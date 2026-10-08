@@ -121,6 +121,7 @@ it('declares node access scope on every active-peer API route', function (): voi
         'gateway:release:list' => ServingNode::Gateway,
         'gateway:release:rollback' => ServingNode::Gateway,
         'gateway:release:show' => ServingNode::Gateway,
+        'gateway:release:smoke' => ServingNode::Gateway,
         'github:app:callback' => ServingNode::Gateway,
         'github:app:destroy' => ServingNode::Gateway,
         'github:app:install' => ServingNode::Gateway,

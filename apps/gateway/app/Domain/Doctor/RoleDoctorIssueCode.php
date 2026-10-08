@@ -15,6 +15,7 @@ enum RoleDoctorIssueCode: string implements DoctorIssueCode
     case PackagesMissing = 'role.packages_missing';
     case CaddyVersionUnsupported = 'role.caddy_version_unsupported';
     case CaddyBuildDrift = 'role.caddy_build_drift';
+    case PhpPoolDirectoryMissing = 'role.php_pool_directory_missing';
     case ServicesInactive = 'role.services_inactive';
     case FirewallProjectionMismatch = 'role.firewall_projection_mismatch';
     case VpnInactive = 'role.vpn_inactive';

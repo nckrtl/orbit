@@ -221,6 +221,33 @@ orbit gateway:release:rollback [<release>] [--force] [--yes] [--json]
 
 The Gateway checks the target and the migrations before it queues anything. A rollback across a migration without `--force` fails with `gateway.release_migration_crossed`, and the message names the newest snapshot. With `--force`, the prompt defaults to No. Declining fails with `input.cancelled`, and nothing is queued. Output and exit status follow `gateway:release:deploy`.
 
+### orbit gateway:release:smoke
+
+Run the [smoke tests](/reference/gateway-recovery#smoke) of the current release against the live Gateway. Smoke changes nothing and writes no release record.
+
+```bash
+orbit gateway:release:smoke [<commit>] [--since=<time>] [--json]
+```
+
+| Argument or option | Meaning |
+| --- | --- |
+| `commit` | The hex SHA, 7 to 40 characters, that the live Gateway must serve. Without it, smoke expects the commit of the current release. |
+| `--since` | The runtime handoff time, ISO 8601 with a zone, such as `2026-10-07T06:00:00Z`. The scheduler and agent view must have restarted after it. Smoke does not wait for a tick; [`orbit gateway:release:auto:status`](#orbit-gatewayreleaseautostatus) shows whether the current release's scheduler has ticked. |
+
+The Gateway runs `bin/gateway-smoke` of the current release inside the request and answers when smoke ends, after about a minute by default. Meanwhile the CLI shows one running step. The detail tree shows the commit, the outcome, the check counts, the duration, and the start time. A failed run adds the smoke message and the next step. A table lists each check with its status, error, message, and duration. JSON returns `release`, `sha`, `outcome`, the smoke `report`, and `request_id`. The command exits 0 only when the outcome is `passed`.
+
+Interrupting the CLI stops waiting, not smoke. Smoke ends on the Gateway within its own limit.
+
+| Error code | Meaning |
+| --- | --- |
+| `gateway.release_commit_invalid` | The commit is not a hex SHA of 7 to 40 characters, or the current release reports no commit. |
+| `gateway.release_since_invalid` | `--since` is not an ISO 8601 time with a zone. |
+| `gateway.release_smoke_failed` | Smoke printed no report, or a report that is not a check failure, such as `terminated`. Checks that did not pass are the `failed` outcome, not this error. |
+| `gateway.release_smoke_timeout` | Smoke ran past its limit and was stopped. |
+| `gateway.release_smoke_killed` | Something else, such as the out-of-memory killer, killed smoke before its limit. |
+| `gateway.release_smoke_missing` | The current release has no `bin/gateway-smoke`. |
+| `gateway.release_smoke_in_progress` | Another smoke run is in progress. Only one runs at a time. |
+
 ### orbit gateway:release:auto:status
 
 Show the [automatic release](/reference/gateway-recovery#automatic-releases) state.
@@ -229,7 +256,7 @@ Show the [automatic release](/reference/gateway-recovery#automatic-releases) sta
 orbit gateway:release:auto:status [--json]
 ```
 
-The detail tree shows whether automatic releases are enabled and paused, with the reason of a pause, the current release and commit, the branch and check, the last check and its result, and the stalls. JSON returns `enabled`, `paused`, `pause`, `current_release`, `current_sha`, `last_tick`, `stalled_since`, `branch_head`, `behind_since`, `branch`, `check`, and `request_id`.
+The detail tree shows whether automatic releases are enabled and paused, with the reason of a pause, the current release and commit, the branch and check, the last check and its result, the stalls, and whether the current release's scheduler has run `tasks:tick` ([post-release tick confirmation](/reference/gateway-recovery#post-release-tick-confirmation)). JSON returns `enabled`, `paused`, `pause`, `current_release`, `current_sha`, `last_tick`, `stalled_since`, `branch_head`, `behind_since`, `branch`, `check`, `tick_confirmation`, and `request_id`.
 
 ### orbit gateway:release:auto:enable and disable
 

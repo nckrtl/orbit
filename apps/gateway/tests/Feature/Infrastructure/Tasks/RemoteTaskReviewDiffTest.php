@@ -173,28 +173,35 @@ it('does not send a review when git cannot produce the stat, the body, or the fi
     $checkout = review_diff_checkout();
     $start = trim((new Process(['git', '-C', $checkout, 'rev-parse', 'HEAD']))->mustRun()->getOutput());
     file_put_contents($checkout.'/tracked.php', "<?php\nreturn 2;\n");
-    $restore = [];
-    $path = getenv('PATH') ?: '';
-    if ($failure === 'stat') {
-        \chmod($checkout.'/tracked.php', 0000);
-        $restore[] = $checkout.'/tracked.php';
-    } elseif ($failure === 'body') {
-        $helper = TestOrbitHome::scratch('fail-helper.sh');
-        file_put_contents($helper, "#!/bin/sh\nexit 3\n");
-        \chmod($helper, 0755);
-        (new Process(['git', '-C', $checkout, 'config', 'diff.external', $helper]))->mustRun();
-    } elseif ($failure === 'untracked') {
+    if ($failure === 'untracked') {
         file_put_contents($checkout.'/secret.php', "hidden\n");
-        \chmod($checkout.'/secret.php', 0000);
-        $restore[] = $checkout.'/secret.php';
-    } else {
-        $bin = TestOrbitHome::scratch('git-bin');
-        mkdir($bin);
-        $git = trim((string) shell_exec('command -v git'));
-        file_put_contents($bin.'/git', "#!/bin/sh\nfor argument in \"\$@\"; do if [ \"\$argument\" = ls-files ]; then echo ls-files-failed >&2; exit 1; fi; done\nexec ".escapeshellarg($git)." \"\$@\"\n");
-        \chmod($bin.'/git', 0755);
-        putenv('PATH='.$bin.':'.$path);
     }
+    $bin = TestOrbitHome::scratch('git-bin');
+    mkdir($bin);
+    $git = trim((new Process(['sh', '-c', 'command -v git']))->mustRun()->getOutput());
+    $record = TestOrbitHome::scratch('git-failure');
+    $condition = match ($failure) {
+        'stat' => '[ "$argument" = --numstat ]',
+        'body' => '[ "$argument" = diff ] && [ "$stat" = no ]',
+        'untracked' => '[ "$argument" = --intent-to-add ]',
+        'ls-files' => '[ "$argument" = ls-files ]',
+    };
+    file_put_contents($bin.'/git', "#!/bin/sh\nstat=no\nfor argument in \"\$@\"; do [ \"\$argument\" != --numstat ] || stat=yes; done\n".
+        'for argument in "$@"; do if '.$condition.'; then printf %s '.escapeshellarg($failure).' > '.escapeshellarg($record).'; exit 3; fi; done'."\n".
+        'exec '.escapeshellarg($git).' "$@"'."\n");
+    \chmod($bin.'/git', 0755);
+    $ssh = new class($bin.':'.(getenv('PATH') ?: '')) implements SshExecutor
+    {
+        public function __construct(private string $path) {}
+
+        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+        {
+            $process = new Process($command->arguments, null, ['PATH' => $this->path], $command->input);
+            $process->run();
+
+            return new CommandResult((int) $process->getExitCode(), $process->getOutput(), $process->getErrorOutput(), 1, false);
+        }
+    };
     $instance = review_diff_instance($checkout);
     $group = Task::topLevel()->create([
         'project_id' => $instance->project_id,
@@ -213,20 +220,14 @@ it('does not send a review when git cannot produce the stat, the body, or the fi
         'subtask_start_commit' => $start,
     ]);
     $driver = new FakeAgentDriver('pi');
-    app()->instance(TaskReviewDiff::class, review_diff_reader(new LocalShellSshExecutor));
+    app()->instance(TaskReviewDiff::class, review_diff_reader($ssh));
     app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
     app()->forgetInstance(AgentSpawner::class);
     app()->forgetInstance(TaskReviewPacketBuilder::class);
 
-    try {
-        app(TaskScheduler::class)->settleImplementer($task);
-    } finally {
-        foreach ($restore as $pathToRestore) {
-            \chmod($pathToRestore, 0644);
-        }
-        putenv('PATH='.$path);
-    }
+    app(TaskScheduler::class)->settleImplementer($task);
 
+    expect(file_get_contents($record))->toBe($failure);
     expect($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
         ->and($task->fresh()?->review_notified_attempt)->toBeNull()
         ->and($task->fresh()?->communication_failures)->toBe(1)

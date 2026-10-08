@@ -274,5 +274,21 @@ function node_response_public_data(): array
         'error_code' => null,
         'roles' => ['app-dev'],
         'settings' => null,
+        'updating' => null,
     ];
 }
+
+it('reads the update in progress and ignores a malformed one', function (mixed $updating, ?array $expected): void {
+    $response = NodeResponse::fromGatewayData(['id' => 4, 'name' => 'gateway', 'updating' => $updating], 'request');
+
+    expect($response->updating?->toArray())->toBe($expected)
+        ->and($response->toArray()['updating'])->toBe($expected);
+})->with([
+    'gateway release' => [
+        ['kind' => 'gateway_release', 'since' => '2026-10-08T12:00:00+00:00', 'rollout' => null, 'release' => 31],
+        ['kind' => 'gateway_release', 'since' => '2026-10-08T12:00:00+00:00', 'rollout' => null, 'release' => 31],
+    ],
+    'absent' => [null, null],
+    'unknown kind' => [['kind' => 'reboot', 'since' => '2026-10-08T12:00:00+00:00'], null],
+    'missing since' => [['kind' => 'fleet_rollout', 'rollout' => 3], null],
+]);

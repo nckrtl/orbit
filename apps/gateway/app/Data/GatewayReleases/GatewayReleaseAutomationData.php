@@ -11,11 +11,15 @@ use Spatie\LaravelData\Mappers\SnakeCaseMapper;
 /**
  * The state of automatic Gateway releases: the switch, a pause, the release that is current, the
  * last runner tick, since when a transient cause has kept releases from making progress, and the
- * branch head the runner last read with since when it differs from the deployed commit.
+ * branch head the runner last read with since when it differs from the deployed commit, and whether the
+ * current release's own scheduler has run `tasks:tick` since it went live.
  */
 #[MapOutputName(SnakeCaseMapper::class)]
 final class GatewayReleaseAutomationData extends Data
 {
+    /**
+     * @param  array<string, mixed>|null  $tickConfirmation  the `tick` phase of the current release's verified record
+     */
     public function __construct(
         public bool $enabled,
         public bool $paused,
@@ -28,5 +32,6 @@ final class GatewayReleaseAutomationData extends Data
         public ?string $behindSince,
         public string $branch,
         public string $check,
+        public ?array $tickConfirmation = null,
     ) {}
 }

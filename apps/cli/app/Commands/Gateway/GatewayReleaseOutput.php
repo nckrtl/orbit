@@ -6,6 +6,7 @@ namespace App\Commands\Gateway;
 
 use Orbit\Sdk\Responses\GatewayReleases\GatewayReleaseAutomationResponse;
 use Orbit\Sdk\Responses\GatewayReleases\GatewayReleaseResponse;
+use Orbit\Sdk\Responses\GatewayReleases\GatewayReleaseSmokeResponse;
 
 /** Human renderings shared by the Gateway release commands. */
 final class GatewayReleaseOutput
@@ -78,7 +79,69 @@ final class GatewayReleaseOutput
             'Stalled since' => $state->stalledSince,
             'Branch head' => $state->branchHead,
             'Behind since' => $state->behindSince,
+            'Scheduler tick' => self::tickConfirmation($state->tickConfirmation),
         ];
+    }
+
+    /**
+     * Whether the current release's own scheduler has run `tasks:tick`, with the time that decides it.
+     *
+     * @param  array<string, mixed>|null  $phase
+     */
+    private static function tickConfirmation(?array $phase): ?string
+    {
+        $outcome = is_array($phase) && is_string($phase['outcome'] ?? null) ? $phase['outcome'] : null;
+
+        return match ($outcome) {
+            null => null,
+            'pending' => 'pending, due by '.(is_string($phase['deadline'] ?? null) ? $phase['deadline'] : '—'),
+            'confirmed' => 'confirmed, tick at '.(is_string($phase['last_tick_at'] ?? null) ? $phase['last_tick_at'] : '—'),
+            'missed' => 'missed, no tick by '.(is_string($phase['deadline'] ?? null) ? $phase['deadline'] : '—'),
+            default => $outcome,
+        };
+    }
+
+    /** @return array<string, string|null> */
+    public static function smoke(GatewayReleaseSmokeResponse $result): array
+    {
+        $report = $result->report ?? [];
+        $summary = is_array($report['summary'] ?? null) ? $report['summary'] : [];
+        $counts = [];
+
+        foreach (['passed', 'failed', 'timeout', 'skipped'] as $status) {
+            if (is_int($summary[$status] ?? null)) {
+                $counts[] = $summary[$status].' '.$status;
+            }
+        }
+
+        // A passed smoke has no message or next step, so those rows appear only when the report has them.
+        return array_filter([
+            'Commit' => $result->sha,
+            'Outcome' => $result->outcome,
+            'Checks' => $counts === [] ? null : implode(', ', $counts),
+            'Message' => is_string($report['message'] ?? null) ? $report['message'] : false,
+            'Next' => is_string($report['next'] ?? null) ? $report['next'] : false,
+            'Duration' => is_int($report['duration_ms'] ?? null) ? self::duration($report['duration_ms']) : null,
+            'Started' => is_string($report['started_at'] ?? null) ? $report['started_at'] : null,
+        ], static fn (string|false|null $value): bool => $value !== false);
+    }
+
+    /** @return list<list<string>> */
+    public static function smokeChecks(GatewayReleaseSmokeResponse $result): array
+    {
+        $rows = [];
+
+        foreach ($result->checks() as $name => $check) {
+            $rows[] = [
+                $name,
+                $check['status'],
+                $check['error'] ?? '—',
+                $check['message'] ?? '—',
+                $check['duration_ms'] === null ? '—' : self::duration($check['duration_ms']),
+            ];
+        }
+
+        return $rows;
     }
 
     private static function steps(GatewayReleaseResponse $record): ?string

@@ -11,6 +11,7 @@ use Illuminate\Support\Carbon;
 
 /**
  * @property string $id
+ * @property bool $warm_pool
  * @property int|null $group_id
  * @property int|null $node_id
  * @property string $provider
@@ -55,7 +56,7 @@ final class TaskSandbox extends Model
     /** @var list<string> */
     #[\Override]
     protected $fillable = [
-        'id', 'group_id', 'node_id', 'provider', 'name', 'state', 'desired_power', 'spec',
+        'id', 'group_id', 'node_id', 'warm_pool', 'provider', 'name', 'state', 'desired_power', 'spec',
         'credential_fingerprint', 'network_policy', 'server_id', 'disk_id', 'public_address', 'create_attempted_at', 'firewall_configured_at', 'destroyed_at', 'error_code',
         'review_started_at', 'parked_at', 'preview', 'resume_requested_at',
     ];
@@ -65,7 +66,7 @@ final class TaskSandbox extends Model
     protected function casts(): array
     {
         return [
-            'state' => SandboxState::class, 'spec' => 'array', 'pi_token' => 'encrypted', 'model_key' => 'encrypted',
+            'warm_pool' => 'boolean', 'state' => SandboxState::class, 'spec' => 'array', 'pi_token' => 'encrypted', 'model_key' => 'encrypted',
             'model_key_registered_at' => 'datetime', 'model_key_revoked_at' => 'datetime',
             'create_attempted_at' => 'datetime', 'firewall_configured_at' => 'datetime', 'destroyed_at' => 'datetime',
             'review_started_at' => 'datetime', 'parked_at' => 'datetime', 'preview' => 'boolean', 'resume_requested_at' => 'datetime',

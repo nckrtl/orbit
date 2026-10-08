@@ -662,6 +662,7 @@ DESCRIPTIONS = {
     'gateway:release:rollback': 'Queues a rollback to a retained release, named by its 12-digit id, and starts its release unit. Refuses a target that lacks a migration of the current release unless `force` is true. Answers 202 with the queued release record. See /reference/gateway-recovery#roll-back.',
     'gateway:release:list': 'Lists the 50 newest Gateway release records, newest first, including queued and running ones.',
     'gateway:release:show': 'Shows one Gateway release record by its numeric id (1 to 6 digits), or the newest record of a commit named by a hex SHA of 7 to 40 characters.',
+    'gateway:release:smoke': 'Runs `bin/gateway-smoke` of the current release against the live Gateway, for the current commit or the `commit` you name, and answers when it ends. `since` is the runtime handoff time, ISO 8601 with a zone. Smoke restarts nothing and writes no release record, so it runs inside the request: its limit, `ORBIT_GATEWAY_RELEASE_SMOKE_TIMEOUT`, is lowered to what the request\'s command deadline has left, about 520 seconds at most, so the run ends before PHP-FPM ends the request. One smoke runs at a time; another answers 409 `gateway.release_smoke_in_progress`. Checks that did not pass answer 200 with `outcome` `failed` and the report; a smoke that printed no report, ran past its limit, or is missing is an error. See /reference/gateway-recovery#smoke.',
     'gateway:release:auto:status': 'Shows whether automatic Gateway releases are enabled or paused, the current release, the last runner tick, and how long releases have made no progress. See /reference/gateway-recovery#automatic-releases.',
     'gateway:release:auto:enable': 'Turns automatic Gateway releases on. A pause still holds them until `gateway:release:auto:resume`.',
     'gateway:release:auto:disable': 'Turns automatic Gateway releases off. A release that already runs finishes.',
@@ -1501,6 +1502,7 @@ CTRL_DATA_OVERRIDES = {
     'ProxyCliController@models': ('ProxyCliModelData', True),
     'TaskGroupsController@comments': ('TaskCommentData', True),
     'TasksController@status': ('TasksStatusData', False),
+    'GatewayReleasesController@smoke': ('GatewayReleaseSmokeData', False),
     'GatewayReleaseAutomationController@show': ('GatewayReleaseAutomationData', False), 'GatewayReleaseAutomationController@enable': ('GatewayReleaseAutomationData', False),
     'GatewayReleaseAutomationController@disable': ('GatewayReleaseAutomationData', False), 'GatewayReleaseAutomationController@resume': ('GatewayReleaseAutomationData', False),
 }
@@ -1792,6 +1794,8 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
             responses['200'] = envelope(data, 'The request succeeded.')
         if route['name'] == 'gateway:trust':
             responses['503'] = error_response('The Gateway root CA is unavailable (`ca.unavailable`).')
+        if route['name'] == 'gateway:release:smoke':
+            responses['500'] = error_response('Smoke printed no report or one that is not a check failure, such as `terminated` (`gateway.release_smoke_failed`), ran past its limit (`gateway.release_smoke_timeout`), was killed (`gateway.release_smoke_killed`), or the current release has no `bin/gateway-smoke` (`gateway.release_smoke_missing`).')
     if route['name'].startswith('project:document:'):
         op['description'] = 'Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.'
         if route['name'] in ('project:document:list', 'project:document:search', 'project:document:version:list'):

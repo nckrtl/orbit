@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Instances;
 
+use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Instances\ProductionPhpRuntimeIdentity;
 use App\Domain\Instances\ProductionPhpRuntimeManager;
 use App\Domain\Instances\Removal\InstanceRemovalProjector;
@@ -139,11 +140,27 @@ final readonly class NativeInstanceRemovalProjector implements InstanceRemovalPr
                 $this->productionPhp()->remove($instance);
             }
         } else {
-            $this->php->converge($instance->node);
+            $this->convergeDevelopmentPhp($instance);
         }
         $this->caddy->build($instance->node);
         $this->certificates->removeInstance($instance);
         $this->metrics?->reconcile();
+    }
+
+    /**
+     * Stored state renders no pool for the removed Instance, so a convergence that skipped another
+     * site's pool for a missing directory has still withdrawn this one. Doctor reports the skipped
+     * pool; it must not keep this removal open.
+     */
+    private function convergeDevelopmentPhp(Instance $instance): void
+    {
+        try {
+            $this->php->converge($instance->node);
+        } catch (RuntimeConvergenceException $exception) {
+            if ($exception->errorCode !== RemoteAppDevPhpFpmManager::PoolDirectoryMissing) {
+                throw $exception;
+            }
+        }
     }
 
     private function productionPhp(): ProductionPhpRuntimeManager

@@ -46,6 +46,9 @@ final readonly class RemoveTaskSandboxAction
             if ($sandbox->group_id !== $groupId) {
                 throw $this->ownership();
             }
+            if ($endedOnly && $sandbox->warm_pool && $sandbox->desired_power !== 'destroyed') {
+                throw new ComputeException('compute.warm_active', 'The sandbox is an active warm reservation.');
+            }
             $group = $groupId === null ? null : Task::topLevel()->find($groupId);
             if ($groupId !== null && (! $group instanceof Task || $group->task_compute !== TaskCompute::Vm || $group->execution_mode !== TaskExecutionMode::Managed)) {
                 throw $this->ownership();

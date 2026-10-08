@@ -15,9 +15,13 @@ use App\Infrastructure\Nodes\RemotePhpPackageManager;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Node;
 use App\Rules\SupportedPhpVersion;
+use Illuminate\Support\Collection;
 
 final readonly class RemoteAppDevPhpFpmManager implements AppDevPhpFpmManager
 {
+    /** Convergence published every other pool but skipped a desired pool whose working directory is missing. */
+    public const string PoolDirectoryMissing = 'app-dev.php_pool_directory_missing';
+
     public function __construct(
         private DevelopmentSiteRepository $sites,
         private DevelopmentPhpFpmConfigRenderer $renderer,
@@ -28,29 +32,68 @@ final readonly class RemoteAppDevPhpFpmManager implements AppDevPhpFpmManager
         private string $lockDirectory = '/run/lock/orbit',
     ) {}
 
+    /**
+     * Publishes one `orbit-scopes.conf` for each PHP version from stored state. A site whose working
+     * directory is missing on the Node gets no pool: PHP-FPM refuses to start while any pool names a
+     * missing `chdir`, so one such pool would stop every site of that version. Convergence publishes the
+     * other pools first and then fails with `app-dev.php_pool_directory_missing`, so the operation that
+     * asked for the missing pool does not report success. Doctor reports it as
+     * `role.php_pool_directory_missing`. Package installation never starts PHP-FPM; each publication
+     * starts or reloads it after it installs the validated pools, so a stale pool that keeps PHP-FPM
+     * from starting cannot block the publication that removes it.
+     */
     public function converge(Node $node): void
     {
         $this->convergeSites($node);
     }
 
+    /**
+     * The Orbit-rendered pools on the Node that name a missing working directory: installed pools, which
+     * stop PHP-FPM from starting, and desired pools, which converge skips.
+     *
+     * @return list<array{pool: string, version: string, directory: string, installed: bool}>
+     */
+    public function poolsWithMissingDirectories(Node $node, ?float $commandTimeout = null): array
+    {
+        $desiredSites = $this->desiredSites($node);
+        $installed = $this->installedProjection(
+            $node,
+            $this->accounts->resolve($node),
+            $this->workingDirectories($desiredSites),
+            $commandTimeout,
+        );
+        $pools = array_map(
+            static fn (array $pool): array => [...$pool, 'installed' => true],
+            $installed->poolsWithMissingDirectories(),
+        );
+        $installedPools = array_column($pools, 'pool');
+
+        foreach ($desiredSites as $site) {
+            if (
+                ! in_array($site->phpWorkingDirectory(), $installed->missingDirectories, strict: true)
+                || in_array($site->poolName(), $installedPools, strict: true)
+            ) {
+                continue;
+            }
+
+            $pools[] = [
+                'pool' => $site->poolName(),
+                'version' => $site->phpVersion ?? '',
+                'directory' => $site->phpWorkingDirectory(),
+                'installed' => false,
+            ];
+        }
+
+        return $pools;
+    }
+
     private function convergeSites(Node $node): void
     {
         $account = $this->accounts->resolve($node);
-        $desiredSites = $this->sites
-            ->forNode($node)
-            ->filter(
-                static fn (DevelopmentSite $site): bool => (
-                    $site->phpVersion !== null
-                    && ! $site->isProxy()
-                    && ! $site->usesDedicatedPhpRuntime()
-                ),
-            )
-            ->values();
-        $desiredVersions = $desiredSites
+        $desiredSites = $this->desiredSites($node);
+        $unsupportedVersion = $desiredSites
             ->map(static fn (DevelopmentSite $site): string => $site->phpVersion ?? '')
             ->unique()
-            ->values();
-        $unsupportedVersion = $desiredVersions
             ->first(static fn (string $version): bool => ! SupportedPhpVersion::isSupported($version));
 
         if (is_string($unsupportedVersion)) {
@@ -61,7 +104,21 @@ final readonly class RemoteAppDevPhpFpmManager implements AppDevPhpFpmManager
             );
         }
 
-        $installedProjection = $this->installedProjection($node, $account);
+        $installedProjection = $this->installedProjection($node, $account, $this->workingDirectories($desiredSites));
+        $skippedSites = $desiredSites
+            ->filter(static fn (DevelopmentSite $site): bool => in_array(
+                needle: $site->phpWorkingDirectory(),
+                haystack: $installedProjection->missingDirectories,
+                strict: true,
+            ))
+            ->values();
+        $desiredSites = $desiredSites
+            ->reject(static fn (DevelopmentSite $site): bool => $skippedSites->contains($site))
+            ->values();
+        $desiredVersions = $desiredSites
+            ->map(static fn (DevelopmentSite $site): string => $site->phpVersion ?? '')
+            ->unique()
+            ->values();
         $role = $desiredSites->contains(static fn (DevelopmentSite $site): bool => $site->environment === 'production')
             ? RoleName::AppProd
             : RoleName::AppDev;
@@ -106,10 +163,58 @@ final readonly class RemoteAppDevPhpFpmManager implements AppDevPhpFpmManager
 
             throw $recoveryFailure ?? $exception;
         }
+
+        if ($skippedSites->isNotEmpty()) {
+            $pools = $skippedSites
+                ->map(static fn (DevelopmentSite $site): string => "{$site->poolName()} ({$site->phpWorkingDirectory()})")
+                ->implode(', ');
+
+            throw new RuntimeConvergenceException(
+                step: 'php-fpm-directories',
+                errorCode: self::PoolDirectoryMissing,
+                message: "PHP-FPM pools were not published on node [{$node->name}] because their working directories are missing: {$pools}.",
+            );
+        }
     }
 
-    private function installedProjection(Node $node, ManagedUserAccount $account): PhpFpmInstalledProjection
+    /** @return Collection<int, DevelopmentSite> */
+    private function desiredSites(Node $node): Collection
     {
+        return $this->sites
+            ->forNode($node)
+            ->filter(
+                static fn (DevelopmentSite $site): bool => (
+                    $site->phpVersion !== null
+                    && ! $site->isProxy()
+                    && ! $site->usesDedicatedPhpRuntime()
+                ),
+            )
+            ->values();
+    }
+
+    /**
+     * @param  Collection<int, DevelopmentSite>  $sites
+     * @return list<string>
+     */
+    private function workingDirectories(Collection $sites): array
+    {
+        return array_values(array_unique($sites
+            ->map(static fn (DevelopmentSite $site): string => $site->phpWorkingDirectory())
+            ->all()));
+    }
+
+    /**
+     * Reads every installed `orbit-scopes.conf` and reports, as root, which of the given working
+     * directories and the `chdir` of every installed pool are missing. It changes nothing on the Node.
+     *
+     * @param  list<string>  $directories
+     */
+    private function installedProjection(
+        Node $node,
+        ManagedUserAccount $account,
+        array $directories,
+        ?float $commandTimeout = null,
+    ): PhpFpmInstalledProjection {
         $result = $this->ssh->execute(
             $node,
             new RemoteCommand(
@@ -121,24 +226,35 @@ final readonly class RemoteAppDevPhpFpmManager implements AppDevPhpFpmManager
                     $account->user,
                     $account->group,
                     $account->home,
+                    ...$directories,
                 ],
                 input: <<<'BASH'
                     php_root=$1
                     managed_user=$2
                     managed_group=$3
                     managed_home=$4
+                    shift 4
+                    directories=("$@")
                     for path in "$php_root"/*/fpm/pool.d/orbit-scopes.conf; do
                         if [ -e "$path" ]; then
                             version=$(basename "$(dirname "$(dirname "$(dirname "$path")")")")
                             printf '%s\t' "$version"
                             base64 --wrap=0 -- "$path"
                             printf '\n'
+                            while IFS= read -r directory; do
+                                directories+=("$directory")
+                            done < <(sed -n 's/^chdir = //p' -- "$path")
                         fi
                     done
+                    if [ "${#directories[@]}" -gt 0 ]; then
+                        printf '%s\0' "${directories[@]}" \
+                            | sudo xargs -0 -r -n 1 sh -c 'test -d "$1" || printf "missing-directory\t%s\n" "$1"' sh
+                    fi
                     BASH,
             ),
             step: 'php-fpm-discover',
             errorCode: 'app-dev.php_fpm_discovery_failed',
+            commandTimeout: $commandTimeout,
         );
 
         return PhpFpmInstalledProjection::fromDiscoveryOutput($result->stdout);
@@ -162,7 +278,7 @@ final readonly class RemoteAppDevPhpFpmManager implements AppDevPhpFpmManager
             }
 
             try {
-                $this->publishVersion($node, $version, $installedProjection->previousConfiguration($version), $account);
+                $this->publishVersion($node, $version, $installedProjection->restorableConfiguration($version), $account);
             } catch (RuntimeConvergenceException $exception) {
                 $recoveryFailure ??= $exception;
             }
@@ -265,6 +381,10 @@ final readonly class RemoteAppDevPhpFpmManager implements AppDevPhpFpmManager
             sudo "php-fpm\$version" -y "\$temporary_directory/php-fpm.conf" -t
 
             if [ -f "\$managed_configuration" ] && cmp -s -- "\$candidate" "\$managed_configuration"; then
+                sudo systemctl enable "php\$version-fpm"
+                if ! sudo systemctl is-active --quiet "php\$version-fpm"; then
+                    sudo systemctl restart "php\$version-fpm"
+                fi
                 exit 0
             fi
 

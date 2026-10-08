@@ -7,6 +7,7 @@ use App\Actions\GatewayReleases\ConfigureGatewayReleaseAction;
 use App\Actions\GatewayReleases\DeployGatewayReleaseAction;
 use App\Actions\GatewayReleases\PrepareGatewayReleaseAction;
 use App\Actions\GatewayReleases\RollbackGatewayReleaseAction;
+use App\Actions\GatewayReleases\RunAutomaticGatewayReleaseAction;
 use App\Domain\GatewayReleases\GatewayReleaseDatabase;
 use App\Domain\GatewayReleases\GatewayReleaseRuntime;
 use App\Domain\GatewayReleases\GatewayReleaseVerifier;
@@ -15,6 +16,7 @@ use App\Infrastructure\GatewayReleases\GatewayReleaseAdopter;
 use App\Infrastructure\GatewayReleases\GatewayReleaseBuilder;
 use App\Infrastructure\GatewayReleases\GatewayReleaseGuard;
 use App\Infrastructure\GatewayReleases\GatewayReleasePromoter;
+use App\Infrastructure\GatewayReleases\GatewayReleaseTickConfirmation;
 use App\Infrastructure\GatewayReleases\GatewayRuntimeHandoff;
 use App\Infrastructure\GatewayReleases\GatewaySchedulerHandoff;
 use App\Infrastructure\GatewayReleases\HttpGatewayReleaseVerifier;
@@ -35,6 +37,7 @@ beforeEach(function (): void {
         'orbit.gateway_releases.min_free_mb' => 2048,
         'orbit.gateway_releases.keep' => 4,
         'orbit.gateway_releases.snapshots_keep' => 3,
+        'orbit.gateway_releases.tick_confirmation_seconds' => 240,
     ]);
 });
 
@@ -62,6 +65,9 @@ describe('the Gateway release pipeline from the container', function (): void {
             ->and(wired($promoter, 'guard'))->toBeInstanceOf(GatewayReleaseGuard::class)
             ->and(wired($promoter, 'keptReleases'))->toBe(4)
             ->and(wired($promoter, 'verifier'))->toBeInstanceOf(HttpGatewayReleaseVerifier::class)
+            ->and(wired($promoter, 'ticks'))->toBeInstanceOf(GatewayReleaseTickConfirmation::class)
+            ->and(wired(app(RunAutomaticGatewayReleaseAction::class), 'ticks'))->toBeInstanceOf(GatewayReleaseTickConfirmation::class)
+            ->and(wired(wired($promoter, 'ticks'), 'windowSeconds'))->toBe(240)
             ->and($runtime)->toBeInstanceOf(ArtisanGatewayReleaseRuntime::class)
             ->and(wired($runtime, 'fallback'))->toBeInstanceOf(LocalGatewayReleaseRuntime::class)
             ->and(wired($runtime, 'stepLock'))->toBe('/home/orbit/.orbit/gateway-release-step.lock')

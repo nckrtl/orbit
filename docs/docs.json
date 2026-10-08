@@ -227,6 +227,7 @@
               "POST /api/v1/gateway/release-automation/disable",
               "POST /api/v1/gateway/release-automation/enable",
               "POST /api/v1/gateway/release-automation/resume",
+              "POST /api/v1/gateway/release-smoke",
               "GET /api/v1/gateway/releases",
               "POST /api/v1/gateway/releases",
               "GET /api/v1/gateway/releases/{release}",

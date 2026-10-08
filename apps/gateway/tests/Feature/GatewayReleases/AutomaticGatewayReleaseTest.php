@@ -117,7 +117,7 @@ describe('gateway:release:auto', function (): void {
             ->and($record->outcome)->toBe('verified')
             ->and($record->sha)->toBe($sha)
             ->and($record->requested)->toBe($sha)
-            ->and(array_keys($record->phases))->toBe(['prepare', 'guard', 'configuration', 'snapshot', 'migrate', 'switch', 'handoff', 'verify', 'scheduler', 'web', 'smoke'])
+            ->and(array_keys($record->phases))->toBe(['prepare', 'guard', 'configuration', 'snapshot', 'migrate', 'switch', 'handoff', 'verify', 'scheduler', 'web', 'smoke', 'tick'])
             ->and($this->pipeline->fixture->layout->currentReleaseId())->toBe(substr($sha, 0, 12))
             ->and(Activity::query()->where('command', 'gateway:release:auto')->value('status'))->toBe('succeeded')
             ->and($this->pipeline->alerts)->toBe([]);

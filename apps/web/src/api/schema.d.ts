@@ -812,6 +812,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/gateway/release-smoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * gateway:release:smoke
+         * @description Runs `bin/gateway-smoke` of the current release against the live Gateway, for the current commit or the `commit` you name, and answers when it ends. `since` is the runtime handoff time, ISO 8601 with a zone. Smoke restarts nothing and writes no release record, so it runs inside the request: its limit, `ORBIT_GATEWAY_RELEASE_SMOKE_TIMEOUT`, is lowered to what the request's command deadline has left, about 520 seconds at most, so the run ends before PHP-FPM ends the request. One smoke runs at a time; another answers 409 `gateway.release_smoke_in_progress`. Checks that did not pass answer 200 with `outcome` `failed` and the report; a smoke that printed no report, ran past its limit, or is missing is an error. See /reference/gateway-recovery#smoke.
+         */
+        post: operations["gateway-release-smoke"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/gateway/releases": {
         parameters: {
             query?: never;
@@ -3889,6 +3909,9 @@ export interface components {
             behind_since?: string | null;
             branch?: string;
             check?: string;
+            tick_confirmation?: {
+                [key: string]: unknown;
+            } | null;
         };
         GatewayReleasePause: {
             reason?: string;
@@ -3906,6 +3929,14 @@ export interface components {
             record?: number | null;
             error_code?: string | null;
             message?: string | null;
+        };
+        GatewayReleaseSmoke: {
+            release?: string | null;
+            sha?: string;
+            outcome?: string;
+            report?: {
+                [key: string]: unknown;
+            } | null;
         };
         GatewayRelease: {
             id?: number;
@@ -4198,12 +4229,20 @@ export interface components {
             error_code?: string | null;
             roles?: string[];
             settings?: components["schemas"]["NodeSettings"] | null;
+            updating?: components["schemas"]["NodeUpdating"] | null;
         };
         NodeSettings: {
             apps?: components["schemas"]["NodeStorageApps"] | null;
         };
         NodeStorageApps: {
             path?: string | null;
+        };
+        NodeUpdating: {
+            /** @enum {string} */
+            kind?: "fleet_rollout" | "gateway_release";
+            since?: string;
+            rollout?: number | null;
+            release?: number | null;
         };
         NodeAccess: {
             can_access?: components["schemas"]["NodeAccessNode"][];
@@ -7248,6 +7287,74 @@ export interface operations {
             };
             /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "gateway-release-smoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description Hex SHA the live Gateway must serve, 7 to 40 characters. Default: the current release */
+                    commit?: string | null;
+                    /** @description Runtime handoff time, ISO 8601 with a zone. The scheduler and agent view must have started after it */
+                    since?: string | null;
+                };
+            };
+        };
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["GatewayReleaseSmoke"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Smoke printed no report or one that is not a check failure, such as `terminated` (`gateway.release_smoke_failed`), ran past its limit (`gateway.release_smoke_timeout`), was killed (`gateway.release_smoke_killed`), or the current release has no `bin/gateway-smoke` (`gateway.release_smoke_missing`). */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };

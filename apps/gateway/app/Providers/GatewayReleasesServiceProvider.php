@@ -20,7 +20,10 @@ use App\Domain\GatewayReleases\GatewayReleaseWebBuild;
 use App\Domain\GitHub\GreenCommitResolver;
 use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Hibernation\RuntimeHibernatorConverger;
+use App\Domain\Nodes\NodeUpdateBroadcaster;
 use App\Domain\Settings\SettingRepository;
+use App\Domain\Tasks\TaskExtensionState;
+use App\Domain\Tasks\TaskTickClock;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
 use App\Infrastructure\Files\ProtectedFileWriter;
 use App\Infrastructure\Gateway\GatewayApplicationPath;
@@ -41,6 +44,7 @@ use App\Infrastructure\GatewayReleases\GatewayReleaseRetry;
 use App\Infrastructure\GatewayReleases\GatewayReleaseSource;
 use App\Infrastructure\GatewayReleases\GatewayReleaseSupersession;
 use App\Infrastructure\GatewayReleases\GatewayReleaseSwitcher;
+use App\Infrastructure\GatewayReleases\GatewayReleaseTickConfirmation;
 use App\Infrastructure\GatewayReleases\GatewayRuntimeHandoff;
 use App\Infrastructure\GatewayReleases\GatewaySchedulerHandoff;
 use App\Infrastructure\GatewayReleases\GitHubArtifactWebBuild;
@@ -178,6 +182,7 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
                 automation: $app->make(GatewayReleaseAutomation::class),
                 units: $app->make(GatewayReleaseUnitStarter::class),
                 retry: $app->make(GatewayReleaseRetry::class),
+                nodes: $app->make(NodeUpdateBroadcaster::class),
             ),
         );
         $this->app->bind(
@@ -210,6 +215,16 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
                 retry: $app->make(GatewayReleaseRetry::class),
                 guard: $app->make(GatewayReleaseGuard::class),
                 fleet: $app->make(FleetConvergeUnits::class),
+                ticks: $app->make(GatewayReleaseTickConfirmation::class),
+            ),
+        );
+        $this->app->bind(
+            GatewayReleaseTickConfirmation::class,
+            static fn (Application $app): GatewayReleaseTickConfirmation => new GatewayReleaseTickConfirmation(
+                clock: $app->make(TaskTickClock::class),
+                extension: $app->make(TaskExtensionState::class),
+                alerts: $app->make(GatewayReleaseAlerts::class),
+                windowSeconds: Config::integer('orbit.gateway_releases.tick_confirmation_seconds'),
             ),
         );
         $this->app->bind(

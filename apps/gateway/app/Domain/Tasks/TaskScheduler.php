@@ -19,6 +19,7 @@ use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Shared\StoredInteger;
 use App\Infrastructure\Compute\TaskSandboxGroupLifecycle;
+use App\Infrastructure\Compute\TaskSandboxWarmPool;
 use App\Models\Activity;
 use App\Models\AgentThread;
 use App\Models\Instance;
@@ -139,6 +140,7 @@ final readonly class TaskScheduler
         private TaskWorkspaceTopology $topology,
         private TaskTopologyAdmission $topologyAdmission,
         private TaskSandboxGroupLifecycle $sandboxes,
+        private TaskSandboxWarmPool $warmPool,
         private TaskPullRequestMerger $merger,
     ) {}
 
@@ -2994,7 +2996,7 @@ final readonly class TaskScheduler
         $removed = 0;
         $candidates = TaskSandbox::query()->where('state', '!=', SandboxState::Destroyed)
             ->whereNotIn('id', Instance::query()->whereNotNull('task_sandbox_id')->select('task_sandbox_id'))
-            ->where(fn ($query) => $query->where('desired_power', 'destroyed')->orWhereNull('group_id')->orWhereHas('group', fn ($groups) => $groups
+            ->where(fn ($query) => $query->where('desired_power', 'destroyed')->orWhere(fn ($warm) => $warm->whereNull('group_id')->where('warm_pool', false))->orWhereHas('group', fn ($groups) => $groups
                 ->where('execution_mode', TaskExecutionMode::Managed)->where('task_compute', TaskCompute::Vm)
                 ->where(fn ($claim) => $claim->whereNull('reserved_at')->orWhere('reserved_at', '<=', RemoveTaskWorkspaceAction::reservationCutoff()))
                 ->whereIn('status', [TaskGroupStatus::Completed, TaskGroupStatus::Cancelled])))
@@ -3254,6 +3256,8 @@ final readonly class TaskScheduler
         while ($this->claimNext($skipped) instanceof Task) {
             $started++;
         }
+
+        $this->warmPool->reconcile();
 
         return $started;
     }

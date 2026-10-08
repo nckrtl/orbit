@@ -9,7 +9,7 @@ covers:
   - apps/gateway/app/Infrastructure/Gateway/GatewayCheckoutAccessConverger.php
   - apps/gateway/app/**/GatewayReleases/**
   - apps/gateway/app/**/*GatewayRelease*.php
-  - apps/gateway/{app/Domain/Fleet/**,app/Infrastructure/Fleet/**,app/Actions/Fleet/**,app/Data/Fleet/**,app/Models/FleetRollout*.php,app/Console/Commands/FleetConvergeCommand.php,app/Http/Controllers/Api/FleetRolloutsController.php,config/fleet.php}
+  - apps/gateway/{app/Domain/Nodes/NodeUpdat*.php,app/Data/Nodes/NodeUpdatingData.php,app/Domain/Fleet/**,app/Infrastructure/Fleet/**,app/Actions/Fleet/**,app/Data/Fleet/**,app/Models/FleetRollout*.php,app/Console/Commands/FleetConvergeCommand.php,app/Http/Controllers/Api/FleetRolloutsController.php,config/fleet.php}
 ---
 
 # Update and recover a Gateway
@@ -110,7 +110,9 @@ Name the commit by its hex SHA, 7 to 40 characters. Branch names, tags, and othe
 
 Every artisan command of a release runs with a clean environment that has only `HOME`, `PATH`, and `LANG`, so the release reads its configuration from the shared env file alone. These commands, and `composer install`, hold `ORBIT_HOME/gateway-release-step.lock` while they run. When the process that started one dies, for example with its SSH session, the command still finishes. Until it has, the next release step is refused with `gateway.release_in_progress`.
 
-Only a release with a `REVISION` file is prepared. When the configuration cannot be cached, prepare removes `REVISION` again. The Gateway runs with a cached configuration, so a change to the shared env file takes effect only after [`gateway:release:configure`](#apply-an-env-change). A release that already has it is reused without another build step. Only its web build is installed again when it is missing. A partial release from a failed or interrupted prepare is removed and built again on the next run. It never touches the current release link, the database, or a running service.
+Only a release with a `REVISION` file is prepared. When the configuration cannot be cached, prepare removes `REVISION` again. The Gateway runs with a cached configuration, so a change to the shared env file takes effect only after [`gateway:release:configure`](#apply-an-env-change). A release that already has it is reused without another build step. Only its web build is installed again when it is missing. A partial release from a failed or interrupted prepare is removed and built again on the next run of the same commit, or [pruned](#deploy-a-release) by a later verified release once it is 1 hour old.
+
+Prepare never touches the current release link, the database, or a running service.
 
 Prepare refuses before it fetches or writes when the releases directory has less free space than `ORBIT_GATEWAY_RELEASE_MIN_FREE_MB`, 1024 MiB by default. Each release has its own `vendor/` directories. Releases share the Git objects in `shared/orbit.git`, so a release costs about the size of its source and its two `vendor/` directories, about 115 MB without development packages.
 
@@ -146,7 +148,7 @@ The web app ships with the Gateway release of the same commit. On every CI run o
 
 Extraction accepts only regular files and directories with plain relative names. It refuses links, special files, absolute names, `..`, duplicate and encrypted entries, and entries whose size or checksum differs from their header. It also refuses more than 20,000 entries or more than 512 MiB of files.
 
-A complete build is reused. Nothing serves it until the release verified: deploy then switches `web/current` to it in one rename. A failure leaves no partial build behind. After a verified release, the Gateway removes every web build that belongs to no retained release, such as the build of a commit whose prepare failed later, or an older `bin/web-deploy` build. It never removes the build `current` serves. When the releases directory cannot be read, it skips this cleanup and logs a warning.
+A complete build is reused. Nothing serves it until the release verified: deploy then switches `web/current` to it in one rename. Open pages read the new build's `version.json` and move to it on their next navigation or resume ([Updates to open pages](/reference/web-app#updates-to-open-pages)). A failure leaves no partial build behind. After a verified release, the Gateway removes every web build that belongs to no retained release, such as the build of a commit whose prepare failed later, or an older `bin/web-deploy` build. It never removes the build `current` serves. When the releases directory cannot be read, it skips this cleanup and logs a warning.
 
 CI's `Required checks` job needs the Web job, and the Web job uploads the artifact before it succeeds. So a commit with passing checks has its artifact, and a missing or expired one fails the commit at once instead of waiting for it. A newer commit is released instead. The artifact expires after 14 days, so deploying or adopting an older commit fails at this step.
 
@@ -196,6 +198,10 @@ Smoke does not run before the web switch. Any failure after the switch counts, a
 To decide, deploy compares the migrations the database has applied with the previous release's files, never with what is pending now. A killed attempt of the same commit can leave such a migration.
 
 After a verified release, deploy removes old releases. It keeps the newest `ORBIT_GATEWAY_RELEASES_KEEP` releases (default 5), and always the current and the previous one.
+
+It also removes each release directory without `REVISION` that is more than 1 hour old, with its web build. Such a directory is left by a prepare that stopped, for example an adoption that lacked a GitHub App permission, and no later prepare of another commit removes it. Every prepare holds the release lock, and so does deploy while it prunes, so no prepare is writing to the directory. The age is a margin on top.
+
+Deploy keeps an incomplete directory that is the current or the previous release, because that release needs a repair. It also keeps a directory whose `REVISION` names another commit. Remove that one by hand. A directory that cannot be removed stays, and each verified release logs a warning with its id.
 
 #### Migrations and the snapshot
 
@@ -266,8 +272,8 @@ Smoke runs `bin/gateway-smoke` of the new release, `releases/<id>/bin/gateway-sm
 | Option | Value |
 | --- | --- |
 | `--sha` | The release's commit. |
-| `--since` | The time the runtime handoff started, in whole seconds. The scheduler and agent view must have restarted after it, and a tasks tick must have started after it. |
-| `--timeout` | `ORBIT_GATEWAY_RELEASE_SMOKE_TIMEOUT`, default `90` seconds. A restarted scheduler starts its first tick on the next minute. |
+| `--since` | The time the runtime handoff started, in whole seconds. The scheduler and agent view must have restarted after it. |
+| `--timeout` | `ORBIT_GATEWAY_RELEASE_SMOKE_TIMEOUT`, default `90` seconds. |
 | `--checkout`, `--web-dir` | `/home/orbit/orbit` and the web directory, so the checks read the live paths. |
 | `--web-url`, `--up-url`, `--status-url` | Built from `ORBIT_GATEWAY_VERIFY_ORIGIN`. |
 | `--write-check --smoke-project` | Only when `ORBIT_GATEWAY_RELEASE_SMOKE_PROJECT` names a Project. |
@@ -276,7 +282,34 @@ The Python checks trust Orbit's root CA through `SSL_CERT_FILE`, set to Caddy's 
 
 The release record stores the smoke JSON as `phases.smoke.report`, also when smoke fails. Smoke fails when it exits nonzero, reports `passed: false`, prints no JSON, or the release has no `bin/gateway-smoke`. When it runs 15 seconds past its own limit, the step fails with `gateway.release_smoke_timeout`. `timeout` then sends `SIGTERM` to smoke, which kills every check command it started, each in a session of its own, and prints a `terminated` result that the record keeps as the report. After 5 more seconds, `timeout` kills what is left. No check outlives the step. A smoke failure is handled like a failed verification: switch back without migrations, pause after them.
 
+Smoke does not wait for the first `tasks:tick`, because a restarted scheduler starts it only at the next full minute. It checks that the scheduler's process runs from the new release and that the release's `artisan schedule:list` lists `tasks:tick`. The first tick is [confirmed after the release](#post-release-tick-confirmation). Pass `--wait-for-tick` to `bin/gateway-smoke` by hand to wait for it instead.
+
+#### Post-release tick confirmation
+
+A verified release starts with the step `tick` set to `pending`. The step records `since`, the time the runtime handoff started. It also records `deadline`, which comes `ORBIT_GATEWAY_RELEASE_TICK_CONFIRMATION_SECONDS` after the release was verified. The default is 180 seconds, and the minimum is 60. Every [tick of the release runner](#what-a-tick-does) decides the pending confirmations it can, also while automatic releases are disabled or paused, so a manual deploy and a rollback are confirmed too.
+
+`tasks:tick` records when it started and the version of the code that ran it, the commit in the release's `REVISION`. The step ends as one of these:
+
+| Outcome | When |
+| --- | --- |
+| `confirmed` | A tick started at or after `since` and ran the release's own commit. It records `last_tick_at`, `last_tick_version`, and `decided_at`. A tick that ran during smoke confirms the release at once |
+| `missed` | The first runner tick after `deadline` saw no such tick. It records the last tick it saw and raises at most one [`release_scheduler_silent` alert](#release-alerts), stored as `tick.alert` |
+| `skipped` | The tasks extension is disabled, so the scheduler runs no `tasks:tick` |
+| `superseded` | A newer verified release went live. That release has a confirmation of its own. While another release is only being tried, the step stays `pending`, because a failed attempt switches back |
+
+A missed confirmation does not switch back or pause. The release passed verify and smoke, and its scheduler runs the new code, so a forward fix still ships automatically. The record stays `verified`, and the fleet rollout follows it as usual. Check the scheduler unit with `systemctl status` and its journal. `gateway:release:show` lists the step with the others, and `gateway:release:auto:status` shows it for the current release as `tick_confirmation`.
+
 Run the same smoke by hand against the live Gateway. It runs `bin/gateway-smoke` of the current release for its commit, or for the commit you name. It changes nothing and writes no release record.
+
+```bash
+orbit gateway:release:smoke [<SHA>] [--since=<TIME>]
+```
+
+From any Node with access to the Gateway, [`orbit gateway:release:smoke`](/cli/gateway#orbit-gatewayreleasesmoke) asks the Gateway to run it. Smoke restarts nothing and writes no record, so it runs inside the API request, unlike a deploy. An API request gets 570 seconds, 20 of them reserved for cleanup, and PHP-FPM ends it after 600. So the API lowers the smoke limit to what the request has left, about 520 seconds at most. With the 15-second grace period and the stop and kill delays, the run ends within the request. The default limit of 90 seconds stays as it is.
+
+Checks that did not pass answer with the `failed` outcome and the report, and the CLI exits 1. One API smoke runs at a time, because a run and its checks hold several PHP-FPM workers. A second one fails with `gateway.release_smoke_in_progress`.
+
+On the Gateway host, the Artisan command runs the same smoke without the lower limit:
 
 ```bash
 php /home/orbit/orbit/apps/gateway/artisan gateway:release:smoke [<SHA>] [--since=<TIME>]
@@ -314,6 +347,8 @@ Under the lock no release process runs, so a `running` record is dead. `ExecStop
 
 Otherwise it spends one attempt of the commit's retry budget, and it alerts once that budget is spent. An attempt that died before prepare named the commit counts by the full SHA it requested.
 
+While a record is `running`, the Gateway Node reads as [updating](#nodes-being-updated).
+
 One release step holds `ORBIT_HOME/gateway-release.lock`. A second step is refused with `gateway.release_in_progress`.
 
 #### Deploy through the API
@@ -346,6 +381,7 @@ The unit runs `gateway:release:run <record>`, which claims the record and runs t
 | `gateway.release_smoke_timeout` | Smoke ran past its limit and was stopped. |
 | `gateway.release_smoke_killed` | Smoke was killed before its limit by something else, such as the kernel's out-of-memory killer. |
 | `gateway.release_smoke_missing` | The release has no `bin/gateway-smoke`. |
+| `gateway.release_smoke_in_progress` | Another smoke run through the API is in progress. |
 | `gateway.release_switch_back_failed` | The failure was real, and returning to the previous release also failed. |
 | `gateway.release_configuration_failed` | The release's configuration could not be cached again. It runs before migrations, so nothing changed. |
 | `gateway.release_unexpected_failure` | A step failed with an error the release code did not expect. The message names it. |
@@ -408,13 +444,14 @@ Each unit runs as `orbit` from `/home/orbit/orbit/apps/gateway`, so a run starts
 
 Each tick of `gateway:release:auto` takes these steps and stops at the first that ends it:
 
-1. It stops when automatic releases are disabled or paused. A stall ends then.
-2. A requested release that waits for its unit goes first. The tick stops.
-3. It takes the release lock and ends the records of dead releases. A busy lock stops the tick.
-4. It stops without a deployed commit: the Gateway runs from no release, or `REVISION` is unreadable.
-5. It asks GitHub for the newest [green commit](/reference/github-app#find-the-newest-green-commit) of the branch that descends from the deployed commit. Commits with a release that failed for the commit itself are left out.
-6. A manual deploy that pinned an older commit after the last resume is never undone. The tick pauses with the reason `manual_deploy`.
-7. It deploys that commit with the trigger `auto`, under the release lock.
+1. It decides the pending [tick confirmations](#post-release-tick-confirmation).
+2. It stops when automatic releases are disabled or paused. A stall ends then.
+3. A requested release that waits for its unit goes first. The tick stops.
+4. It takes the release lock and ends the records of dead releases. A busy lock stops the tick.
+5. It stops without a deployed commit: the Gateway runs from no release, or `REVISION` is unreadable.
+6. It asks GitHub for the newest [green commit](/reference/github-app#find-the-newest-green-commit) of the branch that descends from the deployed commit. Commits with a release that failed for the commit itself are left out.
+7. A manual deploy that pinned an older commit after the last resume is never undone. The tick pauses with the reason `manual_deploy`.
+8. It deploys that commit with the trigger `auto`, under the release lock.
 
 The repository is the `origin` of the shared release repository. `ORBIT_GATEWAY_RELEASE_BRANCH` and `ORBIT_GATEWAY_RELEASE_CHECK` name the branch and the check, by default `main` and `Required checks`. A commit whose release failed or switched back with a retry left is tried again after 10 minutes, up to three attempts.
 
@@ -467,7 +504,7 @@ While it is up to date, the runner reads the branch head at most every 15 minute
 
 ### Read the state
 
-`orbit gateway:release:auto:status` shows the switch, a pause with its release, error code, and snapshot, the current release, the last tick, and the stalls. `orbit gateway:status` shows the current release and a short summary. A last check older than two minutes means the timer does not run. Check it with `systemctl status orbit-gateway-release.timer` on the Gateway.
+`orbit gateway:release:auto:status` shows the switch, a pause with its release, error code, and snapshot, the current release, the last tick, the stalls, and the current release's [tick confirmation](#post-release-tick-confirmation). `orbit gateway:status` shows the current release and a short summary. A last check older than two minutes means the timer does not run. Check it with `systemctl status orbit-gateway-release.timer` on the Gateway.
 
 ## Adopt the release layout
 
@@ -586,6 +623,7 @@ A release command raises an alert when a release fails, when it pauses automatic
 | `rollout_halted` | A fleet rollout stopped at a Node that failed |
 | `release_stalled` | [Automatic releases](#failure-and-alerts) made no progress for 30 minutes, or the branch head stayed unreleased for 6 hours |
 | `release_cleanup_paused` | A release went live, but [document cleanup](/reference/project-documents#restore-time-cleanup-gate) stayed paused after the handoff |
+| `release_scheduler_silent` | A release went live, but its own scheduler ran no `tasks:tick` by the [confirmation deadline](#post-release-tick-confirmation). At most once per release; nothing switches back or pauses |
 | `rollout_stalled` | `orbit self-update` on one Node stayed `incomplete` for 6 visits in a row, or a rollout waited more than 2 hours for its CLI release. The rollout does not halt |
 | `rollout_caddy_skipped` | A fleet rollout kept a Node's live Caddyfile because the new one was refused. Once per rollout; the rollout does not halt |
 
@@ -795,6 +833,23 @@ After the rollout, every run visits some Nodes again, one at a time and with the
 So a Node that was offline is converged within 5 minutes after it returns.
 
 Doctor reports a lagging Node of the rollout set as `node.release_lag` while the rollout is on. A Node outside the set, such as a task sandbox, never gets it. `observed` says why: `no rollout yet`, `not in the rollout`, the Node's outcome, or `drifted`. Doctor reads only the desired state that a run already resolved; it never asks Git or GitHub.
+
+### Nodes being updated
+
+Each Node in `GET /api/v1/nodes` and `GET /api/v1/nodes/{node}` has an `updating` field. It is null unless the Gateway is updating that Node now:
+
+| `kind` | The Node is updating while | `since` | Id field |
+| --- | --- | --- | --- |
+| `fleet_rollout` | The rollout or the catch-up visits it: the visit has a `started_at` and no `finished_at` | The visit's `started_at` | `rollout`, the rollout id |
+| `gateway_release` | A [release record](#release-records) is `running`. Only the Node with the active `gateway` role updates | The record's `created_at` | `release`, the record id |
+
+The other id field is null. A visit clears its `finished_at` when it starts, so a catch-up visit of a converged Node counts too. The rollout visits one Node at a time, so at most one Node is `fleet_rollout`. The Gateway Node is never in the [rollout set](#rollout-set-and-order), so one Node is never both. A `queued` release record does not count, because nothing changed yet.
+
+A visit counts only while a run holds the fleet lock, so a long visit stays `updating` for as long as it runs. A run that dies leaves its visit open. Nothing renews the lock then, so it runs out within 20 minutes and the Node stops reading as updating. The next run ends every open visit before it visits a Node, and broadcasts each of those Nodes. A dead `running` release record ends as `interrupted`, as [Release records](#release-records) describes.
+
+The list reads every Node's state with two queries, one for the visits in progress and one for a running release. It reads the fleet lock only when a visit is open.
+
+The Gateway broadcasts [`node.updated`](/reference/events#node) with the new value when a visit starts and ends, and when a release record starts running and ends. The [web app](/reference/web-app#live-node-and-process-state) shows the Node as `updating`.
 
 ## Limits
 

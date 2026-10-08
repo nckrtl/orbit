@@ -91,6 +91,20 @@ final readonly class GatewayReleaseAlerts
     }
 
     /**
+     * Raises the one alert of a verified release whose scheduler showed no `tasks:tick` in time. It returns what the
+     * caller stores on the release's `tick` phase, so it does not take the record's own alert, which a failure or a
+     * paused document cleanup may already hold.
+     *
+     * @return array<string, mixed>
+     */
+    public function schedulerSilent(GatewayRelease $record, string $summary): array
+    {
+        $receipt = $record->commit() === null ? null : $this->send(ReleaseAlertKind::ReleaseSchedulerSilent, (string) $record->commit(), (string) $record->id, $summary);
+
+        return $this->stored($record, ReleaseAlertKind::ReleaseSchedulerSilent, $receipt);
+    }
+
+    /**
      * Raises a stalled alert for the deployed commit when automatic releases cannot make progress.
      * The caller decides when a stall is long enough and that it alerts once.
      */
@@ -118,11 +132,17 @@ final readonly class GatewayReleaseAlerts
         return $this->notifier->alert($alert);
     }
 
-    private function store(GatewayRelease $record, ReleaseAlertKind $kind, ?ReleaseAlertReceipt $receipt): void
+    /** @return array<string, mixed> */
+    private function stored(GatewayRelease $record, ReleaseAlertKind $kind, ?ReleaseAlertReceipt $receipt): array
     {
-        $alert = $receipt instanceof ReleaseAlertReceipt
+        return $receipt instanceof ReleaseAlertReceipt
             ? ['kind' => $kind->value, ...$receipt->toArray()]
             : ['kind' => $kind->value, 'outcome' => 'skipped', 'reason' => $record->commit() === null ? 'commit_unknown' : 'repository_unknown'];
+    }
+
+    private function store(GatewayRelease $record, ReleaseAlertKind $kind, ?ReleaseAlertReceipt $receipt): void
+    {
+        $alert = $this->stored($record, $kind, $receipt);
 
         try {
             $record->forceFill(['alert' => $alert])->save();

@@ -5,21 +5,26 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api;
 
 use App\Actions\GatewayReleases\ShowGatewayReleaseAction;
+use App\Actions\GatewayReleases\SmokeGatewayReleaseAction;
 use App\Actions\GatewayReleases\StartGatewayReleaseDeployAction;
 use App\Actions\GatewayReleases\StartGatewayReleaseRollbackAction;
 use App\Data\GatewayReleases\GatewayReleaseData;
+use App\Data\GatewayReleases\GatewayReleaseSmokeData;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\GatewayReleases\DeployGatewayReleaseRequest;
 use App\Http\Requests\GatewayReleases\RollbackGatewayReleaseRequest;
+use App\Http\Requests\GatewayReleases\SmokeGatewayReleaseRequest;
 use App\Models\GatewayRelease;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 /**
- * Gateway release records, and manual deploys and rollbacks. A deploy or rollback answers 202 with
- * the queued record; the release runs in its own systemd unit and the caller follows the record.
+ * Gateway release records, manual deploys and rollbacks, and smoke runs. A deploy or rollback
+ * answers 202 with the queued record; the release runs in its own systemd unit and the caller
+ * follows the record. A smoke run restarts nothing and writes no record, so it runs in the request,
+ * bounded to end before PHP-FPM ends the request.
  */
 #[RequiresNodeAccess(ServingNode::Gateway)]
 final class GatewayReleasesController extends Controller
@@ -44,6 +49,11 @@ final class GatewayReleasesController extends Controller
     public function rollback(RollbackGatewayReleaseRequest $request, string $release, StartGatewayReleaseRollbackAction $action): JsonResponse
     {
         return $this->respond($request, GatewayReleaseData::fromModel($action->execute($release, $request->force()))->toArray(), 202);
+    }
+
+    public function smoke(SmokeGatewayReleaseRequest $request, SmokeGatewayReleaseAction $action): JsonResponse
+    {
+        return $this->respond($request, GatewayReleaseSmokeData::fromResult($action->inRequest($request->commit(), $request->since()))->toArray());
     }
 
     /** @param array<int|string, mixed> $data */

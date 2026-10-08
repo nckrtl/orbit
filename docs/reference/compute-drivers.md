@@ -115,7 +115,9 @@ the dedicated bridge. This driver does not change the host firewall.
 
 ### Image test baselines
 
-Sandbox images need a test baseline from CI. Each successful project job on `main` publishes a `sandbox-tia-<index>-<commit>` artifact for 14 days. It contains the Pest graph and a manifest with the Project path, tested commit, CI run, graph checksum, and test configuration checksums. Image preparation must select a successful CI run and validate that manifest before importing the graph. Pull request runs do not publish these image inputs. A baseline accelerates local feedback; CI on the published task commit remains the merge gate.
+Sandbox images need a test baseline from CI. Each successful project job on `main` publishes a `sandbox-tia-<index>-<commit>` artifact for 14 days. It contains the Pest graph and a manifest with the Project path, tested commit, CI run, graph checksum, and test configuration checksums.
+
+The graph records the tested commit and a result for every test file it links, whether the job ran the affected tests or the full suite. Image preparation must select a successful CI run and validate that manifest before importing the graph. Pull request runs do not publish these image inputs. A baseline accelerates local feedback; CI on the published task commit remains the merge gate.
 
 Download the artifact outside the sandbox from a successful `main` CI run. Pass its extracted directory to `bin/tia-cache import-ci --project <path> --artifact <directory> --commit <tested-sha>` inside the image checkout. The command validates checksums, configuration, portable graph paths, test results, and commit ancestry. It seeds only an absent private graph and preserves an existing one. It does not fetch credentials or publish the imported graph to a shared cache store.
 
@@ -147,6 +149,7 @@ hosts, in placement order. Each entry contains:
 | `project` | `orbit-task-sandboxes`, or `orbit-sandbox-proof-<suffix>` for an isolated proof |
 | `pool` | Storage pool for guest disks and the worktree volume |
 | `max_vms` | Running or reserved VM budget, from 1 to 64 |
+| `warm_pairs` | Unassigned Orbit pairs to keep ready: 0, 1, or 2; defaults to 0 |
 | `orbit_images` | Pinned VM fingerprints keyed by `operator`, `gateway`, and optional workload role |
 | `project_images` | Pinned VM fingerprints keyed by Project slug |
 | `blocked_networks` | Additional host and LAN IPv4 CIDRs to exclude from public egress |
@@ -161,6 +164,18 @@ that cannot be observed is an error, not evidence of available cloud placement.
 Orbit groups stay local until cloud support for that lane is proven. The task
 workspace entry point remains gated while workspace and agent integration is
 completed; these settings alone do not start sandbox task execution.
+
+### Keep an Orbit pair ready
+
+Set a host's `warm_pairs` to 1 or 2 after its pair images and source template pass acceptance. The target must fit inside `max_vms`. Warm pairs use the same VM budget as task claims; each pair reserves two VMs, a subnet, and its private Pi port. Local compute, Orbit claims, and the Tasks extension must be enabled before replenishment starts. A zero target preserves the default behavior.
+
+A warm reservation has its own UUID and records the exact published images and source template before cloning. It has no task group, workspace Instance, GitHub token, Pi token, or model key. Its running power state confirms the physical pair only. Normal source, native readiness, and Pi admission still run when a group claims it.
+
+A new Orbit claim uses a matching warm reservation before allocating another pair, even when the remaining VM budget is zero. Assignment preserves the sandbox UUID, images, subnet, devices, and source-template provenance. An incomplete warm reservation can finish under the claim's normal retry path. An assigned sandbox never returns to the pool, and deleting its task group does not turn it into a warm reservation.
+
+The scheduler attempts resumes and new claims before replenishing the pool. It creates or retries at most one warm pair per claim pass and does not replenish while eligible Orbit work waits. Failed preparation keeps its recorded identity and capacity reservation for retry. The orphan sweep preserves explicit unassigned warm intent. Reconciliation destroys stale or excess unassigned pairs through their recorded driver; it never removes another group's resources. A host removed from configuration retains its outstanding reservations until its recorded configuration is restored for cleanup.
+
+Disabling the pool stops replenishment and drains its unassigned reservations. Running groups keep their recorded placement and compute mode. First-agent timing must be measured after warm assignment; a running pair alone is not evidence that an agent can start.
 
 ### Commands inside a guest
 

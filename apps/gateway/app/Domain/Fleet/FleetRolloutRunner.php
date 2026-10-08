@@ -6,12 +6,14 @@ namespace App\Domain\Fleet;
 
 use App\Data\Fleet\DesiredFleetStateData;
 use App\Domain\Nodes\NodeCliInstallation;
+use App\Domain\Nodes\NodeUpdateBroadcaster;
 use App\Infrastructure\Nodes\NodeLocks;
 use App\Models\FleetRollout;
 use App\Models\FleetRolloutNode;
 use App\Models\Node;
 use App\Models\NodeFootprint as NodeFootprintRecord;
 use Illuminate\Support\Carbon;
+use Throwable;
 
 /**
  * Runs the fleet rollout and its catch-up (ADR 0202). `orbit-fleet-converge.service` runs it after each
@@ -47,6 +49,7 @@ final readonly class FleetRolloutRunner
         private bool $enabled,
         private FleetServingRelease $serving,
         private FleetConvergeUnits $units,
+        private NodeUpdateBroadcaster $nodeUpdates,
     ) {}
 
     /** @return array{status: string, rollout: ?int, visited: list<array{node: string, outcome: string}>} */
@@ -72,6 +75,7 @@ final readonly class FleetRolloutRunner
     /** @return array{status: string, rollout: ?int, visited: list<array{node: string, outcome: string}>} */
     private function runLocked(): array
     {
+        $this->endDeadVisits();
         $halted = FleetRollout::query()->where('status', FleetRolloutStatus::Halted->value)->latest('id')->first();
 
         if ($halted instanceof FleetRollout) {
@@ -121,11 +125,14 @@ final readonly class FleetRolloutRunner
                 return $this->summary('superseded', $rollout, $visited);
             }
 
-            $row->forceFill(['started_at' => now(), 'attempts' => $row->attempts + 1])->save();
+            // A cleared `finished_at` marks the visit in progress, so the Node reads as updating while it runs.
+            $row->forceFill(['started_at' => now(), 'finished_at' => null, 'attempts' => $row->attempts + 1])->save();
+            $this->nodeUpdates->node($node->id);
             $firstVisit = ! $rollout->nodes()->whereIn('outcome', [FleetNodeOutcome::Converged->value, FleetNodeOutcome::Unchanged->value])->exists();
-            $result = $this->converger->converge($node, $state, $allowDowngrade, $firstVisit);
+            $result = $this->visit($row, $node, $state, $allowDowngrade, $firstVisit);
             $previous = $row->evidence ?? [];
             $this->record($row, $result, $previous);
+            $this->nodeUpdates->node($node->id);
             $this->watchIncomplete($rollout, $row, $result, $previous);
             $this->noticeCaddySkip($rollout, $row, $result);
             $visited[] = ['node' => $row->node_name, 'outcome' => $result->outcome->value];
@@ -148,6 +155,37 @@ final readonly class FleetRolloutRunner
         }
 
         return $this->summary($rollout->status->value, $rollout, $visited);
+    }
+
+    /** Converges one Node. A visit that throws still ends, so the Node never reads as updating after it. */
+    private function visit(FleetRolloutNode $row, Node $node, DesiredFleetStateData $state, bool $allowDowngrade, bool $firstVisit): FleetNodeResult
+    {
+        try {
+            return $this->converger->converge($node, $state, $allowDowngrade, $firstVisit);
+        } catch (Throwable $exception) {
+            try {
+                $row->forceFill(['finished_at' => now()])->save();
+                $this->nodeUpdates->node($node->id);
+            } catch (Throwable $cleanup) {
+                report($cleanup);
+            }
+
+            throw $exception;
+        }
+    }
+
+    /**
+     * Ends the visits a run that died left open. This run holds the fleet lock, so no visit runs: each open visit
+     * belongs to a dead process, and its Node is not updating any more.
+     */
+    private function endDeadVisits(): void
+    {
+        $open = FleetRolloutNode::query()->whereNotNull('started_at')->whereNull('finished_at')->get();
+
+        foreach ($open as $row) {
+            $row->forceFill(['finished_at' => now()])->save();
+            $this->nodeUpdates->node($row->node_id);
+        }
     }
 
     /**

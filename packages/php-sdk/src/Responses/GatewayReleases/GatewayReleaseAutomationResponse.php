@@ -9,13 +9,16 @@ use InvalidArgumentException;
 /**
  * The state of automatic Gateway releases. `pause` and `lastTick` keep the Gateway's fields:
  * `pause` has `reason`, `since`, `record`, `release`, `sha`, `error_code`, and `snapshot`; `lastTick` has
- * `checked_at`, `result`, `sha`, `record`, `error_code`, and `message`.
+ * `checked_at`, `result`, `sha`, `record`, `error_code`, and `message`. `tickConfirmation` is the `tick` phase of the
+ * current release's record: `outcome` (`pending`, `confirmed`, `missed`, `skipped`, or `superseded`), `since`,
+ * `deadline`, and once decided `last_tick_at`, `last_tick_version`, and `decided_at`.
  */
 final readonly class GatewayReleaseAutomationResponse
 {
     /**
      * @param  array<string, mixed>|null  $pause
      * @param  array<string, mixed>|null  $lastTick
+     * @param  array<string, mixed>|null  $tickConfirmation
      */
     public function __construct(
         public bool $enabled,
@@ -30,6 +33,7 @@ final readonly class GatewayReleaseAutomationResponse
         public string $branch,
         public string $check,
         public string $requestId,
+        public ?array $tickConfirmation = null,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -55,6 +59,7 @@ final readonly class GatewayReleaseAutomationResponse
             branch: self::text($data, 'branch') ?? '',
             check: self::text($data, 'check') ?? '',
             requestId: $requestId,
+            tickConfirmation: self::map($data['tick_confirmation'] ?? null),
         );
     }
 
@@ -73,6 +78,7 @@ final readonly class GatewayReleaseAutomationResponse
             'behind_since' => $this->behindSince,
             'branch' => $this->branch,
             'check' => $this->check,
+            'tick_confirmation' => $this->tickConfirmation,
             'request_id' => $this->requestId,
         ];
     }

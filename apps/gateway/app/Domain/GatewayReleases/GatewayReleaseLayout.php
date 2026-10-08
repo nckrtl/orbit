@@ -149,6 +149,33 @@ final readonly class GatewayReleaseLayout
     }
 
     /**
+     * The ids of release directories without `REVISION`: prepares that stopped or are still running. A directory
+     * whose `REVISION` names another commit is not listed, because prepare refuses to replace it.
+     *
+     * @return list<string>
+     */
+    public function incompleteReleaseIds(): array
+    {
+        $entries = @scandir($this->releasesPath());
+
+        if ($entries === false) {
+            return [];
+        }
+
+        $releases = [];
+
+        foreach ($entries as $entry) {
+            $path = $this->releasesPath().'/'.$entry;
+
+            if (GatewayReleaseCommit::isId($entry) && is_dir($path) && ! is_link($path) && ! file_exists($path.'/REVISION') && ! is_link($path.'/REVISION')) {
+                $releases[] = $entry;
+            }
+        }
+
+        return $releases;
+    }
+
+    /**
      * Retained release ids, newest first by preparation time. Partial releases are excluded.
      *
      * @return list<string>
@@ -173,6 +200,6 @@ final readonly class GatewayReleaseLayout
 
         uksort($releases, static fn (string $left, string $right): int => [$releases[$right], $right] <=> [$releases[$left], $left]);
 
-        return array_keys($releases);
+        return array_map(strval(...), array_keys($releases));
     }
 }
