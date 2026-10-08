@@ -6,6 +6,7 @@ use App\Domain\AppDev\AppDevPhpFpmManager;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Clusters\ClusterState;
+use App\Domain\Fleet\NodeFootprint;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Metrics\ExporterDegradationReason;
 use App\Domain\Nodes\ManagedUserAccount;
@@ -264,15 +265,28 @@ describe('Route removal certificate order', function (): void {
             ->and($this->nodes->validates('10.44.0.30'))->toBeTrue();
     });
 
-    it('keeps the residue for a retry when the Node still does not answer at converge', function (): void {
-        [$route] = certificate_order_targeted_route($this->nodes, $this->beast, nodeScoped: true);
+    it('skips a failed residue cleanup without failing the converge and retries it next time', function (): void {
+        [$route, $instance] = certificate_order_targeted_route($this->nodes, $this->beast, nodeScoped: true);
         $this->nodes->down = ['10.44.0.7'];
         $this->deleteJson("/api/v1/routes/{$route->id}", ['offline' => true])->assertOk();
+        $footprint = new NodeFootprint([app(RouteResidueFootprintArtifact::class)]);
+        // The Node answers the probe, but its Caddy publish still fails.
+        $this->nodes->down = [];
+        $this->nodes->failCaddy = '10.44.0.7';
 
-        expect(fn () => app(RouteResidueFootprintArtifact::class)->apply($this->beast))
-            ->toThrow('The Caddy build for Node [beast] failed at stage [connect]');
+        $first = $footprint->converge($this->beast);
 
-        expect(RouteRemovalResidue::query()->where('node_id', $this->beast->id)->exists())->toBeTrue();
+        expect($first->skipped['route-residue']['reason'])->toBe(RouteResidueFootprintArtifact::CleanupFailed)
+            ->and(RouteRemovalResidue::query()->where('node_id', $this->beast->id)->sole()->attempts)->toBe(1)
+            ->and($footprint->drifted($this->beast))->toBeTrue();
+
+        $this->nodes->failCaddy = null;
+        $second = $footprint->converge($this->beast);
+
+        expect($second->skipped)->toBe([])
+            ->and(RouteRemovalResidue::query()->exists())->toBeFalse()
+            ->and($this->nodes->names('10.44.0.7', "app-instance-{$instance->id}"))->toBeFalse()
+            ->and($footprint->drifted($this->beast))->toBeFalse();
     });
 
     it('keeps the certificate and a retryable Route when the Caddy build fails', function (): void {

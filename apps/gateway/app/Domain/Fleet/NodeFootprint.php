@@ -121,7 +121,12 @@ final readonly class NodeFootprint
             }
 
             $outcomes[$name] = $changed === false ? NodeFootprintResult::Unchanged : NodeFootprintResult::Applied;
-            $applied[$name] = $digest;
+
+            // An artifact that finished its own work, such as removing the last Route residue, no longer
+            // applies; recording it would leave the Node drifted until the next converge.
+            if ($artifact->applies($node)) {
+                $applied[$name] = $digest;
+            }
         }
 
         $plan = NodeFootprintPlan::of($applied);

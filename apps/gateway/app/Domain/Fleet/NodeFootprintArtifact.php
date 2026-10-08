@@ -15,7 +15,11 @@ interface NodeFootprintArtifact
     /** A stable name, such as `caddy`. */
     public function name(): string;
 
-    /** Whether the Node carries this artifact. */
+    /**
+     * Whether the Node carries this artifact. It can read stored state that `apply()` changes.
+     *
+     * @phpstan-impure
+     */
     public function applies(Node $node): bool;
 
     /** The digest of what the Gateway renders for the Node now. */

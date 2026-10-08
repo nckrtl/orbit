@@ -107,7 +107,7 @@ final class RoutesController extends Controller
     public function destroy(RemoveRouteRequest $request, Route $route, RemoveRouteAction $action): JsonResponse
     {
         return response()->json([
-            'data' => RemovedRouteData::fromRemoval($action->execute($route, $request->offline()))->toArray(),
+            'data' => RemovedRouteData::fromRemoval($action->executeForOperator($route, $request->offline()))->toArray(),
             'meta' => $this->meta($request),
         ]);
     }

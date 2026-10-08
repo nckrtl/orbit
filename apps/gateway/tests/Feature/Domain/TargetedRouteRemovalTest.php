@@ -110,7 +110,7 @@ describe('targeted Route removal on a Node the Gateway cannot reach', function (
         $this->probe->unreachable = [$node->id];
         $this->projector->failures['caddy'] = 1;
 
-        expect(fn () => app(RemoveRouteAction::class)->execute($route))
+        expect(fn () => app(RemoveRouteAction::class)->executeForOperator($route, offline: false))
             ->toThrow(function (ResourceOperationException $exception): void {
                 expect($exception->errorCode)->toBe('route.node_unreachable')
                     ->and($exception->status)->toBe(502)
@@ -128,12 +128,27 @@ describe('targeted Route removal on a Node the Gateway cannot reach', function (
             ->and(RouteRemovalResidue::query()->exists())->toBeFalse();
     });
 
+    it('keeps the step failure for an internal caller that has no offline option', function (): void {
+        $route = targeted_route_removal_route(InstanceState::SourceResolved);
+        $node = targeted_route_removal_node_for($route, $this->projector);
+        $this->probe->unreachable = [$node->id];
+        $this->projector->failures['caddy'] = 1;
+
+        expect(fn () => app(RemoveRouteAction::class)->execute($route))
+            ->toThrow(function (ResourceOperationException $exception): void {
+                expect($exception->errorCode)->toBe('route.test_caddy');
+            });
+
+        expect($this->probe->probed)->toBe([])
+            ->and($route->refresh()->error_code)->toBe('route.test_caddy');
+    });
+
     it('keeps the step failure when every Node the step acts on answers', function (): void {
         $route = targeted_route_removal_route(InstanceState::SourceResolved);
         targeted_route_removal_node_for($route, $this->projector);
         $this->projector->failures['caddy'] = 1;
 
-        expect(fn () => app(RemoveRouteAction::class)->execute($route))
+        expect(fn () => app(RemoveRouteAction::class)->executeForOperator($route, offline: false))
             ->toThrow(function (ResourceOperationException $exception): void {
                 expect($exception->errorCode)->toBe('route.test_caddy');
             });

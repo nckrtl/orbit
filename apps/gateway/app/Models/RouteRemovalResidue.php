@@ -17,6 +17,7 @@ use Illuminate\Support\Carbon;
  * @property int $route_id
  * @property string $domain
  * @property list<string> $steps
+ * @property int $attempts
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property-read Node $node
@@ -30,6 +31,7 @@ final class RouteRemovalResidue extends Model
         'route_id',
         'domain',
         'steps',
+        'attempts',
     ];
 
     /** @return array<string, string> */
@@ -39,6 +41,7 @@ final class RouteRemovalResidue extends Model
             'node_id' => 'integer',
             'route_id' => 'integer',
             'steps' => 'array',
+            'attempts' => 'integer',
         ];
     }
 

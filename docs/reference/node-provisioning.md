@@ -235,7 +235,7 @@ The step reads the path again under the Node's update lock before it installs, b
 | `private-dns` | The `vpn` Node, when it is not the Gateway's | The [private-DNS](/reference/private-dns) listener release, units, records, and catalog. It restarts the listener or dnsmasq only for a change |
 | `proxycli` | The [ProxyCli](/reference/proxycli) collector's Node | The collector script. A changed script restarts the collector, a Node-owned Process |
 | `annotator` | A Node with an annotator Process | The server files in `/opt/orbit/annotator`. Running annotators keep their code until their Process restarts |
-| `route-residue` | A Node that an [offline Route removal](/reference/routes#remove-a-route-from-an-unreachable-node) skipped | The Caddy build and PHP-FPM convergence without the removed Route, then removal of its certificates and firewall rules. It deletes the residue when it finishes |
+| `route-residue` | A Node that an [offline Route removal](/reference/routes#remove-a-route-from-an-unreachable-node) skipped | Caddy and PHP-FPM without the removed Route, then its certificates and firewall rules. A failure is `skipped` and retried later |
 
 Each artifact has a digest that the Gateway computes from its own code and pins, without SSH. The Caddy digest covers every Gateway source file the Caddy build renders from: the build, its site sources, and the classes they use, such as `DevelopmentSite` and the `CaddyRelease` pin. The other digests cover the private-DNS listener release and publication code, the agent pin and the inputs its unit renders from, the collector script, and the annotator files.
 

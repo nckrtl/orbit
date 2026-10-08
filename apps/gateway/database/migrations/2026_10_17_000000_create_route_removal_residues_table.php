@@ -21,6 +21,8 @@ return new class extends Migration
             $table->unsignedBigInteger('route_id');
             $table->string('domain');
             $table->json('steps');
+            // Counts failed cleanups, so a failure changes the digest and the next converge retries.
+            $table->unsignedInteger('attempts')->default(0);
             $table->timestamps();
             $table->unique(['node_id', 'route_id']);
         });

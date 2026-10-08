@@ -47,7 +47,16 @@ final readonly class RemoveRouteAction
      */
     public function execute(Route $route, bool $offline = false): Route
     {
-        return $this->remove($route, allowTracking: false, offline: $offline);
+        return $this->remove($route, allowTracking: false, offline: $offline, offersOffline: false);
+    }
+
+    /**
+     * `route:destroy`: like {@see execute()}, and a step that fails on an unreachable Node names the
+     * `--offline` option. Internal callers have no such option, so they keep the step's own error.
+     */
+    public function executeForOperator(Route $route, bool $offline): Route
+    {
+        return $this->remove($route, allowTracking: false, offline: $offline, offersOffline: true);
     }
 
     public function executeTrackingRoute(Route $route): Route
@@ -60,10 +69,10 @@ final readonly class RemoveRouteAction
             );
         }
 
-        return $this->remove($route, allowTracking: true, offline: false);
+        return $this->remove($route, allowTracking: true, offline: false, offersOffline: false);
     }
 
-    private function remove(Route $route, bool $allowTracking, bool $offline): Route
+    private function remove(Route $route, bool $allowTracking, bool $offline, bool $offersOffline): Route
     {
         $expectedTargetIds = $route
             ->targets()
@@ -76,7 +85,7 @@ final readonly class RemoveRouteAction
         $result = $this->environmentOperations->run(
             $expectedTargetIds,
             fn (): Route => $this->owner->run(
-                fn (): Route => $this->executeOwned($route, $expectedTargetIds, $allowTracking, $offline),
+                fn (): Route => $this->executeOwned($route, $expectedTargetIds, $allowTracking, $offline, $offersOffline),
             ),
         );
 
@@ -99,8 +108,13 @@ final readonly class RemoveRouteAction
      *
      * @param  list<int>  $expectedTargetIds
      */
-    private function executeOwned(Route $route, array $expectedTargetIds, bool $allowTracking, bool $offline): Route
-    {
+    private function executeOwned(
+        Route $route,
+        array $expectedTargetIds,
+        bool $allowTracking,
+        bool $offline,
+        bool $offersOffline,
+    ): Route {
         $locked = $this->lockAndGuard($route, $expectedTargetIds);
         $targeted = $locked->targets->isNotEmpty();
 
@@ -154,7 +168,7 @@ final readonly class RemoveRouteAction
 
             return $this->deleteRecord($locked, $expectedTargetIds, $allowTracking, $skipped);
         } catch (Throwable $exception) {
-            if (! $offline && $this->changesNodes($failureStep)) {
+            if ($offersOffline && ! $offline && $this->changesNodes($failureStep)) {
                 $exception = $this->unreachableFailure($exception, $nodes, $failureStep);
             }
 
