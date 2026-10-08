@@ -20,7 +20,7 @@ describe('Incus sandbox boundary', function (): void {
     });
 
     it('filters real packets and restores only recorded host policies', function (): void {
-        $process = new Process(['sudo', '-n', 'unshare', '--net', 'python3', base_path('tests/Fixtures/Compute/incus_host_network_test.py'), base_path('../agent/resources/incus-host-network.py'), '--packets']);
+        $process = new Process(['sudo', '-n', 'unshare', '--net', 'python3', '-B', base_path('tests/Fixtures/Compute/incus_host_network_test.py'), base_path('../agent/resources/incus-host-network.py'), '--packets']);
         $process->mustRun();
 
         expect($process->getExitCode())->toBe(0);
