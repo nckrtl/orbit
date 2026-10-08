@@ -1,0 +1,18 @@
+Reading desired state...
+Updating agent...
+Updating CLI...
+
+┌  Update Orbit
+│
+├  ● Read desired state
+│    CLI 0.4681.0, agent 0.4.1
+│
+├  ● Update agent
+│    This machine is not a managed Node.
+│
+├  ● Updating CLI
+│
+└  Update failed.
+
+The downloaded orbit-0.4681.0-linux-x86_64 failed checksum verification.
+Code: self_update.checksum_mismatch

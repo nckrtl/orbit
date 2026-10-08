@@ -6,7 +6,9 @@ namespace App\Infrastructure\Gateway;
 
 use App\Domain\AgentView\AgentViewConverger;
 use App\Domain\Certificates\GatewayCertificateIssuer;
+use App\Domain\Fleet\FleetConvergeUnits;
 use App\Domain\Gateway\GatewayWebConverger;
+use App\Domain\GatewayReleases\GatewayReleaseUnitConverger;
 use App\Domain\Hibernation\RuntimeHibernatorConverger;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
@@ -30,6 +32,8 @@ final readonly class NativeGatewayWebConverger implements GatewayWebConverger
         private string $checkoutPath,
         private RuntimeHibernatorConverger $hibernator,
         private AgentViewConverger $agentView,
+        private GatewayReleaseUnitConverger $releaseUnits,
+        private ?FleetConvergeUnits $fleet = null,
     ) {}
 
     /**
@@ -55,6 +59,8 @@ final readonly class NativeGatewayWebConverger implements GatewayWebConverger
         $this->build($node);
         $this->hibernator->converge();
         $this->agentView->converge();
+        $this->releaseUnits->converge();
+        $this->fleet?->converge();
     }
 
     private function build(Node $node): void

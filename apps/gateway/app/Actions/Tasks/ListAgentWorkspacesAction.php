@@ -30,7 +30,7 @@ final readonly class ListAgentWorkspacesAction
 
         $unfinished = [
             TaskGroupStatus::Backlog, TaskGroupStatus::Todo, TaskGroupStatus::Reserved,
-            TaskGroupStatus::Running, TaskGroupStatus::Reviewing, TaskGroupStatus::Settling,
+            TaskGroupStatus::Running, TaskGroupStatus::Reviewing, TaskGroupStatus::Settling, TaskGroupStatus::WaitingForReview,
         ];
         $groups = Task::topLevel()
             ->with(['project', 'taskable'])

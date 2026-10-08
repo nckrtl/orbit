@@ -27,12 +27,16 @@ it.each([
     ["running", "In progress"],
     ["reviewing", "In progress"],
     ["settling", "In progress"],
+    ["waiting_for_review", "In progress"],
     ["completed", "Done"],
     ["failed", "Done"],
     ["cancelled", "Done"],
-] as const)("places %s in %s", (status: Task["status"] | "backlog" | "settling", column) => {
-    expect(taskColumn(status)).toBe(column);
-});
+] as const)(
+    "places %s in %s",
+    (status: Task["status"] | "backlog" | "settling" | "waiting_for_review", column) => {
+        expect(taskColumn(status)).toBe(column);
+    },
+);
 
 it.each([
     [true, "direction", "Needs your direction", "Which discount policy should checkout use?"],
@@ -110,6 +114,7 @@ it("counts completed nested tasks against the group total", () => {
         title: `Step ${id}`,
         brief: "",
         deliverables: [],
+        topology: [],
         status,
         implementer_agent_thread_id: null,
         tokens: null,
@@ -203,6 +208,7 @@ it.each([
     ["running", true],
     ["reviewing", true],
     ["settling", true],
+    ["waiting_for_review", true],
     ["completed", false],
     ["failed", false],
     ["cancelled", false],

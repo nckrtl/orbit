@@ -1,0 +1,63 @@
+Loading task group...
+
+┌  Show task group
+│
+├  ● Loaded task group
+│
+└  Loaded task group.
+
+
+┌  Task group: ORB-1
+│
+├  ID                    1
+│
+├  Title                 Review #460: Throttle logins
+│
+├  Project               orbit
+│
+├  Status                settling
+│
+├  Assistance            no
+│
+├  Kind                  —
+│
+├  Question              —
+│
+├  Reason                —
+│
+├  Instance              —
+│
+├  Pull request          https://github.com/nckrtl/orbit/pull/460
+│
+├  Review and merge      yes
+│
+├  Pull request branch   cursor/login-throttle
+│
+├  Merge                 waiting: Check Required checks is still running on aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.
+│
+├  Notify Coder          no
+│
+├  Implementer model     gpt-5.6-luna
+│
+├  Reviewer model        gpt-5.6-luna
+│
+├  Tokens                —
+│
+├  Line diff             —
+│
+└  Duration              —
+
+Brief
+  Orbit reviews pull request https://github.com/nckrtl/orbit/pull/460.
+
+ ┌──────────┬────┬──────────────┬───────────┬──────────────┬────────┬───────────┬──────────┬──────┬────────────┐
+ │ POSITION │ ID │ TITLE        │ STATUS    │ DELIVERABLES │ TOKENS │ LINE DIFF │ DURATION │ KIND │ ASSISTANCE │
+ ├──────────┼────┼──────────────┼───────────┼──────────────┼────────┼───────────┼──────────┼──────┼────────────┤
+ │ 1        │ 2  │ Final review │ completed │ 1            │ —      │ —         │ —        │ —    │ —          │
+ └──────────┴────┴──────────────┴───────────┴──────────────┴────────┴───────────┴──────────┴──────┴────────────┘
+ ┌──────────────────────────────────────────┬─────────────────────┬──────────────┬────────┬───────────────┐
+ │ REVIEWED COMMIT                          │ SOURCE              │ FINAL REVIEW │ PUSHED │ GITHUB REVIEW │
+ ├──────────────────────────────────────────┼─────────────────────┼──────────────┼────────┼───────────────┤
+ │ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa │ pull_request_review │ 2            │ —      │ 3311          │
+ └──────────────────────────────────────────┴─────────────────────┴──────────────┴────────┴───────────────┘
+Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844

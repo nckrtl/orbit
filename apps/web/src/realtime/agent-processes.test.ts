@@ -83,9 +83,14 @@ describe("agent Process state", () => {
             sequence: 3,
             part: 2,
             parts: 2,
-            units: [unit("orbit-process-42-web", "systemd", "active")],
+            units: [unit("orbit-process-42-web", "systemd", "failed")],
         });
-        expect(withAgentProcessStatuses([process()])[0]?.runtime_status).toBe("active");
+        expect(withAgentProcessStatuses([process()])[0]?.runtime_status).toBe("failed");
+        expect(
+            withAgentProcessStatuses([
+                process({ id: 99, name: "db", runtime: "docker", runtime_status: "exited" }),
+            ])[0]?.runtime_status,
+        ).toBe("running");
         applyAgentProcessEvent(7, "client-snapshot", { sequence: 4, part: 1, parts: 1, units: [] });
         expect(withAgentProcessStatuses([process()])[0]?.runtime_status).toBe("inactive");
     });

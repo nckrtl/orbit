@@ -1,0 +1,15 @@
+[Unit]
+Description=Restore Orbit sandbox host network boundaries
+Wants=network-online.target
+After=network-online.target local-fs.target nftables.service ufw.service firewalld.service
+Before=incus.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/libexec/orbit-sandbox-network restore
+TimeoutStartSec=120
+RemainAfterExit=yes
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

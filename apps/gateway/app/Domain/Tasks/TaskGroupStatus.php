@@ -12,6 +12,7 @@ enum TaskGroupStatus: string
     case Running = 'running';
     case Reviewing = 'reviewing';
     case Settling = 'settling';
+    case WaitingForReview = 'waiting_for_review';
     case Completed = 'completed';
     case Failed = 'failed';
     case Cancelled = 'cancelled';
@@ -24,7 +25,14 @@ enum TaskGroupStatus: string
             self::Running,
             self::Reviewing,
             self::Settling,
+            self::WaitingForReview,
         ];
+    }
+
+    /** @return list<self> */
+    public static function awaitingCompletion(): array
+    {
+        return [self::Settling, self::WaitingForReview];
     }
 
     public function isActive(): bool

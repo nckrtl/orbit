@@ -217,6 +217,7 @@ function renamed_node_expected_json(): array
         'error_code' => null,
         'roles' => ['gateway', 'vpn'],
         'settings' => null,
+        'updating' => null,
         'request_id' => rename_node_request_id(),
     ];
 }

@@ -237,6 +237,17 @@ describe('repository guidance bootstrap', function (): void {
             ShowGitHubAppRequest::class,
             DestroyGitHubAppRequest::class,
         ];
+        $gatewayReleaseRequests = [
+            'Orbit\\Sdk\\Requests\\GatewayReleases\\ListGatewayReleasesRequest',
+            'Orbit\\Sdk\\Requests\\GatewayReleases\\ShowGatewayReleaseRequest',
+            'Orbit\\Sdk\\Requests\\GatewayReleases\\DeployGatewayReleaseRequest',
+            'Orbit\\Sdk\\Requests\\GatewayReleases\\RollbackGatewayReleaseRequest',
+            'Orbit\\Sdk\\Requests\\GatewayReleases\\ShowGatewayReleaseAutomationRequest',
+            'Orbit\\Sdk\\Requests\\GatewayReleases\\EnableGatewayReleaseAutomationRequest',
+            'Orbit\\Sdk\\Requests\\GatewayReleases\\DisableGatewayReleaseAutomationRequest',
+            'Orbit\\Sdk\\Requests\\GatewayReleases\\ResumeGatewayReleaseAutomationRequest',
+            'Orbit\\Sdk\\Requests\\GatewayReleases\\SmokeGatewayReleaseRequest',
+        ];
         $proxycliRequests = [
             SetupProxyCliRequest::class,
             TeardownProxyCliRequest::class,
@@ -302,7 +313,13 @@ describe('repository guidance bootstrap', function (): void {
             'Orbit\\Sdk\\Requests\\Projects\\DestroyProjectDevelopmentDeployStepRequest',
         ];
         $proxycliSwitchRequests = [SetupProxyCliRequest::class, TeardownProxyCliRequest::class];
-        $expectedOperationCount = count($developmentDeployRequests) + count($extensionRequests) + count($exclusionRequests) + count($lifecycleRequests) + $preScheduleOperationCount + count($scheduleRequests) + count($databaseRequests) + count($databaseServerRequests) + count($gitHubRequests) + count($proxycliRequests) + count($taskRequests) + count($logRequests);
+        $fleetRequests = [
+            'Orbit\\Sdk\\Requests\\Gateway\\ShowDesiredFleetStateRequest',
+            'Orbit\\Sdk\\Requests\\Fleet\\ShowFleetRolloutRequest',
+            'Orbit\\Sdk\\Requests\\Fleet\\ResumeFleetRolloutRequest',
+            'Orbit\\Sdk\\Requests\\Nodes\\ConvergeNodeRequest',
+        ];
+        $expectedOperationCount = count($fleetRequests) + count($developmentDeployRequests) + count($extensionRequests) + count($exclusionRequests) + count($lifecycleRequests) + $preScheduleOperationCount + count($scheduleRequests) + count($databaseRequests) + count($databaseServerRequests) + count($gitHubRequests) + count($gatewayReleaseRequests) + count($proxycliRequests) + count($taskRequests) + count($logRequests) + 15;
         $expectedRequests = [
             'Orbit\\Sdk\\Requests\\Tools\\ListToolManagersRequest',
             'Orbit\\Sdk\\Requests\\Tools\\ScanToolInventoryRequest',
@@ -404,7 +421,9 @@ describe('repository guidance bootstrap', function (): void {
             ->toContain(...$exclusionRequests)
             ->toContain(...$logRequests)
             ->toContain(...$extensionRequests)
+            ->toContain(...$gatewayReleaseRequests)
             ->toContain(...$proxycliSwitchRequests)
+            ->toContain(...$fleetRequests)
             ->toContain(CloneInstanceRequest::class)
             ->toContain(TransferInstanceRequest::class)
             ->toContain(CreateInstanceRequest::class)
@@ -475,12 +494,12 @@ describe('repository guidance bootstrap', function (): void {
             ->toEqualCanonicalizing($taskRequests);
     });
 
-    it('documents the 186-operation SDK surface including proxycli, questions, and task definition transport', function (): void {
+    it('documents the 209-operation SDK surface including Project Documents', function (): void {
         $publicContract = repository_guidance_contents('.ai/rules/public-contract.md');
         $normalizedPublicContract = repository_guidance_normalized_contents('.ai/rules/public-contract.md');
 
         expect($publicContract)
-            ->toContain('The SDK models exactly 186 concrete public Gateway API operations:')
+            ->toContain('The SDK models exactly 209 concrete public Gateway API operations:')
             ->toContain('- Tasks: enable, disable, status, group list, show, create, update, cancel, and complete, subtask create, update, destroy, and cancel, comment create and list, question list, agent thread list, and task definition list, show, create, update, and destroy.')
             ->toContain('- Logs: Instance log read, and live log stream create, renew, and destroy for an Instance or a Process.')
             ->toContain('- Analytics: pin the Plausible version, and show, set, and unset the Stats API key. The key is never returned.')
@@ -495,6 +514,7 @@ describe('repository guidance bootstrap', function (): void {
             ->toContain('- Schedule: list, add, show, run, logs, complete, remove, and activate.')
             ->toContain('- Database connection: list, show, add, update, remove, attach, detach, query, tables, schema, describe, user create, and user list.')
             ->toContain('- GitHub App: install, show, and destroy.')
+            ->toContain('- Gateway releases: list, show, deploy, rollback, and automatic release status, enable, disable, and resume.')
             ->toContain(
                 '- Project runtime definition: process and Schedule list, create, show, update, and destroy.',
             )
@@ -556,7 +576,7 @@ describe('repository guidance bootstrap', function (): void {
 
         expect(repository_guidance_normalized_contents('README.md'))
             ->toContain(
-                'The SDK exposes exactly 186 public Gateway operations.',
+                'The SDK exposes exactly 209 public Gateway operations.',
                 'The SDK exposes typed enable, disable, status, provider list, provider show, account update, and model list requests for the optional CLIProxyAPI quota collector.',
                 'The SDK exposes typed list, show, add, update, remove, attach, detach, query, tables, schema, describe, and user create requests for Gateway-owned database connection records.',
                 'The SDK exposes typed list, create, show, update, and destroy requests for Project process and Schedule definitions.',

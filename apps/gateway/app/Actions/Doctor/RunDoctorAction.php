@@ -53,6 +53,17 @@ final readonly class RunDoctorAction
     }
 
     /**
+     * Inspect one Node without an access check, for the Gateway's own verification such as the fleet
+     * rollout (ADR 0202).
+     *
+     * @param  list<DoctorFamily>  $families
+     */
+    public function executeForNode(Node $node, array $families = []): DoctorReportData
+    {
+        return $this->report($this->contexts(new Collection([$node])), $families);
+    }
+
+    /**
      * @param  Collection<int, Node>  $nodes
      * @return array<int, DoctorNodeContext>
      */

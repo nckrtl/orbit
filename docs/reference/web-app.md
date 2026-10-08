@@ -1,6 +1,6 @@
 ---
 title: "Web app"
-description: "How the Gateway serves the Orbit web app at https://gateway.orbit, how the app stays live, how bin/web-deploy releases it, and how to roll a release back."
+description: "How the Gateway serves the Orbit web app at https://gateway.orbit, how the app stays live, and how open pages move to a new release. Also how each Gateway release installs its CI build, how bin/web-deploy releases it by hand, and how to roll a release back."
 covers:
   - apps/web/**
   - bin/web-deploy
@@ -15,6 +15,8 @@ covers:
 The web app is Orbit's live view of the fleet. It is a static single-page app that reads the Gateway API and follows [realtime events](/reference/events). Its TypeScript API schema is generated from the Gateway OpenAPI document (`docs/openapi.json`) with `bun run types` in `apps/web`. Operation descriptions and request-field comments in that schema follow the OpenAPI document, including argument and option text that [API reference generation](/reference/api-reference) reads from the CLI command classes. Regenerate the schema after an OpenAPI change and commit it with the app.
 
 The generated API schema also includes the Project development deploy step operations and their `required` boolean. These types describe the [API contract](/reference/deployments#development-deploy-steps); they do not add web controls or start deployments.
+
+The generated API schema includes show and update operations for Project Documents storage on the Gateway, with their redacted `DocumentStorage` response. Credential fields are update inputs only, never response properties. These types describe the [storage contract](/reference/project-documents#private-s3-boundary); they do not add storage settings controls to the web app.
 
 The generated Instance response includes nullable `annotator_port` and `annotator_url` fields. The URL points to `/__orbit/annotator` on the Instance Route when a port and Route exist. The generated Process create description also lists the `annotator` preset. These API schema fields add no web UI control; see [Annotator Process](/reference/agentation#annotator-process).
 
@@ -44,9 +46,9 @@ The Gateway's Caddy site sends each request to one of three places.
 | `/grafana/*` | The `metrics.orbit` site on the same Caddy, after the Metrics access check. |
 | Everything else | The current web release. |
 
-A path without a file returns the release's `index.html`, and the app's router shows the page. Files under `/assets/` carry content hashes, so browsers cache them as immutable. Every other web response has `Cache-Control: no-cache`, so a new release shows on the next load.
+A path without a file returns the release's `index.html`, and the app's router shows the page. Files under `/assets/` carry content hashes, so browsers cache them as immutable. A missing file under `/assets/` returns 404 with `Cache-Control: no-cache`, never `index.html`. Every other web response has `Cache-Control: no-cache`, so a new release shows on the next load, and [open pages](#updates-to-open-pages) move to it.
 
-`/grafana/*` checks the browser's address with `GET /api/v1/metrics/grafana/authorize`, removes the `/grafana` prefix, and forwards the request to `metrics.orbit`. The Metrics publication owns that site and its Grafana upstream. When Metrics is disabled, the app shows `—` for Node metrics.
+`/grafana/*` checks the browser's address with `GET /api/v1/metrics/grafana/authorize`, removes the `/grafana` prefix, and forwards the request to `metrics.orbit`. For PHP requests and that check, Caddy resolves the checkout link for each request (`resolve_root_symlink`), so a Gateway [release](/reference/gateway-recovery#runtime-handoff) switch reaches every request at once. The Metrics publication owns that site and its Grafana upstream. When Metrics is disabled, the app shows `—` for Node metrics.
 
 The app connects to Reverb at the URL that `GET /api/v1/realtime` returns.
 
@@ -84,6 +86,8 @@ The app subscribes to `presence-node.{id}` for every active Node, next to the `o
 | Lost: the agent left, or sent nothing for 15 seconds | offline | The value from the Process list |
 | Not seen since the page subscribed | Prometheus `up` | The value from the Process list |
 
+A Node that the Gateway is updating shows `updating` in blue instead, whatever the agent or Prometheus reports. Its [`updating`](/reference/gateway-recovery#nodes-being-updated) field is set while the fleet rollout visits the Node, or while a Gateway release runs on the Gateway Node. Its status dot pulses slowly between full and half opacity over 2 seconds. When the system asks for reduced motion, the dot stays solid blue. The hover text and the accessible label name the cause: `updating — fleet rollout` or `updating — Gateway release`. A `node.updated` event sets and clears the value. Demo mode shows one Node in a fleet rollout.
+
 A Node without an [agent](/reference/node-agent#where-it-runs) always uses the last row. A macOS tool-only Node has no agent or Metrics exporter in this slice; the page shows unavailable live telemetry rather than treating that absence as a failed Linux service. An example is a [Node without roles](/reference/node-provisioning#nodes-without-roles) that has no pinned SSH host key.
 
 CPU and memory come from [`process.usage`](/reference/events#process-usage) events. The app writes each sample into its cached Process list. While realtime is live, it reloads the Process list only when no sample arrived for 60 seconds.
@@ -91,6 +95,8 @@ CPU and memory come from [`process.usage`](/reference/events#process-usage) even
 ## Live tasks
 
 The generated task schema keeps `watched_pr_url`, `watched_pr_number`, and `watched_pr_state` apart from `pr_url`. The watched fields describe the pull request found on the task branch while subtasks are open; `pr_url` still identifies the reviewed pull request Orbit opened. The [branch watch](/reference/tasks#watch-the-branch-while-subtasks-are-open) owns that distinction. Regenerate the web schema after these response fields change, and keep typed test fixtures current. A task with no watched pull request has null watched fields; do not copy `pr_url` into them.
+
+The generated subtask schema includes `topology`, a workload-role array, and the create and update inputs accept the same declaration. Response fixtures retain `[]` for subtasks without a declaration. Regenerate these types together with OpenAPI after a topology contract change. The [compute driver](/reference/compute-drivers) validates declarations and gates dispatch on native readiness. These API types add no topology controls to the task board.
 
 When the Gateway reports Tasks enabled, the app keeps the task board, each task, its agent threads, its comments, and the extension status current from [task events](/reference/events#tasks). When disabled, it hides task navigation and task routes; enabling the extension makes those views available again without removing stored task records.
 
@@ -193,6 +199,33 @@ On a phone, the footer is hidden because the header already shows the Gateway's 
 
 The Menu drawer shows one support line with the display mode, the window and screen sizes, and the four insets. [Web verification](/reference/web-verification) checks a phone-sized viewport.
 
+## Updates to open pages
+
+Each build carries its id, the commit it was built from. CI and `bin/web-deploy` build one exact commit. A build outside a Git checkout uses a hash of its sources instead. The build writes the id to `version.json` at its top, as `{"build": "<id>"}`. The Gateway serves that file with `Cache-Control: no-cache`, like every web file outside `/assets/`.
+
+A built page reads `/version.json` past the browser cache and compares it with its own id. It reads at most once a minute and never in the first minute after the page loaded. It reads at these times:
+
+- A client-side navigation starts.
+- A hidden page becomes visible again.
+- The browser restores the page from its back-forward cache.
+
+A network error, a failed response, or a body that is not that JSON changes nothing. When the Gateway serves another build, the page acts as follows.
+
+| When | The page |
+| --- | --- |
+| A navigation | Loads the target URL in full, as Inertia does on a version mismatch. |
+| The page shows again | Reloads. |
+
+The page does not load a new build over a draft that the app protects or over a focused text field. A protected draft, such as an unsaved Project Document, has a router blocker that asks before the page unloads. While such a draft exists, or while a text field has focus, also inside the annotation overlay, the page waits. A later navigation loads the new build in full. When that navigation leaves the draft, its blocker asks first, and the full load follows once the draft is gone.
+
+Typed text in a form without a blocker is not protected once its field loses focus, so a page that shows again can reload over it.
+
+The page loads each newer build only once. Before the full load, it marks that build in `sessionStorage`, or in memory when the browser refuses storage. The new build clears the mark when it starts, and a mark older than ten minutes counts as a load that never arrived. A page that still runs an older build keeps the mark and does not load that build again, so a Gateway that serves an old `index.html` cannot cause a reload loop; the page tries again at most every ten minutes. It still loads a later build.
+
+When a script or style of the running build fails to load (`vite:preloadError` or a failed `import()`), the page reloads once for that build, unless it holds a protected draft or a focused text field.
+
+Added to the home screen of an iPhone or iPad, the app stays in memory and navigates only client-side. These checks move it to a new release. The id is the commit, so every Gateway release moves open pages once, also a release that does not change the web app. `vp dev` and `bun run demo` do not check, because Vite reloads the modules there.
+
 ## Web directory
 
 The web directory is `/home/orbit/web`. `ORBIT_GATEWAY_WEB` can name another direct child of `/home/orbit`. The directory belongs to the `orbit` user and the `caddy` group.
@@ -211,17 +244,23 @@ The web directory is `/home/orbit/web`. `ORBIT_GATEWAY_WEB` can name another dir
 5. It publishes the site.
 6. It converges the runtime hibernator and the [agent view subscriber](/reference/node-agent#subscriber).
 
-It changes no role, VPN setting, or Node. A Gateway deploy never changes the releases or `current`.
+It changes no role, VPN setting, or Node, and it never changes the releases or `current`. A [Gateway release](/reference/gateway-recovery#web-build) installs its own web build in `releases/` and switches `current` after the release verified.
 
 ## Release a build
 
-Run `bin/web-deploy` from a clean checkout of the commit to release.
+Each Gateway release ships the web app of its commit. CI builds `apps/web` on every push to `main` and uploads it as the artifact `web-dist-<sha>`. While it prepares the release, the Gateway downloads that artifact through its GitHub App and installs it as `releases/<commit>`. It switches `current` after the release verified, and switches it back when the release switches back. The Gateway needs no Node or Bun for this. [Web build](/reference/gateway-recovery#web-build) describes the checks, and [Deploy a release](/reference/gateway-recovery#deploy-a-release) the order.
+
+When the Gateway prunes a release, it removes that release's web build too. After each verified release it also removes every build that belongs to no retained release, a `bin/web-deploy` build of another commit included. It never removes the build `current` names.
+
+Both builds hold `version.json` at the top, next to `index.html`, so [open pages](#updates-to-open-pages) find the release that `current` serves.
+
+`bin/web-deploy` stays for manual use: a build of a commit CI did not publish, or a Gateway that does not release itself. Run it from a clean checkout of the commit to release.
 
 ```bash
 bin/web-deploy
 ```
 
-The command refuses uncommitted changes. It checks the commit out into a temporary worktree and builds it there with a minimal environment, so ignored files such as `apps/web/.env.local` and `VITE_*` variables never reach a release. It installs the locked dependencies of `packages/agent-annotation` and `apps/web`, builds `apps/web`, uploads the build to `releases/<commit>`, and switches `current` in one rename. It keeps the five newest releases and never removes the current one.
+The command refuses uncommitted changes. It checks the commit out into a temporary worktree and builds it there with a minimal environment, so ignored files such as `apps/web/.env.local` and `VITE_*` variables never reach a release. It installs the locked dependencies of `apps/web`, builds `apps/web`, uploads the build to `releases/<commit>`, and switches `current` in one rename. It keeps the five newest releases. It never removes the release `current` serves, or the build of a retained Gateway release, one whose `releases/<id>/REVISION` exists in the Gateway releases directory. So a manual run never removes a build that a Gateway rollback needs.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
@@ -229,6 +268,7 @@ The command refuses uncommitted changes. It checks the commit out into a tempora
 | `ORBIT_WEB_DEPLOY_SSH` | `ssh` | SSH command, including options such as `-i KEY`. |
 | `ORBIT_WEB_DIR` | `/home/orbit/web` | Web directory on the Gateway host. |
 | `ORBIT_WEB_GROUP` | `caddy` | Group that must read the release. |
+| `ORBIT_GATEWAY_RELEASES` | `/home/orbit/releases` | Gateway [releases directory](/reference/gateway-recovery#release-layout) on the Gateway host. Their web builds are never pruned. |
 
 ## Roll back
 
@@ -294,9 +334,21 @@ Loopback publication plus SSH forwarding gives Mac access without a public liste
 
 Files copied into the Gateway checkout's `public` directory would follow Gateway deploys, and a deploy that cleans the checkout would remove them. A separate web directory lets a web release and a Gateway deploy happen independently. A rollback only moves `current`.
 
-### A build on the operator's machine
+### A build from CI
 
-Building on the Gateway host would need Node or Bun there only for this step.
+Building on the Gateway would need Node and Bun on the control plane only for this step. CI already builds the web app for every `main` commit, so a Gateway release installs that build. `bin/web-deploy` builds on the operator's machine for a commit CI did not publish.
+
+### A version file instead of a service worker
+
+Inertia sends an asset version with each response and loads the page in full when it differs. This app gets its data from the API, not from page responses, so it reads the version from a static file of the release instead. The file moves with `current`, so it always names the build that a full load would get.
+
+A service worker could update the app too, but it adds an install lifecycle and a cache that can serve an old app shell, and the app is useless without the Gateway anyway. A timer would wake hidden tabs and phones. A read on navigation and on resume costs one small request at most once a minute, at the moments when a full load interrupts nothing.
+
+The id is the commit and not a hash of the assets, so a page names the Gateway release it came from. The cost is one full load after a release that did not change the web app, and a new entry chunk for each commit.
+
+### A missing asset is an error
+
+`current` serves one build. A page of any earlier release can ask for its own files, and `current` does not hold them. With the `index.html` fallback, such a request got HTML with the immutable header, so a browser could keep HTML as that script for a year. A 404 with `no-cache` fails the request instead and caches nothing.
 
 ### Grafana through the Metrics site
 

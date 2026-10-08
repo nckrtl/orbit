@@ -13,6 +13,8 @@ use App\Domain\Doctor\DoctorNodeContext;
 use App\Domain\Doctor\GatewayVpnInspectionData;
 use App\Domain\Doctor\GatewayVpnStateInspector;
 use App\Domain\Doctor\NodeInspectionData;
+use App\Domain\Doctor\PhpPoolDirectoryInspector;
+use App\Domain\Doctor\PhpPoolDirectoryObservation;
 use App\Domain\Doctor\RoleInspectionData;
 use App\Domain\Doctor\RoleStateInspector;
 use App\Domain\Nodes\RoleName;
@@ -25,6 +27,74 @@ use Illuminate\Support\Facades\DB;
 
 beforeEach(function (): void {
     app()->instance(CaddyBuildInspector::class, role_probe_caddy_builds(null));
+    app()->instance(PhpPoolDirectoryInspector::class, role_probe_php_pools([]));
+});
+
+it('reports every Orbit PHP-FPM pool with a missing working directory once, on the active app-dev role', function (): void {
+    $node = role_probe_node('php-pools');
+    $metrics = role_probe_assignment($node, RoleName::Metrics);
+    $appDev = role_probe_assignment($node, RoleName::AppDev);
+    $roleCalls = 0;
+    $vpnCalls = 0;
+    $pools = role_probe_php_pools([
+        new PhpPoolDirectoryObservation('orbit-app-instance-342', '8.5', '/fast/apps/orbit-website/task-1172', installed: true),
+        new PhpPoolDirectoryObservation('orbit-app-instance-7', '8.4', '/fast/apps/acme/main', installed: false),
+    ]);
+
+    $report = new RoleDoctorProbe(
+        role_probe_state_inspector($roleCalls),
+        role_probe_vpn_inspector($vpnCalls),
+        phpPools: $pools,
+    )->inspect(role_probe_context($node));
+
+    expect(array_map(
+        static fn (DoctorIssueData $issue): array => [$issue->resourceId, $issue->code, $issue->kind, $issue->expected, $issue->observed],
+        $report->issues,
+    ))
+        ->toBe([
+            [$appDev->id, 'role.php_pool_directory_missing', DoctorIssueKind::Drift, 'present', 'missing'],
+            [$appDev->id, 'role.php_pool_directory_missing', DoctorIssueKind::Drift, 'present', 'missing'],
+        ])
+        ->and($report->issues[0]->summary)
+        ->toContain('orbit-app-instance-342', '/fast/apps/orbit-website/task-1172', 'cannot start')
+        ->and($report->issues[1]->summary)
+        ->toContain('orbit-app-instance-7', 'does not publish it')
+        ->and($pools->nodes)
+        ->toBe([$node->id])
+        ->and($metrics->id)
+        ->toBeLessThan($appDev->id);
+});
+
+it('reports an unverifiable PHP-FPM pool observation and skips Nodes without an application role', function (): void {
+    $appDevNode = role_probe_node('php-pools-failed');
+    $appDev = role_probe_assignment($appDevNode, RoleName::AppDev);
+    $metricsNode = role_probe_node('php-pools-none');
+    role_probe_assignment($metricsNode, RoleName::Metrics);
+    $roleCalls = 0;
+    $vpnCalls = 0;
+    $failing = role_probe_php_pools([], throws: true);
+    $unused = role_probe_php_pools([]);
+
+    $failed = new RoleDoctorProbe(
+        role_probe_state_inspector($roleCalls),
+        role_probe_vpn_inspector($vpnCalls),
+        phpPools: $failing,
+    )->inspect(role_probe_context($appDevNode));
+    $skipped = new RoleDoctorProbe(
+        role_probe_state_inspector($roleCalls),
+        role_probe_vpn_inspector($vpnCalls),
+        phpPools: $unused,
+    )->inspect(role_probe_context($metricsNode));
+
+    expect(array_map(
+        static fn (DoctorIssueData $issue): array => [$issue->resourceId, $issue->code, $issue->summary],
+        $failed->issues,
+    ))
+        ->toBe([[$appDev->id, 'role.inspection_failed', 'PHP-FPM pool observation failed.']])
+        ->and($skipped->issues)
+        ->toBe([])
+        ->and($unused->nodes)
+        ->toBe([]);
 });
 
 it('returns a healthy empty report without live inspection when the node has no roles', function (): void {
@@ -754,6 +824,33 @@ describe('Caddy build drift', function (): void {
         'no active role' => [true, LifecycleStatus::Failed],
     ]);
 });
+
+/** @param list<PhpPoolDirectoryObservation> $observations */
+function role_probe_php_pools(array $observations, bool $throws = false): PhpPoolDirectoryInspector
+{
+    return new class($observations, $throws) implements PhpPoolDirectoryInspector
+    {
+        /** @var list<int> */
+        public array $nodes = [];
+
+        /** @param list<PhpPoolDirectoryObservation> $observations */
+        public function __construct(
+            private array $observations,
+            private bool $throws,
+        ) {}
+
+        public function inspect(Node $node): array
+        {
+            $this->nodes[] = $node->id;
+
+            if ($this->throws) {
+                throw new DoctorInspectionException;
+            }
+
+            return $this->observations;
+        }
+    };
+}
 
 function role_probe_caddy_builds(?CaddyBuildObservation $observation, bool $throws = false): CaddyBuildInspector
 {

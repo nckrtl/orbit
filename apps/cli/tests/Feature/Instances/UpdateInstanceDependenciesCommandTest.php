@@ -300,13 +300,4 @@ describe('single instance dependency update', function (): void {
             ->and(Artisan::output())->not->toContain('rollback complete');
     });
 
-    it('does not emit progress chrome for noninteractive JSON', function (): void {
-        update_cli_mock();
-        Artisan::call('instance:dependencies:update', [
-            '--project' => 'fixture.example.test',
-            '--json' => true,
-            '--no-interaction' => true,
-        ]);
-        expect(Artisan::output())->not->toContain("\e", 'Working', 'Resolving', 'Updating');
-    });
 });

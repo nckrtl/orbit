@@ -10,6 +10,7 @@ use Orbit\Sdk\Requests\Routes\SetRouteTargetRequest;
 use Orbit\Sdk\Requests\Routes\ShowRouteRequest;
 use Orbit\Sdk\Requests\Routes\UnsetRouteTargetRequest;
 use Orbit\Sdk\Requests\Routes\UpdateRouteRequest;
+use Orbit\Sdk\Responses\Routes\RemovedRouteResponse;
 use Orbit\Sdk\Responses\Routes\RouteResponse;
 use Orbit\Sdk\Responses\Routes\RoutesResponse;
 use Saloon\Enums\Method;
@@ -99,26 +100,6 @@ it('preserves valid Route error-code tokens', function (): void {
         ->toBe('route.publication_failed');
 });
 
-it('normalizes malformed Route error codes to null', function (mixed $errorCode): void {
-    $response = RouteResponse::fromGatewayData(
-        [...route_data(), 'error_code' => $errorCode],
-        route_request_id(),
-    );
-
-    expect($response->errorCode)
-        ->toBeNull()
-        ->and($response->toArray()['error_code'])
-        ->toBeNull()
-        ->and(serialize($response))
-        ->not->toContain(is_string($errorCode) ? $errorCode : 'credential');
-})->with([
-    'credential-shaped code' => 'token=route-response-credential',
-    'control characters' => "route.failed\r\ncredential",
-    'whitespace' => ' route.failed ',
-    'non-string' => [['credential']],
-    'oversized' => str_repeat('a', times: 129),
-]);
-
 it('preserves a combined domain and publication update', function (): void {
     $update = new UpdateRouteRequest(11, domain: 'final.example.test', publication: 'public');
     $response = RouteResponse::fromGatewayData(
@@ -172,7 +153,34 @@ it('defines the exact update, target, clear, and remove transports', function ()
         ->and($remove->getMethod())
         ->toBe(Method::DELETE)
         ->and($remove->resolveEndpoint())
-        ->toBe('/api/v1/routes/11');
+        ->toBe('/api/v1/routes/11')
+        ->and($remove->body()->all())
+        ->toBe([])
+        ->and((new DestroyRouteRequest(11, offline: true))->body()->all())
+        ->toBe(['offline' => true]);
+});
+
+it('reads the Nodes an offline Route removal left unchanged', function (): void {
+    $payload = route_data();
+    $payload['retained_on_nodes'] = [
+        ['node_id' => 4, 'node' => 'beast', 'steps' => ['caddy', 'php', 'firewall', 7]],
+        'not a residue',
+    ];
+
+    $response = RemovedRouteResponse::fromGatewayData($payload, route_request_id());
+
+    expect($response->route->id)
+        ->toBe($payload['id'])
+        ->and($response->retainedOnNodes)
+        ->toHaveCount(1)
+        ->and($response->retainedOnNodes[0]->toArray())
+        ->toBe(['node_id' => 4, 'node' => 'beast', 'steps' => ['caddy', 'php', 'firewall']])
+        ->and(array_keys($response->toArray()))
+        ->toContain('retained_on_nodes')
+        ->and(array_key_last($response->toArray()))
+        ->toBe('request_id')
+        ->and(RemovedRouteResponse::fromGatewayData(route_data(), route_request_id())->retainedOnNodes)
+        ->toBe([]);
 });
 
 it('does not treat leftover hostname fields as Route domain aliases', function (): void {

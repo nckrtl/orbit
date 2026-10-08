@@ -6,14 +6,13 @@ namespace App\Infrastructure\Tasks;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Tasks\TaskWorkspaceDiffReader;
-use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Instance;
 
 final readonly class RemoteTaskWorkspaceDiffReader implements TaskWorkspaceDiffReader
 {
     public function __construct(
-        private DevelopmentSshExecutor $ssh,
+        private TaskWorkspaceExecutor $ssh,
     ) {}
 
     public function lineDiff(Instance $instance, string $baseBranch): int
@@ -33,7 +32,7 @@ final readonly class RemoteTaskWorkspaceDiffReader implements TaskWorkspaceDiffR
 
         try {
             $result = $this->ssh->execute(
-                $instance->node,
+                $instance,
                 new RemoteCommand(
                     arguments: TaskWorkerUser::arguments([
                         'bash',
@@ -41,7 +40,7 @@ final readonly class RemoteTaskWorkspaceDiffReader implements TaskWorkspaceDiffR
                         '--',
                         $instance->checkout_path,
                         $baseBranch,
-                    ]),
+                    ], $instance),
                     input: <<<'BASH'
                     checkout=$1
                     base=$2
@@ -75,7 +74,7 @@ final readonly class RemoteTaskWorkspaceDiffReader implements TaskWorkspaceDiffR
 
         try {
             $result = $this->ssh->execute(
-                $instance->node,
+                $instance,
                 new RemoteCommand(
                     arguments: TaskWorkerUser::arguments([
                         'bash',
@@ -83,7 +82,7 @@ final readonly class RemoteTaskWorkspaceDiffReader implements TaskWorkspaceDiffR
                         '--',
                         $instance->checkout_path,
                         $since,
-                    ]),
+                    ], $instance),
                     input: <<<'BASH'
                     checkout=$1
                     since=$2

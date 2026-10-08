@@ -86,7 +86,7 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
     protected static ?string $deliverablesRefusal = null;
 
     /** @var list<string> */
-    public const array GROUP_STATUSES = ['backlog', 'todo', 'reserved', 'running', 'reviewing', 'settling', 'completed', 'failed', 'cancelled'];
+    public const array GROUP_STATUSES = ['backlog', 'todo', 'reserved', 'running', 'reviewing', 'settling', 'waiting_for_review', 'completed', 'failed', 'cancelled'];
 
     /** @var list<string> */
     public const array PLANNING_STATUSES = ['backlog', 'todo'];
@@ -303,12 +303,22 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
             'Title' => $group->title,
             'Project' => $group->project ?? $group->projectId,
             'Status' => $group->status,
+            ...($group->taskCompute === null ? [] : ['Task compute' => $group->taskCompute]),
+            ...($group->taskCompute !== 'vm' ? [] : ['Sandbox power' => $group->sandboxPower]),
+            ...($group->taskCompute !== 'vm' && ! $group->preview ? [] : ['Preview' => $group->preview]),
+            ...($group->capacityWaitReason === null ? [] : ['Waiting for capacity' => $group->capacityWaitReason]),
             'Assistance' => $group->assistanceRequested,
             'Kind' => self::askingKind($group->assistanceRequested, $group->assistanceKind),
             'Question' => self::askingText($group->assistanceRequested, $group->assistanceQuestion),
             'Reason' => self::askingText($group->assistanceRequested, $group->assistanceReason),
             'Instance' => $group->taskableId,
             'Pull request' => $group->prUrl,
+            ...($group->reviewAndMerge === null ? [] : [
+                'Review and merge' => $group->reviewAndMerge->enabled,
+                ...($group->reviewAndMerge->prBranch === null ? [] : ['Pull request branch' => $group->reviewAndMerge->prBranch]),
+                'Merge' => $group->reviewAndMerge->mergeStatus === null ? null : $group->reviewAndMerge->mergeStatus.($group->reviewAndMerge->mergeReason === null ? '' : ': '.$group->reviewAndMerge->mergeReason),
+                ...($group->reviewAndMerge->mergedSha === null ? [] : ['Merged commit' => $group->reviewAndMerge->mergedSha]),
+            ]),
             'Notify Coder' => $group->notifyCoder,
             'Implementer model' => $group->implementerModel,
             'Reviewer model' => $group->reviewerModel,
@@ -350,9 +360,60 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
             $this->writeText('Fails on the start commit', implode(', ', $repros));
         }
 
+        if ($group->reviewAndMerge !== null && $group->reviewAndMerge->reviewedCommits !== []) {
+            ConsoleWriter::write($this->output, $this->humanRenderer()->table(
+                ['Reviewed commit', 'Source', 'Final review', 'Pushed', 'GitHub review'],
+                array_map(static fn (array $commit): array => [
+                    $commit['sha'],
+                    $commit['source'],
+                    $commit['review_task_id'],
+                    $commit['pushed_at'],
+                    $commit['github_review_id'],
+                ], $group->reviewAndMerge->reviewedCommits),
+            ));
+        }
+
         $this->writeHumanMessage("Request ID: {$group->requestId}");
 
         return self::SUCCESS;
+    }
+
+    /** @return list<string>|false|null */
+    protected function topologyOption(mixed $raw): array|false|null
+    {
+        if ($raw === null) {
+            return null;
+        }
+        try {
+            $value = is_string($raw) ? json_decode($raw, flags: JSON_THROW_ON_ERROR) : null;
+        } catch (JsonException) {
+            $value = null;
+        }
+        $topology = self::topology($value);
+        if ($topology === null) {
+            $this->renderGatewayFailure('tasks.topology_invalid', 'Topology must be a JSON array of distinct app-dev, app-prod, or app-prod-2 nodes.');
+
+            return false;
+        }
+
+        return $topology;
+    }
+
+    /** @return list<string>|null */
+    protected static function topology(mixed $value): ?array
+    {
+        if (! is_array($value) || ! array_is_list($value) || count($value) > 3) {
+            return null;
+        }
+        $roles = [];
+        foreach ($value as $role) {
+            if (! is_string($role) || ! in_array($role, ['app-dev', 'app-prod', 'app-prod-2'], true) || in_array($role, $roles, true)) {
+                return null;
+            }
+            $roles[] = $role;
+        }
+
+        return $roles;
     }
 
     protected function renderSubtask(SubtaskResponse $task): int
@@ -366,6 +427,7 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
         ConsoleWriter::write($this->output, $this->humanRenderer()->detail("Subtask: {$task->id}", [
             'Task group' => $task->taskGroupId,
             'Position' => $task->position,
+            ...($task->topology === [] ? [] : ['Topology' => implode(', ', $task->topology)]),
             'Title' => $task->title,
             'Status' => $task->status,
             'Assistance' => $task->assistanceRequested,

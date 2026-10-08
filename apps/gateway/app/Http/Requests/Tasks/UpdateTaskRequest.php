@@ -6,6 +6,7 @@ namespace App\Http\Requests\Tasks;
 
 use App\Data\Tasks\UpdateTaskData;
 use App\Domain\Tasks\TaskDeliverableType;
+use App\Domain\Tasks\TaskTopology;
 use App\Http\Requests\TopLevelJsonObjectInspector;
 use App\Rules\CommandPaths;
 use App\Rules\DistinctDeliverableIds;
@@ -26,6 +27,8 @@ final class UpdateTaskRequest extends FormRequest
             'title' => ['sometimes', 'string', 'max:160'],
             'brief' => ['sometimes', 'string', 'max:8000'],
             'position' => ['sometimes', 'integer:strict', 'min:1'],
+            'topology' => ['sometimes', 'array', 'list', 'max:3'],
+            'topology.*' => ['required', 'string', 'distinct:strict', Rule::in(['app-dev', 'app-prod', 'app-prod-2'])],
             'deliverables' => ['sometimes', 'array', 'list', 'max:5', new DistinctDeliverableIds],
             'deliverables.*' => ['required', 'array:id,type,description,path,change,command,directory,fails_on_base,paths'],
             'deliverables.*.id' => ['required', 'string', 'max:64', 'regex:/\A[a-z0-9]+(?:-[a-z0-9]+)*\z/'],
@@ -45,7 +48,7 @@ final class UpdateTaskRequest extends FormRequest
     public function validationData(): array
     {
         try {
-            return app(TopLevelJsonObjectInspector::class)->inspect($this->getContent(), ['title', 'brief', 'position', 'deliverables']);
+            return app(TopLevelJsonObjectInspector::class)->inspect($this->getContent(), ['title', 'brief', 'position', 'deliverables', 'topology']);
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
         }
@@ -59,6 +62,7 @@ final class UpdateTaskRequest extends FormRequest
             title: is_string($this->validated('title')) ? $this->validated('title') : null,
             brief: is_string($this->validated('brief')) ? $this->validated('brief') : null,
             position: is_int($position) ? $position : null,
+            topology: array_key_exists('topology', $this->validated()) ? TaskTopology::from($this->validated('topology')) : null,
             deliverables: array_key_exists('deliverables', $this->validated()) ? CreateTaskRequest::deliverables($this->validated('deliverables')) : null,
         );
     }

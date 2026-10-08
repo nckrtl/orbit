@@ -52,14 +52,20 @@ final readonly class HttpCoderSettleNotifier implements CoderSettleNotifier
     {
         $kind = $group->assistance_kind;
 
-        $this->post([
+        $payload = [
             'event' => 'task_group.assistance_requested',
             'task_group_id' => $group->id,
             'title' => $group->title,
             'kind' => $kind instanceof AssistanceKind ? $kind->value : null,
             'question' => $group->assistance_question,
             'reason' => $reason,
-        ]);
+        ];
+
+        $this->post($payload);
+
+        if ($kind === AssistanceKind::Direction) {
+            $this->postOpsBot($payload);
+        }
     }
 
     /**
@@ -91,6 +97,37 @@ final readonly class HttpCoderSettleNotifier implements CoderSettleNotifier
                     'X-Orbit-Timestamp' => $timestamp,
                     'X-Orbit-Signature' => 'sha256='.$signature,
                 ])
+                ->post($url);
+        } catch (Throwable) {
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function postOpsBot(array $payload): void
+    {
+        $url = $this->string(config('orbit.tasks.opsbot_webhook_url'));
+        $secret = $this->string(config('orbit.tasks.opsbot_webhook_secret'));
+
+        if ($url === null || $secret === null) {
+            return;
+        }
+
+        try {
+            $body = json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+        } catch (JsonException) {
+            return;
+        }
+
+        try {
+            Http::connectTimeout(self::CONNECT_TIMEOUT)
+                ->timeout(self::TIMEOUT)
+                ->withToken($secret)
+                ->withHeaders([
+                    'X-Automation-Key' => $secret,
+                ])
+                ->withBody($body, 'application/json')
                 ->post($url);
         } catch (Throwable) {
         }

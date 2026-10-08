@@ -4,10 +4,14 @@ declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
+use App\Infrastructure\Compute\SandboxFleetIdentity;
+use App\Infrastructure\Compute\TaskSandboxDrivers;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\Tasks\IncusSandboxHost;
 use App\Infrastructure\Tasks\RemoteTaskWorkspaceMcp;
+use App\Infrastructure\Tasks\TaskWorkspaceExecutor;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
@@ -33,7 +37,7 @@ function workspace_mcp_instance(string $checkout): Instance
 
 function workspace_mcp(): RemoteTaskWorkspaceMcp
 {
-    return new RemoteTaskWorkspaceMcp(new DevelopmentSshExecutor(
+    return new RemoteTaskWorkspaceMcp(new TaskWorkspaceExecutor(new DevelopmentSshExecutor(
         new LocalShellSshExecutor,
         new class implements SshKeyProvider
         {
@@ -56,7 +60,7 @@ function workspace_mcp(): RemoteTaskWorkspaceMcp
 
             public function put(string $host, int $port, HostKey $key): void {}
         },
-    ));
+    ), app(IncusSandboxHost::class), app(TaskSandboxDrivers::class), app(SandboxFleetIdentity::class)));
 }
 
 afterEach(function (): void {

@@ -28,6 +28,8 @@ use Tests\Support\LoopbackRequesters;
 use Tests\Support\PrivateDnsPortPair;
 use Tests\Support\PrivateDnsPublishHarness;
 
+pest()->group('subprocess');
+
 it('activates the listener from an installed release behind its socket without rewriting LAN into the shared fragment', function (): void {
     $harness = new PrivateDnsPublishHarness;
     [$route, $member] = orb307_published_cluster();

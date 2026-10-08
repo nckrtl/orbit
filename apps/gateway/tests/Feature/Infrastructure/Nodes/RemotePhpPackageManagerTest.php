@@ -492,11 +492,12 @@ it('enables PCOV only for app-dev CLI and verifies both SAPIs', function (): voi
             'phpdismod -v "$version" -s fpm pcov',
             'php"$version" -m',
             'php-fpm"$version" -m',
-            'systemctl enable --now "php$version-fpm.service"',
+            'systemctl enable "php$version-fpm.service"',
             'systemctl is-enabled --quiet "php$version-fpm.service"',
-            'systemctl is-active --quiet "php$version-fpm.service"',
         )
-        ->not->toContain('xdebug', 'opentelemetry');
+        ->not->toContain('xdebug')
+        ->not->toContain('opentelemetry')
+        ->not->toContain('enable --now');
 });
 
 it('publishes and verifies the OPcache runtime module per profile ahead of explicit service activation', function (
@@ -534,10 +535,14 @@ it('publishes and verifies the OPcache runtime module per profile ahead of expli
             'printf \'%s\\n\' "$fpm_ini" | grep -qxF -- "$runtime_key => $runtime_value => $runtime_value"',
             'trap restore_runtime EXIT',
             'if [ "$fpm_pcov_before" != "$fpm_pcov_after" ]; then',
-            'if [ "$runtime_changed" = 1 ] && sudo systemctl is-active --quiet "php$version-fpm.service"; then',
+            'if [ "$runtime_changed" = 1 ] \\',
+            '&& sudo systemctl is-active --quiet "php$version-fpm.service" \\',
+            '&& sudo /usr/sbin/php-fpm"$version" -t >/dev/null 2>&1',
         )
         ->and(mb_strpos($script, 'sudo systemctl reload-or-restart "php$version-fpm.service"'))
-        ->toBeLessThan((int) mb_strpos($script, 'sudo systemctl enable --now "php$version-fpm.service"'));
+        ->toBeLessThan((int) mb_strpos($script, 'sudo systemctl enable "php$version-fpm.service"'))
+        ->and(substr_count($script, 'sudo /usr/sbin/php-fpm"$version" -t >/dev/null 2>&1'))
+        ->toBe(2, 'Both the runtime reload and its restore reload require valid installed pools.');
 })->with([
     'app-dev node' => ['app-dev', 'app-dev'],
     'app-prod node' => ['app-prod', 'app-prod'],
@@ -546,7 +551,7 @@ it('publishes and verifies the OPcache runtime module per profile ahead of expli
 function php_runtime_block(string $script, string $root): string
 {
     $start = (int) mb_strpos($script, 'runtime_module=orbit-runtime');
-    $end = (int) mb_strpos($script, 'sudo systemctl enable --now');
+    $end = (int) mb_strpos($script, 'sudo systemctl enable "php$version-fpm.service"');
     $block = substr($script, $start, $end - $start);
     $block = str_replace(
         [
@@ -556,9 +561,10 @@ function php_runtime_block(string $script, string $root): string
             'sudo install -o root -g root',
             'sudo systemctl',
             'sudo rm -f',
+            'sudo /usr/sbin/php-fpm"$version"',
             '/usr/sbin/php-fpm"$version"',
         ],
-        ['true', 'true', 'phpenmod', 'install', 'systemctl', 'rm -f', 'php-fpm"$version"'],
+        ['true', 'true', 'phpenmod', 'install', 'systemctl', 'rm -f', 'php-fpm"$version"', 'php-fpm"$version"'],
         $block,
     );
 
@@ -671,6 +677,42 @@ it('rewrites the runtime module and reloads FPM when the ini content or its enab
     }
 });
 
+it('leaves a running FPM alone when its installed pools fail validation, so a stale pool cannot stop it', function (): void {
+    $transport = new AppDevFakeSshExecutor;
+    new RemotePhpPackageManager()->installForAppDev(
+        php_package_node(RoleName::AppDev),
+        collect(['8.5']),
+        php_package_app_dev_ssh($transport),
+    );
+
+    $root = (string) realpath(sys_get_temp_dir()).'/orbit-php-runtime-stale-pool-'.bin2hex(random_bytes(6));
+    $block = php_runtime_block($transport->commands[1]->input ?? '', $root);
+    $enabled = $root.'/etc/php/8.5/fpm/conf.d/99-orbit-runtime.ini';
+
+    try {
+        php_runtime_fixture($root, []);
+        $effective = (string) shell_exec(escapeshellarg($root.'/bin/php-fpm8.5'));
+        file_put_contents(
+            $root.'/bin/php-fpm8.5',
+            "#!/usr/bin/env bash\nif [ \"\${1:-}\" = -t ]; then\n    echo 'the chdir path does not exist' >&2\n    exit 78\nfi\nprintf '%s' "
+                .escapeshellarg($effective)."\n",
+        );
+
+        $process = php_runtime_run($block, $root);
+        $calls = php_runtime_calls($root);
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput())
+            ->and(is_link($enabled))
+            ->toBeTrue()
+            ->and($calls)
+            ->toContain('phpenmod -v 8.5 -s fpm orbit-runtime', 'systemctl is-active --quiet php8.5-fpm.service')
+            ->not->toContain('reload-or-restart');
+    } finally {
+        new Filesystem()->deleteDirectory($root);
+    }
+});
+
 it('restores the previous runtime module and enablement when publication fails', function (): void {
     $transport = new AppDevFakeSshExecutor;
     new RemotePhpPackageManager()->installForAppDev(
@@ -754,7 +796,7 @@ it('verifies the managed absolute PHP binaries', function (): void {
     );
 
     $script = $transport->commands[1]->input ?? '';
-    $verification = substr($script, (int) mb_strpos($script, 'sudo systemctl enable --now'));
+    $verification = substr($script, (int) mb_strpos($script, 'sudo systemctl enable "php$version-fpm.service"'));
     $root = sys_get_temp_dir().'/orbit-php-binary-verification-'.bin2hex(random_bytes(6));
 
     try {

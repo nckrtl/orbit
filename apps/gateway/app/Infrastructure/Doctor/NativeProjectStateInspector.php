@@ -8,6 +8,7 @@ use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Doctor\ProjectInspectionData;
 use App\Domain\Doctor\ProjectStateInspector;
 use App\Domain\Instances\InstanceProvisionProgress;
+use App\Domain\Instances\InstanceSandboxGuard;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
@@ -54,12 +55,12 @@ final readonly class NativeProjectStateInspector implements ProjectStateInspecto
         $checkouts = [];
         $instances = $project
             ->instances()
-            ->where('node_id', $node->id)
+            ->whereNull('task_sandbox_id')->where('node_id', $node->id)
             ->where('status', '!=', InstanceState::Removing)
             ->with(['project', 'tasks'])
             ->orderBy('id')
             ->get()
-            ->filter(static fn (Instance $instance): bool => ! InstanceProvisionProgress::isInFlight(
+            ->filter(static fn (Instance $instance): bool => ! InstanceSandboxGuard::isSandbox($instance) && ! InstanceProvisionProgress::isInFlight(
                 $instance,
                 TaskWorkspaceLifecycle::settledState($instance),
             ));

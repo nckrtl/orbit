@@ -16,6 +16,7 @@ use App\Domain\Doctor\InstanceStateInspector;
 use App\Domain\Doctor\PrivateRouteProjectionInspector;
 use App\Domain\Doctor\PublicRouteEdgeInspector;
 use App\Domain\Instances\InstanceProvisionProgress;
+use App\Domain\Instances\InstanceSandboxGuard;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Routes\PublicRouteEligibility;
@@ -47,7 +48,7 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
 
     public function inspect(DoctorNodeContext $context): DoctorFamilyReportData
     {
-        $rows = Instance::query()->with(['project', 'tasks'])->where('node_id', $context->node->id)->orderBy('id')->get();
+        $rows = Instance::query()->with(['project', 'tasks'])->whereNull('task_sandbox_id')->where('node_id', $context->node->id)->orderBy('id')->get()->reject(static fn (Instance $instance): bool => InstanceSandboxGuard::isSandbox($instance));
         if ($rows->isEmpty()) {
             return DoctorFamilyReportData::fromIssues(DoctorFamily::Instance, 0, []);
         }

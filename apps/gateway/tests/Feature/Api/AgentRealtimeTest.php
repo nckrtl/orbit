@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\AgentView\AgentReportedVersions;
 use App\Models\Node;
 use Illuminate\Testing\TestResponse;
 
@@ -45,6 +46,17 @@ describe('agent realtime endpoints', function (): void {
             $this->postJson('/api/v1/agent/broadcasting/auth', ['socket_id' => '1.2', 'channel_name' => $other])
                 ->assertForbidden()->assertJsonPath('error.code', 'agent.channel_forbidden');
         }
+    });
+
+    it('keeps the version the agent reports when it joins its presence channel', function (): void {
+        activate_websocket_role($this->node);
+        $versions = app(AgentReportedVersions::class);
+
+        $this->postJson('/api/v1/agent/broadcasting/auth', ['socket_id' => '1.2', 'channel_name' => "presence-node-logs.{$this->node->id}", 'version' => '0.2.0'])->assertOk();
+        expect($versions->get($this->node->id))->toBeNull();
+
+        $this->postJson('/api/v1/agent/broadcasting/auth', ['socket_id' => '1.2', 'channel_name' => "presence-node.{$this->node->id}", 'version' => '0.3.0'])->assertOk();
+        expect($versions->get($this->node->id)['version'] ?? null)->toBe('0.3.0');
     });
 
     it('returns an eligibility error for an unmanaged node', function (): void {

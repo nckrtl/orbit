@@ -41,4 +41,19 @@ interface TaskBaseBranchFetcher
      * @throws TaskPullRequestException
      */
     public function resetToDefault(Task $group): string;
+
+    /**
+     * The merge base of the workspace HEAD and the fetched `origin/{default branch}` (ADR 0203).
+     *
+     * @throws TaskPullRequestException
+     */
+    public function mergeBase(Task $group): string;
+
+    /**
+     * Moves the workspace branch to an already-fetched commit, such as an incoming pull request head.
+     * Refuses a workspace with tracked changes. The caller ensures no unpushed approved work is lost (ADR 0203).
+     *
+     * @throws TaskPullRequestException
+     */
+    public function moveTo(Task $group, string $sha): void;
 }

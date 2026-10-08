@@ -10,6 +10,7 @@ use App\Domain\Tasks\TaskGroupGuard;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPositions;
 use App\Domain\Tasks\TaskStatus;
+use App\Domain\Tasks\TaskTopology;
 use App\Models\Task;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -32,6 +33,7 @@ final readonly class UpdateTaskAction
                 TaskGroupStatus::Running,
                 TaskGroupStatus::Reviewing,
                 TaskGroupStatus::Settling,
+                TaskGroupStatus::WaitingForReview,
             ], true);
 
             if (! $backlog && ! $todoOutsideBacklog) {
@@ -48,6 +50,13 @@ final readonly class UpdateTaskAction
             }
             if (! $backlog && $data->deliverables === []) {
                 throw TaskGroupGuard::deliverablesRequired();
+            }
+
+            if ($data->topology !== null) {
+                if ($task->status !== TaskStatus::Todo || $task->subtask_start_commit !== null) {
+                    throw ValidationException::withMessages(['topology' => ['A started subtask cannot change its topology.']]);
+                }
+                $task->topology = TaskTopology::from($data->topology);
             }
 
             $task->title = $data->title ?? $task->title;

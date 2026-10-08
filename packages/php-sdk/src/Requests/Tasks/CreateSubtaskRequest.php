@@ -18,12 +18,16 @@ final class CreateSubtaskRequest extends GatewayRequest implements HasBody
     #[\Override]
     protected Method $method = Method::POST;
 
-    /** @param list<array<string, string|bool|list<string>>> $deliverables */
+    /**
+     * @param  list<array<string, string|bool|list<string>>>  $deliverables
+     * @param  list<string>|null  $topology
+     */
     public function __construct(
         private readonly int $groupId,
         private readonly string $title,
         private readonly string $brief,
         private readonly array $deliverables = [],
+        private readonly ?array $topology = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -48,6 +52,10 @@ final class CreateSubtaskRequest extends GatewayRequest implements HasBody
 
         if ($this->deliverables !== []) {
             $body['deliverables'] = $this->deliverables;
+        }
+
+        if ($this->topology !== null) {
+            $body['topology'] = $this->topology;
         }
 
         return json_encode($body, JSON_THROW_ON_ERROR);

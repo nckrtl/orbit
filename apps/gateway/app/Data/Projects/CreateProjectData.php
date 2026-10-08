@@ -6,6 +6,7 @@ namespace App\Data\Projects;
 
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Projects\ProjectType;
+use App\Domain\Tasks\TaskCompute;
 
 final readonly class CreateProjectData
 {
@@ -22,6 +23,7 @@ final readonly class CreateProjectData
         public ProjectSourceAccess $sourceAccess = ProjectSourceAccess::GitHubApp,
         public bool $taskWorkspaceRoutedProvided = false,
         public bool $taskWorkspaceRouted = true,
+        public TaskCompute $taskCompute = TaskCompute::Shared,
     ) {}
 
     /**

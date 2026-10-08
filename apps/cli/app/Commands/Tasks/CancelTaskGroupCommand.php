@@ -37,7 +37,7 @@ final class CancelTaskGroupCommand extends TaskCommand
             return self::FAILURE;
         }
 
-        $groupId ??= $this->selectGroup($connector, excluded: ['settling', 'completed']);
+        $groupId ??= $this->selectGroup($connector, excluded: ['settling', 'waiting_for_review', 'completed']);
 
         if ($groupId === null) {
             return self::FAILURE;

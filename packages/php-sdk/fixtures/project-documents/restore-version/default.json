@@ -1,0 +1,33 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\ProjectDocuments\\RestoreProjectDocumentVersionRequest",
+    "route": "POST /api/v1/projects/{project}/documents/{entry}/restore-version",
+    "status": 200,
+    "body": {
+        "data": {
+            "id": 1,
+            "project_id": 1,
+            "kind": "file",
+            "parent_id": null,
+            "name": "renamed.txt",
+            "revision": 4,
+            "archived_at": null,
+            "created_at": "2026-01-01T00:00:00.000000Z",
+            "updated_at": "2026-01-01T00:00:00.000000Z",
+            "path": "renamed.txt",
+            "is_archived": false,
+            "current_version": {
+                "id": 3,
+                "number": 3,
+                "media_type": "text/plain",
+                "size_bytes": 6,
+                "sha256": "b640e840b19d378660b32fb51ae18d67dccb4a8596a29e7bd72c1b2ae5928f41",
+                "created_at": "2026-01-01T00:00:00.000000Z",
+                "created_by_node_id": 1
+            }
+        },
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+        }
+    }
+}

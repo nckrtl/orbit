@@ -7,7 +7,6 @@ namespace App\Infrastructure\Tasks;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Tasks\TaskReviewDiff;
 use App\Domain\Tasks\TaskReviewDiffException;
-use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\SourceControl\WorkspaceGit;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -23,7 +22,7 @@ final readonly class RemoteTaskReviewDiff implements TaskReviewDiff
 
     private const string SummaryMarker = '---ORBIT-REVIEW-SUMMARY---';
 
-    public function __construct(private DevelopmentSshExecutor $ssh) {}
+    public function __construct(private TaskWorkspaceExecutor $ssh) {}
 
     public function read(Instance $instance, string $startCommit): array
     {
@@ -33,9 +32,9 @@ final readonly class RemoteTaskReviewDiff implements TaskReviewDiff
         }
 
         try {
-            $result = $this->ssh->execute($instance->node, new RemoteCommand(
-                arguments: TaskWorkerUser::arguments(['bash', '-seu', '--', $instance->checkout_path, $startCommit]),
-                input: WorkspaceGit::bashPreamble(TaskWorkerUser::name() === null ? null : $instance->checkout_path).<<<'BASH'
+            $result = $this->ssh->execute($instance, new RemoteCommand(
+                arguments: TaskWorkerUser::arguments(['bash', '-seu', '--', $instance->checkout_path, $startCommit], $instance),
+                input: WorkspaceGit::bashPreamble(TaskWorkerUser::name($instance) === null ? null : $instance->checkout_path).<<<'BASH'
                     set -o pipefail
                     cd -- "$1"
                     start=$2
@@ -44,17 +43,19 @@ final readonly class RemoteTaskReviewDiff implements TaskReviewDiff
                     fi
                     work=$(mktemp -d)
                     trap 'rm -rf "$work"' EXIT
+                    index=$(git rev-parse --git-path index)
+                    if [ -f "$index" ]; then
+                        cp --preserve=timestamps -- "$index" "$work/index"
+                    else
+                        GIT_INDEX_FILE="$work/index" git read-tree --empty
+                    fi
+                    export GIT_INDEX_FILE="$work/index"
+                    git ls-files --others --exclude-standard -z > "$work/untracked"
+                    if [ -s "$work/untracked" ]; then
+                        git --literal-pathspecs add --intent-to-add --pathspec-from-file="$work/untracked" --pathspec-file-nul
+                    fi
                     numstat="$work/numstat"
                     git diff --numstat "$start" > "$numstat"
-                    git ls-files --others --exclude-standard -z | while IFS= read -r -d '' path; do
-                        piece="$work/piece"
-                        status=0
-                        git diff --no-index --numstat -- /dev/null "$path" >"$piece" || status=$?
-                        if [ "$status" -gt 1 ] || { [ "$status" -eq 1 ] && [ ! -s "$piece" ]; }; then
-                            exit "$status"
-                        fi
-                        cat "$piece"
-                    done >> "$numstat"
                     files=0
                     insertions=0
                     deletions=0
@@ -76,15 +77,6 @@ final readonly class RemoteTaskReviewDiff implements TaskReviewDiff
                         if [ "$diff_status" -ne 0 ]; then
                             exit "$diff_status"
                         fi
-                        git ls-files --others --exclude-standard -z | while IFS= read -r -d '' path; do
-                            piece="$work/body"
-                            status=0
-                            git diff --no-index -- /dev/null "$path" >"$piece" || status=$?
-                            if [ "$status" -gt 1 ] || { [ "$status" -eq 1 ] && [ ! -s "$piece" ]; }; then
-                                exit "$status"
-                            fi
-                            cat "$piece"
-                        done
                     } | head -c 20000
                     body=${PIPESTATUS[0]}
                     set -e

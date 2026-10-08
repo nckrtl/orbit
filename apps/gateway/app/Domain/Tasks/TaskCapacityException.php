@@ -13,8 +13,8 @@ use RuntimeException;
  */
 final class TaskCapacityException extends RuntimeException
 {
-    public function __construct(public readonly bool $fleetFull)
+    public function __construct(public readonly bool $fleetFull, string $reason = 'No Node has task capacity.')
     {
-        parent::__construct('No Node has task capacity.');
+        parent::__construct($reason);
     }
 }

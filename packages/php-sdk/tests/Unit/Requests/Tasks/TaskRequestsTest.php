@@ -10,21 +10,16 @@ use Orbit\Sdk\Requests\Tasks\CancelTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\CompleteTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\CreateSubtaskRequest;
 use Orbit\Sdk\Requests\Tasks\CreateTaskCommentRequest;
-use Orbit\Sdk\Requests\Tasks\CreateTaskDefinitionRequest;
 use Orbit\Sdk\Requests\Tasks\CreateTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\DestroySubtaskRequest;
-use Orbit\Sdk\Requests\Tasks\DestroyTaskDefinitionRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskAgentsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskCommentsRequest;
-use Orbit\Sdk\Requests\Tasks\ListTaskDefinitionsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskGroupsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskQuestionsRequest;
-use Orbit\Sdk\Requests\Tasks\ShowTaskDefinitionRequest;
 use Orbit\Sdk\Requests\Tasks\ShowTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\ShowTasksStatusRequest;
 use Orbit\Sdk\Requests\Tasks\SubtaskInput;
 use Orbit\Sdk\Requests\Tasks\UpdateSubtaskRequest;
-use Orbit\Sdk\Requests\Tasks\UpdateTaskDefinitionRequest;
 use Orbit\Sdk\Requests\Tasks\UpdateTaskGroupRequest;
 use Orbit\Sdk\Responses\Tasks\SubtaskResponse;
 use Orbit\Sdk\Responses\Tasks\TaskAgentsResponse;
@@ -60,11 +55,6 @@ describe('task transport', function (): void {
         'comment list' => [new ListTaskCommentsRequest(13, 57), Method::GET, '/api/v1/task-groups/13/tasks/57/comments'],
         'question list' => [new ListTaskQuestionsRequest, Method::GET, '/api/v1/task-questions'],
         'agents' => [new ListTaskAgentsRequest(13), Method::GET, '/api/v1/task-groups/13/agents'],
-        'definition list' => [new ListTaskDefinitionsRequest, Method::GET, '/api/v1/task-definitions'],
-        'definition show' => [new ShowTaskDefinitionRequest(4, 'build-feature'), Method::GET, '/api/v1/projects/4/task-definitions/build-feature'],
-        'definition create' => [new CreateTaskDefinitionRequest(4, '{}'), Method::POST, '/api/v1/projects/4/task-definitions'],
-        'definition update' => [new UpdateTaskDefinitionRequest(4, 'build-feature', '{}'), Method::PUT, '/api/v1/projects/4/task-definitions/build-feature'],
-        'definition destroy' => [new DestroyTaskDefinitionRequest(4, 'build-feature'), Method::DELETE, '/api/v1/projects/4/task-definitions/build-feature'],
     ]);
 
     it('sends create fields and omits only absent optional values', function (): void {
@@ -148,6 +138,8 @@ describe('task responses from recorded Gateway fixtures', function (): void {
     })->with([
         'status' => ['tasks-status/enabled', new ShowTasksStatusRequest, TasksStatusResponse::class],
         'assisted status' => ['tasks-status/assistance', new ShowTasksStatusRequest, TasksStatusResponse::class],
+        'review-and-merge status' => ['tasks-status/merges', new ShowTasksStatusRequest, TasksStatusResponse::class],
+        'review-and-merge show' => ['tasks-show/review-and-merge', new ShowTaskGroupRequest(1), TaskGroupResponse::class],
         'list' => ['tasks-list/default', new ListTaskGroupsRequest, TaskGroupsResponse::class],
         'empty list' => ['tasks-list/empty', new ListTaskGroupsRequest, TaskGroupsResponse::class],
         'create' => ['tasks-create/created', new CreateTaskGroupRequest(1, 'Add the tasks CLI', 'Brief'), TaskGroupResponse::class],
@@ -165,6 +157,31 @@ describe('task responses from recorded Gateway fixtures', function (): void {
         'empty question list' => ['tasks-question-list/empty', new ListTaskQuestionsRequest, TaskQuestionsResponse::class],
         'agents' => ['tasks-agents/default', new ListTaskAgentsRequest(1), TaskAgentsResponse::class],
     ]);
+
+    it('keeps the review-and-merge state of a task and of tasks status', function (): void {
+        $group = task_fixture_send('tasks-show/review-and-merge', new ShowTaskGroupRequest(1));
+        $status = task_fixture_send('tasks-status/merges', new ShowTasksStatusRequest);
+        $plain = task_fixture_send('tasks-show/default', new ShowTaskGroupRequest(1));
+
+        expect($group)->toBeInstanceOf(TaskGroupResponse::class)
+            ->and($status)->toBeInstanceOf(TasksStatusResponse::class)
+            ->and($plain)->toBeInstanceOf(TaskGroupResponse::class);
+        assert($group instanceof TaskGroupResponse && $status instanceof TasksStatusResponse && $plain instanceof TaskGroupResponse);
+
+        expect($group->reviewAndMerge?->enabled)->toBeTrue()
+            ->and($group->reviewAndMerge?->prBranch)->toBe('cursor/login-throttle')
+            ->and($group->reviewAndMerge?->mergeStatus)->toBe('waiting')
+            ->and($group->reviewAndMerge?->reviewedCommits[0]['sha'] ?? null)->toBe(str_repeat('a', 40))
+            ->and($group->reviewAndMerge?->reviewedCommits[0]['source'] ?? null)->toBe('pull_request_review')
+            ->and($group->reviewAndMerge?->reviewedCommits[0]['github_review_id'] ?? null)->toBe(3311)
+            ->and($group->toArray()['review_and_merge']['pr_branch'] ?? null)->toBe('cursor/login-throttle')
+            ->and($plain->reviewAndMerge)->toBeNull()
+            ->and($plain->toArray())->not->toHaveKey('review_and_merge')
+            ->and($status->merges)->toHaveCount(1)
+            ->and($status->merges[0]->reference())->toBe('ORB-1')
+            ->and($status->merges[0]->mergeStatus)->toBe('waiting')
+            ->and($status->toArray()['merges'][0]['pr_branch'] ?? null)->toBe('cursor/login-throttle');
+    });
 
     it('keeps the Gateway fields of a group and its ordered subtasks', function (): void {
         $group = task_fixture_send('tasks-show/default', new ShowTaskGroupRequest(1));
@@ -202,6 +219,10 @@ describe('task responses from recorded Gateway fixtures', function (): void {
         assert($enabled instanceof TasksStatusResponse && $clear instanceof TasksStatusResponse && $assisted instanceof TasksStatusResponse);
 
         expect($enabled->enabled)->toBeTrue()
+            ->and($enabled->lastTickAt)->toBe('2026-09-23T10:00:00.000000Z')
+            ->and($enabled->toArray()['last_tick_at'] ?? null)->toBe('2026-09-23T10:00:00.000000Z')
+            ->and($assisted->lastTickAt)->toBeNull()
+            ->and($assisted->toArray())->toHaveKey('last_tick_at', null)
             ->and($clear->assistance)->toBe([])
             ->and($clear->toArray()['assistance'])->toBe([])
             ->and(array_map(static fn (TaskAssistanceResponse $group): string => $group->reference(), $assisted->assistance ?? []))->toBe(['ORB-1', 'ORB-2'])
@@ -223,6 +244,11 @@ describe('task responses from recorded Gateway fixtures', function (): void {
                 'assistance_reason' => 'Which database should this use?',
             ])
             ->and($assisted->toArray()['assistance'])->toHaveCount(2);
+    });
+
+    it('refuses a tasks status whose last tick is not a string', function (): void {
+        expect(static fn (): TasksStatusResponse => TasksStatusResponse::fromGatewayData(['enabled' => true, 'assistance' => [], 'last_tick_at' => 1_791_352_800], 'request-id'))
+            ->toThrow(GatewayApiException::class, 'Gateway response contains an invalid tasks extension status.');
     });
 
     it('keeps an assistance request on the group and each subtask', function (): void {
@@ -497,3 +523,47 @@ function task_fixture_send(string $fixture, GatewayRequest $request): object
 
     return $dto;
 }
+
+it('bounds observed sandbox power without inferring it from group status', function (mixed $value, ?string $expected): void {
+    $group = TaskGroupResponse::fromGatewayData([
+        'id' => 1, 'project_id' => 1, 'title' => 'Sandbox', 'brief' => 'Power is separate.',
+        'status' => 'waiting_for_review', 'task_compute' => 'vm', 'questions' => 0, 'escalations' => 0,
+        'sandbox_power' => $value,
+    ], '0198e15c-bf97-7c23-8f1f-61b8fe67a844');
+
+    expect($group->sandboxPower)->toBe($expected)
+        ->and($group->toArray()['sandbox_power'])->toBe($expected);
+})->with([
+    ['running', 'running'], ['stopped', 'stopped'], ['destroyed', 'destroyed'],
+    [null, null], ['starting', null], [['running'], null], [true, null],
+]);
+
+it('transports preview omission and explicit booleans', function (?bool $preview): void {
+    foreach ([new CreateTaskGroupRequest(1, 'Work', 'Brief', preview: $preview), new UpdateTaskGroupRequest(1, preview: $preview)] as $request) {
+        $body = json_decode($request->body()->all(), true, flags: JSON_THROW_ON_ERROR);
+        if ($preview === null) {
+            expect($body)->not->toHaveKey('preview');
+        } else {
+            expect($body['preview'])->toBe($preview);
+        }
+    }
+})->with([null, false, true]);
+
+it('transports declared topology including an explicit empty replacement', function (): void {
+    expect(json_decode(new CreateSubtaskRequest(13, 'Step', 'Work', topology: ['app-dev'])->body()->all(), true))
+        ->toBe(['title' => 'Step', 'brief' => 'Work', 'topology' => ['app-dev']]);
+    expect(json_decode(new UpdateSubtaskRequest(13, 57, topology: [])->body()->all(), true))->toBe(['topology' => []]);
+    expect(new SubtaskInput('Step', 'Work', topology: ['app-prod-2'])->toArray())
+        ->toBe(['title' => 'Step', 'brief' => 'Work', 'topology' => ['app-prod-2']]);
+    $fixture = json_decode((string) file_get_contents(dirname(__DIR__, 4).'/fixtures/tasks/tasks-subtask-create/created.json'), true, flags: JSON_THROW_ON_ERROR);
+    $data = [...$fixture['body']['data'], 'topology' => ['app-dev', 'app-prod']];
+    $result = SubtaskResponse::fromGatewayData($data, task_request_id());
+    expect($result->topology)->toBe(['app-dev', 'app-prod']);
+    expect($result->toArray()['topology'])->toBe(['app-dev', 'app-prod']);
+});
+
+it('rejects malformed topology response types', function (mixed $topology): void {
+    $fixture = json_decode((string) file_get_contents(dirname(__DIR__, 4).'/fixtures/tasks/tasks-subtask-create/created.json'), true, flags: JSON_THROW_ON_ERROR);
+    expect(fn () => SubtaskResponse::fromGatewayData([...$fixture['body']['data'], 'topology' => $topology], task_request_id()))
+        ->toThrow(GatewayApiException::class);
+})->with(['scalar' => ['app-dev'], 'non-string' => [[1]], 'object' => [['name' => 'app-dev']]]);

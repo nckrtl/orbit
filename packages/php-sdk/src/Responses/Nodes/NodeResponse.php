@@ -35,6 +35,7 @@ final readonly class NodeResponse
         public ?NodeSettings $settings = null,
         /** @var list<array{project_id: int, project_slug: string, node_id: int, node_name: string, development_instance_count: int}>|null */
         public ?array $excludedProjects = null,
+        public ?NodeUpdatingResponse $updating = null,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -76,6 +77,7 @@ final readonly class NodeResponse
             access: is_array($data['access'] ?? null) ? NodeAccessResponse::fromGatewayData($data['access']) : null,
             settings: self::settings($data['settings'] ?? null),
             excludedProjects: self::exclusions($data['excluded_projects'] ?? null),
+            updating: NodeUpdatingResponse::tryFromGatewayData($data['updating'] ?? null),
         );
     }
 
@@ -105,6 +107,7 @@ final readonly class NodeResponse
             'error_code' => $this->errorCode,
             'roles' => $this->roles,
             'settings' => $this->settings?->toArray(),
+            'updating' => $this->updating?->toArray(),
             'request_id' => $this->requestId,
         ];
 

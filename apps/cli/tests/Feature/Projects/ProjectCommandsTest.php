@@ -135,6 +135,7 @@ describe('project:create', function (): void {
         'node-package' => ['node-package', '.'],
         'laravel-package' => ['laravel-package', '.'],
         'laravel-app' => ['laravel-app', 'public'],
+        'symfony-app' => ['symfony-app', 'public'],
         'monorepo' => ['monorepo', 'public'],
     ]);
 
@@ -663,14 +664,14 @@ describe('project:update', function (): void {
         expect($mockClient->getLastRequest())->toBeNull();
     });
 
-    it('updates a Project to node-package through the typed SDK request', function (): void {
+    it('updates a Project type through the typed SDK request', function (string $type): void {
         $mockClient = MockClient::global([
             UpdateProjectRequest::class => app_mock_response(),
         ]);
 
         $this->artisan('project:update', [
             'project' => '3',
-            '--type' => 'node-package',
+            '--type' => $type,
             '--json' => true,
         ])->expectsOutput(app_json())
             ->assertExitCode(0);
@@ -678,8 +679,8 @@ describe('project:update', function (): void {
         expect($mockClient->getLastRequest())
             ->toBeInstanceOf(UpdateProjectRequest::class)
             ->and($mockClient->getLastRequest()?->body()->all())
-            ->toBe(['type' => 'node-package']);
-    });
+            ->toBe(['type' => $type]);
+    })->with(['node-package', 'symfony-app']);
 
     it('reports the updated project for humans', function (): void {
         MockClient::global([UpdateProjectRequest::class => app_mock_response()]);
@@ -742,6 +743,35 @@ describe('project:update', function (): void {
         'mixed case' => 'False',
         'empty' => '',
         'missing value' => null,
+    ]);
+
+    it('sends the review-and-merge switch and the merge check only when given', function (array $arguments, array $body): void {
+        $mockClient = MockClient::global([
+            UpdateProjectRequest::class => app_mock_response(),
+        ]);
+
+        $this->artisan('project:update', ['project' => '3', ...$arguments])->assertExitCode(0);
+
+        expect($mockClient->getLastRequest()?->body()->all())->toBe($body);
+    })->with([
+        'switch on with a check' => [['--review-and-merge' => 'true', '--merge-check' => 'Required checks'], ['review_and_merge' => true, 'merge_check' => 'Required checks']],
+        'switch off' => [['--review-and-merge' => 'false'], ['review_and_merge' => false]],
+        'clear the check' => [['--clear-merge-check' => true], ['merge_check' => null]],
+    ]);
+
+    it('rejects an invalid review-and-merge value or conflicting merge check flags before a request', function (array $arguments, string $code): void {
+        $mockClient = MockClient::global();
+
+        $this->artisan('project:update', ['project' => '3', '--json' => true, ...$arguments])
+            ->expectsOutputToContain($code)
+            ->assertExitCode(1);
+
+        expect($mockClient->getLastPendingRequest())->toBeNull();
+    })->with([
+        'yes' => [['--review-and-merge' => 'yes'], 'project.review_and_merge_invalid'],
+        'missing value' => [['--review-and-merge' => null], 'project.review_and_merge_invalid'],
+        'both check flags' => [['--merge-check' => 'Required checks', '--clear-merge-check' => true], 'project.merge_check_conflict'],
+        'blank check' => [['--merge-check' => '  '], 'project.merge_check_invalid'],
     ]);
 
     it('refuses an empty update without gateway IO', function (): void {
@@ -930,3 +960,36 @@ it('renders an explicit empty list and preserves the empty machine collection', 
         expect($output)->toContain('No Projects found.', app_request_id())->not->toContain('Operation failed.');
     }
 })->with([false, true]);
+
+describe('Project task compute', function (): void {
+    it('transports a supplied mode on create and on a compute-only update', function (string $mode): void {
+        $mock = MockClient::global([
+            CreateProjectRequest::class => app_mock_response(201),
+            UpdateProjectRequest::class => app_mock_response(),
+        ]);
+        $this->artisan('project:create', [
+            'slug' => 'orbit', 'type' => 'monorepo',
+            'repository' => 'https://github.com/nckrtl/orbit.git',
+            '--task-compute' => $mode, '--json' => true,
+        ])->assertExitCode(0);
+        expect($mock->getLastRequest()?->body()->all()['task_compute'])->toBe($mode);
+
+        $this->artisan('project:update', [
+            'project' => '3', '--task-compute' => $mode, '--json' => true,
+        ])->assertExitCode(0);
+        expect($mock->getLastRequest()?->body()->all())->toBe(['task_compute' => $mode]);
+    })->with(['shared', 'vm']);
+
+    it('refuses invalid or bare compute flags without Gateway IO', function (?string $mode): void {
+        $mock = MockClient::global();
+        foreach ([
+            'project:create' => ['slug' => 'orbit', 'type' => 'monorepo', 'repository' => 'https://github.com/nckrtl/orbit.git'],
+            'project:update' => ['project' => '3'],
+        ] as $command => $arguments) {
+            $this->artisan($command, [...$arguments, '--task-compute' => $mode, '--json' => true])
+                ->expectsOutputToContain('project.task_compute_invalid')
+                ->assertExitCode(1);
+        }
+        expect($mock->getLastPendingRequest())->toBeNull();
+    })->with(['auto', 'VM', '', null]);
+});

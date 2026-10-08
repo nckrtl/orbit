@@ -1,4 +1,14 @@
 {
-  "source_sha256": "649b69b9c2cd8d32a261ddf99dcecffc11c72c2fd413feb391420751c58be02b",
-  "asset_sha256": "6fef91633752b58fc4fd63f5890194bb83d561cd383cd4e2f60bd20b3ff6d678"
+  "package": "@nckrtl/annotator",
+  "version": "0.2.0",
+  "files": {
+    "bin/QUEUE-SKILL.md": "ebcf7f40b24d8c714c81b1d5461fedebc67b3362ecdab04c1880d55b73b14e27",
+    "bin/SKILL.md": "6b91341c1637cb3525c78168877009890e044937899075dd3c5ccb732428478e",
+    "bin/lifecycle.mjs": "09fb239f9ac852cc4878dd7b809eeabb9a5c67393407a0d2df107ac65fa8e8df",
+    "bin/serve.mjs": "a22e3f627ded689134a451eaadfcec342f0c6fd30df44a900889865de7f2a901",
+    "bin/store.mjs": "bd55cf8b310a0524e96c051d272ed415061fbf22daceb70f49c797a86ecfd3d0",
+    "bin/vite.d.mts": "d0920c4a2680b24f3eab591ccc5c4fbfb5f6e3588c361f00743cc5d6a3a9e4aa",
+    "bin/vite.mjs": "923419835e18585afceb7f12579ea1aeeb92d3e21f84240414e80ca374f6511f",
+    "inject.js.gz": "b7690be94800db9b2f219c5c464e66c9f8f37e0fce8ced1650595279d00cf25e"
+  }
 }

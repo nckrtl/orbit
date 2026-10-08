@@ -17,6 +17,7 @@
         "mcp-tools": "bin/mcp-tools --check",
         "cli-contract": "bin/cli-contract",
         "test": "bin/test",
+        "test:affected": "@test",
         "check": [
             "Composer\\Config::disableProcessTimeout",
             "bin/review-check"

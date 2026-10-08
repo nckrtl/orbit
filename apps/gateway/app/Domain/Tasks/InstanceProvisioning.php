@@ -15,10 +15,11 @@ use App\Models\Instance;
  * instance for every subtask. It returns the instance the group holds, and resumes an unattached
  * `task-{group id}` instance on its own Node.
  *
- * A null result means provisioning failed. A capacity wait throws TaskCapacityException instead.
+ * A typed failure carries the cause; a null result means no cause is available.
+ * A capacity wait throws TaskCapacityException instead.
  */
 interface InstanceProvisioning
 {
     /** @throws TaskCapacityException when every Node that could host the group is at the task ceiling. */
-    public function provision(InstanceProvisionIntent $intent): ?Instance;
+    public function provision(InstanceProvisionIntent $intent): Instance|InstanceProvisionFailure|null;
 }

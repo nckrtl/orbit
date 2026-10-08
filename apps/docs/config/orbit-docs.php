@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 return [
-    'index_path' => base_path('../../docs/generated/context.json'),
+    'index_path' => env('ORBIT_DOCS_ROOT', base_path('../../docs')).'/generated/context.json',
 
     'ignored_librarian_rules' => [
         // Orbit's introductory pages use reader-focused headings instead of

@@ -41,6 +41,7 @@
                     "title": "Remaining work",
                     "brief": "No longer needed.",
                     "deliverables": [],
+                    "topology": [],
                     "status": "cancelled",
                     "implementer_agent_thread_id": null,
                     "tokens": null,
@@ -61,7 +62,12 @@
                     "fixup_problem": null
                 }
             ],
-            "execution_mode": "managed"
+            "execution_mode": "managed",
+            "task_compute": null,
+            "capacity_wait_reason": null,
+            "sandbox_power": null,
+            "preview": false,
+            "review_and_merge": null
         },
         "meta": {
             "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"

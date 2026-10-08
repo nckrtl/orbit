@@ -27,6 +27,7 @@
                 "app-dev"
             ],
             "settings": null,
+            "updating": null,
             "access": {
                 "can_access": [],
                 "accessible_by": []

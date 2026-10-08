@@ -69,9 +69,9 @@ function complete_group(TaskGroupStatus $status = TaskGroupStatus::Settling): Ta
     return $group->fresh(['project', 'taskable']) ?? $group;
 }
 
-it('removes the shared App instance and marks a settling group completed', function (): void {
+it('removes the shared App instance and marks a settling group completed', function (TaskGroupStatus $status): void {
     app(TaskExtensionState::class)->enable();
-    $group = complete_group();
+    $group = complete_group($status);
     $instanceId = $group->taskable_id;
     $remover = new class implements InstanceRemover
     {
@@ -95,7 +95,7 @@ it('removes the shared App instance and marks a settling group completed', funct
         ->and($completed->settled_at)->not->toBeNull()
         ->and($remover->calls)->toBe([[$instanceId, true]])
         ->and(Instance::query()->find($instanceId))->toBeNull();
-});
+})->with([TaskGroupStatus::Settling, TaskGroupStatus::WaitingForReview]);
 
 it('is idempotent for an already completed group and retries a leftover workspace', function (): void {
     app(TaskExtensionState::class)->enable();

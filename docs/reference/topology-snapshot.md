@@ -138,6 +138,10 @@ The harness writes no Caddy file on any Node. Every Caddyfile comes from a [Node
 
 Guest preparation points `/etc/resolv.conf` at the systemd-resolved stub. It also writes the public upstream servers `1.1.1.1` and `8.8.8.8` into a systemd-resolved drop-in, because runtime resolver settings do not survive a snapshot reboot. Orbit's private DNS routes still apply to private names.
 
+#### Retarget recorded guests
+
+The Gateway retarget helper validates the selected guest inventory and its required native roles before changing endpoints. Missing peers, foreign peers, duplicate identities, or incomplete roles stop retargeting. The operator remains roleless. A selected `app-prod-2` peer requires the native `app-prod` role. The same helper supports the recorded inventory of an [Orbit VM sandbox](/reference/compute-drivers); its images and source volume have their own template provenance.
+
 #### Failed guest scripts
 
 A guest convergence script that exits nonzero stops that step. The harness error names the script, the VM, and the exit code. It also includes the tail of that script's stderr.

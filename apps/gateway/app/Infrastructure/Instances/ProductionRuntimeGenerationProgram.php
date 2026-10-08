@@ -44,16 +44,31 @@ final class ProductionRuntimeGenerationProgram
                 mv -fT -- "$candidate" "$path" || return 1
                 sync -f "$runtime_directory"
             }
+            # The receipt names the master that confirmed the generation. With no pending receipt, a
+            # master that started later (after a reboot, or a restart in the same boot) loaded the same
+            # confirmed files, so a restart outside Orbit does not make the generation unapplied.
             runtime_generation_applied() {
-                local expected
+                local token applied boot start recorded_boot recorded_start
                 test ! -e "$runtime_directory/.runtime-generation.pending" \
                     && test ! -L "$runtime_directory/.runtime-generation.pending" || return 1
                 guard_runtime_receipt "$runtime_directory/.runtime-generation.applied" || return 1
                 test -f "$runtime_directory/.runtime-generation.applied" || return 1
-                expected=$(runtime_master_token) || return 1
-                expected="$(runtime_pool_generation)
-            $expected"
-                test "$(cat "$runtime_directory/.runtime-generation.applied")" = "$expected"
+                token=$(runtime_master_token) || return 1
+                applied=$(cat "$runtime_directory/.runtime-generation.applied") || return 1
+                test "$(printf '%s\n' "$applied" | sed -n 1p)" = "$(runtime_pool_generation)" || return 1
+                test "$(printf '%s\n' "$applied" | wc -l)" -eq 4 || return 1
+                if test "$applied" = "$(runtime_pool_generation)
+            $token"; then
+                    return 0
+                fi
+                boot=$(printf '%s\n' "$token" | sed -n 1p)
+                start=$(printf '%s\n' "$token" | sed -n 3p)
+                recorded_boot=$(printf '%s\n' "$applied" | sed -n 2p)
+                recorded_start=$(printf '%s\n' "$applied" | sed -n 4p)
+                printf '%s' "$recorded_boot" | grep -Eq '^[0-9a-f-]{36}$' || return 1
+                case "$recorded_start" in ''|*[!0-9]*) return 1 ;; esac
+                test "$recorded_boot" != "$boot" && return 0
+                test "$start" -gt "$recorded_start"
             }
             begin_runtime_generation() {
                 guard_runtime_receipt "$runtime_directory/.runtime-generation.applied" || return 1

@@ -1,0 +1,18 @@
+#!/usr/bin/env python3
+"""Ship the tested E2E pair repair helpers in the Gateway source distribution."""
+from pathlib import Path
+import sys
+
+root = Path(__file__).resolve().parent.parent
+check = sys.argv[1:] == ['--check']
+if sys.argv[1:] and not check:
+    sys.exit('usage: bin/compute-guest-build [--check]')
+for name in ('retarget-gateway.php', 'retarget-vpn.sh'):
+    source = root / 'apps/e2e/resources/guest' / name
+    target = root / 'apps/gateway/resources/compute' / name
+    if check:
+        if not target.is_file() or target.read_bytes() != source.read_bytes():
+            sys.exit('Gateway pair helpers are stale. Run bin/compute-guest-build and commit its outputs.')
+    else:
+        target.write_bytes(source.read_bytes())
+print('Gateway pair helpers match the tested E2E sources.')

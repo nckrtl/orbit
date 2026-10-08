@@ -12,7 +12,6 @@ use App\Domain\Tasks\TaskTurnMode;
 use App\Domain\Tasks\TaskTurnReceipt;
 use App\Domain\Tasks\TaskTurnReceiptException;
 use App\Domain\Tasks\TaskTurnReceipts;
-use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Instance;
 
@@ -21,7 +20,7 @@ use App\Models\Instance;
  */
 final readonly class RemoteTaskTurnReceipts implements TaskTurnReceipts
 {
-    public function __construct(private DevelopmentSshExecutor $ssh) {}
+    public function __construct(private TaskWorkspaceExecutor $ssh) {}
 
     public function prepare(Instance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null, ?TaskTurnMode $mode = null, ?string $context = null): void
     {
@@ -133,7 +132,7 @@ final readonly class RemoteTaskTurnReceipts implements TaskTurnReceipts
             throw new TaskTurnReceiptException('The task workspace has no checkout.');
         }
         try {
-            $result = $this->ssh->execute($instance->node, new RemoteCommand(
+            $result = $this->ssh->execute($instance, new RemoteCommand(
                 arguments: ['bash', '-seu', '--', $instance->checkout_path, ...$arguments],
                 input: "checkout=\$1\n".TaskWorkspaceMetadata::bashPreamble().$command,
             ), 'task-turn-receipt', 'tasks.turn_receipt_failed');

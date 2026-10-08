@@ -11,6 +11,7 @@ use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\Instances\CloneCandidateSource;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Instances\InstanceCloneCandidateInspector;
+use App\Domain\Instances\InstanceSandboxGuard;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\ProductionCloneRouteProjector;
@@ -56,6 +57,7 @@ final readonly class CloneInstanceAction
     /** @return array{instance: Instance, created: bool} */
     public function execute(Instance $candidate, CloneInstanceData $data): array
     {
+        InstanceSandboxGuard::assertHostOperation($candidate);
         $candidate->loadMissing(['project', 'node']);
         $existing = $this->existingTarget($candidate, $data);
 
