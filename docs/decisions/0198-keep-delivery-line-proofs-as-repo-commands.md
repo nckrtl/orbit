@@ -31,7 +31,7 @@ The commands do not file a task, merge, deploy, or roll back. Instance rollback 
 
 `bin/pr-head-check` flattens both a bare check-runs object and the one-element array `gh api --paginate --slurp` wraps around it. It omits `--slurp` on older `gh` that do not have the flag. It keeps a review only when its state is `APPROVED` and its `commit_id` equals the current full head SHA. `COMMENTED`, `CHANGES_REQUESTED`, `DISMISSED`, and `PENDING` do not count. The leftover scan skips the detector, the leftover-refusal test, and recorded delivery-line fixtures. A leftover added in product code still fails.
 
-Waking ReviewBot when a GitHub `pull_request_review` event arrives, without a later push, is not wired in this repository; it is a follow-up. A review event never bypasses `bin/pr-head-check`: an `APPROVED` review and successful `Required checks` must still match the exact current head.
+This repository does not wake ReviewBot when a GitHub `pull_request_review` event arrives without a new push; wiring that wake is a follow-up. A review event never bypasses `bin/pr-head-check`: an `APPROVED` review and successful `Required checks` must still match the exact current head.
 
 ## Rejected alternatives
 

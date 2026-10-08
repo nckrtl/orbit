@@ -133,7 +133,7 @@ The diff fails when it adds a leftover the merge skill already names: GitHub aut
 
 Do not add hostnames under the generic `upcloudobjects.com` provider suffix (`object-storage-host`), `linear.app` references, Linear issue IDs, or Linear issue, ticket, project, product, task, integration, or workspace wording (`linear-reference`). A trailing sentence period or DNS root dot still matches the provider host; a domain that extends the suffix does not. Patterns and fixtures contain no real storage bucket, endpoint, region, or account names.
 
-Waking ReviewBot when a GitHub `pull_request_review` event arrives, without a later push, is not wired in this repository; it is a follow-up. A review event never bypasses `bin/pr-head-check`: an `APPROVED` review and successful `Required checks` must still match the exact current head.
+This repository does not wake ReviewBot when a GitHub `pull_request_review` event arrives without a new push; wiring that wake is a follow-up. A review event never bypasses `bin/pr-head-check`: an `APPROVED` review and successful `Required checks` must still match the exact current head.
 
 On any mismatch the JSON names the mismatch. For an unmerged pull request, the next step is to review the new head. For `merged:true`, stop instead, regardless of the mismatch. The command never runs `gh pr merge`.
 
