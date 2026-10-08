@@ -86,6 +86,8 @@ The app subscribes to `presence-node.{id}` for every active Node, next to the `o
 | Lost: the agent left, or sent nothing for 15 seconds | offline | The value from the Process list |
 | Not seen since the page subscribed | Prometheus `up` | The value from the Process list |
 
+A Node that the Gateway is updating shows `updating` in blue instead, whatever the agent or Prometheus reports. Its [`updating`](/reference/gateway-recovery#nodes-being-updated) field is set while the fleet rollout visits the Node, or while a Gateway release runs on the Gateway Node. Its status dot pulses slowly between full and half opacity over 2 seconds. When the system asks for reduced motion, the dot stays solid blue. The hover text and the accessible label name the cause: `updating — fleet rollout` or `updating — Gateway release`. A `node.updated` event sets and clears the value. Demo mode shows one Node in a fleet rollout.
+
 A Node without an [agent](/reference/node-agent#where-it-runs) always uses the last row. A macOS tool-only Node has no agent or Metrics exporter in this slice; the page shows unavailable live telemetry rather than treating that absence as a failed Linux service. An example is a [Node without roles](/reference/node-provisioning#nodes-without-roles) that has no pinned SSH host key.
 
 CPU and memory come from [`process.usage`](/reference/events#process-usage) events. The app writes each sample into its cached Process list. While realtime is live, it reloads the Process list only when no sample arrived for 60 seconds.

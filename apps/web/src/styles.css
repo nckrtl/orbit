@@ -21,6 +21,7 @@
     --yellow: #e5c07b;
     --green: #8bd49c;
     --red: #e06c75;
+    --blue: #61afef;
 }
 
 /* Dark is the theme. Light is there for whoever sets `data-theme="light"` on the root element; the system setting does not pick it. */
@@ -34,6 +35,7 @@
     --yellow: #9a6700;
     --green: #2b8a3e;
     --red: #c92a2a;
+    --blue: #1971c2;
 }
 
 @theme inline {
@@ -48,6 +50,7 @@
     --color-yellow: var(--yellow);
     --color-green: var(--green);
     --color-red: var(--red);
+    --color-blue: var(--blue);
 }
 
 /*
@@ -609,6 +612,26 @@ body {
         animation: none;
         background: none;
         color: var(--fg);
+    }
+}
+
+/* A node the Gateway is updating: its status dot fades slowly to half opacity and back. */
+@keyframes status-pulse {
+    from {
+        opacity: 1;
+    }
+    to {
+        opacity: 0.45;
+    }
+}
+
+.status-pulse {
+    animation: status-pulse 2s ease-in-out infinite alternate;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .status-pulse {
+        animation: none;
     }
 }
 

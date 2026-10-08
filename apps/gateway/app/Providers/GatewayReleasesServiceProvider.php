@@ -20,6 +20,7 @@ use App\Domain\GatewayReleases\GatewayReleaseWebBuild;
 use App\Domain\GitHub\GreenCommitResolver;
 use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Hibernation\RuntimeHibernatorConverger;
+use App\Domain\Nodes\NodeUpdateBroadcaster;
 use App\Domain\Settings\SettingRepository;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
 use App\Infrastructure\Files\ProtectedFileWriter;
@@ -178,6 +179,7 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
                 automation: $app->make(GatewayReleaseAutomation::class),
                 units: $app->make(GatewayReleaseUnitStarter::class),
                 retry: $app->make(GatewayReleaseRetry::class),
+                nodes: $app->make(NodeUpdateBroadcaster::class),
             ),
         );
         $this->app->bind(
