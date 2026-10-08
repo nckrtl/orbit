@@ -99,6 +99,25 @@ it('reads tracked and untracked review diff without updating the index', functio
         ->and($diff['diff'])->toContain("return 'new';");
 });
 
+it('reads untracked symlinks without following their targets or changing the index', function (string $target): void {
+    $checkout = review_diff_checkout();
+    $start = trim((new Process(['git', '-C', $checkout, 'rev-parse', 'HEAD']))->mustRun()->getOutput());
+    mkdir($checkout.'/skills');
+    file_put_contents($checkout.'/skills/private.txt', "Do not include target contents.\n");
+    file_put_contents($checkout.'/.gitignore', "skills/\n");
+    (new Process(['git', '-C', $checkout, 'add', '.gitignore']))->mustRun();
+    symlink($target, $checkout.'/skill-link');
+    $index = file_get_contents($checkout.'/.git/index');
+
+    $diff = review_diff_reader(new LocalShellSshExecutor)->read(review_diff_instance($checkout), $start);
+
+    expect(file_get_contents($checkout.'/.git/index'))->toBe($index)
+        ->and(array_column($diff['files'], 'path'))->toContain('skill-link')
+        ->and($diff['diff'])->toContain('new file mode 120000', '+'.$target)
+        ->and($diff['diff'])->not->toContain('Do not include target contents.')
+        ->and($diff['summary'])->toBe(['files' => 2, 'insertions' => 2, 'deletions' => 0]);
+})->with(['directory' => 'skills', 'file' => 'skills/private.txt', 'dangling' => 'missing']);
+
 it('refuses a missing checkout, a missing base, and output that is not a diff', function (string $case): void {
     $checkout = review_diff_checkout();
     $start = trim((new Process(['git', '-C', $checkout, 'rev-parse', 'HEAD']))->mustRun()->getOutput());
