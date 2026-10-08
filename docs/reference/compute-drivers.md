@@ -232,6 +232,8 @@ Sandbox MCP files are installed through the guest transport. For Orbit they name
 
 Before the first fetch in an Incus Orbit sandbox, Orbit configures guest DNS for GitHub domains through `1.1.1.1` and `9.9.9.9`. This bootstrap works before the cloned private Gateway is retargeted. Its persistent resolver drop-in routes only `github.com`, `githubusercontent.com`, and `githubassets.com`; private topology DNS keeps its existing policy. Preparation refuses foreign source ownership or a changed resolver drop-in.
 
+Pair preparation installs the same GitHub resolver on the private Gateway before refreshing dependencies. It also gives that Gateway's dnsmasq backend fixed public upstreams at `1.1.1.1` and `9.9.9.9`, which the host boundary permits. Private records and peer DNS routes stay in place. Orbit checks the source owner and isolated Gateway address before it writes the upstream file. A foreign file or failed validation refuses readiness; failed activation removes only the new owned drop-in.
+
 This prepares source only; the claim gate still requires the runtime, model proxy, and topology bootstrap.
 
 ### Keep guest paths off the host

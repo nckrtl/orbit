@@ -127,6 +127,7 @@ pest()->tia()->watch([
     'resources/compute/guest-github-access.py' => 'tests/Feature/Infrastructure/Tasks/SandboxGitHubAccessTest.php',
     'resources/compute/guest-github-dns.py' => 'tests/Feature/Infrastructure/Tasks/SandboxWorkspaceSourceTest.php',
     'resources/compute/guest-workspace-source.py' => 'tests/Feature/Infrastructure/Tasks/SandboxWorkspaceSourceTest.php',
+    'resources/compute/guest-pair-dns.py' => 'tests/Feature/Infrastructure/Tasks/SandboxPairRuntimeTest.php',
     'resources/compute/guest-pair-runtime.py' => 'tests/Feature/Infrastructure/Tasks/SandboxPairRuntimeTest.php',
     'resources/compute/retarget-gateway.php' => 'tests/Feature/Infrastructure/Tasks/SandboxPairRuntimeTest.php',
     'resources/compute/retarget-vpn.sh' => 'tests/Feature/Infrastructure/Tasks/SandboxPairRuntimeTest.php',

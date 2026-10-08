@@ -9,6 +9,7 @@ use App\Domain\Instances\InstanceState;
 use App\Domain\Tasks\TaskTopology;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Instance;
+use App\Models\TaskSandbox;
 use Throwable;
 
 /** Prepare only the isolated Orbit pair; the live Gateway and fleet are never targets. */
@@ -45,6 +46,8 @@ final readonly class SandboxPairRuntime
         try {
             $head = $this->runtime($workspace, [...$request, 'phase' => 'inspect'], 'operator');
             $request['head'] = $head;
+            $step = 'Gateway public DNS';
+            $this->prepareDns($workspace, $sandbox);
             if (count($inventory) > 2) {
                 $step = 'Gateway branch runtime';
                 $this->runtime($workspace, [...$request, 'phase' => 'gateway'], 'gateway');
@@ -84,6 +87,26 @@ final readonly class SandboxPairRuntime
             $this->runtime($workspace, [...$request, 'phase' => 'operator'], 'operator');
         } catch (Throwable) {
             throw new ComputeException('compute.pair_unavailable', 'The sandbox pair could not confirm '.$step.'.');
+        }
+    }
+
+    private function prepareDns(Instance $workspace, TaskSandbox $sandbox): void
+    {
+        $template = $sandbox->spec['source_template'] ?? null;
+        if (! is_array($template) || ! is_string($template['repository'] ?? null) || ! is_string($template['base'] ?? null)) {
+            throw new ComputeException('compute.pair_unavailable', 'The test Gateway source identity is unavailable.');
+        }
+        $request = ['sandbox_id' => $sandbox->id, 'checkout' => $workspace->checkout_path,
+            'repository' => $template['repository'], 'branch' => 'task-'.$sandbox->group_id,
+            'base' => $template['base'], 'source_template' => $template];
+        foreach (['github_dns' => 'guest-github-dns.py', 'pair_dns' => 'guest-pair-dns.py'] as $operation => $name) {
+            $result = $this->guest->execute($workspace, new RemoteCommand(
+                ['sudo', '-n', 'python3', '-I', '-c', $this->program($name)],
+                input: json_encode(['operation' => $operation, ...$request], JSON_THROW_ON_ERROR), timeout: 90, maxOutputBytes: 8192,
+            ), 'sandbox-pair', 'tasks.pair_setup_failed', role: 'gateway');
+            if ($result->truncated || json_decode($result->stdout, true, flags: JSON_THROW_ON_ERROR) !== ['ready' => true]) {
+                throw new ComputeException('compute.pair_unavailable', 'The test Gateway public DNS is unavailable.');
+            }
         }
     }
 
