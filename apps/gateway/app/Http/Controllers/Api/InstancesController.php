@@ -46,7 +46,7 @@ final class InstancesController extends Controller
         ]);
     }
 
-    #[RequiresNodeAccess(ServingNode::InstanceOwning)]
+    #[RequiresNodeAccess(ServingNode::InstanceCreation)]
     public function store(StoreInstanceRequest $request, CreateInstanceAction $action): JsonResponse
     {
         $result = $action->execute($request->payload());

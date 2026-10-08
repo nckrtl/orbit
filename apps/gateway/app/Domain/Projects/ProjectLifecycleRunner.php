@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Projects;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\Instances\Deployment\DevelopmentDeployment;
 use App\Domain\Instances\InstanceSandboxGuard;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
@@ -24,6 +25,7 @@ final readonly class ProjectLifecycleRunner
         private CommandDeadline $deadline,
         private VpToolManager $vp,
         private TiaBaselineSetup $tia,
+        private DevelopmentDeployment $deployment,
     ) {}
 
     public function run(Instance $instance, LifecyclePhase $phase): bool
@@ -50,6 +52,9 @@ final readonly class ProjectLifecycleRunner
             );
         }
 
+        $directory = $this->servedDirectory($instance, $phase, $checkout);
+        // A default Instance's seed is its own active release. Setup that runs in that release has no other seed.
+        $seeded = $phase === LifecyclePhase::Setup && $instance->seed_path !== $directory;
         $program = file_get_contents(resource_path('instances/lifecycle.py'));
 
         if (! is_string($program) || $program === '') {
@@ -87,11 +92,12 @@ final readonly class ProjectLifecycleRunner
 
                 $input = ProtectedInput::fromString(json_encode([
                     'checkout' => $checkout,
+                    'directory' => $directory,
                     'command' => $command,
                     'environment' => [
                         'VP_HOME' => $vpHome,
-                        'ORBIT_SEED_PATH' => $phase === LifecyclePhase::Setup ? ($instance->seed_path ?? '') : '',
-                        'ORBIT_SEED_COMMIT' => $phase === LifecyclePhase::Setup ? ($instance->seed_commit ?? '') : '',
+                        'ORBIT_SEED_PATH' => $seeded ? ($instance->seed_path ?? '') : '',
+                        'ORBIT_SEED_COMMIT' => $seeded ? ($instance->seed_commit ?? '') : '',
                     ],
                     'timeout' => $timeout - 5.0,
                 ], JSON_THROW_ON_ERROR));
@@ -166,6 +172,31 @@ final readonly class ProjectLifecycleRunner
         }
 
         return true;
+    }
+
+    /**
+     * The directory the Instance serves. A default Instance with the development release layout
+     * serves the release that `current` selects, and its checkout stays at the commit it was
+     * cloned at. Steps such as migrations must see the code that runs, so they run in that release.
+     */
+    private function servedDirectory(Instance $instance, LifecyclePhase $phase, string $checkout): string
+    {
+        if (! $instance->development_release_layout) {
+            return $checkout;
+        }
+
+        try {
+            $release = $this->deployment->selected($instance);
+        } catch (Throwable $exception) {
+            throw new ResourceOperationException(
+                errorCode: 'instance.active_release_unavailable',
+                message: ($phase === LifecyclePhase::Setup ? 'Setup' : 'Teardown').' did not start: Orbit could not read the active release of the Instance.',
+                status: 409,
+                previous: $exception,
+            );
+        }
+
+        return $release->path;
     }
 
     /**

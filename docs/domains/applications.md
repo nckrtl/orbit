@@ -2,7 +2,7 @@
 title: "Applications"
 description: "How a Project becomes an Instance on a Node: create or adopt a development checkout, provision its endpoint, clone to production, move, and remove."
 covers:
-  - apps/gateway/app/Actions/Instances/{CreateInstanceAction,CopyInstanceDependenciesAction,CloneInstanceDatabaseAction,RegisterInstanceAction,RenameInstanceAction,ListInstancesAction,ShowInstanceAction}.php
+  - apps/gateway/app/Actions/Instances/{CreateInstanceAction,CopyInstanceDependenciesAction,CloneInstanceDatabaseAction,CreateInstanceServerDatabaseAction,RegisterInstanceAction,RenameInstanceAction,ListInstancesAction,ShowInstanceAction}.php
   - apps/gateway/app/Domain/Instances/{DatabaseClone,DependencyCopy}/**
   - apps/gateway/app/Domain/Instances/{InstanceState,InstanceSourceLayout,InstanceDestinationGuard,ComposerSourceClassifier,Development*}.php
   - apps/gateway/app/Domain/Instances/Registration/**
@@ -110,6 +110,27 @@ No teardown step runs after a failed copy, because no setup step ran yet. When t
 Orbit records each finished step of the copy on its connection. When a create stops before the copy finished, an identical `instance:create` finishes the copy and then runs the setup steps. It copies the data again unless the earlier copy finished, so it never keeps a partial copy.
 
 The copy holds the full data of the `default` Instance, including personal data. A Project without a `default` Instance, or whose `default` Instance has no `DB` attachment, gets no copy.
+
+### Database on a server
+
+An Instance that gets no copy, such as the `default` Instance itself, can get an empty database during create. Name a [Database server](/reference/database-servers) with `--database-server` (API field `database_server`).
+
+```bash
+orbit instance:create 12 3 default --database-server=beast-mysql
+```
+
+After the source is ready and before the setup steps, Orbit does what [`database:create --server --instance`](/reference/database-servers#create-a-database-on-a-server) does. It creates the database `<project>_<instance>`, its test database, and the Instance's user on the server, with the connection slug `<project>-<instance>`. It records the Instance as the owner and attaches the database under prefix `DB`. Then it imports and synchronizes `.env` and `.env.testing` as the clone does. A setup step such as a migration finds the database on the first create.
+
+| Code | HTTP | Cause |
+| --- | --- | --- |
+| `instance.database_server_conflict` | 422 | The new Instance gets a [copy](#database-clone) of the `default` database. Nothing changes. |
+| `database.server_missing` | 404 | No Database server has that slug. Nothing changes. |
+| `database.server_inactive` | 409 | The Database server is not active. Nothing changes. |
+| `instance.database_create_failed` | 502 | Orbit could not finish the database. |
+
+The other `database:create` codes, such as `database.name_conflict` and `database.slug_conflict`, pass through. Every failure after the check removes the Instance and the database it owns, as a failed copy does, and no setup step runs. When a create stops before the database exists, an identical `instance:create` creates it and then runs the setup steps.
+
+The caller needs an [access grant](/cli/node) to the Instance's Node and to the Gateway, the same access `database:create` needs.
 
 ## Record a renamed branch
 
@@ -263,6 +284,10 @@ An Instance is active once Orbit prepared its source, runtime, Route, and Larave
 ### Orbit owns the Laravel URL
 
 Laravel uses `APP_URL` to build links outside a request. When Orbit changes a domain and leaves `APP_URL` alone, links break. So Orbit derives `APP_URL` from the Route in development and production. Reading an existing `APP_URL` as the source of the domain was rejected: the Route decides the endpoint.
+
+### Create the database before setup
+
+A database attached with `database:create --instance` can only come after the Instance exists. By then `instance:create` has run the setup steps, so a migration step failed and rolled the whole create back. Orbit now creates the database inside the create, between activation and setup, by reusing `database:create`. Ignoring a failed setup step was rejected, because an Instance whose setup failed is not a useful result. A default server stored on the Project was rejected, because the choice belongs to each Instance and a second hidden default would compete with the [database clone](#database-clone).
 
 ### Copy dependencies, not the checkout
 

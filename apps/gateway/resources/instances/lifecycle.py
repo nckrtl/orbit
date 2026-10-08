@@ -47,6 +47,11 @@ try:
     checkout = payload['checkout']
     if not os.path.isabs(checkout) or os.path.realpath(checkout) != checkout:
         raise SystemExit(125)
+    # A release-layout Instance serves a release under its checkout; the lock stays on the checkout.
+    directory = payload.get('directory', checkout)
+    if not isinstance(directory, str) or os.path.realpath(directory) != directory \
+            or (directory != checkout and not directory.startswith(checkout + '/releases/')):
+        raise SystemExit(125)
     lock_path = '/tmp/orbit-lifecycle-' + str(os.getuid()) + '-' + hashlib.sha256(checkout.encode()).hexdigest() + '.lock'
     lock = os.open(lock_path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
     try:
@@ -58,7 +63,7 @@ try:
         command_file.write(payload['command'])
     child = subprocess.Popen(
         ['/usr/bin/bash', '-eu', command_path],
-        cwd=checkout,
+        cwd=directory,
         env={**os.environ, **payload.get('environment', {})},
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
