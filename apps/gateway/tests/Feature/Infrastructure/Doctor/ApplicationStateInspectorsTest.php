@@ -417,6 +417,8 @@ it('rejects pending or unacknowledged FPM generations but accepts a master resta
                 older-master) sed -i '4s/.*/999999999999/' "$runtime_directory/.runtime-generation.applied" ;;
                 malformed) sed -i '4s/.*/soon/' "$runtime_directory/.runtime-generation.applied" ;;
                 other-generation) sed -i '1s/.*/0000/' "$runtime_directory/.runtime-generation.applied" ;;
+                restarted-other-generation) sed -i -e '1s/.*/0000/' -e '4s/.*/0/' "$runtime_directory/.runtime-generation.applied" ;;
+                malformed-boot) sed -i -e '2s/.*/not-a-boot-id/' -e '4s/.*/0/' "$runtime_directory/.runtime-generation.applied" ;;
                 recovered) begin_runtime_generation; confirm_runtime_generation ;;
             esac
             pool_configuration="$original_pool"
@@ -433,6 +435,8 @@ it('rejects pending or unacknowledged FPM generations but accepts a master resta
             'older-master' => '0',
             'malformed' => '0',
             'other-generation' => '0',
+            'restarted-other-generation' => '0',
+            'malformed-boot' => '0',
             'recovered' => '1',
         ];
         foreach ($states as $state => $expected) {
