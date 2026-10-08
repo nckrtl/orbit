@@ -45,7 +45,7 @@ The generator reads every command class, including commands the CLI hides at run
 
 The `tasks:create` and `tasks:update` descriptions follow the [Tasks contract](/reference/tasks#tasks-and-subtasks): a task belongs to a Project, and an external ADE plans the work. The descriptions keep the status, subtask, deliverable, and Coder notification requirements. The completion description includes the ended watched pull request path, its durable receipt, and the `tasks.not_settling` and `tasks.subtask_interrupt_failed` errors.
 
-The `tasks:cancel` description follows [workspace cancellation](/reference/tasks#cancel-a-task). It describes forced Instance removal for `source_resolved` workspaces with an eligible pending or failed exclusive Route, and the name-and-branch match used to retry unattached leftovers. An active or shared Route still refuses removal.
+The `tasks:cancel` description follows [workspace cancellation](/reference/tasks#cancel-a-stuck-task). It describes forced Instance removal for `source_resolved` workspaces with an eligible pending or failed exclusive Route, and the name-and-branch match used to retry unattached leftovers. An active or shared Route still refuses removal.
 
 The script marks `instance:deploy` and `instance:rollback` with `x-orbit-task-action: true`. A [task definition](/reference/tasks#subtask-definitions) action may name only a marked operation. A form-request rule `present` marks that property required, as `required` does. The task definition response lists the fields the Gateway always returns, and its parameters, phases, and subtasks use the same item schemas as the write.
 

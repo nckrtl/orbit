@@ -94,7 +94,7 @@ CPU and memory come from [`process.usage`](/reference/events#process-usage) even
 
 ## Live tasks
 
-The generated task cancellation description follows the [cancel contract](/reference/tasks#cancel-a-task): cleanup removes eligible pending or failed exclusive Routes with `source_resolved` workspaces and retries unattached leftovers. Active or shared Routes still block cleanup. This description changes no response fields and adds no web controls.
+The generated task cancellation description follows the [cancel contract](/reference/tasks#cancel-a-stuck-task): cleanup removes eligible pending or failed exclusive Routes with `source_resolved` workspaces and retries unattached leftovers. Active or shared Routes still block cleanup. This description changes no response fields and adds no web controls.
 
 The generated task comment list operation accepts optional `type` and `limit` query inputs. These types describe the [comment list contract](/reference/tasks#model); they add no web controls and do not change comment bodies.
 
