@@ -34,6 +34,8 @@ use Throwable;
  *    The release units are only written and the timer enabled, so the release that runs the handoff keeps running.
  * 4. The scheduler finishes its running commands and starts on the new release ({@see GatewaySchedulerHandoff}).
  * 5. Document cleanup is reconciled and resumed ({@see GatewayCleanupHandoff}).
+ * 6. The Gateway Node's own `orbit-agent` moves to the release's pin ({@see GatewayNodeAgentUpdate}), which the
+ *    fleet rollout never does for the Gateway's machine.
  *
  * @phpstan-import-type HandoffResult from \App\Domain\GatewayReleases\GatewayReleaseRuntime
  */
@@ -78,6 +80,7 @@ final readonly class GatewayRuntimeHandoff
         ?Closure $sleep = null,
         private int $idleWaitSeconds = 60,
         private ?FleetConvergeUnits $fleet = null,
+        private ?GatewayNodeAgentUpdate $agent = null,
     ) {
         $this->readLivePool = $readLivePool ?? static fn (string $path): string|false => @file_get_contents($path);
         $this->resetOpcache = $resetOpcache ?? static fn (string $script, string $query): string => new FpmScriptRequest()->request($script, $query);
@@ -128,7 +131,7 @@ final readonly class GatewayRuntimeHandoff
 
     /**
      * What runs in the background, after verify, because each step can wait: the scheduler drain and restart, document
-     * cleanup, and the OPcache reset.
+     * cleanup, the Gateway Node's agent update, and the OPcache reset.
      *
      * @return HandoffResult
      *
@@ -140,6 +143,7 @@ final readonly class GatewayRuntimeHandoff
         $generation = $this->cleanup->generation();
         $scheduler = $this->scheduler->handoff($gateway);
         $cleanup = $this->cleanup->resume($generation, true);
+        $agent = $this->gatewayAgent($gateway);
 
         return [
             'scheduler' => $scheduler['outcome'],
@@ -149,6 +153,7 @@ final readonly class GatewayRuntimeHandoff
             'cleanup' => $cleanup['outcome'],
             'cleanup_error_code' => $cleanup['error_code'] ?? null,
             'cleanup_paused' => $cleanup['paused'],
+            'gateway_agent' => $agent,
             // Last, after verify: the reset may wait up to a minute for the pools to go idle.
             'opcache' => $this->opcache(),
         ];
@@ -165,6 +170,26 @@ final readonly class GatewayRuntimeHandoff
             $this->fleet?->converge();
         } catch (Throwable $exception) {
             Log::warning('The fleet rollout units could not be installed.', ['error' => $exception->getMessage()]);
+        }
+    }
+
+    /**
+     * Updates the Gateway Node's own agent, after verify, so the restart never delays the check that decides a
+     * switch-back. A failure is only recorded: the release record keeps it and raises one alert
+     * ({@see GatewayReleaseAlerts::gatewayAgent()}), and the release stays live.
+     *
+     * @return array<string, mixed>
+     */
+    private function gatewayAgent(Node $gateway): array
+    {
+        if (! $this->agent instanceof GatewayNodeAgentUpdate) {
+            return ['outcome' => 'skipped', 'reason' => 'not_configured'];
+        }
+
+        try {
+            return $this->agent->converge($gateway);
+        } catch (Throwable $exception) {
+            return ['outcome' => 'failed', 'error_code' => 'agent.install_failed', 'message' => $exception->getMessage()];
         }
     }
 
