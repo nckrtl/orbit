@@ -527,6 +527,12 @@ it("does not let demo adapters call the CLI or an upstream service", async () =>
         expect(speech.ok).toBe(true);
         expect(await speech.text()).not.toBe("upstream");
 
+        // The overlay sends a loopback server URL through this prefix, so it reaches the stub.
+        const page = await (await fetch(`${origin}/`)).text();
+        expect(page).toContain(
+            '<meta name="annotate-local-server-proxy" content="/__annotate/local">',
+        );
+
         const annotation = await fetch(`${origin}/__annotate/local/${port}/annotations`);
         expect(await annotation.json()).toEqual({
             error: "Demo mode does not call the annotation server.",

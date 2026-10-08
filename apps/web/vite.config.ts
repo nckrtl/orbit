@@ -118,6 +118,14 @@ function annotationServer(): Plugin {
     return {
         name: "annotation-server-demo",
         apply: "serve",
+        // Routes a loopback server URL to the stub below, as the package proxy does.
+        transformIndexHtml: () => [
+            {
+                tag: "meta",
+                attrs: { name: "annotate-local-server-proxy", content: "/__annotate/local" },
+                injectTo: "head",
+            },
+        ],
         configureServer(server) {
             server.middlewares.use("/__annotate/local", (_request, response) => {
                 response.writeHead(200, {
