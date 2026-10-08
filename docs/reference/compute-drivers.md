@@ -113,6 +113,12 @@ match. Public HTTP(S) and public DNS are permitted; fleet, private, host, metada
 and other group addresses are excluded. Host forwarding policy must also permit
 the dedicated bridge. Host firewall access requires the opt-in policy below.
 
+### Local Project image ownership
+
+A new local Project reservation records `project_slug` beside its one pinned `operator` image. The host accepts only a private x86_64 VM image with `user.orbit.project.owner=orbit-task-project-image`, `user.orbit.project.slug=<project-slug>`, `user.orbit.project.account=orbit`, and `user.orbit.project.bootstrap=unenrolled`. Image preparation must verify the managed account and absence of fleet or private-topology identity before assigning these properties. An image with Orbit template properties is refused even if it also has Project properties.
+
+Provisioning verifies the Project marker on an existing guest and worktree volume before any mutation. A retry cannot change the Project or adopt an unmarked reservation. These image checks do not enroll the guest or authorize SSH, WireGuard, or hub access. Local Project claim admission remains unavailable until its bootstrap, network, fleet, Route, and cleanup contracts are implemented and accepted.
+
 ### Image test baselines
 
 Sandbox images need a test baseline from CI. Each successful project job on `main` publishes a `sandbox-tia-<index>-<commit>` artifact for 14 days. It contains the Pest graph and a manifest with the Project path, tested commit, CI run, graph checksum, and test configuration checksums.

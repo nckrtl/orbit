@@ -13,5 +13,4 @@ curl --fail --silent --show-error --max-time 10 --cacert "$ca" https://10.44.0.1
 # Only the disposable Gateway supplies realtime and metrics endpoints.
 unset ORBIT_REALTIME_URL ORBIT_GRAFANA_URL ORBIT_GATEWAY VITE_ORBIT_DEMO VITEST
 vp install
-(cd ../../packages/agent-annotation && vp install)
 exec vp dev --host 0.0.0.0 --port 5173 --strictPort

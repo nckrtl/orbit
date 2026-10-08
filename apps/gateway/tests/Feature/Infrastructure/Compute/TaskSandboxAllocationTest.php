@@ -56,7 +56,8 @@ function allocation_host(int $available): void
         expect($row->state)->toBe($request['operation'] === 'resume' ? SandboxState::Starting : SandboxState::Creating);
         $images = $row->spec['images'];
         if ($request['operation'] === 'provision') {
-            expect($request['spec']['source_template'] ?? null)->toBe($row->spec['source_template'] ?? null);
+            expect($request['spec']['source_template'] ?? null)->toBe($row->spec['source_template'] ?? null)
+                ->and($request['spec']['project_slug'] ?? null)->toBe($row->spec['project_slug'] ?? null);
         }
 
         return new CommandResult(0, json_encode(['name' => $name, 'power' => 'running', 'instances' => array_map(
@@ -103,6 +104,48 @@ describe('sandbox placement', function (): void {
         expect(fn () => app(AllocateTaskSandboxAction::class)->execute(allocation_group('orbit')))
             ->toThrow(ComputeException::class, 'configuration is invalid');
         expect(TaskSandbox::query()->count())->toBe(0);
+    });
+
+    it('pins a single local Project image and Project identity through retries', function (): void {
+        allocation_host(2);
+        mock(ComputeDriver::class)->shouldNotReceive('capacity', 'provision');
+        $group = allocation_group('dlf');
+        $allocator = app(AllocateTaskSandboxAction::class);
+        $sandbox = $allocator->execute($group);
+
+        expect($sandbox->provider)->toBe('incus')
+            ->and($sandbox->spec['project_slug'])->toBe('dlf')
+            ->and($sandbox->spec['images'])->toBe(['operator' => str_repeat('c', 64)])
+            ->and($sandbox->spec)->not->toHaveKey('source_template')
+            ->and($sandbox->spec)->not->toHaveKey('pi_port');
+        $this->settings['project_images']['dlf'] = str_repeat('d', 64);
+        config(['compute.incus.hosts' => [$this->settings]]);
+        $retry = $allocator->execute($group);
+        expect($retry->id)->toBe($sandbox->id)
+            ->and($retry->spec['project_slug'])->toBe('dlf')
+            ->and($retry->spec['images'])->toBe(['operator' => str_repeat('c', 64)]);
+    });
+
+    it('retains refused local Project placement without trying cloud overspill', function (): void {
+        mock(ComputeDriver::class)->shouldNotReceive('capacity', 'provision');
+        mock(SshExecutor::class)->shouldReceive('execute')->andReturnUsing(function (SshConnection $connection, RemoteCommand $command): CommandResult {
+            $request = json_decode(stream_get_contents($command->protectedInput->stream()), true, flags: JSON_THROW_ON_ERROR);
+            if ($request['operation'] === 'capacity') {
+                return new CommandResult(0, '{"available":2,"used":0,"budget":2}', '', 1, false);
+            }
+            expect($request['spec']['project_slug'])->toBe('dlf');
+
+            return new CommandResult(1, '{"error":"sandbox_operation_refused"}', '', 1, false);
+        });
+        $group = allocation_group('dlf');
+        expect(fn () => app(AllocateTaskSandboxAction::class)->execute($group))
+            ->toThrow(ComputeException::class, 'ownership is retained for retry');
+        $sandbox = TaskSandbox::query()->sole();
+        expect($sandbox->provider)->toBe('incus')
+            ->and($sandbox->group_id)->toBe($group->id)
+            ->and($sandbox->state)->toBe(SandboxState::Uncertain)
+            ->and($sandbox->spec['project_slug'])->toBe('dlf')
+            ->and($sandbox->spec['images'])->toBe(['operator' => str_repeat('c', 64)]);
     });
 
     it('sends project work to cloud only when local capacity is full', function (): void {

@@ -73,7 +73,6 @@ build="$(mktemp -d "${TMPDIR:-/tmp}/orbit-web-build.XXXXXX")"
 trap 'git -C "$repository_root" worktree remove --force "$build/checkout" >/dev/null 2>&1 || true; rm -rf "$build"' EXIT
 git worktree add --quiet --detach "$build/checkout" HEAD
 clean_env=(env -i "HOME=$HOME" "PATH=$PATH")
-(cd "$build/checkout/packages/agent-annotation" && "${clean_env[@]}" bun install --frozen-lockfile)
 (cd "$build/checkout/apps/web" && "${clean_env[@]}" bun install --frozen-lockfile && "${clean_env[@]}" bun run build)
 dist="$build/checkout/apps/web/dist"
 test -f "$dist/index.html" || { printf 'The build produced no index.html.\n' >&2; exit 1; }

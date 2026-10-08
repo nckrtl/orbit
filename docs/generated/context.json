@@ -928,7 +928,7 @@
         },
         {
             "path": "docs/reference/agent-annotation.md",
-            "title": "Agent annotation package",
+            "title": "Agent annotation",
             "kind": "reference",
             "components": [
                 "apps/gateway",
@@ -940,7 +940,6 @@
                 "Instance",
                 "Node",
                 "Process",
-                "Project",
                 "Route",
                 "Subtask",
                 "Task"
@@ -952,7 +951,8 @@
             "title": "Agentation",
             "kind": "reference",
             "components": [
-                "apps/gateway"
+                "apps/gateway",
+                "apps/web"
             ],
             "concepts": [
                 "Doctor",

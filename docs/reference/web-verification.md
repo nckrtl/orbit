@@ -50,7 +50,7 @@ These fixtures and browser tests exercise client behavior, not live S3 or Gatewa
 
 A path that the URL parser would send to another host is `usage`, including a tab, newline, or carriage return that turns the path into a protocol-relative URL. The browser aborts any request or socket whose host is not the demo server. Each load is answered with that checked response, so the browser does not send the request again and cannot follow a redirect that was not part of the check.
 
-The demo server is the `apps/web` dev server with `VITE_ORBIT_DEMO=1`, bound to `127.0.0.1` on a free port. Demo mode answers the API from the fixture fleet. It does not proxy to a Gateway, and it does not run the dev adapters that call the CLI, Commander, a transcription service, or a local annotation server. Those paths answer on the demo server and make no upstream call. The command waits up to 60 seconds for the server to answer.
+The demo server is the `apps/web` dev server with `VITE_ORBIT_DEMO=1`, bound to `127.0.0.1` on a free port. Demo mode answers the API from the fixture fleet. It does not proxy to a Gateway, and it does not run the dev adapters that call the CLI, a transcription service, or a local annotation server. Those paths answer on the demo server and make no upstream call. The command waits up to 60 seconds for the server to answer.
 
 ## Daemon
 
