@@ -66,6 +66,9 @@ final readonly class ResumeDeliverableCorrectionAction
             $group = $task->parent()->with(['project', 'taskable'])->firstOrFail();
             $instance = $group->taskable;
             if (! $thread instanceof AgentThread || ! $instance instanceof Instance) {
+                // Stays pending, so a restored record resumes it. Record the stall once so the operator can see it.
+                self::recordUnavailable($task, $resume, $thread instanceof AgentThread ? 'workspace' : 'implementer thread');
+
                 return;
             }
             try {
@@ -144,6 +147,22 @@ final readonly class ResumeDeliverableCorrectionAction
             'properties' => ['comment_id' => $resume['comment_id'], 'continuation_comment_id' => $continuation->id],
             'caller_node_id' => $resume['caller_node_id'] ?? null, 'caller_ip' => $resume['caller_ip'] ?? null,
             'request_id' => $resume['request_id'] ?? (string) Str::uuid(), 'command' => 'tasks:comment', 'status' => 'completed',
+        ]);
+    }
+
+    /** @param array{comment_id: int, thread_id: int|null, key: string, message: string, state: string, caller_node_id?: int|null, caller_ip?: string|null, request_id?: string} $resume */
+    private static function recordUnavailable(Task $task, array $resume, string $missing): void
+    {
+        // A subtask has at most one correction, so one record per subtask is one record per resume.
+        $description = 'deliverable correction resume unavailable';
+        if (Activity::query()->where('subject_type', Task::class)->where('subject_id', $task->id)->where('description', $description)->exists()) {
+            return;
+        }
+        Activity::query()->create([
+            'log_name' => 'tasks', 'description' => $description, 'subject_type' => Task::class, 'subject_id' => $task->id,
+            'properties' => ['comment_id' => $resume['comment_id'], 'thread_id' => $resume['thread_id'], 'missing' => $missing],
+            'caller_node_id' => $resume['caller_node_id'] ?? null, 'caller_ip' => $resume['caller_ip'] ?? null,
+            'request_id' => $resume['request_id'] ?? (string) Str::uuid(), 'command' => 'tasks:comment', 'status' => 'failed',
         ]);
     }
 

@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Actions\Tasks\ResumeDeliverableCorrectionAction;
+use App\Actions\Tasks\StoreTaskCommentAction;
 use App\Actions\Tasks\UpdateTaskAction;
 use App\Data\Tasks\UpdateTaskData;
 use App\Domain\GitHub\RepositoryReadAccess;
@@ -34,8 +36,11 @@ use App\Models\TaskCheck;
 use App\Models\TaskComment;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use Symfony\Component\Process\InputStream;
 use Symfony\Component\Process\Process;
+use Tests\Support\DeliverablePathWorkspace;
+use Tests\Support\TestOrbitHome;
 
 /** @param list<array<string, mixed>> $deliverables */
 function revalidation_fixture(array $deliverables, string $base = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', bool $provisional = false): array
@@ -67,7 +72,7 @@ function revalidation_fixture(array $deliverables, string $base = 'bbbbbbbbbbbbb
             return str_repeat('a', 40);
         }
 
-        public function files(Project $project, string $commit): array
+        public function files(Project $project, string $commit, ?Instance $workspace = null): array
         {
             $this->commits[] = $commit;
             if ($this->unavailable) {
@@ -190,7 +195,7 @@ it('allows a concurrent SQLite writer during a blocked remote correction fetch a
                 return new CommandResult(0, $output, '', 0, false);
             }
         };
-        app()->instance(DeliverablePathRepository::class, new NativeDeliverablePathRepository($runner, app(RepositoryReadAccess::class), new Filesystem));
+        app()->instance(DeliverablePathRepository::class, new NativeDeliverablePathRepository($runner, app(RepositoryReadAccess::class), new Filesystem, DeliverablePathWorkspace::unreachableExecutor()));
         $replacement = [['id' => 'paths', 'type' => 'file', 'path' => 'tests/ExistingTest.php']];
         $update = fn () => app(UpdateTaskAction::class)->execute($group, $task, new UpdateTaskData(null, null, null, $replacement));
 
@@ -394,4 +399,135 @@ it('rechecks deliverable paths on an implementer spawn retry', function (): void
     expect($repository->commits)->toBe([str_repeat('b', 40), str_repeat('b', 40)]);
     expect($task->fresh()?->assistance_requested)->toBeTrue();
     expect($task->fresh()?->assistance_reason)->toContain('implementation', 'app/Present.php', str_repeat('b', 40));
+});
+
+/** Any origin read fails at once, so a passing gate proves the workspace answered. */
+function revalidation_offline_origin(): ProcessRunner
+{
+    return new class implements ProcessRunner
+    {
+        public int $reads = 0;
+
+        public function run(ProcessInvocation $invocation): CommandResult
+        {
+            $this->reads++;
+
+            return new CommandResult(128, '', 'fatal: unable to access origin', 0, false);
+        }
+    };
+}
+
+it('starts a review-and-merge successor whose approved start commit exists only in the workspace', function (): void {
+    [$group, $task, , $spawner] = revalidation_fixture([
+        ['id' => 'implementation', 'type' => 'file', 'path' => 'app/LocalOnly.php', 'change' => 'modified'],
+    ]);
+    $group->project->update(['review_and_merge' => true, 'merge_check' => 'Required checks']);
+    $git = DeliverablePathWorkspace::repositories();
+    $group->taskable->update(['checkout_path' => $git['checkout']]);
+    $task->update(['position' => 2]);
+    $previous = Task::query()->create([
+        'parent_id' => $group->id, 'position' => 1, 'title' => 'Approved sibling', 'brief' => 'Done.', 'status' => TaskStatus::Completed,
+    ]);
+    TaskComment::query()->create([
+        'task_group_id' => $group->id, 'task_id' => $previous->id, 'type' => TaskCommentType::Approved, 'author' => 'reviewer', 'posted_at' => now(), 'body' => 'Approved.', 'commit_sha' => $git['local'],
+    ]);
+    $origin = revalidation_offline_origin();
+    app()->instance(DeliverablePathRepository::class, new NativeDeliverablePathRepository($origin, app(RepositoryReadAccess::class), new Filesystem, DeliverablePathWorkspace::localExecutor()));
+    expect($group->fresh(['project'])?->reviewsBeforePush())->toBeTrue();
+
+    app(TaskScheduler::class)->startTask($task);
+    test_pass_baseline();
+
+    expect(TaskReviewBase::commit($task->fresh()))->toBe($git['local']);
+    expect($task->fresh()?->assistance_requested)->toBeFalse();
+    expect($spawner->implementers)->toBe(1);
+    expect($origin->reads)->toBe(0);
+});
+
+it('resumes a subtask held by the path gate after the fault clears and an operator resolution', function (): void {
+    [$group, $task, $repository, $spawner] = revalidation_fixture([
+        ['id' => 'implementation', 'type' => 'file', 'path' => 'app/Present.php'],
+    ]);
+    $repository->trees[str_repeat('b', 40)] = ['app/Present.php'];
+    $repository->unavailable = true;
+    app(TaskScheduler::class)->startTask($task);
+    test_pass_baseline();
+    expect($task->fresh()?->assistance_reason)->toStartWith('Deliverable path validation could not read base');
+    expect($spawner->implementers)->toBe(0);
+
+    app(TaskScheduler::class)->tick();
+    expect($spawner->implementers)->toBe(0);
+
+    $repository->unavailable = false;
+    app(StoreTaskCommentAction::class)->execute($task->fresh(), ['type' => 'resolution', 'body' => 'The repository is readable again.', 'author' => 'operator']);
+
+    expect($task->fresh()?->assistance_requested)->toBeFalse();
+    expect($group->fresh()?->assistance_requested)->toBeFalse();
+    expect(Activity::query()->where('subject_id', $task->id)->where('description', 'resolution queued deliverable gate retry')->count())->toBe(1);
+    expect(Activity::query()->where('subject_id', $task->id)->where('description', 'resolution delivery failed')->count())->toBe(0);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($spawner->implementers)->toBe(1);
+    expect($task->fresh()?->assistance_requested)->toBeFalse();
+    expect($task->fresh()?->implementer_agent_thread_id)->not->toBeNull();
+});
+
+it('accepts a deliverables fix for a subtask held by the path gate without using the one correction', function (): void {
+    [$group, $task, $repository, $spawner] = revalidation_fixture([
+        ['id' => 'implementation', 'type' => 'file', 'path' => 'app/Missing.php'],
+    ]);
+    $repository->trees[str_repeat('b', 40)] = ['app/Present.php'];
+    app(TaskScheduler::class)->startTask($task);
+    test_pass_baseline();
+    expect($task->fresh()?->assistance_reason)->toContain('app/Missing.php');
+    $update = fn (array $deliverables) => app(UpdateTaskAction::class)->execute($group->fresh(), $task->fresh(), new UpdateTaskData(null, null, null, $deliverables));
+
+    expect(fn () => $update([['id' => 'implementation', 'type' => 'file', 'path' => 'app/StillMissing.php']]))->toThrow(ValidationException::class);
+    expect(fn () => app(UpdateTaskAction::class)->execute($group->fresh(), $task->fresh(), new UpdateTaskData('Renamed', null, null, [['id' => 'implementation', 'type' => 'file', 'path' => 'app/Present.php']])))
+        ->toThrow(ResourceOperationException::class);
+    $fixed = [['id' => 'implementation', 'type' => 'file', 'path' => 'app/Present.php']];
+    $update($fixed);
+
+    expect($task->fresh()?->deliverables)->toBe($fixed);
+    expect($task->fresh()?->deliverable_correction_check_id)->toBeNull();
+    $audit = Activity::query()->where('subject_id', $task->id)->where('description', 'deliverables corrected')->sole();
+    expect($audit->properties?->get('gate'))->toBeTrue();
+    expect($task->fresh()?->assistance_requested)->toBeTrue();
+
+    app(StoreTaskCommentAction::class)->execute($task->fresh(), ['type' => 'resolution', 'body' => 'Deliverables fixed.', 'author' => 'operator']);
+    app(TaskScheduler::class)->tick();
+
+    expect($spawner->implementers)->toBe(1);
+    expect($task->fresh()?->assistance_requested)->toBeFalse();
+});
+
+it('keeps an ordinary running subtask deliverables locked when the path gate did not stop it', function (): void {
+    [$group, $task, $repository] = revalidation_fixture([
+        ['id' => 'implementation', 'type' => 'file', 'path' => 'app/Present.php'],
+    ]);
+    $repository->trees[str_repeat('b', 40)] = ['app/Present.php'];
+    $task->update(['status' => TaskStatus::Running, 'assistance_requested' => true, 'assistance_reason' => 'The implementer is blocked: something else.']);
+
+    expect(fn () => app(UpdateTaskAction::class)->execute($group->fresh(), $task->fresh(), new UpdateTaskData(null, null, null, [['id' => 'implementation', 'type' => 'file', 'path' => 'app/Present.php']])))
+        ->toThrow(ResourceOperationException::class);
+});
+
+it('records a correction resume without its implementer thread once and keeps it pending', function (): void {
+    [$group, $task] = revalidation_fixture([['id' => 'implementation', 'type' => 'file', 'path' => 'app/Present.php']]);
+    $comment = TaskComment::query()->create(['task_group_id' => $group->id, 'task_id' => $task->id, 'type' => TaskCommentType::Resolution, 'author' => 'operator', 'body' => 'Resume.', 'posted_at' => now()]);
+    $resume = ['comment_id' => $comment->id, 'thread_id' => 999_999, 'key' => 'correction-key', 'message' => 'Resume.', 'state' => 'pending'];
+    $task->update(['status' => TaskStatus::Running, 'assistance_requested' => true, 'assistance_reason' => 'Invalid overlay path.', 'deliverable_correction_resume' => $resume]);
+
+    app(ResumeDeliverableCorrectionAction::class)->execute($task);
+    app(ResumeDeliverableCorrectionAction::class)->execute($task);
+
+    $records = Activity::query()->where('subject_id', $task->id)->where('description', 'deliverable correction resume unavailable')->get();
+    expect($records)->toHaveCount(1);
+    expect($records->sole()->properties?->get('missing'))->toBe('implementer thread');
+    expect($task->fresh()?->deliverable_correction_resume['state'] ?? null)->toBe('pending');
+});
+
+afterEach(function (): void {
+    TestOrbitHome::clearScratch();
 });

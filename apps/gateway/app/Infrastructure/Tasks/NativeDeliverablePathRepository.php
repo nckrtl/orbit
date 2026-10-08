@@ -10,14 +10,22 @@ use App\Domain\SourceControl\GitBranchName;
 use App\Domain\Tasks\DeliverablePathRepository;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
+use App\Infrastructure\Ssh\RemoteCommand;
+use App\Models\Instance;
 use App\Models\Project;
 use Illuminate\Filesystem\Filesystem;
 use Throwable;
 
-/** Read immutable trees in a disposable bare repository, never in an agent workspace. */
+/**
+ * Read an immutable tree from the task workspace first, because review-and-merge approvals stay local until
+ * Orbit pushes. Without a workspace, or when it lacks the commit, read the origin in a disposable bare repository.
+ * The tree is only listed, so neither source runs project code.
+ */
 final readonly class NativeDeliverablePathRepository implements DeliverablePathRepository
 {
-    public function __construct(private ProcessRunner $processes, private RepositoryReadAccess $access, private Filesystem $filesystem) {}
+    private const int MaxTreeBytes = 16_777_216;
+
+    public function __construct(private ProcessRunner $processes, private RepositoryReadAccess $access, private Filesystem $filesystem, private TaskWorkspaceExecutor $workspaces) {}
 
     public function defaultBranchCommit(Project $project): string
     {
@@ -30,11 +38,47 @@ final readonly class NativeDeliverablePathRepository implements DeliverablePathR
         return $matches[1];
     }
 
-    public function files(Project $project, string $commit): array
+    public function files(Project $project, string $commit, ?Instance $workspace = null): array
     {
         if (preg_match('/\A[0-9a-f]{7,64}\z/i', $commit) !== 1) {
             throw $this->failure();
         }
+        if ($workspace instanceof Instance && $workspace->checkout_path !== '') {
+            $files = $this->workspaceFiles($workspace, $commit);
+            if ($files !== null) {
+                return $files;
+            }
+        }
+
+        return $this->originFiles($project, $commit);
+    }
+
+    /** @return list<string>|null null when the workspace cannot list this commit, so the origin is tried next. */
+    private function workspaceFiles(Instance $workspace, string $commit): ?array
+    {
+        $git = 'git -c core.hooksPath=/dev/null -c core.fsmonitor=false -c safe.directory="$checkout" -C "$checkout"';
+        try {
+            $result = $this->workspaces->execute($workspace, new RemoteCommand(
+                arguments: TaskWorkerUser::arguments(['bash', '-seu', '--', $workspace->checkout_path, $commit], $workspace),
+                input: "checkout=\$1\ncommit=\$2\n{$git} cat-file -e \"\$commit^{commit}\"\n{$git} ls-tree -r -z --full-tree \"\$commit\"\n",
+                maxOutputBytes: self::MaxTreeBytes,
+            ), 'task-deliverable-paths', 'tasks.deliverable_base_unavailable');
+        } catch (Throwable) {
+            return null;
+        }
+        if ($result->truncated) {
+            return null;
+        }
+        try {
+            return $this->parseTree($result->stdout);
+        } catch (ResourceOperationException) {
+            return null;
+        }
+    }
+
+    /** @return list<string> */
+    private function originFiles(Project $project, string $commit): array
+    {
         $directory = sys_get_temp_dir().'/orbit-deliverable-path-'.bin2hex(random_bytes(16));
         if (! mkdir($directory, 0700)) {
             throw $this->failure();
@@ -42,24 +86,31 @@ final readonly class NativeDeliverablePathRepository implements DeliverablePathR
         try {
             $this->run(['git', 'init', '--bare', '--', $directory], $project);
             $this->run(['git', '-C', $directory, 'fetch', '--no-tags', '--depth=1', '--filter=blob:none', '--', $project->repository_url, $commit], $project);
-            $output = $this->run(['git', '-C', $directory, 'ls-tree', '-r', '-z', $commit], $project, 16_777_216);
-            $files = [];
-            foreach (explode("\0", $output) as $entry) {
-                if ($entry === '') {
-                    continue;
-                }
-                if (preg_match('/\A[0-7]{6} (blob|commit) [0-9a-f]+\t(.+)\z/s', $entry, $matches) !== 1) {
-                    throw $this->failure();
-                }
-                if ($matches[1] === 'blob') {
-                    $files[] = $matches[2];
-                }
-            }
+            $output = $this->run(['git', '-C', $directory, 'ls-tree', '-r', '-z', $commit], $project, self::MaxTreeBytes);
 
-            return $files;
+            return $this->parseTree($output);
         } finally {
             $this->filesystem->deleteDirectory($directory);
         }
+    }
+
+    /** @return list<string> */
+    private function parseTree(string $output): array
+    {
+        $files = [];
+        foreach (explode("\0", $output) as $entry) {
+            if ($entry === '') {
+                continue;
+            }
+            if (preg_match('/\A[0-7]{6} (blob|commit) [0-9a-f]+\t(.+)\z/s', $entry, $matches) !== 1) {
+                throw $this->failure();
+            }
+            if ($matches[1] === 'blob') {
+                $files[] = $matches[2];
+            }
+        }
+
+        return $files;
     }
 
     /** @param non-empty-list<string> $arguments */

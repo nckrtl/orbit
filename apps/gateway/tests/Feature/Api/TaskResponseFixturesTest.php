@@ -287,7 +287,7 @@ describe('task response fixtures', function (): void {
                 return str_repeat('a', 40);
             }
 
-            public function files(Project $project, string $commit): array
+            public function files(Project $project, string $commit, ?Instance $workspace = null): array
             {
                 return ['docs/cli/tasks.mdx'];
             }

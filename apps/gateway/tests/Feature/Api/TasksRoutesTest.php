@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Broadcasting\RecordBroadcast;
 use App\Domain\Broadcasting\RecordEventType;
+use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Instances\InstanceRemover;
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Shared\LifecycleStatus;
@@ -27,6 +28,10 @@ use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Api\TaskGroupsController;
 use App\Http\Controllers\Api\TasksController;
+use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Processes\ProcessInvocation;
+use App\Infrastructure\Processes\ProcessRunner;
+use App\Infrastructure\Tasks\NativeDeliverablePathRepository;
 use App\Models\Activity;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
@@ -36,12 +41,15 @@ use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskComment;
 use App\Models\TaskQuestion;
+use Illuminate\Filesystem\Filesystem;
 use Illuminate\Routing\Route;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Event;
 use Orbit\Sdk\Responses\Tasks\TaskGroupResponse;
+use Tests\Support\DeliverablePathWorkspace;
 use Tests\Support\FakeTaskCheckRunner;
+use Tests\Support\TestOrbitHome;
 
 function tasks_gateway(): Node
 {
@@ -959,7 +967,7 @@ function deliverable_path_repository(): object
             return str_repeat('a', 40);
         }
 
-        public function files(Project $project, string $commit): array
+        public function files(Project $project, string $commit, ?Instance $workspace = null): array
         {
             $this->commits[] = $commit;
 
@@ -1244,3 +1252,54 @@ it('allows DeliverablePathChecker callers to supply an explicit commit without d
     expect($errors['0.path'])->toContain(str_repeat('b', 40), 'base_kind=resolved');
     expect($repository->defaultLookups)->toBe(0)->and($repository->commits)->toBe([str_repeat('b', 40)]);
 });
+
+it('accepts a subtask appended after a review-and-merge approval that exists only in the task workspace', function (): void {
+    $gateway = tasks_gateway();
+    enable_tasks();
+    $project = tasks_app('local-approval');
+    $project->update(['review_and_merge' => true, 'merge_check' => 'Required checks']);
+    $git = DeliverablePathWorkspace::repositories();
+    $origin = new class implements ProcessRunner
+    {
+        public int $reads = 0;
+
+        public function run(ProcessInvocation $invocation): CommandResult
+        {
+            $this->reads++;
+
+            return new CommandResult(128, '', 'fatal: unable to access origin', 0, false);
+        }
+    };
+    app()->instance(DeliverablePathRepository::class, new NativeDeliverablePathRepository($origin, app(RepositoryReadAccess::class), new Filesystem, DeliverablePathWorkspace::localExecutor()));
+    $group = Task::query()->create(['project_id' => $project->id, 'title' => 'Local approval', 'brief' => 'Keep approvals local.', 'status' => TaskGroupStatus::Running]);
+    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $gateway->id, 'name' => 'local-approval', 'checkout_path' => $git['checkout'], 'starting_commit' => $git['pushed'], 'status' => 'source_resolved']);
+    $group->taskable()->associate($instance);
+    $group->save();
+    $previous = Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'Earlier', 'brief' => 'Earlier.', 'status' => TaskStatus::Completed]);
+    TaskComment::query()->create(['task_group_id' => $group->id, 'task_id' => $previous->id, 'type' => TaskCommentType::Approved, 'body' => 'Approved.', 'author' => 'reviewer', 'posted_at' => now(), 'commit_sha' => $git['local']]);
+
+    $this->postJson("/api/v1/task-groups/{$group->id}/tasks", [
+        'title' => 'Follow up', 'brief' => 'Change the approved file.', 'deliverables' => [deliverable_path_file('app/LocalOnly.php')],
+    ])->assertCreated()->assertJsonPath('data.position', 2);
+    $this->postJson("/api/v1/task-groups/{$group->id}/tasks", [
+        'title' => 'Missing', 'brief' => 'Name a missing file.', 'deliverables' => [deliverable_path_file('app/Absent.php')],
+    ])->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
+    expect($origin->reads)->toBe(0);
+
+    TaskComment::query()->where('commit_sha', $git['local'])->update(['commit_sha' => str_repeat('e', 40)]);
+    $this->postJson("/api/v1/task-groups/{$group->id}/tasks", [
+        'title' => 'Unknown base', 'brief' => 'The base is in neither source.', 'deliverables' => [deliverable_path_file('app/Pushed.php')],
+    ])->assertUnprocessable()->assertJsonPath('error.code', 'tasks.deliverable_base_unavailable');
+    TestOrbitHome::clearScratch();
+});
+
+it('normalises command paths like file paths before the base check', function (string $path): void {
+    tasks_gateway();
+    enable_tasks();
+    deliverable_path_repository();
+    $project = tasks_app('command-paths');
+    $group = Task::query()->create(['project_id' => $project->id, 'title' => 'Paths', 'brief' => 'Paths.', 'status' => TaskGroupStatus::Backlog]);
+    $command = ['id' => 'repro', 'type' => 'command', 'description' => 'Reproduce.', 'command' => 'vendor/bin/pest', 'fails_on_base' => true, 'paths' => [$path]];
+
+    $this->postJson("/api/v1/task-groups/{$group->id}/tasks", ['title' => 'Repro', 'brief' => 'Repro.', 'deliverables' => [$command]])->assertCreated();
+})->with(['./tests/ExistingTest.php', 'tests//ExistingTest.php', './/tests/ExistingTest.php']);

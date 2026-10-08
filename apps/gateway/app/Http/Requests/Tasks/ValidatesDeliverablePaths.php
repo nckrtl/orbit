@@ -10,6 +10,7 @@ use App\Domain\Tasks\DeliverablePathChecker;
 use App\Domain\Tasks\DeliverablePathRepository;
 use App\Domain\Tasks\TaskReviewBase;
 use App\Domain\Tasks\TaskStatus;
+use App\Models\Instance;
 use App\Models\Project;
 use App\Models\Task;
 use Illuminate\Validation\Validator;
@@ -61,8 +62,10 @@ trait ValidatesDeliverablePaths
             if ($commit === '') {
                 $commit = app(DeliverablePathRepository::class)->defaultBranchCommit($project);
             }
+            // An approval in review-and-merge mode stays in the workspace until Orbit pushes it.
+            $workspace = $group instanceof Task && $group->taskable instanceof Instance ? $group->taskable : null;
             foreach ($lists as $prefix => $deliverables) {
-                foreach (app(DeliverablePathChecker::class)->check($project, $deliverables, $commit, $kind) as $field => $message) {
+                foreach (app(DeliverablePathChecker::class)->check($project, $deliverables, $commit, $kind, $workspace) as $field => $message) {
                     $validator->errors()->add("{$prefix}.{$field}", $message);
                 }
             }

@@ -56,7 +56,7 @@ beforeEach(function (): void {
             return str_repeat('a', 40);
         }
 
-        public function files(Project $project, string $commit): array
+        public function files(Project $project, string $commit, ?Instance $workspace = null): array
         {
             return ['docs/reference/tasks.md', 'app/Data/PantrySync/Item.php', 'resources/js/PantryIntegration.tsx', 'apps/gateway/app/Domain/Tasks/Task.php', 'apps/gateway/tests/Feature/HomeScreenTest.php'];
         }

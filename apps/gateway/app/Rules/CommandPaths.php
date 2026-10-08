@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Rules;
 
+use App\Domain\Tasks\TaskDeliverable;
 use App\Domain\Tasks\TaskDeliverableType;
 use App\Domain\Tasks\TaskDeliverableVerifier;
 use Closure;
@@ -45,6 +46,8 @@ final class CommandPaths implements DataAwareRule, ValidationRule
      */
     public static function pathViolation(string $path, array $baseFiles, array $createdPatterns, bool $failsOnBase): ?string
     {
+        // Normalise like file deliverable paths, so ./tests/A.php and tests//A.php name tests/A.php.
+        $path = (string) preg_replace('#/{2,}#', '/', TaskDeliverable::relative($path));
         if ($failsOnBase && preg_match('#(?:\A|/)tests/|Test\.php\z|\.test\.ts\z|\.spec\.ts\z|_test\.go\z#', $path) !== 1) {
             return 'must be a test file for fails_on_base';
         }

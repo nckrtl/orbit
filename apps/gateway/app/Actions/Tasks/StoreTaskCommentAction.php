@@ -12,6 +12,7 @@ use App\Domain\Tasks\TaskAgentSpawner;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskCommentType;
 use App\Domain\Tasks\TaskExecutionHold;
+use App\Domain\Tasks\TaskGroupGuard;
 use App\Domain\Tasks\TaskQuestions;
 use App\Domain\Tasks\TaskReviewPacketBuilder;
 use App\Domain\Tasks\TaskStatus;
@@ -75,6 +76,17 @@ final readonly class StoreTaskCommentAction
                 $this->log($task, $comment, 'assistance requested');
             }
             if ($type === TaskCommentType::Resolution && trim($comment->body) !== '' && $task->assistance_requested && ! $endedPullRequest) {
+                if (TaskGroupGuard::deliverableGateBlocked($group, $task)) {
+                    // Like a baseline retry, but nothing remote must be reset first: no implementer exists to
+                    // receive this resolution. Clearing assistance lets the next tick run the path gate again.
+                    $task->update([...TaskAssistance::cleared(), 'communication_failures' => 0]);
+                    if (! $group->tasks()->whereKeyNot($task->id)->where('assistance_requested', true)->exists()) {
+                        $group->update(TaskAssistance::cleared());
+                    }
+                    $this->log($task, $comment, 'resolution queued deliverable gate retry');
+
+                    return $comment;
+                }
                 if ($task->deliverable_correction_check_id !== null && $group->assistance_kind === AssistanceKind::Direction
                     && $task->assistance_kind !== AssistanceKind::Direction) {
                     return $comment;

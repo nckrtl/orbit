@@ -4912,20 +4912,21 @@ final readonly class TaskScheduler
     {
         $base = TaskReviewBase::commit($task);
         if ($base === '') {
-            $this->requestAssistance($task, $group, 'Deliverable path validation cannot start the implementer: the review base is unresolved.');
+            $this->requestAssistance($task, $group, TaskGroupGuard::DeliverableGatePrefix.'cannot start the implementer: the review base is unresolved.');
 
             return false;
         }
 
         try {
-            $errors = $this->deliverablePaths->check($group->project, $task->deliverables ?? [], $base);
+            $workspace = $group->taskable instanceof Instance ? $group->taskable : null;
+            $errors = $this->deliverablePaths->check($group->project, $task->deliverables ?? [], $base, 'resolved', $workspace);
         } catch (ResourceOperationException $exception) {
-            $this->requestAssistance($task, $group, "Deliverable path validation could not read base {$base}: ".$exception->getMessage());
+            $this->requestAssistance($task, $group, TaskGroupGuard::DeliverableGatePrefix."could not read base {$base}: ".$exception->getMessage());
 
             return false;
         }
         if ($errors !== []) {
-            $this->requestAssistance($task, $group, 'Deliverable path validation failed before implementer start. '.implode(' ', $errors));
+            $this->requestAssistance($task, $group, TaskGroupGuard::DeliverableGatePrefix.'failed before implementer start. '.implode(' ', $errors));
 
             return false;
         }

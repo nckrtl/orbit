@@ -5,12 +5,16 @@ declare(strict_types=1);
 namespace App\Domain\Tasks;
 
 use App\Domain\Shared\ResourceOperationException;
+use App\Models\AgentThread;
 use App\Models\Task;
 use App\Models\TaskCheck;
 
 /** ADR 0122: the refusals that keep Backlog preparation apart from scheduled work. */
 final class TaskGroupGuard
 {
+    /** Every assistance reason from the deliverable path gate before implementer start begins with this. */
+    public const string DeliverableGatePrefix = 'Deliverable path validation ';
+
     public static function noSubtasks(): ResourceOperationException
     {
         return new ResourceOperationException(
@@ -43,6 +47,21 @@ final class TaskGroupGuard
             message: __('A subtask of a group outside backlog needs at least one deliverable.'),
             status: 422,
         );
+    }
+
+    /**
+     * The deliverable path gate asked for assistance and no implementer exists yet, so there is no thread to resume.
+     * A resolution clears the assistance and the next tick runs the gate again. Called under the group and subtask locks.
+     */
+    public static function deliverableGateBlocked(Task $group, Task $task): bool
+    {
+        return $group->execution_mode === TaskExecutionMode::Managed && $group->status === TaskGroupStatus::Running
+            && $task->parent_id === $group->id && $task->status === TaskStatus::Running && $task->assistance_requested
+            && $task->assistance_kind !== AssistanceKind::Direction && $group->assistance_kind !== AssistanceKind::Direction
+            && is_string($task->assistance_reason) && str_starts_with($task->assistance_reason, self::DeliverableGatePrefix)
+            && $task->implementer_agent_thread_id === null
+            && ! AgentThread::query()->where('task_id', $task->id)->where('role', TaskThreadRole::Implementer->value)
+                ->where('external_id', 'not like', TaskAgentSpawner::PendingPrefix.'%')->exists();
     }
 
     /** Called under the group and subtask locks before consuming the one recovery. */
