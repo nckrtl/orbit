@@ -53,6 +53,23 @@ final readonly class ToolManifest
         ));
     }
 
+    /**
+     * Names the tool list the server offers now: the generated manifest and the enabled extensions that filter
+     * it. A release that changes the manifest, or an extension switch, gives a new version.
+     */
+    public function version(): string
+    {
+        $contents = @file_get_contents($this->path);
+
+        if (! is_string($contents)) {
+            throw new InvalidArgumentException("The MCP tool manifest is missing at {$this->path}.");
+        }
+
+        $enabled = array_keys(array_filter(app(ExtensionStore::class)->all()));
+
+        return substr(hash('sha256', $contents."\n".implode(',', $enabled)), 0, 16);
+    }
+
     /** @return list<ApiOperationTool> */
     public function tools(ApiDispatcher $dispatcher): array
     {

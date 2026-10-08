@@ -27,6 +27,18 @@ Both endpoints speak MCP over streamable HTTP and offer the same catalogue. Thei
 
 One MCP request has one 570-second command deadline, the same deadline as one API request. PHP-FPM ends a Gateway request after 600 seconds. All tool calls in one `execute_tools` batch share that deadline. A tool call cannot extend or reset it. Forward work stops 20 seconds before the deadline, which leaves that time for cleanup. A call that starts after the batch has used up its forward time returns the tool error `command.deadline_exceeded` (status 504) and does not run. The batch then stops at that call. Send long tools, such as `gateway-release-smoke` or `instance-deploy`, as separate requests.
 
+## Tool list changes
+
+The `/mcp` server declares `tools.listChanged`. A release that changes `tools.json`, or an [extension](/cli/extension) switch, changes the tool list. The Gateway does not push that change. It ends the sessions that were opened under the old list instead:
+
+- `initialize` returns an `Mcp-Session-Id` header. The id starts with the tool list version.
+- A request whose session id names an older version receives HTTP 404 with the JSON-RPC error `-32001` `Session not found`. The Gateway does not run that request.
+- The client then sends `initialize` again without a session id and lists the tools again. Claude Code does this itself and retries the tool call once.
+
+A release that leaves the tool list unchanged keeps the sessions open. A request without a session id is served as before. The Gateway stores no session state.
+
+A `server/discover` probe receives only the protocol versions that use `initialize`, so a client that probes falls back to `initialize` and gets a session. Requests in the 2026-07-28 revision still work, but a client on that revision is not told of a new tool list until it connects again. `/mcp/search` lists the same two tools after every change, and `search_tools` always searches the current catalogue, so it does not end sessions.
+
 ## Identity and access
 
 The caller is the Node whose WireGuard address the connection comes from. There is no token and no login.
@@ -112,6 +124,10 @@ The API identifies a caller by WireGuard address. A second credential would crea
 ### No MCP server in the CLI
 
 An MCP server that wraps CLI commands keeps the process start and the CLI install on the agent's machine, and parses output that the API already returns as JSON.
+
+### Sessions end instead of a pushed notification
+
+A pushed `notifications/tools/list_changed` needs a stream that stays open: `GET /mcp` in the `initialize` revisions, or `subscriptions/listen` in the 2026-07-28 revision. Each open stream would hold one of the Gateway's eight PHP-FPM workers, and PHP-FPM ends every request after 600 seconds. A session id that names the tool list version needs no stream and no stored state, and every client that follows the streamable HTTP transport opens a new session after a 404.
 
 ### Typed tools, not one command tool
 

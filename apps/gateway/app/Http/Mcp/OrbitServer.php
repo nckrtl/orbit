@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Mcp;
 
+use App\Http\Middleware\ExpireOutdatedMcpSessions;
 use Laravel\Mcp\Server;
 
 /**
@@ -19,6 +20,19 @@ class OrbitServer extends Server
 
     #[\Override]
     protected string $version = '1.0.0';
+
+    /**
+     * The tool list changes when a release changes the manifest or an extension is switched. A client then
+     * learns of it when its session ends ({@see ExpireOutdatedMcpSessions}).
+     *
+     * @var array<string, array<string, bool>>
+     */
+    #[\Override]
+    protected array $capabilities = [
+        self::CAPABILITY_TOOLS => ['listChanged' => true],
+        self::CAPABILITY_RESOURCES => ['listChanged' => false],
+        self::CAPABILITY_PROMPTS => ['listChanged' => false],
+    ];
 
     /** One page holds the whole catalogue, so a client lists every tool in one request. */
     #[\Override]
@@ -42,6 +56,7 @@ class OrbitServer extends Server
     protected function boot(): void
     {
         $this->methods['tools/call'] = ExtensionAwareCallTool::class;
+        $this->methods['server/discover'] = InitializeHandshakeDiscover::class;
         $this->tools = $this->catalogue();
     }
 

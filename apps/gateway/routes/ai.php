@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Http\Mcp\OrbitSearchServer;
 use App\Http\Mcp\OrbitServer;
+use App\Http\Middleware\ExpireOutdatedMcpSessions;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Middleware\StartRequestDeadline;
 use App\Http\Middleware\ValidateMcpPostSize;
@@ -12,8 +13,9 @@ use Laravel\Mcp\Facades\Mcp;
 // Both servers list or search the same catalogue. The peer check here keeps the catalogue itself private
 // to the fleet; each tool call repeats it, with directed node access, inside the API request it runs.
 // One command deadline covers the whole MCP request, so a batch of long tool calls cannot outlast PHP-FPM.
+// A /mcp session ends when the tool list changes, so the client lists the tools again.
 Mcp::web('/mcp', OrbitServer::class)
-    ->middleware([RequireActiveWireGuardPeer::class, ValidateMcpPostSize::class, StartRequestDeadline::class])
+    ->middleware([RequireActiveWireGuardPeer::class, ValidateMcpPostSize::class, ExpireOutdatedMcpSessions::class, StartRequestDeadline::class])
     ->name('mcp:tools');
 
 Mcp::web('/mcp/search', OrbitSearchServer::class)

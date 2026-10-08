@@ -205,6 +205,72 @@ describe('POST /mcp', function (): void {
     });
 });
 
+describe('/mcp sessions', function (): void {
+    beforeEach(function (): void {
+        $this->initialize = fn (): TestResponse => mcp_call($this, 'initialize', [
+            'protocolVersion' => '2025-06-18',
+            'capabilities' => (object) [],
+            'clientInfo' => ['name' => 'pest', 'version' => '1.0.0'],
+        ]);
+    });
+
+    it('declares tool list changes and names the tool list in the session id', function (): void {
+        $response = ($this->initialize)();
+
+        expect($response->json('result.capabilities.tools.listChanged'))->toBeTrue()
+            ->and($response->headers->get('Mcp-Session-Id'))->toMatch('/\A[0-9a-f]{16}\.[0-9a-f]{32}\z/');
+
+        $session = $response->headers->get('Mcp-Session-Id');
+
+        $this->withHeader('Mcp-Session-Id', $session);
+        $listed = mcp_call($this, 'tools/list');
+
+        $listed->assertOk();
+        expect($listed->json('result.tools'))->not->toBeEmpty()
+            ->and($listed->headers->has('Mcp-Session-Id'))->toBeFalse();
+    });
+
+    it('ends a session opened under an older tool list so the client lists the tools again', function (): void {
+        $session = ($this->initialize)()->headers->get('Mcp-Session-Id');
+        $this->postJson('/api/v1/extensions/tasks/enable')->assertOk();
+        $this->withHeader('Mcp-Session-Id', $session);
+
+        $response = mcp_call($this, 'tools/call', ['name' => 'node-list', 'arguments' => (object) []]);
+
+        $response->assertNotFound()
+            ->assertExactJson(['jsonrpc' => '2.0', 'id' => null, 'error' => ['code' => -32001, 'message' => 'Session not found']]);
+        expect(Activity::query()->where('command', 'node:list')->exists())->toBeFalse();
+
+        $this->flushHeaders();
+        $renewed = ($this->initialize)()->headers->get('Mcp-Session-Id');
+        $this->withHeader('Mcp-Session-Id', $renewed);
+        $names = array_column(mcp_call($this, 'tools/list')->json('result.tools'), 'name');
+
+        expect($renewed)->not->toBe($session)
+            ->and($names)->toContain('tasks-create');
+    });
+
+    it('keeps serving a client that has no session id', function (): void {
+        mcp_call($this, 'tools/list')->assertOk();
+    });
+
+    it('offers only the initialize handshake to a client that probes with server/discover', function (): void {
+        $response = $this->withHeaders(['MCP-Protocol-Version' => '2026-07-28', 'Mcp-Method' => 'server/discover'])->postJson('/mcp', [
+            'jsonrpc' => '2.0',
+            'id' => 1,
+            'method' => 'server/discover',
+            'params' => ['_meta' => [
+                'io.modelcontextprotocol/protocolVersion' => '2026-07-28',
+                'io.modelcontextprotocol/clientCapabilities' => (object) [],
+            ]],
+        ]);
+
+        $response->assertOk();
+        expect($response->json('result.supportedVersions'))->not->toBeEmpty()->not->toContain('2026-07-28')
+            ->and($response->json('result.capabilities.tools.listChanged'))->toBeTrue();
+    });
+});
+
 describe('POST /mcp/search', function (): void {
     it('offers the catalogue through search_tools and execute_tools', function (): void {
         $tools = mcp_message(mcp_call($this, 'tools/list', [], '/mcp/search'));
