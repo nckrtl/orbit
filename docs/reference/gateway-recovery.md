@@ -110,7 +110,9 @@ Name the commit by its hex SHA, 7 to 40 characters. Branch names, tags, and othe
 
 Every artisan command of a release runs with a clean environment that has only `HOME`, `PATH`, and `LANG`, so the release reads its configuration from the shared env file alone. These commands, and `composer install`, hold `ORBIT_HOME/gateway-release-step.lock` while they run. When the process that started one dies, for example with its SSH session, the command still finishes. Until it has, the next release step is refused with `gateway.release_in_progress`.
 
-Only a release with a `REVISION` file is prepared. When the configuration cannot be cached, prepare removes `REVISION` again. The Gateway runs with a cached configuration, so a change to the shared env file takes effect only after [`gateway:release:configure`](#apply-an-env-change). A release that already has it is reused without another build step. Only its web build is installed again when it is missing. A partial release from a failed or interrupted prepare is removed and built again on the next run. It never touches the current release link, the database, or a running service.
+Only a release with a `REVISION` file is prepared. When the configuration cannot be cached, prepare removes `REVISION` again. The Gateway runs with a cached configuration, so a change to the shared env file takes effect only after [`gateway:release:configure`](#apply-an-env-change). A release that already has it is reused without another build step. Only its web build is installed again when it is missing. A partial release from a failed or interrupted prepare is removed and built again on the next run of the same commit, or [pruned](#deploy-a-release) by a later verified release once it is 1 hour old.
+
+Prepare never touches the current release link, the database, or a running service.
 
 Prepare refuses before it fetches or writes when the releases directory has less free space than `ORBIT_GATEWAY_RELEASE_MIN_FREE_MB`, 1024 MiB by default. Each release has its own `vendor/` directories. Releases share the Git objects in `shared/orbit.git`, so a release costs about the size of its source and its two `vendor/` directories, about 115 MB without development packages.
 
@@ -196,6 +198,10 @@ Smoke does not run before the web switch. Any failure after the switch counts, a
 To decide, deploy compares the migrations the database has applied with the previous release's files, never with what is pending now. A killed attempt of the same commit can leave such a migration.
 
 After a verified release, deploy removes old releases. It keeps the newest `ORBIT_GATEWAY_RELEASES_KEEP` releases (default 5), and always the current and the previous one.
+
+It also removes each release directory without `REVISION` that is more than 1 hour old, with its web build. Such a directory is left by a prepare that stopped, for example an adoption that lacked a GitHub App permission, and no later prepare of another commit removes it. Every prepare holds the release lock, and so does deploy while it prunes, so no prepare is writing to the directory. The age is a margin on top.
+
+Deploy keeps an incomplete directory that is the current or the previous release, because that release needs a repair. It also keeps a directory whose `REVISION` names another commit. Remove that one by hand. A directory that cannot be removed stays, and each verified release logs a warning with its id.
 
 #### Migrations and the snapshot
 

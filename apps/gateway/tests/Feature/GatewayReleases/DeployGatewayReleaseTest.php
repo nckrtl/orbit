@@ -9,6 +9,7 @@ use App\Actions\GatewayReleases\SmokeGatewayReleaseAction;
 use App\Domain\Fleet\FleetConvergeUnits;
 use App\Domain\GatewayReleases\GatewayReleaseDatabase;
 use App\Domain\GatewayReleases\GatewayReleaseException;
+use App\Domain\GatewayReleases\GatewayReleaseLayout;
 use App\Domain\GatewayReleases\GatewayReleaseRuntime;
 use App\Domain\GatewayReleases\GatewayReleaseSmoke;
 use App\Domain\GatewayReleases\GatewayReleaseVerifier;
@@ -411,6 +412,74 @@ describe('gateway:release:deploy', function (): void {
         release_deployer($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order), recording_smoke($order))->execute($sha);
 
         expect($order->pruned)->toEqualCanonicalizing([$first, substr($sha, 0, 12)]);
+    });
+
+    it('removes a stale release directory without REVISION and its web build, and keeps a fresh one', function (): void {
+        adopt_release($this->fixture);
+        $sha = $this->fixture->commit('Release that prunes a stopped prepare');
+        $order = new ReleaseSteps;
+        $stale = $this->fixture->layout->releasePath('aaaaaaaaaaaa');
+        $fresh = $this->fixture->layout->releasePath('bbbbbbbbbbbb');
+        $conflict = $this->fixture->layout->releasePath('cccccccccccc');
+
+        foreach ([$stale, $fresh, $conflict] as $path) {
+            mkdir($path.'/apps/gateway/vendor', 0755, true);
+            file_put_contents($path.'/apps/gateway/vendor/autoload.php', '<?php');
+        }
+
+        file_put_contents($conflict.'/REVISION', str_repeat('d', 40)."\n");
+        // A prepare that stopped can leave read-only files behind.
+        chmod($stale.'/apps/gateway/vendor', 0o555);
+        touch($stale, time() - GatewayReleasePromoter::IncompleteReleaseSeconds - 60);
+        touch($conflict, time() - GatewayReleasePromoter::IncompleteReleaseSeconds - 60);
+        touch($fresh, time() - GatewayReleasePromoter::IncompleteReleaseSeconds + 600);
+
+        $deployed = release_deployer($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order), recording_smoke($order))->execute($sha);
+
+        expect($deployed->outcome)->toBe('verified')
+            ->and(file_exists($stale))->toBeFalse()
+            ->and(is_dir($fresh))->toBeTrue()
+            ->and(is_dir($conflict))->toBeTrue()
+            ->and($order->steps)->toContain('web:remove:aaaaaaaaaaaa')
+            ->and($order->steps)->not->toContain('web:remove:bbbbbbbbbbbb')
+            ->and($order->steps)->not->toContain('web:remove:cccccccccccc')
+            ->and($this->fixture->layout->incompleteReleaseIds())->toBe(['bbbbbbbbbbbb']);
+    });
+
+    it('keeps an incomplete release directory that is current or previous', function (): void {
+        adopt_release($this->fixture);
+        $sha = $this->fixture->commit('Release over an incomplete current one');
+        $order = new ReleaseSteps;
+        $smoke = new readonly class($this->fixture->layout) implements GatewayReleaseSmoke
+        {
+            public function __construct(private GatewayReleaseLayout $layout) {}
+
+            public function run(string $id, string $sha, ?DateTimeImmutable $since = null, array $skip = []): array
+            {
+                // The switch made this release current; take its REVISION away and age it, as a broken repair would.
+                chmod($this->layout->releasePath($id), 0o755);
+                unlink($this->layout->releasePath($id).'/REVISION');
+                touch($this->layout->releasePath($id), time() - GatewayReleasePromoter::IncompleteReleaseSeconds - 60);
+
+                return ['outcome' => 'passed', 'report' => ['passed' => true]];
+            }
+        };
+
+        $deployed = release_deployer($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order), $smoke)->execute($sha);
+
+        expect($deployed->outcome)->toBe('verified')
+            ->and($this->fixture->layout->currentReleaseId())->toBe(substr($sha, 0, 12))
+            ->and(is_dir($this->fixture->layout->releasePath(substr($sha, 0, 12))))->toBeTrue()
+            ->and($this->fixture->layout->incompleteReleaseIds())->toBe([substr($sha, 0, 12)])
+            ->and($order->steps)->not->toContain('web:remove:'.substr($sha, 0, 12));
+
+        $next = $this->fixture->commit('Release over an incomplete previous one');
+        $deployed = release_deployer($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order), recording_smoke($order))->execute($next);
+
+        expect($deployed->outcome)->toBe('verified')
+            ->and($deployed->previousId)->toBe(substr($sha, 0, 12))
+            ->and(is_dir($this->fixture->layout->releasePath(substr($sha, 0, 12))))->toBeTrue()
+            ->and($order->steps)->not->toContain('web:remove:'.substr($sha, 0, 12));
     });
 
     it('skips pruning web builds when the releases directory cannot be read', function (): void {
