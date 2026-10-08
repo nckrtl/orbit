@@ -13,6 +13,7 @@ use App\Infrastructure\GatewayReleases\GatewayReleaseLock;
 use App\Infrastructure\GatewayReleases\GatewayReleaseRecorder;
 use App\Infrastructure\GatewayReleases\ScriptGatewayReleaseSmoke;
 use App\Infrastructure\GatewayReleases\SystemdGatewayReleaseUnitStarter;
+use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
@@ -155,7 +156,7 @@ function gateway_smoke_api(GatewayReleaseLayout $layout, RecordedSmokeProcesses 
         origin: 'https://gateway.orbit',
         webRoot: '/home/orbit/web',
         timeoutSeconds: $timeout,
-    )));
+    ), app(CommandDeadline::class)));
 }
 
 /** A release layout with a current release and a retained target, without Git. */
@@ -504,16 +505,50 @@ describe('gateway release API', function (): void {
             ->assertJsonPath('error.code', 'gateway.release_smoke_failed');
     });
 
-    it('lowers a long smoke limit so the run ends before PHP-FPM ends the request', function (): void {
+    it('lowers a long smoke limit so the run ends within the command deadline of the request', function (): void {
         $processes = new RecordedSmokeProcesses(new CommandResult(0, json_encode(gateway_smoke_report(true), JSON_THROW_ON_ERROR), '', 42_000, false));
         gateway_smoke_api($this->layout, $processes, timeout: 600);
 
         $this->postJson('/api/v1/gateway/release-smoke', ['commit' => null, 'since' => null])->assertOk();
 
-        expect(array_slice($processes->arguments, 7, 2))->toBe(['--timeout', '540'])
-            ->and($processes->arguments[3])->toBe('555')
-            ->and($processes->timeout)->toBeLessThanOrEqual((float) SmokeGatewayReleaseAction::RequestSeconds)
-            ->and(SmokeGatewayReleaseAction::RequestSeconds)->toBeLessThan(600);
+        // The request's deadline is 570 seconds with a 20-second cleanup reserve, inside PHP-FPM's 600.
+        expect($processes->arguments[7])->toBe('--timeout')
+            ->and((int) $processes->arguments[8])->toBeBetween(510, 520)
+            ->and((int) $processes->arguments[3])->toBe((int) $processes->arguments[8] + 15)
+            ->and($processes->timeout)->toBeLessThanOrEqual(550.0);
+
+        // A deadline that already runs, with less time left, bounds the run too.
+        app(CommandDeadline::class)->start(200.0, CommandDeadline::CleanupReserveSeconds);
+        $this->postJson('/api/v1/gateway/release-smoke', ['commit' => null, 'since' => null])->assertOk();
+        app(CommandDeadline::class)->clear();
+
+        expect((int) $processes->arguments[8])->toBeBetween(140, 150)
+            ->and($processes->timeout)->toBeLessThanOrEqual(180.0);
+    });
+
+    it('keeps a smoke that was terminated an error, not a failed result', function (): void {
+        gateway_smoke_api($this->layout, new RecordedSmokeProcesses(new CommandResult(143, '{"schema":1,"passed":false,"error":"terminated"}', '', 300, false)));
+
+        $this->postJson('/api/v1/gateway/release-smoke', ['commit' => null, 'since' => null])->assertStatus(500)
+            ->assertJsonPath('error.code', 'gateway.release_smoke_failed');
+    });
+
+    it('refuses a smoke while another one runs', function (): void {
+        $processes = new RecordedSmokeProcesses(new CommandResult(0, json_encode(gateway_smoke_report(true), JSON_THROW_ON_ERROR), '', 42_000, false));
+        gateway_smoke_api($this->layout, $processes);
+        $held = fopen($this->base.'/home/gateway-release-smoke.lock', 'c');
+        flock($held, LOCK_EX);
+
+        try {
+            $this->postJson('/api/v1/gateway/release-smoke', ['commit' => null, 'since' => null])->assertStatus(409)
+                ->assertJsonPath('error.code', 'gateway.release_smoke_in_progress');
+        } finally {
+            flock($held, LOCK_UN);
+            fclose($held);
+        }
+
+        expect($processes->arguments)->toBe([]);
+        $this->postJson('/api/v1/gateway/release-smoke', ['commit' => null, 'since' => null])->assertOk();
     });
 
     it('refuses an invalid commit, a time without a zone, and an unknown body field', function (): void {

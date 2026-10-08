@@ -282,7 +282,9 @@ Run the same smoke by hand against the live Gateway. It runs `bin/gateway-smoke`
 orbit gateway:release:smoke [<SHA>] [--since=<TIME>]
 ```
 
-From any Node with access to the Gateway, [`orbit gateway:release:smoke`](/cli/gateway#orbit-gatewayreleasesmoke) asks the Gateway to run it. Smoke restarts nothing and writes no record, so it runs inside the API request, unlike a deploy. PHP-FPM ends a request after 600 seconds, so the API lowers the smoke limit to 540 seconds at most. With the 15-second grace period and the stop and kill delays, the run ends before PHP-FPM ends the request. The default limit of 90 seconds stays as it is. Checks that did not pass answer with the `failed` outcome and the report, and the CLI exits 1.
+From any Node with access to the Gateway, [`orbit gateway:release:smoke`](/cli/gateway#orbit-gatewayreleasesmoke) asks the Gateway to run it. Smoke restarts nothing and writes no record, so it runs inside the API request, unlike a deploy. An API request gets 570 seconds, 20 of them reserved for cleanup, and PHP-FPM ends it after 600. So the API lowers the smoke limit to what the request has left, about 520 seconds at most. With the 15-second grace period and the stop and kill delays, the run ends within the request. The default limit of 90 seconds stays as it is.
+
+Checks that did not pass answer with the `failed` outcome and the report, and the CLI exits 1. One API smoke runs at a time, because a run and its checks hold several PHP-FPM workers. A second one fails with `gateway.release_smoke_in_progress`.
 
 On the Gateway host, the Artisan command runs the same smoke without the lower limit:
 
@@ -354,6 +356,7 @@ The unit runs `gateway:release:run <record>`, which claims the record and runs t
 | `gateway.release_smoke_timeout` | Smoke ran past its limit and was stopped. |
 | `gateway.release_smoke_killed` | Smoke was killed before its limit by something else, such as the kernel's out-of-memory killer. |
 | `gateway.release_smoke_missing` | The release has no `bin/gateway-smoke`. |
+| `gateway.release_smoke_in_progress` | Another smoke run through the API is in progress. |
 | `gateway.release_switch_back_failed` | The failure was real, and returning to the previous release also failed. |
 | `gateway.release_configuration_failed` | The release's configuration could not be cached again. It runs before migrations, so nothing changed. |
 | `gateway.release_unexpected_failure` | A step failed with an error the release code did not expect. The message names it. |

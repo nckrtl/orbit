@@ -4912,7 +4912,7 @@
         "tags": [
           "Gateway"
         ],
-        "description": "Runs `bin/gateway-smoke` of the current release against the live Gateway, for the current commit or the `commit` you name, and answers when it ends. `since` is the runtime handoff time, ISO 8601 with a zone. Smoke restarts nothing and writes no release record, so it runs inside the request: its limit, `ORBIT_GATEWAY_RELEASE_SMOKE_TIMEOUT`, is lowered to 540 seconds at most so the run ends before PHP-FPM ends the request. Checks that did not pass answer 200 with `outcome` `failed` and the report; a smoke that printed no report, ran past its limit, or is missing is an error. See /reference/gateway-recovery#smoke.",
+        "description": "Runs `bin/gateway-smoke` of the current release against the live Gateway, for the current commit or the `commit` you name, and answers when it ends. `since` is the runtime handoff time, ISO 8601 with a zone. Smoke restarts nothing and writes no release record, so it runs inside the request: its limit, `ORBIT_GATEWAY_RELEASE_SMOKE_TIMEOUT`, is lowered to what the request's command deadline has left, about 520 seconds at most, so the run ends before PHP-FPM ends the request. One smoke runs at a time; another answers 409 `gateway.release_smoke_in_progress`. Checks that did not pass answer 200 with `outcome` `failed` and the report; a smoke that printed no report, ran past its limit, or is missing is an error. See /reference/gateway-recovery#smoke.",
         "requestBody": {
           "required": false,
           "content": {
