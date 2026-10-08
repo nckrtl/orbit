@@ -16,6 +16,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteRemovalGuard;
+use App\Domain\Routes\RouteRemovalProjector;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -25,6 +26,7 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
 use App\Models\RouteTarget;
+use Tests\Support\FakeRouteRemovalProjector;
 
 beforeEach(function (): void {
     $this->orbitApp = Project::query()->create([
@@ -209,11 +211,16 @@ it('eligible Route removal deletes only owned target rows and releases unrelated
         'repository_url' => 'https://example.test/other.git',
     ]);
 
+    $projector = new FakeRouteRemovalProjector;
+    app()->instance(RouteRemovalProjector::class, $projector);
+
     $this->instance->update(['status' => InstanceState::Reserved]);
     app(RemoveRouteAction::class)->execute($this->route);
 
     expect(Route::query()->count())
         ->toBe(0)
+        ->and($projector->events)
+        ->toBe(['dns', 'caddy', 'certificates', 'firewall', 'php'])
         ->and(RouteTarget::query()->count())
         ->toBe(0)
         ->and($this->instance->fresh())

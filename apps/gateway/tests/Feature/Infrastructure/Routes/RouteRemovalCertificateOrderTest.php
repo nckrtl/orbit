@@ -2,9 +2,11 @@
 
 declare(strict_types=1);
 
+use App\Domain\AppDev\AppDevPhpFpmManager;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Clusters\ClusterState;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
@@ -16,6 +18,7 @@ use App\Domain\Routes\RouteStatus;
 use App\Domain\Routes\RouteTargetSetStep;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AppDev\DevelopmentDnsConfigRenderer;
+use App\Infrastructure\AppDev\DevelopmentSite;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
@@ -34,6 +37,7 @@ use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Cluster;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
@@ -63,7 +67,8 @@ beforeEach(function (): void {
     config()->set('orbit.home', $this->removalHome);
     $this->nodes = new CertificateOrderNodes;
     $this->dnsRuns = new CertificateOrderDnsRunner;
-    certificate_order_bind_projectors($this->nodes, $this->dnsRuns);
+    $this->php = new CertificateOrderPhpFpm;
+    certificate_order_bind_projectors($this->nodes, $this->dnsRuns, $this->php);
     $this->beast = certificate_order_node('beast', 7, RoleName::AppDev);
 });
 
@@ -150,6 +155,61 @@ describe('Route removal certificate order', function (): void {
             ->and($this->nodes->names('10.44.0.20', "route-{$route->id}-router"))->toBeFalse()
             ->and($this->nodes->hasCertificate('10.44.0.20', "route-{$route->id}-router"))->toBeFalse()
             ->and($this->nodes->removedWhileNamed)->toBe([])
+            ->and($this->nodes->validates('10.44.0.20'))->toBeTrue();
+    });
+
+    it('withdraws a published pending targeted Route before it deletes the record', function (): void {
+        // The incident state: a task workspace Route whose Instance resolved its source has published
+        // its sites, so its workload and Router sites, certificates, firewall rule, and PHP-FPM pool
+        // are live while the Route is still pending.
+        $cluster = Cluster::query()->create(['name' => 'lab', 'state' => ClusterState::Active]);
+        $router = certificate_order_node('router', 20, RoleName::Router, $cluster);
+        $worker = certificate_order_node('worker', 30, RoleName::AppDev, $cluster);
+        $project = Project::query()->create([
+            'name' => 'Acme',
+            'slug' => 'acme',
+            'repository_url' => 'https://example.test/acme.git',
+            'root' => 'public',
+        ]);
+        $instance = Instance::query()->create([
+            'project_id' => $project->id,
+            'node_id' => $worker->id,
+            'name' => 'task-342',
+            'checkout_path' => '/srv/acme/task-342',
+            'branch' => 'task-342',
+            'starting_commit' => str_repeat('a', 40),
+            'selected_php_version' => '8.5',
+            'status' => InstanceState::SourceResolved,
+        ]);
+        $route = Route::query()->create([
+            'project_id' => $project->id,
+            'cluster_id' => $cluster->id,
+            'domain' => 'task-342.acme.test',
+            'provenance' => RouteProvenance::Explicit,
+            'publication' => RoutePublication::Private,
+            'status' => RouteStatus::Pending,
+        ]);
+        $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
+        $route->publishSites();
+        $this->nodes->issue('10.44.0.30', "app-instance-{$instance->id}");
+        $this->nodes->issue('10.44.0.20', "route-{$route->id}-router");
+        certificate_order_caddy()->converge($worker);
+        certificate_order_caddy()->converge($router);
+
+        expect($this->nodes->names('10.44.0.30', "app-instance-{$instance->id}"))->toBeTrue()
+            ->and($this->nodes->names('10.44.0.20', "route-{$route->id}-router"))->toBeTrue();
+
+        $this->deleteJson("/api/v1/routes/{$route->id}")->assertOk();
+
+        expect(Route::query()->whereKey($route->id)->exists())->toBeFalse()
+            ->and($instance->refresh()->status)->toBe(InstanceState::SourceResolved)
+            ->and($this->nodes->names('10.44.0.30', "app-instance-{$instance->id}"))->toBeFalse()
+            ->and($this->nodes->names('10.44.0.20', "route-{$route->id}-router"))->toBeFalse()
+            ->and($this->nodes->hasCertificate('10.44.0.20', "route-{$route->id}-router"))->toBeFalse()
+            ->and($this->nodes->firewallRemovals)->toContain("10.44.0.30:orbit:route-{$route->id}-lan")
+            ->and($this->php->converged)->toBe(['worker' => []])
+            ->and($this->nodes->removedWhileNamed)->toBe([])
+            ->and($this->nodes->validates('10.44.0.30'))->toBeTrue()
             ->and($this->nodes->validates('10.44.0.20'))->toBeTrue();
     });
 
@@ -271,8 +331,11 @@ function certificate_order_node(string $name, int $octet, RoleName $role, ?Clust
     return $node;
 }
 
-function certificate_order_bind_projectors(CertificateOrderNodes $nodes, CertificateOrderDnsRunner $dnsRuns): void
-{
+function certificate_order_bind_projectors(
+    CertificateOrderNodes $nodes,
+    CertificateOrderDnsRunner $dnsRuns,
+    CertificateOrderPhpFpm $php,
+): void {
     $executor = new DevelopmentSshExecutor(
         $nodes,
         new class implements SshKeyProvider
@@ -331,7 +394,7 @@ function certificate_order_bind_projectors(CertificateOrderNodes $nodes, Certifi
     );
     app()->instance(
         RouteRemovalProjector::class,
-        new NativeRouteRemovalProjector($dns, $certificates, $caddy, new RemoteAppDevRouteFirewallManager($executor)),
+        new NativeRouteRemovalProjector($dns, $certificates, $caddy, new RemoteAppDevRouteFirewallManager($executor), $php),
     );
 }
 
@@ -359,6 +422,9 @@ final class CertificateOrderNodes implements SshExecutor
 
     /** @var list<string> */
     public array $removedWhileNamed = [];
+
+    /** @var list<string> */
+    public array $firewallRemovals = [];
 
     public ?string $failCaddy = null;
 
@@ -393,6 +459,10 @@ final class CertificateOrderNodes implements SshExecutor
             }
 
             unset($this->certificates[$host][$scope]);
+        }
+
+        if (str_contains($input, 'sudo ufw --force delete')) {
+            $this->firewallRemovals[] = "{$host}:{$command->arguments[3]}";
         }
 
         return new CommandResult(0, '', '', 1, false);
@@ -451,5 +521,22 @@ final class CertificateOrderDnsRunner implements ProcessRunner
         }
 
         return new CommandResult(0, '', '', 1, false);
+    }
+}
+
+/** Records each PHP-FPM converge with the PHP sites stored state renders on that Node at that moment. */
+final class CertificateOrderPhpFpm implements AppDevPhpFpmManager
+{
+    /** @var array<string, list<string>> */
+    public array $converged = [];
+
+    public function converge(Node $node): void
+    {
+        $this->converged[$node->name] = new DevelopmentSiteRepository()
+            ->forNode($node)
+            ->filter(static fn (DevelopmentSite $site): bool => $site->phpVersion !== null)
+            ->map(static fn (DevelopmentSite $site): string => $site->domain)
+            ->values()
+            ->all();
     }
 }

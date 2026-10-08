@@ -418,11 +418,15 @@ The grace period covers clients whose resolver honors the TTL, such as systemd-r
 
 ## Remove a Route
 
-`route:destroy` removes an untargeted Route. The Gateway refuses a Route whose public edge is live, and a Route in a replacement pair, with `route.reconciliation_required`. Removal clears the site publication flag, then runs these steps in order: remove DNS records, withdraw the Caddy sites, remove the certificates, remove firewall rules, and delete the record. A failure keeps the Route with `failed_step` and `error_code`. Repeat the same command to retry. The retry runs every step again from the start, and clears the failure once the failed step passes.
+`route:destroy` removes a Route and its projections. The Gateway refuses a Route whose public edge is live, and a Route in a replacement pair, with `route.reconciliation_required`. Removal clears the site publication flag and sets the Route `retiring`. Then it runs these steps in order: remove DNS records, withdraw the Caddy sites, remove the certificates, remove firewall rules, converge PHP-FPM on each target Node, and delete the record. A failure keeps the Route `failed` with `failed_step` and `error_code`. Repeat the same command to retry. The retry runs every step again from the start, and clears the failure once the failed step passes.
 
 Removal releases the domain at once. The Node's shared runtime and Caddy service stay.
 
-A targeted Route can be removed only when none of its Instances is active and the Route is not `active`. The Gateway then deletes the record directly, without the DNS, Caddy, certificate, and firewall steps. Instance removal deletes a Route whose last target it removes, before it finalizes the source. A development removal first serves `503 Orbit Route unavailable` for the Route from stored state. Then it clears the site publication, builds Caddy without the Route, removes the Instance and Router certificates, and deletes the Route. A production removal republishes the remaining pool when a shared Route keeps other targets. [Instance removal](/reference/instance-removal) owns the cascade.
+A targeted Route can be removed only when none of its Instances is active and the Route is not `active`. It runs the same steps, so a `pending` Route that already published its sites leaves nothing live on its Nodes. A task workspace whose source resolved is an example. The Caddy and firewall steps include every target Node. The PHP-FPM step converges each Node of a development target. A production target keeps its dedicated PHP-FPM service, and every target keeps its Instance certificate, until [Instance removal](/reference/instance-removal). The Instances stay without a Route.
+
+A targeted removal records its failed step with the prefix `targeted:`, for example `targeted:caddy`. A retry of the same removal resumes it. A Route whose untargeted removal failed and that has gained a target since then is refused with `env.owner_changed`.
+
+Instance removal deletes a Route whose last target it removes, before it finalizes the source. A development removal first serves `503 Orbit Route unavailable` for the Route from stored state. Then it clears the site publication, builds Caddy without the Route, removes the Instance and Router certificates, and deletes the Route. A production removal republishes the remaining pool when a shared Route keeps other targets. [Instance removal](/reference/instance-removal) owns the cascade.
 
 | Removal | Guard |
 | --- | --- |

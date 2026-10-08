@@ -80,13 +80,21 @@ final readonly class RemoveRouteAction
         return $result;
     }
 
-    /** @param list<int> $expectedTargetIds */
+    /**
+     * A targeted Route can be removed once none of its Instances is active. It withdraws its
+     * projections like an untargeted Route, and also converges PHP-FPM on its target Nodes, so a
+     * pending Route that published its sites leaves no site, certificate, DNS name, firewall rule,
+     * or pool behind.
+     *
+     * @param  list<int>  $expectedTargetIds
+     */
     private function executeOwned(Route $route, array $expectedTargetIds, bool $allowTracking): Route
     {
         $locked = $this->lockAndGuard($route, $expectedTargetIds);
+        $targeted = $locked->targets->isNotEmpty();
 
-        if ($locked->targets->isNotEmpty()) {
-            if (RouteRemovalStep::tryFrom((string) $locked->failed_step) instanceof RouteRemovalStep) {
+        if ($targeted) {
+            if (RouteRemovalStep::isUntargetedFailure($locked->failed_step)) {
                 throw new ResourceOperationException(
                     errorCode: 'env.owner_changed',
                     message: 'The Instance environment owner changed during the operation.',
@@ -96,9 +104,6 @@ final readonly class RemoveRouteAction
 
             $this->associations->assertTargetsDetachable($locked);
             $this->reconciliation->assertRouteMutable($locked);
-            $locked->delete();
-
-            return $locked;
         }
 
         $this->assertStandaloneRemovalAllowed($locked, $allowTracking);
@@ -121,11 +126,19 @@ final readonly class RemoveRouteAction
             $this->cleanupStep($locked, $failureStep, function () use ($locked): void {
                 $this->projection->cleanupFirewall($locked);
             });
+
+            if ($targeted) {
+                $failureStep = RouteRemovalStep::Php;
+                $this->cleanupStep($locked, $failureStep, function () use ($locked): void {
+                    $this->projection->cleanupPhp($locked);
+                });
+            }
+
             $failureStep = RouteRemovalStep::Record;
 
             return $this->deleteRecord($locked, $expectedTargetIds, $allowTracking);
         } catch (Throwable $exception) {
-            $this->recordFailure($locked, $failureStep, $this->errorCode($exception));
+            $this->recordFailure($locked, $failureStep->failedStep($targeted), $this->errorCode($exception));
 
             throw $exception;
         }
@@ -222,6 +235,11 @@ final readonly class RemoveRouteAction
         $removed = DB::transaction(function () use ($route, $expectedTargetIds, $allowTracking): Route {
             $locked = Route::query()->with('targets')->lockForUpdate()->findOrFail($route->id);
             $this->assertTargetsUnchanged($locked, $expectedTargetIds);
+
+            if ($locked->targets->isNotEmpty()) {
+                $this->associations->assertTargetsDetachable($locked);
+            }
+
             $this->assertStandaloneRemovalAllowed($locked, $allowTracking);
             $locked->delete();
 
@@ -253,13 +271,13 @@ final readonly class RemoveRouteAction
         }
     }
 
-    private function recordFailure(Route $route, RouteRemovalStep $step, string $errorCode): void
+    private function recordFailure(Route $route, string $failedStep, string $errorCode): void
     {
         Route::query()
             ->whereKey($route->id)
             ->update([
                 'status' => RouteStatus::Failed->value,
-                'failed_step' => $step->value,
+                'failed_step' => $failedStep,
                 'error_code' => $errorCode,
             ]);
         $route->refresh();
@@ -267,7 +285,7 @@ final readonly class RemoveRouteAction
 
     private function resumeFrom(?string $failedStep): RouteRemovalStep
     {
-        return RouteRemovalStep::tryFrom((string) $failedStep) ?? RouteRemovalStep::Dns;
+        return RouteRemovalStep::fromFailedStep($failedStep) ?? RouteRemovalStep::Dns;
     }
 
     private function errorCode(Throwable $exception): string
@@ -284,7 +302,8 @@ final readonly class RemoveRouteAction
             RouteRemovalStep::Caddy => 1,
             RouteRemovalStep::Certificates => 2,
             RouteRemovalStep::Firewall => 3,
-            RouteRemovalStep::Record => 4,
+            RouteRemovalStep::Php => 4,
+            RouteRemovalStep::Record => 5,
         };
     }
 }
