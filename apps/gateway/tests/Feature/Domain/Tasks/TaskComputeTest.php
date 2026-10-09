@@ -57,7 +57,7 @@ describe('task compute rollout', function (): void {
 
         expect($group->fresh()->task_compute)->toBe(TaskCompute::Vm)
             ->and($group->fresh()->status)->toBe(TaskGroupStatus::Todo)
-            ->and($group->fresh()->capacity_wait_reason)->toContain('sandbox compute')
+            ->and($group->fresh()->capacity_wait_reason)->toBe('Task VM: task VMs are not enabled on this Gateway.')
             ->and(Instance::query()->count())->toBe(0);
         $project->update(['task_compute' => TaskCompute::Shared]);
         expect(fn () => $group->fresh()->update(['task_compute' => TaskCompute::Shared]))

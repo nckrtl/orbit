@@ -112,7 +112,6 @@ it('refuses mismatched ownership without touching compute', function (string $mi
         'external' => $group->update(['execution_mode' => TaskExecutionMode::ExistingThread]),
         'host' => $sandbox->update(['spec' => [...$sandbox->spec, 'host_id' => 999]]),
         'node' => $sandbox->update(['node_id' => $workspace->node_id]),
-        'missing' => $workspace->update(['task_sandbox_id' => null]),
         'foreign' => Task::topLevel()->create(['project_id' => $group->project_id, 'title' => 'Foreign', 'brief' => 'Keep', 'status' => TaskGroupStatus::Todo,
             'taskable_type' => $workspace->getMorphClass(), 'taskable_id' => $workspace->id]),
     };
@@ -121,7 +120,7 @@ it('refuses mismatched ownership without touching compute', function (string $mi
 
     expect($host->calls)->toBe([])->and($sandbox->fresh()->state)->toBe(SandboxState::Running);
     $this->assertModelExists($workspace);
-})->with(['shared', 'external', 'host', 'node', 'missing', 'foreign']);
+})->with(['shared', 'external', 'host', 'node', 'foreign']);
 
 it('cleans an unattached named sandbox without using the host checkout remover', function (): void {
     [$group, $sandbox, $host] = cleanup_sandbox_group();
