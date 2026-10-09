@@ -20,10 +20,6 @@ use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\WebSocket\NativeWebSocketRuntimeLifecycle;
 use App\Models\Node;
 use App\Models\NodeRole;
-use Tests\TestCase;
-
-/** The Caddy package source program reads its verifier through resource_path(), which needs the application. */
-uses(TestCase::class);
 
 it('installs prerequisites, then clones, installs and starts Reverb with the resolved config', function (): void {
     $commands = [];

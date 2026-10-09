@@ -178,10 +178,10 @@ The API takes `web_root` on `POST /api/v1/routes` and `PATCH /api/v1/routes/{rou
 | Instance's own Route | Each Instance has at most one Route without a web root. A `laravel-app` or `symfony-app` Instance keeps it: a web root on it returns `route.web_root_conflict`. |
 | Site | Workload Caddy serves the Route's domain from its web root. The Route has its own leaf, `route-<id>`, so the Instance's leaf keeps naming its own Route. |
 | PHP-FPM | One pool for each application directory. Routes that serve one directory share its pool. |
-| `APP_URL` | The Instance's own Route keeps its directory. Another directory takes the domain of the oldest Route that serves it. |
+| `APP_URL` | The Instance's own Route keeps its directory. Another directory takes the domain of the oldest Route that serves it. A development `default` with releases copies each directory's `.env` into its next [release](/reference/deployments#development-defaults). |
 | Change | Creating, updating, or removing such a Route converges its site, pool, and `APP_URL`. A Project root change moves `APP_URL` to the new winner. |
 | Instance removal | Once every refusal check passes, removes the Instance's Routes with a web root, then the Instance. A refused removal keeps them. |
-| Transfer | Refused with `instance.transfer_web_root_routes`. Remove those Routes, transfer, and create them again. |
+| Transfer | The Routes move with the Instance and keep their IDs and domains. A public one cannot change Cluster. See [Instance transfer](/reference/instance-transfer#routes-with-a-web-root). |
 | Hibernation | A request to any Route of the Instance wakes it. Dependency pruning covers only the default directory. |
 | Processes and Schedules | Unchanged. They keep the default application directory or their explicit working directory. |
 | Production | Refused with `route.web_root_unsupported`. |
@@ -190,7 +190,9 @@ The default directory keeps its pool, `orbit-app-instance-<id>`. Another directo
 
 A Route with a web root keeps its domain, so a domain change returns `route.web_root_domain_immutable`. Send `web_root` on its own; combined with another field it returns `route.web_root_update_separate`.
 
-Follow-ups: production Instances, and the `.env` of other directories in the releases of a development `default`. Doctor checks `APP_URL` only for the Instance's own Route.
+Once the Instance has a PHP runtime, Doctor checks `APP_URL` in each directory that a Route with a web root serves and that holds `artisan`. It compares the value with the domain of the Route that wins the directory, by the rule above. A difference gives `instance.laravel_url_mismatch`, and its summary names the directory. See [Check Routes with Doctor](#check-routes-with-doctor).
+
+Follow-ups: production Instances, and a transfer that moves a public Route with a web root to another Cluster.
 
 ## Custom proxy Routes
 
@@ -512,7 +514,7 @@ Doctor skips an Instance in `removing`. A removal that lasts 10 minutes or more 
 | `instance.private_certificate_mismatch` | A Route certificate is missing or stale. |
 | `instance.private_dns_mismatch` | Private DNS does not answer the domain with the expected address. |
 | `instance.private_firewall_mismatch` | Role firewall rules differ from the Route's expected rules. |
-| `instance.laravel_url_mismatch` | A detected Laravel `APP_URL` differs from the Route domain. |
+| `instance.laravel_url_mismatch` | A detected Laravel `APP_URL` differs from the Route domain, or from the domain of the Route that wins a [web-root directory](#serve-several-web-roots). The summary names that directory. |
 | `instance.target_set_mismatch` | Router Caddy does not publish the Route's ordered target set. |
 | `instance.route_association_mismatch` | An Instance has no Route without a web root, or more than one. |
 | `instance.public_ingress_mismatch` | The Ingress Caddyfile lacks the public site that a build renders for it. |

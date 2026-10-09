@@ -84,6 +84,18 @@ final readonly class NativeDevelopmentRouteProjector implements DevelopmentRoute
         $this->certificates->convergeInstanceHostnameChange($instance, $candidate->domain);
     }
 
+    public function prepareDestinationCertificates(Instance $instance, Route $route): void
+    {
+        InstanceSandboxGuard::assertHostOperation($instance);
+        $instance->loadMissing('node');
+        $this->certificates->convergeInstance($instance, $route);
+        $router = $this->router($instance, $route);
+
+        if ($router instanceof Node) {
+            $this->certificates->convergeRouteRouter($route, $router);
+        }
+    }
+
     public function retireSource(InstanceTransfer $transfer): void
     {
         app(DevelopmentProjectionOperationLock::class)->run(fn () => $this->retireSourceOwned($transfer));
@@ -125,6 +137,31 @@ final readonly class NativeDevelopmentRouteProjector implements DevelopmentRoute
             $oldRoute = new Route;
             $oldRoute->id = $transfer->source_route_id;
             $this->certificates->removeRouteRouter($oldRoute, $sourceRouter);
+        }
+
+        foreach ($transfer->web_root_route_ids ?? [] as $routeId) {
+            $this->retireSourceWebRootRoute($routeId, $source, $sourceRouter);
+        }
+    }
+
+    /**
+     * A Route with a web root that the transfer moved keeps its ID, so its old leaves carry the same
+     * scopes as the new ones. A leaf that a site on the Node still loads stays, such as the Router leaf
+     * when the transfer kept the Cluster.
+     */
+    private function retireSourceWebRootRoute(int $routeId, Node $source, Node $sourceRouter): void
+    {
+        $route = new Route;
+        $route->id = $routeId;
+
+        if (! $this->usesCertificate($source, "route-{$routeId}")) {
+            $this->certificates->removeRouteLeaf($route, $source);
+        }
+
+        new RemoteAppDevRouteFirewallManager($this->ssh)->remove($source, $routeId);
+
+        if (! $this->usesCertificate($sourceRouter, "route-{$routeId}-router")) {
+            $this->certificates->removeRouteRouter($route, $sourceRouter);
         }
     }
 
