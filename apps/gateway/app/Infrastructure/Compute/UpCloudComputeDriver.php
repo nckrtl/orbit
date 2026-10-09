@@ -152,13 +152,13 @@ final readonly class UpCloudComputeDriver implements ComputeDriver
     {
         return ['server' => [
             'hostname' => $sandbox->name, 'title' => $sandbox->name, 'zone' => $spec->zone,
-            'plan' => 'STARTER-1xCPU-1GB', 'metadata' => 'yes', 'firewall' => 'on', 'remote_access_enabled' => 'no',
+            'plan' => $spec->plan(), 'metadata' => 'yes', 'firewall' => 'on', 'remote_access_enabled' => 'no',
             'labels' => ['label' => [['key' => 'orbit-sandbox', 'value' => $sandbox->id]]],
             'networking' => ['interfaces' => ['interface' => [[
                 'type' => 'public', 'ip_addresses' => ['ip_address' => [['family' => 'IPv4']]],
             ]]]],
             'storage_devices' => ['storage_device' => [[
-                'action' => 'clone', 'storage' => SandboxSpec::Image, 'size' => 20, 'tier' => 'standard', 'title' => $sandbox->name.'-disk',
+                'action' => 'clone', 'storage' => $spec->image, 'size' => $spec->diskGb(), 'tier' => 'standard', 'title' => $sandbox->name.'-disk',
             ]]],
             'user_data' => $this->bootstrap->render($spec),
         ]];

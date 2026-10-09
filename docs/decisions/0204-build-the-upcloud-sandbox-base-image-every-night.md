@@ -1,6 +1,6 @@
 # ADR 0204: Build the UpCloud sandbox base image every night
 
-UpCloud Project sandboxes start from one shared base template that the Gateway rebuilds from a clean VM every night. The template contains the `app-dev` toolchain, the Pi executable, ZFS, and warm Composer and npm caches for every Project on the lane. Each claim still sets up its Project from scratch.
+UpCloud Project sandboxes start from one shared base template that the Gateway rebuilds from a clean VM every night. The template contains the `app-dev` packages, ZFS, and warm Composer and npm caches for every Project on the lane. Each claim still sets up its Project from scratch.
 
 ## Status
 
@@ -33,13 +33,14 @@ UpCloud sandboxes use `STARTER-2xCPU-2GB` with its included 30 GB Standard disk.
 
 All Projects share one base template. It contains:
 
-- the cloud-init prerequisites, the bootstrap and `app-dev` packages, PHP, Node, and Caddy;
-- `zfsutils-linux`, with `zfs_arc_max` set to 128 MB;
-- the pinned Pi executable;
+- the cloud-init prerequisites and the bootstrap and `app-dev` packages, including Caddy and Composer;
+- `zfsutils-linux`, `gdisk`, and `parted`, with `zfs_arc_max` set to 128 MB;
 - Composer and npm caches, warmed as described below;
 - the managed `orbit` account with no authorized keys.
 
 It contains no Project source, credentials, fleet identity, WireGuard keys, SSH host keys, `machine-id`, or ZFS pool.
+
+PHP and the Pi executable stay out of the template. A Project selects its PHP version, and enrollment installs it from the pinned package source. The Pi install records the sandbox that owns it, so a template copy would be refused.
 
 ### Disk layout
 
@@ -56,7 +57,7 @@ A Gateway schedule runs one build each night:
 3. Warm the caches. The Gateway reads `composer.lock` and `package-lock.json` from each Project's default branch with GitHub App read access, and sends only those files to the VM. The VM runs `composer install --no-scripts --no-plugins` and `npm ci --ignore-scripts` in temporary directories, then deletes those directories. No Project code runs during the build.
 4. Audit and clean the VM: remove SSH host keys, `machine-id`, the build key, shell history, and any credentials. Run `cloud-init clean`. Stop the VM.
 5. Templatize its disk. Delete the build server. Record the template UUID, build date, and setup script checksum.
-6. Smoke-test the template: create one VM from it, confirm cloud-init finishes, the pool mounts, PHP and Pi start, then destroy it.
+6. Smoke-test the template: create one VM from it, confirm cloud-init finishes and the pool mounts at the checkout path, then destroy it.
 7. Publish the template only after the smoke test passes. New reservations pin the newest published template. Existing reservations keep their recorded image.
 
 A failed step keeps the previous published template. The build VM and smoke VM are always destroyed, and a failure raises an alert.
@@ -65,11 +66,16 @@ A failed step keeps the previous published template. The build VM and smoke VM a
 
 Orbit keeps the newest published template and the one before it, for rollback. It deletes an older template once no reservation that is not destroyed records it. A template is never updated in place; each build publishes a new UUID.
 
+### Delivery
+
+The driver changes and the setup script ship first. Until the nightly build ships, an operator builds the template with the script and sets its UUID in Gateway configuration. The nightly build, cache warming, smoke test, and retention follow in a separate pull request.
+
 ### Driver changes
 
 - `SandboxSpec` accepts the published base template. It no longer requires the public Ubuntu template.
 - The size `starter-small` is replaced by a size that maps to `STARTER-2xCPU-2GB`.
-- `UpCloudCloudInit` creates the user and authorizes the Gateway key, disables root growth, and prepares the pool. It no longer updates or installs packages.
+- `UpCloudCloudInit` creates the user and authorizes the Gateway key, disables root growth, and prepares the pool. On a base template it no longer updates or installs packages.
+- Reservations recorded before this change keep their image, plan, and disk size.
 
 ## Rejected alternatives
 
@@ -81,7 +87,7 @@ Orbit keeps the newest published template and the one before it, for rollback. I
 
 ## Consequences
 
-- Claims and recoveries skip package installation. Dependency installs are faster through the warm caches.
+- Claims and recoveries skip most package installation; only the Project's PHP version and Pi are installed per claim. Dependency installs are faster through the warm caches.
 - The template costs about €0.33 per GB per month, about €6.60 for one 20 GB template and €13.20 while two are kept. Build and smoke VMs cost about one cent a night.
 - Cached packages from every Project's lock files are present on every sandbox. Paid packages that need authentication are left out of the warm cache.
 - The template exists only in the build zone, `nl-ams1`. Another zone needs its own build.

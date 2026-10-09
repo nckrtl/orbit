@@ -17,11 +17,26 @@ The UpCloud compute driver provides the VM lifecycle for a task sandbox. It is a
 
 ## Provision a VM
 
-`ProvisionTaskSandboxAction` reserves one sandbox for a managed task group. It uses the pinned image and smallest size, and takes the network from Gateway configuration. The first size is `starter-small`: one CPU, 1 GB memory, a 20 GB disk, and 1 GB swap. The image is the pinned Ubuntu Resolute template. The disk meets the task image minimum from the DLF experiment; a provider power state does not prove that a project fits or that bootstrap has finished.
+`ProvisionTaskSandboxAction` reserves one sandbox for a managed task group and takes the network from Gateway configuration. New reservations use the size `starter-2x2`: the `STARTER-2xCPU-2GB` plan with two CPUs, 2 GB memory, its included 30 GB disk, and 1 GB swap. The image is the [base template](#build-the-base-template) named by `ORBIT_UPCLOUD_BASE_IMAGE`. Without that setting, it is the pinned public Ubuntu Resolute template. Reservations recorded with the earlier size `starter-small` (`STARTER-1xCPU-1GB` with a 20 GB disk) keep it. A provider power state does not prove that a project fits or that bootstrap has finished.
 
 The reservation records its UUID and immutable image, plan, network, and Gateway public SSH key before any provider mutation. A lock for the provider serializes claims against the configured VM budget. Reserved, uncertain, stopping, and deleting VMs all consume capacity. A task group reuses its current reservation. A destroyed reservation stays in history; a later claim gets a new identity.
 
-The driver creates a VM with cloud-init. Cloud-init creates the managed `orbit` user, authorizes only the Gateway's public SSH key, installs base prerequisites, adds swap, and creates an empty `/home/orbit/orbit` checkout directory owned by `orbit` with mode `0700`. Source preparation verifies that directory before importing the Project. Cloud-init contains no provider token, GitHub token, Pi token, proxy key, or subscription sign-in. Project runtime and agent configuration belong to the later enrollment step.
+The driver creates a VM with cloud-init. Cloud-init creates the managed `orbit` user, authorizes only the Gateway's public SSH key, adds swap, and creates an empty `/home/orbit/orbit` checkout directory owned by `orbit` with mode `0700`. Source preparation verifies that directory before importing the Project.
+
+On the public Ubuntu template, cloud-init also installs the base prerequisites and grows root to fill the disk. On a base template, the packages are already present and root keeps the template's 20 GB. Cloud-init then creates a partition in the remaining space and a ZFS pool `orbit` on it, with lz4 compression and POSIX ACLs. It mounts the dataset `orbit/checkout` at `/home/orbit/orbit`. A failed pool step fails cloud-init, so enrollment refuses the VM. Cloud-init contains no provider token, GitHub token, Pi token, proxy key, or subscription sign-in. Project runtime and agent configuration belong to the later enrollment step.
+
+## Build the base template
+
+[ADR 0204](/decisions/0204-build-the-upcloud-sandbox-base-image-every-night) defines one shared base template. `resources/compute/upcloud-base-image.sh` prepares it. The script installs the sandbox cloud-init prerequisites, every Node's bootstrap packages, the `app-dev` role packages, ZFS, `gdisk`, and `parted`. It caps the ZFS cache at 128 MB and adds the swapfile. It then removes the SSH host keys, `machine-id`, `hostid`, authorized keys, shell history, and cloud-init state. PHP versions and the Pi executable are not included; enrollment and Pi preparation install them for each claim, because a Project selects its PHP version and the Pi install records its owning sandbox.
+
+Until the nightly build is in place, an operator builds the template:
+
+1. Create a VM in the sandbox zone from the public Ubuntu template, with a 20 GB disk and a firewall that admits SSH only from the operator's address.
+2. Copy the script to the VM and run it as root.
+3. Stop the VM, templatize its disk, and delete the VM.
+4. Set `ORBIT_UPCLOUD_BASE_IMAGE` to the template UUID.
+
+A test checks that the script lists every package in the Node package catalog for `app-dev`. A template is never changed in place; a rebuild publishes a new UUID. Existing reservations keep their recorded image, so delete an old template only after no reservation that is not destroyed records it.
 
 ## Credentials and network
 
@@ -43,6 +58,7 @@ Set these values in the Gateway environment before provisioning a sandbox.
 | `ORBIT_UPCLOUD_TOKEN_FILE` | Absolute path to the protected provider credential file | Unset |
 | `ORBIT_UPCLOUD_MAX_VMS` | Maximum outstanding sandbox reservations | `0` |
 | `ORBIT_UPCLOUD_ZONE` | UpCloud zone for new reservations | `nl-ams1` |
+| `ORBIT_UPCLOUD_BASE_IMAGE` | UUID of the published base template in that zone | Unset: the public Ubuntu template |
 | `ORBIT_UPCLOUD_GATEWAY_ADDRESS` | Public IPv4 address allowed to SSH into the VM | Unset |
 | `ORBIT_UPCLOUD_WIREGUARD_ADDRESS` | Public IPv4 address of the WireGuard hub | Unset |
 | `ORBIT_UPCLOUD_WIREGUARD_PORT` | WireGuard UDP port | `51820` |

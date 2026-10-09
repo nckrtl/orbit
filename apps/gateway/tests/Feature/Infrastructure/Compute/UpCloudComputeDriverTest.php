@@ -7,9 +7,11 @@ use App\Domain\Compute\ComputeDriver;
 use App\Domain\Compute\ComputeException;
 use App\Domain\Compute\SandboxSpec;
 use App\Domain\Compute\SandboxState;
+use App\Domain\Nodes\RoleName;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Infrastructure\Compute\UpCloudCloudInit;
 use App\Infrastructure\Compute\UpCloudToken;
+use App\Infrastructure\Nodes\NodeBootstrapPackageCatalog;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Instance;
 use App\Models\Node;
@@ -34,7 +36,7 @@ function compute_config(): string
     });
     config(['compute.upcloud' => [
         'enabled' => true, 'token_file' => $path, 'max_vms' => 2, 'zone' => 'nl-ams1',
-        'image' => SandboxSpec::Image, 'gateway_address' => '1.1.1.1',
+        'base_image' => null, 'gateway_address' => '1.1.1.1',
         'wireguard_address' => '8.8.8.8', 'wireguard_port' => 51820,
     ]]);
     Http::preventStrayRequests();
@@ -47,13 +49,21 @@ function compute_spec(): SandboxSpec
     return new SandboxSpec('nl-ams1', '1.1.1.1', '8.8.8.8', 51820, 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHdUmJNAeflz28V7EadKJL3DLqnMqS6JyEQJmpCPNG5T fixture');
 }
 
-function compute_sandbox(bool $created = false): TaskSandbox
+function compute_base_spec(): SandboxSpec
+{
+    $spec = compute_spec();
+
+    return new SandboxSpec($spec->zone, $spec->gatewayAddress, $spec->wireguardAddress, $spec->wireguardPort, $spec->publicKey,
+        '0123abcd-0000-4000-8000-0000000000ba', SandboxSpec::DefaultSize);
+}
+
+function compute_sandbox(bool $created = false, ?SandboxSpec $spec = null): TaskSandbox
 {
     $id = (string) Str::uuid();
 
     return TaskSandbox::query()->create([
         'id' => $id, 'provider' => 'upcloud', 'name' => 'orbit-sandbox-'.$id,
-        'spec' => compute_spec()->toArray(), 'state' => $created ? SandboxState::Running : SandboxState::Reserved,
+        'spec' => ($spec ?? compute_spec())->toArray(), 'state' => $created ? SandboxState::Running : SandboxState::Reserved,
         'credential_fingerprint' => $created ? hash('sha256', 'ucat_test_only') : null,
         'desired_power' => 'running', 'create_attempted_at' => $created ? now() : null,
         'server_id' => $created ? '00000000-0000-4000-8000-000000000001' : null,
@@ -115,6 +125,56 @@ describe('UpCloud provisioning', function (): void {
         $config = json_decode(substr($bootstrap, strlen("#cloud-config\n")), true, flags: JSON_THROW_ON_ERROR);
 
         expect($config['runcmd'])->toContain(['install', '-d', '-o', 'orbit', '-g', 'orbit', '-m', '0700', '/home/orbit/orbit']);
+    });
+
+    it('creates a base-template VM on the two-core plan with a ZFS pool after root and no package installs', function (): void {
+        compute_config();
+        $sandbox = compute_sandbox(spec: compute_base_spec());
+        Http::fake([
+            'https://api.upcloud.com/1.3/server' => function (Request $request) use ($sandbox) {
+                expect($request->data()['server'])->toMatchArray(['plan' => 'STARTER-2xCPU-2GB', 'zone' => 'nl-ams1', 'firewall' => 'on']);
+                expect($request->data()['server']['storage_devices']['storage_device'][0])
+                    ->toMatchArray(['action' => 'clone', 'storage' => '0123abcd-0000-4000-8000-0000000000ba', 'size' => 30, 'tier' => 'standard']);
+                $cloudInit = json_decode(substr($request->data()['server']['user_data'], strlen("#cloud-config\n")), true);
+                expect($cloudInit)->not->toHaveKey('packages');
+                expect($cloudInit)->toMatchArray(['package_update' => false, 'growpart' => ['mode' => 'off'], 'resize_rootfs' => false]);
+                expect($cloudInit['runcmd'][0])->toBe(['install', '-d', '-o', 'orbit', '-g', 'orbit', '-m', '0700', '/home/orbit/orbit']);
+                expect(end($cloudInit['runcmd'])[2])->toContain('zpool create', 'acltype=posixacl', 'mountpoint=/home/orbit/orbit', 'chmod 0700 /home/orbit/orbit');
+                expect($request->data()['server']['user_data'])->not->toContain('ucat_test_only', 'apiKey', 'orbit-token', 'orbit-worker');
+
+                return Http::response(compute_server($sandbox), 201);
+            },
+            'https://api.upcloud.com/1.3/server/00000000-0000-4000-8000-000000000001' => Http::response(compute_server($sandbox)),
+            'https://api.upcloud.com/1.3/server/00000000-0000-4000-8000-000000000001/firewall_rule' => Http::response(compute_firewall()),
+        ]);
+
+        expect(app(ComputeDriver::class)->provision($sandbox)->state)->toBe(SandboxState::Running);
+    });
+
+    it('keeps the recorded image and size of a reservation and refuses unknown ones', function (): void {
+        $legacy = SandboxSpec::fromArray(compute_spec()->toArray());
+        expect([$legacy->image, $legacy->size, $legacy->plan(), $legacy->diskGb(), $legacy->usesBaseImage()])
+            ->toBe([SandboxSpec::Image, 'starter-small', 'STARTER-1xCPU-1GB', 20, false]);
+        $base = SandboxSpec::fromArray(compute_base_spec()->toArray());
+        expect([$base->plan(), $base->diskGb(), $base->usesBaseImage()])->toBe(['STARTER-2xCPU-2GB', 30, true]);
+
+        foreach ([['size' => 'starter-huge'], ['image' => 'ubuntu-26.04'], ['image' => null]] as $change) {
+            expect(fn () => SandboxSpec::fromArray([...compute_base_spec()->toArray(), ...$change]))
+                ->toThrow(ComputeException::class, 'The sandbox image, size, or network configuration is invalid.');
+        }
+    });
+
+    it('lists every package a sandbox Node needs in the base image script', function (): void {
+        $script = (string) file_get_contents(resource_path('compute/upcloud-base-image.sh'));
+        $catalog = app(NodeBootstrapPackageCatalog::class);
+        $node = new Node;
+        $config = json_decode(substr(app(UpCloudCloudInit::class)->render(compute_spec()), strlen("#cloud-config\n")), true);
+        $packages = [...$config['packages'], ...$catalog->forNode($node), ...$catalog->forRole($node, RoleName::AppDev), 'zfsutils-linux', 'gdisk'];
+
+        foreach ($packages as $package) {
+            expect(preg_match('/(?<![\w.-])'.preg_quote($package, '/').'(?![\w.-])/', $script))->toBe(1, $package);
+        }
+        expect($script)->toContain('rm -f /etc/ssh/ssh_host_*', 'truncate -s 0 /etc/machine-id', 'cloud-init clean');
     });
 
     it('records creation before sending it and creates one smallest VM without secrets in cloud-init', function (): void {
@@ -488,6 +548,7 @@ describe('UpCloud reservation and credentials', function (): void {
     });
     it('reuses the group reservation and frozen network configuration', function (): void {
         compute_config();
+        config(['compute.upcloud.base_image' => '0123abcd-0000-4000-8000-0000000000ba']);
         compute_keys();
         $group = compute_group();
         Http::fake([
@@ -499,12 +560,12 @@ describe('UpCloud reservation and credentials', function (): void {
         ]);
         expect(fn () => app(ProvisionTaskSandboxAction::class)->execute($group))->toThrow(ComputeException::class);
         $sandbox = TaskSandbox::query()->sole();
-        config(['compute.upcloud.gateway_address' => '9.9.9.9']);
+        config(['compute.upcloud.gateway_address' => '9.9.9.9', 'compute.upcloud.base_image' => '0123abcd-0000-4000-8000-0000000000bb']);
 
         $result = app(ProvisionTaskSandboxAction::class)->execute($group);
 
         expect($result->id)->toBe($sandbox->id);
-        expect($result->spec['gateway_address'])->toBe('1.1.1.1');
+        expect($result->spec)->toMatchArray(['gateway_address' => '1.1.1.1', 'image' => '0123abcd-0000-4000-8000-0000000000ba', 'size' => 'starter-2x2']);
         expect(TaskSandbox::query()->count())->toBe(1);
         expect(Http::recorded(fn (Request $request): bool => $request->method() === 'POST'))->toHaveCount(1);
         expect(Http::recorded(fn (Request $request): bool => str_starts_with($request->url(), 'https://api.upcloud.com/')))->toHaveCount(4);

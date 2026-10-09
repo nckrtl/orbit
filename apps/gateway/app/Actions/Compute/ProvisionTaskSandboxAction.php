@@ -53,7 +53,7 @@ final readonly class ProvisionTaskSandboxAction
                 throw new ComputeException('compute.capacity', 'The UpCloud VM budget is full.');
             }
             $spec = SandboxSpec::fromArray([
-                'image' => config('compute.upcloud.image'), 'size' => 'starter-small',
+                'image' => config('compute.upcloud.base_image') ?: SandboxSpec::Image, 'size' => SandboxSpec::DefaultSize,
                 'zone' => config('compute.upcloud.zone'), 'gateway_address' => config('compute.upcloud.gateway_address'),
                 'wireguard_address' => config('compute.upcloud.wireguard_address'), 'wireguard_port' => config('compute.upcloud.wireguard_port'),
                 'public_key' => trim($this->keys->publicKey()),
