@@ -5,7 +5,7 @@ Orbit connects application development, hosting, and machine maintenance. Use it
 Register a Git repository, create a development App instance, and get a private HTTPS URL:
 
 ```bash
-orbit project:create hello laravel-app https://github.com/YOUR-ACCOUNT/hello.git --root=public
+orbit project:create hello laravel-app https://github.com/YOUR-ACCOUNT/hello.git --apps='[{"name":"web","path":".","web_root":"public","type":"laravel-app"}]'
 orbit instance:create PROJECT_ID NODE_ID default
 ```
 

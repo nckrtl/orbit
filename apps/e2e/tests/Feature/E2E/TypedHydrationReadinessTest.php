@@ -205,7 +205,7 @@ it('uses the Orbit runtime profile when root invokes typed hydration', function 
         'checkout_path' => '__CHECKOUT__',
         'selected_branch' => 'main',
         'starting_commit' => str_repeat('a', 40),
-        'effective_root' => 'public',
+        'apps' => [['name' => 'web', 'path' => '.', 'web_root' => 'public', 'type' => 'laravel-app']],
     ]]);
     $fixture = typedHydrationReadinessFixture($response, 0, ['root_invocation' => true]);
 
@@ -250,7 +250,7 @@ it('hydrates once after readiness and six transient preflight failures within th
         'checkout_path' => '__CHECKOUT__',
         'selected_branch' => 'main',
         'starting_commit' => str_repeat('a', 40),
-        'effective_root' => 'public',
+        'apps' => [['name' => 'web', 'path' => '.', 'web_root' => 'public', 'type' => 'laravel-app']],
     ]]);
     $failure = json_encode(['error' => [
         'code' => 'gateway.unavailable',
@@ -386,7 +386,7 @@ it('refuses hydration when development no longer contains its registered source'
         'checkout_path' => '__CHECKOUT__',
         'selected_branch' => 'main',
         'starting_commit' => str_repeat('a', 40),
-        'effective_root' => 'public',
+        'apps' => [['name' => 'web', 'path' => '.', 'web_root' => 'public', 'type' => 'laravel-app']],
     ]]);
     $fixture = typedHydrationReadinessFixture($response, 0, ['git_reset_exit_code' => 75]);
 
@@ -448,7 +448,7 @@ it('fails immediately before checkout mutation for semantic typed state', functi
                 'checkout_path' => '/wrong/checkout',
                 'selected_branch' => 'main',
                 'starting_commit' => str_repeat('a', 40),
-                'effective_root' => 'public',
+                'apps' => [['name' => 'web', 'path' => '.', 'web_root' => 'public', 'type' => 'laravel-app']],
             ]],
         ], JSON_THROW_ON_ERROR),
     ],
@@ -463,7 +463,7 @@ it('fails immediately before checkout mutation for semantic typed state', functi
                 'checkout_path' => '__CHECKOUT__',
                 'selected_branch' => 'main',
                 'starting_commit' => str_repeat('a', 40),
-                'effective_root' => 'public',
+                'apps' => [['name' => 'web', 'path' => '.', 'web_root' => 'public', 'type' => 'laravel-app']],
             ]],
         ], JSON_THROW_ON_ERROR),
     ],
@@ -478,7 +478,7 @@ it('fails immediately before checkout mutation for semantic typed state', functi
                 'checkout_path' => '__CHECKOUT__',
                 'selected_branch' => 'main',
                 'starting_commit' => str_repeat('a', 40),
-                'effective_root' => 'public',
+                'apps' => [['name' => 'web', 'path' => '.', 'web_root' => 'public', 'type' => 'laravel-app']],
             ]],
         ], JSON_THROW_ON_ERROR),
     ],
@@ -493,7 +493,7 @@ it('fails immediately before checkout mutation for semantic typed state', functi
                 'checkout_path' => '__CHECKOUT__',
                 'selected_branch' => 'main',
                 'starting_commit' => str_repeat('a', 40),
-                'effective_root' => 'public',
+                'apps' => [['name' => 'web', 'path' => '.', 'web_root' => 'public', 'type' => 'laravel-app']],
             ]],
         ], JSON_THROW_ON_ERROR),
     ],

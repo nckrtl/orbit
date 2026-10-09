@@ -307,7 +307,7 @@ def archive_cleanup(label):
 
 
 def create_instance(name, domain):
-    row = orbit("instance-create-" + name, "instance:create", PROJECT, SOURCE_ID, name, "--root=public")
+    row = orbit("instance-create-" + name, "instance:create", PROJECT, SOURCE_ID, name)
     INSTANCES.append(row["id"])
     require(row["checkout_path"] == f"{APPS}/{name}", "Unexpected fixture placement")
     python("app-dev", "web-root-" + name, "import pathlib,sys; pathlib.Path(sys.argv[1], 'public').mkdir(exist_ok=True)", row["checkout_path"])
@@ -361,7 +361,7 @@ assert not glob.glob('/tmp/orbit-transfer-*')
 print(json.dumps({'gateway_tmp': os.statvfs('/tmp').f_blocks * os.statvfs('/tmp').f_frsize, 'staging_path': sys.argv[1]}))
 ''', STAGING)
     on("gateway", "gateway-staging-filesystem-is-not-tmpfs", "df", "-T", str(pathlib.PurePosixPath(STAGING).parent), "/tmp")
-    project = orbit("project-create", "project:create", SLUG, "laravel-package", "https://github.com/github/gitignore.git", "--default-branch=main", "--root=public", "--task-workspace-routed=false")
+    project = orbit("project-create", "project:create", SLUG, "laravel-package", "https://github.com/github/gitignore.git", "--default-branch=main", "--apps=[{\"name\":\"web\",\"path\":\".\",\"web_root\":\"public\",\"type\":\"laravel-package\"}]", "--task-workspace-routed=false")
     PROJECT = project["id"]
     large = create_instance(f"{SLUG}-large", f"{SLUG}-large.orbit")
     prepared = python("app-dev", "large-checkout-generated", PREPARE, large["checkout_path"], PAYLOAD_BYTES, timeout=180)

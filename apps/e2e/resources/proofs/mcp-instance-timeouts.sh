@@ -476,7 +476,7 @@ for node in data["nodes"]:
 ' <<<"$node_json")
 echo "NODE app-dev id=$node_id"
 
-project_json=$(on_node gateway 90 rec:"proof project" orbit project:create "$slug" laravel-package https://github.com/github/gitignore.git --default-branch=main --root=. --name="MCP timeout $stamp" --task-workspace-routed=false --json --no-interaction)
+project_json=$(on_node gateway 90 rec:"proof project" orbit project:create "$slug" laravel-package https://github.com/github/gitignore.git --default-branch=main --apps='[{"name":"web","path":".","web_root":null,"type":"laravel-package"}]' --name="MCP timeout $stamp" --task-workspace-routed=false --json --no-interaction)
 project_id=$(json_value id <<<"$project_json")
 echo "PROJECT id=$project_id slug=$slug"
 on_node gateway 30 orbit instance:setup-step:create hold --project="$project_id" --command="sleep $hold_seconds" --timeout="$step_timeout" --json >/dev/null

@@ -172,7 +172,7 @@ if ($cmd === "baseline") {
         "instance_id" => $instance?->id,
         "instance_status" => $instance instanceof App\Models\Instance ? $enum($instance->status) : null,
         "checkout_path" => $instance?->checkout_path,
-        "root" => $instance?->root,
+        "root" => $instance?->sourceRoot(),
         "task_workspace_routed" => $instance?->task_workspace_routed,
         "route_count" => $instance instanceof App\Models\Instance ? $instance->routes()->count() : 0,
     ];
@@ -188,7 +188,7 @@ if ($cmd === "instance") {
         "id" => $instance->id,
         "name" => $instance->name,
         "status" => $enum($instance->status),
-        "root" => $instance->root,
+        "root" => $instance->sourceRoot(),
         "checkout_path" => $instance->checkout_path,
         "task_workspace_routed" => $instance->task_workspace_routed,
         "route_count" => $instance->routes()->count(),
@@ -354,7 +354,12 @@ project_id_for() {
 
 ensure_project() {
     local slug=$1 type=$2 repo=$3 branch_name=$4 root_path=$5 routed=$6 check_mode=$7
-    local json id
+    local json id apps
+    if [[ $root_path == . ]]; then
+        apps=$(printf '[{"name":"web","path":".","web_root":null,"type":"%s"}]' "$type")
+    else
+        apps=$(printf '[{"name":"web","path":".","web_root":"%s","type":"%s"}]' "$root_path" "$type")
+    fi
     json=$(project_list)
     verify_fixtures "$json" >/dev/null
     id=$(project_id_for "$slug" "$json")
@@ -366,14 +371,14 @@ ensure_project() {
             check_args=(--task-check="$check_mode")
         fi
         json=$(on_node gateway 120 orbit project:create "$slug" "$type" "$repo" \
-            --name="$slug" --default-branch="$branch_name" --root="$root_path" \
+            --name="$slug" --default-branch="$branch_name" --apps="$apps" \
             --task-workspace-routed="$routed" "${check_args[@]}" --json)
         id=$(printf '%s' "$json" | at '["id"]')
     else
         if [[ $check_mode == clear ]]; then
-            on_node gateway 60 orbit project:update "$id" --task-workspace-routed="$routed" --root="$root_path" --clear-task-check --json >/dev/null
+            on_node gateway 60 orbit project:update "$id" --task-workspace-routed="$routed" --clear-task-check --json >/dev/null
         else
-            on_node gateway 60 orbit project:update "$id" --task-workspace-routed="$routed" --root="$root_path" --task-check="$check_mode" --json >/dev/null
+            on_node gateway 60 orbit project:update "$id" --task-workspace-routed="$routed" --task-check="$check_mode" --json >/dev/null
         fi
     fi
     printf '%s' "$id"
@@ -879,7 +884,6 @@ unrouted_json=$(wait_baseline "$unrouted_subtask" "unrouted workspace recorded m
 assert_eq "$(printf '%s' "$unrouted_json" | at '["task_workspace_routed"]')" false "new workspace ignored the routing setting"
 assert_eq "$(printf '%s' "$unrouted_json" | at '["instance_status"]')" source_resolved "unrouted workspace was activated"
 assert_eq "$(printf '%s' "$unrouted_json" | at '["route_count"]')" 0 "unrouted workspace gained a route"
-assert_eq "$(printf '%s' "$unrouted_json" | at '["root"]')" null "unrouted workspace stored a root"
 stable_again=$(observe instance "$routed_instance" "stable routed workspace after new unrouted workspace")
 require_marker "$stable_again" >/dev/null
 assert_eq "$(printf '%s' "$stable_again" | at '["task_workspace_routed"]')" true "first workspace changed when the second was created"
@@ -891,7 +895,6 @@ retained=$(observe instance "$unrouted_instance" "unrouted workspace retains rec
 require_marker "$retained" >/dev/null
 assert_eq "$(printf '%s' "$retained" | at '["task_workspace_routed"]')" false "unrouted workspace followed the restored routing setting"
 assert_eq "$(printf '%s' "$retained" | at '["status"]')" source_resolved "unrouted workspace changed status when routing returned to true"
-assert_eq "$(printf '%s' "$retained" | at '["root"]')" null "unrouted workspace gained a root when routing returned to true"
 assert_eq "$(printf '%s' "$retained" | at '["route_count"]')" 0 "unrouted workspace gained a route when routing returned to true"
 
 require_marker "$(observe settle "$noncomposer_group_id")" >/dev/null

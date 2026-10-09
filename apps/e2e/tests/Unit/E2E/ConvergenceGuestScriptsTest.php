@@ -349,7 +349,7 @@ function typed_sample_resource_fixture(): array
             if [[ -n "${TYPED_APP_RESPONSE:-}" ]]; then
               printf '{"%s":[%s,%s]}' "$collection" "$legacy" "$TYPED_APP_RESPONSE"
             elif [[ -e "$state/app" ]]; then
-              printf '{"%s":[%s,{"id":1,"slug":"laravel-typed","name":"Laravel","repository_url":"https://github.com/laravel/laravel.git","default_branch":"main","root":"public"}]}' "$collection" "$legacy"
+              printf '{"%s":[%s,{"id":1,"slug":"laravel-typed","name":"Laravel","repository_url":"https://github.com/laravel/laravel.git","default_branch":"main","apps":[{"name":"web","path":".","web_root":"public","type":"laravel-app"}]}]}' "$collection" "$legacy"
             else
               printf '{"%s":[%s]}' "$collection" "$legacy"
             fi
@@ -368,7 +368,7 @@ function typed_sample_resource_fixture(): array
               if [[ -n "${TYPED_RESPONSE:-}" ]]; then
                 printf '%s' "$TYPED_RESPONSE"
               else
-                printf '{%s"instances":[{"id":4,"project_id":1,"node_id":2,"name":"e2e-dev","status":"active","checkout_path":"%s/laravel-typed/e2e-dev","selected_branch":"e2e-dev","starting_commit":"%s","effective_root":"public"}' "$prefix" "$state" "$(printf a%.0s {1..40})"
+                printf '{%s"instances":[{"id":4,"project_id":1,"node_id":2,"name":"e2e-dev","status":"active","checkout_path":"%s/laravel-typed/e2e-dev","selected_branch":"e2e-dev","starting_commit":"%s","apps":[{"name":"web","path":".","web_root":"public","type":"laravel-app"}]}' "$prefix" "$state" "$(printf a%.0s {1..40})"
                 if [[ -e "$state/production" ]]; then
                   production_endpoint='"domain":"e2e-prod.orbit.test"'
                   case "${PRODUCTION_ENDPOINT_SHAPE:-domain}" in
@@ -377,7 +377,7 @@ function typed_sample_resource_fixture(): array
                     invalid-domain-with-hostname) production_endpoint='"domain":"","hostname":"e2e-prod.orbit.test"' ;;
                     *) exit 70 ;;
                   esac
-                  printf ',{"id":5,"project_id":1,"node_id":3,"name":"e2e-prod","status":"active","checkout_path":"%s/production/releases/one","production_user":"orbit-laravel","production_home":"%s/production","selected_branch":"main","starting_commit":"%s","effective_root":"%s/production/current/public",%s}' "$state" "$state" "$(printf a%.0s {1..40})" "$state" "$production_endpoint"
+                  printf ',{"id":5,"project_id":1,"node_id":3,"name":"e2e-prod","status":"active","checkout_path":"%s/production/releases/one","production_user":"orbit-laravel","production_home":"%s/production","selected_branch":"main","starting_commit":"%s","apps":[{"name":"web","path":".","web_root":"public","type":"laravel-app"}],%s}' "$state" "$state" "$(printf a%.0s {1..40})" "$production_endpoint"
                 fi
                 printf ']}'
               fi
@@ -480,7 +480,7 @@ function typed_sample_app(array $branchFields, array $overrides = []): string
                 'slug' => 'laravel-typed',
                 'name' => 'Laravel',
                 'repository_url' => 'https://github.com/laravel/laravel.git',
-                'root' => 'public',
+                'apps' => [['name' => 'web', 'path' => '.', 'web_root' => 'public', 'type' => 'laravel-app']],
             ],
             $branchFields,
             $overrides,
@@ -3050,7 +3050,7 @@ describe('convergence guest scripts', function () {
                 [[ "$*" == 'instance:list --json' ]]
                 state=$(dirname "$0")
                 printf '%s\n' "$*" >>"$state/orbit-commands"
-                printf '{"instances":[{"id":4,"project_id":1,"node_id":2,"name":"e2e-dev","status":"active","checkout_path":"%s/checkout","selected_branch":"e2e-dev","starting_commit":"%s","effective_root":"public"}]}' "$state" "$SAMPLE_STARTING_SHA"
+                printf '{"instances":[{"id":4,"project_id":1,"node_id":2,"name":"e2e-dev","status":"active","checkout_path":"%s/checkout","selected_branch":"e2e-dev","starting_commit":"%s","apps":[{"name":"web","path":".","web_root":"public","type":"laravel-app"}]}]}' "$state" "$SAMPLE_STARTING_SHA"
                 BASH);
             chmod("{$fixture['root']}/orbit", 0o700);
             file_put_contents("{$fixture['checkout']}/vendor/autoload.php", "autoloaded\n");
@@ -3189,7 +3189,7 @@ describe('convergence guest scripts', function () {
             'repository' => ['repository_url' => 'https://example.invalid/wrong.git'],
             'slug' => ['slug' => 'wrong'],
             'name' => ['name' => 'Wrong'],
-            'root' => ['root' => 'web'],
+            'root' => ['apps' => [['name' => 'web', 'path' => '.', 'web_root' => 'web', 'type' => 'laravel-app']]],
             'identity' => ['id' => '1'],
             default => [],
         };
@@ -3206,7 +3206,7 @@ describe('convergence guest scripts', function () {
                     'checkout_path' => "{$fixture['root']}/laravel-typed/e2e-dev",
                     'selected_branch' => 'e2e-dev',
                     'starting_commit' => str_repeat('a', 40),
-                    'effective_root' => 'public',
+                    'apps' => [['name' => 'web', 'path' => '.', 'web_root' => 'public', 'type' => 'laravel-app']],
                 ]],
             ], JSON_THROW_ON_ERROR);
         }
@@ -3320,7 +3320,7 @@ describe('convergence guest scripts', function () {
             expect($firstCommands)->toBe([
                 ...typed_cluster_creation_commands(),
                 'project:list --json',
-                'project:create laravel-typed laravel-app https://github.com/laravel/laravel.git --name=Laravel --root=public --json',
+                'project:create laravel-typed laravel-app https://github.com/laravel/laravel.git --name=Laravel --apps=[{"name":"web","path":".","web_root":"public","type":"laravel-app"}] --json',
                 'instance:create 1 2 e2e-dev --domain=e2e-dev.orbit --json',
                 'instance:list --json',
                 'route:list --json',
@@ -3522,13 +3522,13 @@ describe('convergence guest scripts', function () {
             $second = typed_sample_create_resources_process($fixture, [
                 'COMMAND_SURFACE' => $surface,
                 'TYPED_RESPONSE' => json_encode(['instances' => [
-                    [...$state, 'id' => 4, 'status' => 'active', 'selected_branch' => 'e2e-dev', 'starting_commit' => str_repeat('a', 40)],
+                    [...$state, 'id' => 4, 'status' => 'active', 'selected_branch' => 'e2e-dev', 'starting_commit' => str_repeat('a', 40), 'apps' => [['name' => 'web', 'path' => '.', 'web_root' => 'public', 'type' => 'laravel-app']]],
                     [
                         'id' => 5, 'project_id' => 1, 'node_id' => 3, 'name' => 'e2e-prod',
                         'status' => 'active', 'environment' => 'production', 'source_layout' => 'checkout',
                         'checkout_path' => $production['current_target'],
                         'production_user' => $production['user'], 'production_home' => $production['home'],
-                        'effective_root' => $production['effective_root'], 'domain' => $production['domain'],
+                        'apps' => [['name' => 'web', 'path' => '.', 'web_root' => 'public', 'type' => 'laravel-app']], 'domain' => $production['domain'],
                     ],
                 ]], JSON_THROW_ON_ERROR),
             ]);
@@ -4128,7 +4128,7 @@ describe('convergence guest scripts', function () {
                     'checkout_path' => "{$fixture['root']}/other/e2e-dev",
                     'selected_branch' => 'main',
                     'starting_commit' => str_repeat('a', 40),
-                    'effective_root' => 'public',
+                    'apps' => [['name' => 'web', 'path' => '.', 'web_root' => 'public', 'type' => 'laravel-app']],
                 ]],
             ], JSON_THROW_ON_ERROR)],
         };
@@ -4184,7 +4184,7 @@ describe('convergence guest scripts', function () {
                     'checkout_path' => $checkout,
                     'selected_branch' => 'e2e-dev',
                     'starting_commit' => str_repeat('a', 40),
-                    'effective_root' => 'public',
+                    'apps' => [['name' => 'web', 'path' => '.', 'web_root' => 'public', 'type' => 'laravel-app']],
                 ]],
             ], JSON_THROW_ON_ERROR);
 
@@ -4311,25 +4311,25 @@ describe('convergence guest scripts', function () {
         'ambiguous later shape' => ['{"app_instances":[],"instances":[]}'],
         'duplicate target' => ['{"instances":[{"name":"e2e-dev"},{"name":"e2e-dev"}]}'],
         'wrong App' => [
-            '{"instances":[{"project_id":9,"node_id":2,"name":"e2e-dev","status":"active","checkout_path":"{checkout}","selected_branch":"e2e-dev","starting_commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","effective_root":"public"}]}',
+            '{"instances":[{"project_id":9,"node_id":2,"name":"e2e-dev","status":"active","checkout_path":"{checkout}","selected_branch":"e2e-dev","starting_commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","apps":[{"name":"web","path":".","web_root":"public","type":"laravel-app"}]}]}',
         ],
         'wrong Node' => [
-            '{"instances":[{"project_id":1,"node_id":3,"name":"e2e-dev","status":"active","checkout_path":"{checkout}","selected_branch":"e2e-dev","starting_commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","effective_root":"public"}]}',
+            '{"instances":[{"project_id":1,"node_id":3,"name":"e2e-dev","status":"active","checkout_path":"{checkout}","selected_branch":"e2e-dev","starting_commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","apps":[{"name":"web","path":".","web_root":"public","type":"laravel-app"}]}]}',
         ],
         'inactive lifecycle' => [
-            '{"instances":[{"project_id":1,"node_id":2,"name":"e2e-dev","status":"source_resolved","checkout_path":"{checkout}","selected_branch":"e2e-dev","starting_commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","effective_root":"public"}]}',
+            '{"instances":[{"project_id":1,"node_id":2,"name":"e2e-dev","status":"source_resolved","checkout_path":"{checkout}","selected_branch":"e2e-dev","starting_commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","apps":[{"name":"web","path":".","web_root":"public","type":"laravel-app"}]}]}',
         ],
         'missing branch evidence' => [
-            '{"instances":[{"project_id":1,"node_id":2,"name":"e2e-dev","status":"active","checkout_path":"{checkout}","starting_commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","effective_root":"public"}]}',
+            '{"instances":[{"project_id":1,"node_id":2,"name":"e2e-dev","status":"active","checkout_path":"{checkout}","starting_commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","apps":[{"name":"web","path":".","web_root":"public","type":"laravel-app"}]}]}',
         ],
         'invalid commit evidence' => [
-            '{"instances":[{"project_id":1,"node_id":2,"name":"e2e-dev","status":"active","checkout_path":"{checkout}","selected_branch":"e2e-dev","starting_commit":"invalid","effective_root":"public"}]}',
+            '{"instances":[{"project_id":1,"node_id":2,"name":"e2e-dev","status":"active","checkout_path":"{checkout}","selected_branch":"e2e-dev","starting_commit":"invalid","apps":[{"name":"web","path":".","web_root":"public","type":"laravel-app"}]}]}',
         ],
         'relative checkout identity' => [
-            '{"instances":[{"project_id":1,"node_id":2,"name":"e2e-dev","status":"active","checkout_path":"relative/path","selected_branch":"e2e-dev","starting_commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","effective_root":"public"}]}',
+            '{"instances":[{"project_id":1,"node_id":2,"name":"e2e-dev","status":"active","checkout_path":"relative/path","selected_branch":"e2e-dev","starting_commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","apps":[{"name":"web","path":".","web_root":"public","type":"laravel-app"}]}]}',
         ],
         'wrong effective root' => [
-            '{"instances":[{"project_id":1,"node_id":2,"name":"e2e-dev","status":"active","checkout_path":"{checkout}","selected_branch":"e2e-dev","starting_commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","effective_root":"web"}]}',
+            '{"instances":[{"project_id":1,"node_id":2,"name":"e2e-dev","status":"active","checkout_path":"{checkout}","selected_branch":"e2e-dev","starting_commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","apps":[{"name":"web","path":".","web_root":"web","type":"laravel-app"}]}]}',
         ],
     ]);
 
@@ -4360,7 +4360,7 @@ describe('convergence guest scripts', function () {
             case "$1" in
               node:list) printf '{"nodes":[{"id":2,"name":"app-dev","roles":["app-dev"]},{"id":3,"name":"app-prod","roles":["app-prod"]}]}' ;;
               node:role:add) printf '{"node_id":%s,"role":"%s","assignment":{"status":"active"}}' "$2" "$3" ;;
-              instance:list) printf '{"instances":[{"id":4,"project_id":1,"node_id":2,"name":"e2e-dev","status":"active","checkout_path":"%s/laravel-typed/e2e-dev","selected_branch":"e2e-dev","starting_commit":"%s","effective_root":"public"}]}' "$state" "$(printf a%.0s {1..40})" ;;
+              instance:list) printf '{"instances":[{"id":4,"project_id":1,"node_id":2,"name":"e2e-dev","status":"active","checkout_path":"%s/laravel-typed/e2e-dev","selected_branch":"e2e-dev","starting_commit":"%s","apps":[{"name":"web","path":".","web_root":"public","type":"laravel-app"}]}]}' "$state" "$(printf a%.0s {1..40})" ;;
               list) printf 'instance:create\n' ;;
               instance:php) exit 99 ;;
               *) exit 70 ;;
@@ -4831,7 +4831,7 @@ it('accepts current Gateway Project, Instance, and Route JSON', function (): voi
     expect($sample)->toContain('route:create "$typed_instance_id" e2e-dev.orbit --publication=private --json');
     foreach ((new Filesystem)->files($guest) as $scriptFile) {
         $contents = (string) file_get_contents($scriptFile->getPathname());
-        expect(preg_match('/app_id|app_instance_id|\["apps"\]|main_branch/', $contents))->toBe(0)
+        expect(preg_match('/app_id|app_instance_id|(?<!\$x)\["apps"\]|main_branch/', $contents))->toBe(0)
             ->and(preg_match('/route:create\s+"\$(?:project_id|app_id)"/', $contents))->toBe(0);
     }
 
@@ -4858,7 +4858,7 @@ it('accepts current Gateway Project, Instance, and Route JSON', function (): voi
         'checkout_path' => $checkout,
         'selected_branch' => 'e2e-dev',
         'starting_commit' => str_repeat('a', 40),
-        'effective_root' => 'public',
+        'apps' => [['name' => 'web', 'path' => '.', 'web_root' => 'public', 'type' => 'laravel-app']],
     ]);
     $route = array_replace($route, [
         'id' => 5,
@@ -4887,7 +4887,7 @@ it('accepts current Gateway Project, Instance, and Route JSON', function (): voi
                     'checkout_path' => $fixture['root'].'/production/releases/one',
                     'production_user' => 'orbit-laravel',
                     'production_home' => $fixture['root'].'/production',
-                    'effective_root' => $fixture['root'].'/production/current/public',
+                    'apps' => [['name' => 'web', 'path' => '.', 'web_root' => 'public', 'type' => 'laravel-app']],
                     'domain' => 'e2e-prod.orbit.test',
                 ]],
                 'request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844',
