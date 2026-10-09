@@ -103,7 +103,7 @@ Sometimes a green commit never gets its CLI release. After a newer commit reache
 
 When the commit's release stays `release_missing`, `release_mismatch`, or `release_incomplete` for 30 minutes, the Gateway names the newest published release of an ancestor instead:
 
-1. It takes the 50 newest commits before the Gateway's commit on the first-parent history of `main`, with `git rev-list --first-parent`. Only those commits have releases, so the commits of merged branches do not use up the 50.
+1. It takes the 50 newest commits before the Gateway's commit on the first-parent history of `main`. Commits of merged branches never have a release, so the search skips them.
 2. It keeps only the commits whose CLI build inputs match the Gateway's commit. The [build inputs](#cli-build-inputs) are listed below.
 3. It tries their releases from the highest release number down, and checks each one as it checks its own release. A release number whose tag points at another commit is skipped.
 4. The first available release becomes `cli`, with `status` `available`, that ancestor's `commit`, and the `reason` of the commit's own release.
