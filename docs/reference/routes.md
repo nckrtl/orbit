@@ -181,7 +181,7 @@ The API takes `web_root` on `POST /api/v1/routes` and `PATCH /api/v1/routes/{rou
 | `APP_URL` | The Instance's own Route keeps its directory. Another directory takes the domain of the oldest Route that serves it. |
 | Change | Creating, updating, or removing such a Route converges its site, pool, and `APP_URL`. A Project root change moves `APP_URL` to the new winner. |
 | Instance removal | Once every refusal check passes, removes the Instance's Routes with a web root, then the Instance. A refused removal keeps them. |
-| Transfer | Refused with `instance.transfer_web_root_routes`. Remove those Routes, transfer, and create them again. |
+| Transfer | The Routes move with the Instance and keep their IDs and domains. A public one cannot change Cluster. See [Instance transfer](/reference/instance-transfer#routes-with-a-web-root). |
 | Hibernation | A request to any Route of the Instance wakes it. Dependency pruning covers only the default directory. |
 | Processes and Schedules | Unchanged. They keep the default application directory or their explicit working directory. |
 | Production | Refused with `route.web_root_unsupported`. |
@@ -192,7 +192,7 @@ A Route with a web root keeps its domain, so a domain change returns `route.web_
 
 Once the Instance has a PHP runtime, Doctor checks `APP_URL` in each directory that a Route with a web root serves and that holds `artisan`. It compares the value with the domain of the Route that wins the directory, by the rule above. A difference gives `instance.laravel_url_mismatch`, and its summary names the directory. See [Check Routes with Doctor](#check-routes-with-doctor).
 
-Follow-ups: production Instances, and the `.env` of other directories in the releases of a development `default`.
+Follow-ups: production Instances, the `.env` of other directories in the releases of a development `default`, and a transfer that moves a public Route with a web root to another Cluster.
 
 ## Custom proxy Routes
 
