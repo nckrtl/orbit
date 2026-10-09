@@ -267,7 +267,7 @@ jobs:
           key: ${{ steps.orbit-tia-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       # A full run records this commit in the graph, and the step that requires it records it after an affected run.
-      # Sandbox images and the shared main cache store (bin/tia-cache refresh) import this artifact. The Pint and
+      # Sandbox images and the shared main cache store import this artifact. The Pint and
       # PHPStan caches that composer check just wrote travel with it.
       - name: Export main caches
         if: success() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
