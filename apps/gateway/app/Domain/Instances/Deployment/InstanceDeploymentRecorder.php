@@ -50,7 +50,7 @@ final readonly class InstanceDeploymentRecorder
 
         $deployment->update([
             'release' => $result->release?->name,
-            'commit' => $result->release?->commit,
+            'commit' => $result->commit,
             'status' => $result->succeeded ? 'succeeded' : 'failed',
             'failed_step' => $result->failure?->boundary->value,
             'error_code' => $result->failure?->errorCode,

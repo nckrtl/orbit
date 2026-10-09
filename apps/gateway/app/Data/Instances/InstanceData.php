@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Data\Instances;
 
-use App\Actions\Instances\SelectInstanceSeedAction;
 use App\Data\Nodes\NodeIdentityData;
 use App\Data\Projects\ProjectIdentityData;
 use App\Data\Routes\RouteData;
@@ -58,9 +57,6 @@ final class InstanceData extends Data
 
     public static function fromModel(Instance $instance): self
     {
-        if ($instance->name === 'default' && $instance->development_release_layout) {
-            app(SelectInstanceSeedAction::class)->execute($instance);
-        }
         $instance->loadMissing(['project', 'node', 'routes.targets', 'deploySteps']);
         $route = $instance->authoritativeRoute() ?? $instance->routes->first();
         $removal = InstanceRemoval::query()

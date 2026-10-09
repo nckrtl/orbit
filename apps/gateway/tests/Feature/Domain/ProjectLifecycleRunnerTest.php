@@ -6,8 +6,6 @@ use App\Actions\Instances\RunInstanceSetupAction;
 use App\Actions\Instances\SelectInstanceSeedAction;
 use App\Data\Instances\InstanceData;
 use App\Domain\AppDev\RuntimeConvergenceException;
-use App\Domain\Instances\Deployment\DeploymentRelease;
-use App\Domain\Instances\Deployment\DevelopmentDeployment;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Projects\LifecycleStep;
@@ -20,7 +18,6 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\ProjectLifecycleStep;
 use Illuminate\Filesystem\Filesystem;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Tests\Support\LifecycleSshExecutor;
 
@@ -58,14 +55,13 @@ it('exports resolved VP_HOME to project-local vp in non-login lifecycle shells',
     ['/home/orbit/.vite-plus', LifecyclePhase::Teardown],
 ]);
 
-it('passes the default release seed to setup and keeps the selection on retry', function (): void {
+it('passes the default checkout seed to setup and keeps the selection on retry', function (): void {
     $default = Instance::query()->create([
         'project_id' => $this->instance->project_id, 'node_id' => $this->instance->node_id,
         'name' => 'default', 'checkout_path' => '/fast/apps/lifecycle/default',
-        'development_release_layout' => true, 'seed_path' => '/fast/apps/lifecycle/default/releases/initial',
+        'seed_path' => '/fast/apps/lifecycle/default', 'seed_repository' => '/fast/apps/lifecycle/default',
         'seed_commit' => str_repeat('a', 40), 'status' => InstanceState::Active,
     ]);
-    app()->instance(DevelopmentDeployment::class, Mockery::mock(DevelopmentDeployment::class)->shouldReceive('selected')->andReturnUsing(fn (): DeploymentRelease => new DeploymentRelease('initial', $default->seed_path, $default->seed_commit))->getMock());
     $this->instance->update(['status' => InstanceState::Reserved]);
     app(SelectInstanceSeedAction::class)->execute($this->instance);
     $this->instance->update(['status' => InstanceState::SourceResolved]);
@@ -82,18 +78,39 @@ it('passes the default release seed to setup and keeps the selection on retry', 
     expect($data['seed_path'])->toBe($default->seed_path)->and($data['seed_commit'])->toBe(str_repeat('b', 40));
 });
 
+it('reads the seed again for each step, so a moved seed reaches a running setup', function (): void {
+    $this->instance->update(['seed_selected' => true, 'seed_path' => '/fast/apps/lifecycle/default/releases/initial', 'seed_commit' => str_repeat('a', 40)]);
+    $this->steps->create($this->instance->project, LifecyclePhase::Setup, new LifecycleStep('first', 'true'), null, null);
+    $this->steps->create($this->instance->project, LifecyclePhase::Setup, new LifecycleStep('second', 'printf "%s" "$ORBIT_SEED_PATH" > seed'), null, null);
+    $transport = new LifecycleSshExecutor(function (array $payload): int {
+        // Converting the default's old release layout moves the seed between two steps.
+        Instance::query()->whereKey($this->instance->id)->update(['seed_path' => '/fast/apps/lifecycle/default']);
+
+        return 0;
+    });
+
+    expect($transport->runner()->run($this->instance, LifecyclePhase::Setup))->toBeTrue()
+        ->and($transport->inputs[0]['environment']['ORBIT_SEED_PATH'])->toBe('/fast/apps/lifecycle/default/releases/initial')
+        ->and($transport->inputs[1]['environment']['ORBIT_SEED_PATH'])->toBe('/fast/apps/lifecycle/default');
+});
+
+it('gives the setup of a default no seed, because its seed is its own checkout', function (): void {
+    $this->instance->update(['name' => 'default', 'seed_path' => $this->sandbox, 'seed_repository' => $this->sandbox, 'seed_commit' => str_repeat('a', 40)]);
+    $this->steps->create($this->instance->project, LifecyclePhase::Setup, new LifecycleStep('cold', 'test -z "$ORBIT_SEED_PATH"; test -z "$ORBIT_SEED_COMMIT"; pwd > ran-here'), null, null);
+
+    expect($this->runner->run($this->instance, LifecyclePhase::Setup))->toBeTrue()
+        ->and(file_get_contents($this->sandbox.'/ran-here'))->toBe($this->sandbox."\n");
+});
+
 it('keeps an explicitly empty seed through setup and retries after a default release appears', function (): void {
     $this->instance->update(['status' => InstanceState::Reserved]);
-    $deployment = Mockery::mock(DevelopmentDeployment::class);
-    $deployment->shouldNotReceive('selected');
-    app()->instance(DevelopmentDeployment::class, $deployment);
     $selector = app(SelectInstanceSeedAction::class);
     $selector->execute($this->instance);
     $this->instance->update(['starting_commit' => str_repeat('a', 40), 'status' => InstanceState::SourceResolved]);
     Instance::query()->create([
         'project_id' => $this->instance->project_id, 'node_id' => $this->instance->node_id,
         'name' => 'default', 'checkout_path' => '/fast/apps/lifecycle/default',
-        'development_release_layout' => true, 'seed_path' => '/fast/apps/lifecycle/default/releases/later',
+        'seed_path' => '/fast/apps/lifecycle/default', 'seed_repository' => '/fast/apps/lifecycle/default',
         'seed_commit' => str_repeat('b', 40), 'status' => InstanceState::Active,
     ]);
     $this->steps->create($this->instance->project, LifecyclePhase::Setup, new LifecycleStep('cold', 'test -z "$ORBIT_SEED_PATH"; test -z "$ORBIT_SEED_COMMIT"'), null, null);
@@ -106,139 +123,13 @@ it('keeps an explicitly empty seed through setup and retries after a default rel
         ->and($this->instance->starting_commit)->toBe(str_repeat('a', 40));
 });
 
-it('runs the lists in the active release of a default Instance with the release layout', function (LifecyclePhase $phase): void {
-    $release = $this->sandbox.'/releases/20261008120000-active';
-    mkdir($release, 0700, true);
-    $this->instance->update(['name' => 'default', 'development_release_layout' => true, 'seed_path' => $release, 'seed_commit' => str_repeat('a', 40)]);
-    $deployment = Mockery::mock(DevelopmentDeployment::class);
-    $deployment->shouldReceive('selected')->once()->andReturn(new DeploymentRelease('20261008120000-active', $release, str_repeat('a', 40)));
-    // The release is the default Instance's own seed, so setup gets no seed to copy from.
-    $this->steps->create($this->instance->project, $phase, new LifecycleStep('where', 'pwd > ran-here; test -z "$ORBIT_SEED_PATH"; test -z "$ORBIT_SEED_COMMIT"'), null, null);
+it('runs the lists in the checkout', function (LifecyclePhase $phase): void {
+    $this->steps->create($this->instance->project, $phase, new LifecycleStep('where', 'pwd > ran-here'), null, null);
 
-    expect($this->transport->runner(deployment: $deployment)->run($this->instance, $phase))->toBeTrue()
-        ->and(file_get_contents($release.'/ran-here'))->toBe($release."\n")
-        ->and(file_exists($this->sandbox.'/ran-here'))->toBeFalse()
-        ->and($this->transport->inputs[0]['checkout'])->toBe($this->sandbox)
-        ->and($this->transport->inputs[0]['directory'])->toBe($release)
-        ->and($this->transport->inputs[0]['environment_directory'])->toBe($phase === LifecyclePhase::Setup ? '' : null);
+    expect($this->runner->run($this->instance, $phase))->toBeTrue()
+        ->and(file_get_contents($this->sandbox.'/ran-here'))->toBe($this->sandbox."\n")
+        ->and($this->transport->inputs[0]['checkout'])->toBe($this->sandbox);
 })->with([LifecyclePhase::Setup, LifecyclePhase::Teardown]);
-
-it('gives setup in an active release no seed even when the stored seed names an older release', function (): void {
-    $release = $this->sandbox.'/releases/20261009120000-new';
-    mkdir($release, 0700, true);
-    // A deploy moved `current` after the seed was recorded.
-    $this->instance->update(['name' => 'default', 'development_release_layout' => true, 'seed_path' => $this->sandbox.'/releases/initial', 'seed_commit' => str_repeat('a', 40)]);
-    $deployment = Mockery::mock(DevelopmentDeployment::class);
-    $deployment->shouldReceive('selected')->once()->andReturn(new DeploymentRelease('20261009120000-new', $release, str_repeat('b', 40)));
-    $this->steps->create($this->instance->project, LifecyclePhase::Setup, new LifecycleStep('cold', 'test -z "$ORBIT_SEED_PATH"; test -z "$ORBIT_SEED_COMMIT"; touch installed'), null, null);
-
-    expect($this->transport->runner(deployment: $deployment)->run($this->instance, LifecyclePhase::Setup))->toBeTrue()
-        ->and(file_exists($release.'/installed'))->toBeTrue();
-});
-
-it('copies the synchronized environment files into the active release before setup', function (?string $root, string $application): void {
-    $release = $this->sandbox.'/releases/20261009120000-active';
-    $source = rtrim($this->sandbox.'/'.$application, '/');
-    $target = rtrim($release.'/'.$application, '/');
-    is_dir($source) || mkdir($source, 0700, true);
-    mkdir($target, 0700, true);
-    file_put_contents($source.'/.env', "DB_DATABASE=fresh\n");
-    chmod($source.'/.env', 0600);
-    file_put_contents($source.'/.env.testing', "DB_DATABASE=fresh_test\n");
-    chmod($source.'/.env.testing', 0640);
-    // The release still has the files its deploy copied.
-    file_put_contents($target.'/.env', "DB_DATABASE=stale\n");
-    $this->instance->update(['name' => 'default', 'development_release_layout' => true, 'source_is_laravel' => true, 'root' => $root]);
-    $deployment = Mockery::mock(DevelopmentDeployment::class);
-    $deployment->shouldReceive('selected')->once()->andReturn(new DeploymentRelease('20261009120000-active', $release, str_repeat('a', 40)));
-    $directory = $application === '' ? '.' : $application;
-    $this->steps->create($this->instance->project, LifecyclePhase::Setup, new LifecycleStep('migrate', "cat {$directory}/.env > migrated-with"), null, null);
-
-    expect($this->transport->runner(deployment: $deployment)->run($this->instance, LifecyclePhase::Setup))->toBeTrue()
-        ->and(file_get_contents($release.'/migrated-with'))->toBe("DB_DATABASE=fresh\n")
-        ->and(file_get_contents($target.'/.env.testing'))->toBe("DB_DATABASE=fresh_test\n")
-        ->and(fileperms($target.'/.env') & 0777)->toBe(0600)
-        ->and(fileperms($target.'/.env.testing') & 0777)->toBe(0640)
-        ->and(fileowner($target.'/.env'))->toBe(fileowner($source.'/.env'))
-        ->and(glob($target.'/.orbit-environment-*', GLOB_NOSORT) ?: [])->toBe([])
-        ->and($this->transport->inputs[0]['environment_directory'])->toBe($application);
-})->with([
-    'an application at the repository root' => [null, ''],
-    'a nested application' => ['apps/site/public', 'apps/site'],
-]);
-
-it('copies no environment files for setup in the checkout', function (): void {
-    file_put_contents($this->sandbox.'/.env', "DB_DATABASE=fresh\n");
-    $this->steps->create($this->instance->project, LifecyclePhase::Setup, new LifecycleStep('install', 'true'), null, null);
-
-    expect($this->runner->run($this->instance, LifecyclePhase::Setup))->toBeTrue()
-        ->and($this->transport->inputs[0]['environment_directory'])->toBeNull();
-});
-
-it('runs teardown in the checkout when the active release cannot be read, so removal can finish', function (): void {
-    $this->instance->update(['name' => 'default', 'development_release_layout' => true]);
-    $deployment = Mockery::mock(DevelopmentDeployment::class);
-    $deployment->shouldReceive('selected')->once()->andThrow(new ResourceOperationException('deployment.invalid_release', 'Development deployment returned an invalid release.', 409));
-    $this->steps->create($this->instance->project, LifecyclePhase::Teardown, new LifecycleStep('where', 'pwd > ran-here'), null, null);
-    Log::spy();
-
-    expect($this->transport->runner(deployment: $deployment)->run($this->instance, LifecyclePhase::Teardown))->toBeTrue()
-        ->and(file_get_contents($this->sandbox.'/ran-here'))->toBe($this->sandbox."\n")
-        ->and($this->transport->inputs[0]['directory'])->toBe($this->sandbox)
-        ->and($this->transport->inputs[0]['environment_directory'])->toBeNull();
-    Log::shouldHaveReceived('warning')->once()->withArgs(fn (string $message, array $context): bool => $context === ['instance_id' => $this->instance->id, 'error' => 'deployment.invalid_release']);
-});
-
-it('runs the lists in the checkout of an Instance without the release layout', function (): void {
-    $deployment = Mockery::mock(DevelopmentDeployment::class);
-    $deployment->shouldNotReceive('selected');
-    $this->steps->create($this->instance->project, LifecyclePhase::Setup, new LifecycleStep('where', 'pwd > ran-here'), null, null);
-
-    expect($this->transport->runner(deployment: $deployment)->run($this->instance, LifecyclePhase::Setup))->toBeTrue()
-        ->and(file_get_contents($this->sandbox.'/ran-here'))->toBe($this->sandbox."\n")
-        ->and($this->transport->inputs[0]['directory'])->toBe($this->sandbox);
-});
-
-it('starts no step when the active release cannot be read', function (): void {
-    $this->instance->update(['name' => 'default', 'development_release_layout' => true]);
-    $deployment = Mockery::mock(DevelopmentDeployment::class);
-    $deployment->shouldReceive('selected')->andThrow(new ResourceOperationException('deployment.invalid_release', 'Development deployment returned an invalid release.', 409));
-    $this->steps->create($this->instance->project, LifecyclePhase::Setup, new LifecycleStep('install', 'touch installed'), null, null);
-
-    expect(fn () => $this->transport->runner(deployment: $deployment)->run($this->instance, LifecyclePhase::Setup))
-        ->toThrow(function (ResourceOperationException $exception): void {
-            expect($exception->errorCode)->toBe('instance.active_release_unavailable')
-                ->and($exception->status)->toBe(409);
-        });
-    expect($this->transport->inputs)->toBeEmpty()
-        ->and(file_exists($this->sandbox.'/installed'))->toBeFalse();
-});
-
-it('refuses a lifecycle directory outside the checkout releases', function (string $directory): void {
-    mkdir($this->sandbox.'/releases/one', 0700, true);
-    mkdir($this->sandbox.'-sibling', 0700);
-    symlink($this->sandbox.'/releases/one', $this->sandbox.'/releases/link');
-    $this->instance->update(['name' => 'default', 'development_release_layout' => true]);
-    $path = str_replace('{checkout}', $this->sandbox, $directory);
-    $deployment = Mockery::mock(DevelopmentDeployment::class);
-    $deployment->shouldReceive('selected')->andReturn(new DeploymentRelease('one', $path, str_repeat('a', 40)));
-    $this->steps->create($this->instance->project, LifecyclePhase::Setup, new LifecycleStep('install', 'touch installed'), null, null);
-
-    try {
-        expect(fn () => $this->transport->runner(deployment: $deployment)->run($this->instance, LifecyclePhase::Setup))
-            ->toThrow(function (ResourceOperationException $exception): void {
-                expect($exception->errorCode)->toBe('instance.setup_step_failed')
-                    ->and($exception->details)->toBe(['step' => 'install', 'outcome' => 'unconfirmed']);
-            });
-        expect(file_exists($path.'/installed'))->toBeFalse();
-    } finally {
-        (new Filesystem)->deleteDirectory($this->sandbox.'-sibling');
-    }
-})->with([
-    'a sibling directory' => ['{checkout}-sibling'],
-    'a link to a release' => ['{checkout}/releases/link'],
-    'a parent reference' => ['{checkout}/releases/one/../one'],
-]);
 
 it('passes empty seed values when the Project has no release', function (): void {
     $this->steps->create($this->instance->project, LifecyclePhase::Setup, new LifecycleStep('cold', 'test -z "$ORBIT_SEED_PATH"; test -z "$ORBIT_SEED_COMMIT"; touch installed'), null, null);

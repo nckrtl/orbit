@@ -10,8 +10,6 @@ use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\GitHub\GitHubCliToken;
 use App\Domain\GitHub\RepositoryReadAccess;
-use App\Domain\Instances\Deployment\DeploymentRelease;
-use App\Domain\Instances\Deployment\DevelopmentDeployment;
 use App\Domain\Instances\DevelopmentInstanceProvisioner;
 use App\Domain\Instances\DevelopmentInstanceSourceLifecycle;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
@@ -221,15 +219,12 @@ it('retains an interrupted prepare without a receipt and cleans a lost response 
     }
 })->with(['interrupted before receipt' => 'before receipt', 'lost completed response' => 'lost response']);
 
-it('starts a linked workspace from the recorded release instead of newer origin main', function (): void {
+it('starts a linked workspace from the deployed commit of the default instead of newer origin main', function (): void {
     config()->set('orbit.tasks.worker_user', null);
     $seed = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'default');
     $this->source->prepare($seed, false);
     $resolution = $this->source->resolve($seed);
-    $path = $seed->checkout_path.'/releases/initial';
-    orb76_run(['git', '-C', $seed->checkout_path, 'worktree', 'add', '--detach', $path, $resolution->startingCommit]);
-    $seed->update(['development_release_layout' => true, 'seed_path' => '/stale/selection', 'seed_commit' => str_repeat('b', 40)]);
-    app()->instance(DevelopmentDeployment::class, Mockery::mock(DevelopmentDeployment::class)->shouldReceive('selected')->andReturn(new DeploymentRelease('initial', $path, $resolution->startingCommit))->getMock());
+    $seed->update(['seed_path' => $seed->checkout_path, 'seed_commit' => $resolution->startingCommit, 'seed_repository' => $seed->checkout_path]);
     orb178_advance_remote($this->sandbox, 'main');
     $workspace = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'task-seeded', 'task-seeded');
     $workspace->update(['source_prepare_id' => (string) Str::uuid()]);
@@ -237,7 +232,7 @@ it('starts a linked workspace from the recorded release instead of newer origin 
     $resolved = $this->source->resolve($workspace);
     $this->source->inspectPrepared($workspace);
     expect($resolved->startingCommit)->toBe($resolution->startingCommit)
-        ->and($workspace->refresh()->seed_path)->toBe($path)
+        ->and($workspace->refresh()->seed_path)->toBe($seed->checkout_path)
         ->and($workspace->source_layout)->toBe('worktree')
         ->and(is_file($workspace->checkout_path.'/.git'))->toBeTrue()
         ->and(trim(orb76_run(['git', '-C', $workspace->checkout_path, 'rev-parse', '--path-format=absolute', '--git-common-dir'])->stdout))->toBe($seed->checkout_path.'/.git');
