@@ -22,7 +22,8 @@ use JsonException;
  * Runs task VMs on an Incus host Node with `sudo -n incus --project <project> …` over SSH, as the
  * host's managed user. `incus-host.sh` prepared the project, the bridge with its ACL, the default
  * profile and the image. The provider never creates a network: it pins the VM's profile NIC to the
- * host's configured bridge. This class is the one place that validates Incus output.
+ * host's configured bridge with port isolation. This class is the one place that validates Incus
+ * output. Every VM name follows `--`, so no name can be read as an option.
  */
 final readonly class IncusTaskVmProvider implements TaskVmProvider
 {
@@ -37,7 +38,11 @@ final readonly class IncusTaskVmProvider implements TaskVmProvider
 
     public function create(TaskVm $vm, string $userData): void
     {
-        if ($this->observe($vm) instanceof VmObservation) {
+        $observation = $this->observe($vm);
+        if ($observation instanceof VmObservation) {
+            // A stopped VM is one whose launch created it but did not start it.
+            $this->start($vm, $observation);
+
             return;
         }
 
@@ -45,13 +50,15 @@ final readonly class IncusTaskVmProvider implements TaskVmProvider
         // `incus launch` reads instance config as YAML from a stdin that is not a terminal. JSON is YAML,
         // but YAML knows no `\/` escape.
         $result = $this->incus($vm, [
-            'launch', $host->image, $vm->name, '--vm',
+            'launch', '--vm',
             '--config', "limits.cpu={$host->cpus}", '--config', "limits.memory={$host->memory}",
-            '--device', "root,size={$host->disk}", '--device', "eth0,network={$host->network}",
+            '--device', "root,size={$host->disk}",
+            '--device', "eth0,network={$host->network}", '--device', 'eth0,security.port_isolation=true',
+            '--', $host->image, $vm->name,
         ], json_encode(['config' => ['cloud-init.user-data' => $userData]], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
 
-        // A launch whose answer was lost still created the VM.
-        if (! $result->succeeded() && ! $this->observe($vm) instanceof VmObservation) {
+        // Only a launch whose answer was lost and whose VM runs counts: a VM that did not start keeps the launch error.
+        if (! $result->succeeded() && $this->observe($vm)?->running !== true) {
             throw $this->failed($vm, 'launch', $result);
         }
     }
@@ -59,7 +66,7 @@ final readonly class IncusTaskVmProvider implements TaskVmProvider
     /** @phpstan-impure */
     public function observe(TaskVm $vm): ?VmObservation
     {
-        $result = $this->incus($vm, ['list', $vm->name, '--format', 'json']);
+        $result = $this->incus($vm, ['list', '--format', 'json', '--', $vm->name]);
         if (! $result->succeeded()) {
             throw $this->failed($vm, 'list', $result);
         }
@@ -87,7 +94,7 @@ final readonly class IncusTaskVmProvider implements TaskVmProvider
 
     public function bootstrapReady(TaskVm $vm): bool
     {
-        $result = $this->incus($vm, ['exec', $vm->name, '--', 'cloud-init', 'status', '--format=json']);
+        $result = $this->incus($vm, ['exec', '--', $vm->name, 'cloud-init', 'status', '--format=json']);
         // Until the guest agent runs, `incus exec` fails and prints nothing on stdout.
         if (! $result->succeeded() && trim($result->stdout) === '') {
             return false;
@@ -108,7 +115,7 @@ final readonly class IncusTaskVmProvider implements TaskVmProvider
 
     public function sshHostFingerprint(TaskVm $vm): string
     {
-        $result = $this->incus($vm, ['exec', $vm->name, '--', 'ssh-keygen', '-l', '-f', '/etc/ssh/ssh_host_ed25519_key.pub']);
+        $result = $this->incus($vm, ['exec', '--', $vm->name, 'ssh-keygen', '-l', '-f', '/etc/ssh/ssh_host_ed25519_key.pub']);
         if (! $result->succeeded()) {
             throw $this->failed($vm, 'exec ssh-keygen', $result);
         }
@@ -121,10 +128,23 @@ final readonly class IncusTaskVmProvider implements TaskVmProvider
 
     public function destroy(TaskVm $vm): void
     {
-        $result = $this->incus($vm, ['delete', $vm->name, '--force']);
+        $result = $this->incus($vm, ['delete', '--force', '--', $vm->name]);
 
         if (! $result->succeeded() && $this->observe($vm) instanceof VmObservation) {
             throw $this->failed($vm, 'delete', $result);
+        }
+    }
+
+    private function start(TaskVm $vm, VmObservation $observation): void
+    {
+        if ($observation->running) {
+            return;
+        }
+
+        $result = $this->incus($vm, ['start', '--', $vm->name]);
+        // A guest reboot shows the VM stopped for a moment, so a VM that runs now counts as started.
+        if (! $result->succeeded() && $this->observe($vm)?->running !== true) {
+            throw $this->failed($vm, 'start', $result);
         }
     }
 
@@ -186,7 +206,7 @@ final readonly class IncusTaskVmProvider implements TaskVmProvider
 
     private function failed(TaskVm $vm, string $operation, CommandResult $result): TaskVmException
     {
-        $detail = implode("\n", array_slice(explode("\n", trim($result->stderr)), -5));
+        $detail = mb_substr(implode("\n", array_slice(explode("\n", trim($result->stderr)), -5)), 0, 2000);
 
         return new TaskVmException('task_vm.host_command_failed', "`incus {$operation}` for task VM [{$vm->name}] failed with exit code [{$result->exitCode}].".($detail === '' ? '' : "\n{$detail}"), 502);
     }

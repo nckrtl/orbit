@@ -112,30 +112,51 @@ it('launches an absent VM on the configured bridge with the user-data on stdin',
 
     [$connection, $launch] = $this->ssh->calls[1];
     expect(($this->argv)())->toBe([
-        [...INCUS_PREFIX, 'list', 'tvm-1', '--format', 'json'],
-        [...INCUS_PREFIX, 'launch', 'ubuntu-26.04-vm', 'tvm-1', '--vm', '--config', 'limits.cpu=2', '--config', 'limits.memory=4GiB',
-            '--device', 'root,size=20GiB', '--device', 'eth0,network=orbittask0'],
+        [...INCUS_PREFIX, 'list', '--format', 'json', '--', 'tvm-1'],
+        [...INCUS_PREFIX, 'launch', '--vm', '--config', 'limits.cpu=2', '--config', 'limits.memory=4GiB', '--device', 'root,size=20GiB',
+            '--device', 'eth0,network=orbittask0', '--device', 'eth0,security.port_isolation=true', '--', 'ubuntu-26.04-vm', 'tvm-1'],
     ])
         ->and($launch->input)->toBe('{"config":{"cloud-init.user-data":"#cloud-config\nshell: /bin/bash\n"}}')
         ->and([$connection->host, $connection->user, $connection->port, $connection->identityFile, $connection->knownHostsFile])
         ->toBe(['10.44.0.7', 'orbit', 22, '/keys/id_ed25519', '/keys/known_hosts']);
 });
 
-it('does not launch a VM that exists', function (): void {
-    ($this->answer)(incusList(incusInstance(status: 'Stopped')));
+it('does not launch a VM that runs', function (): void {
+    ($this->answer)(incusList(incusInstance()));
 
     $this->provider->create($this->vm, '#cloud-config');
 
     expect($this->ssh->calls)->toHaveCount(1);
 });
 
-it('accepts a failed launch only when the VM exists afterwards', function (): void {
+it('starts a VM that exists but is stopped', function (): void {
+    ($this->answer)(incusList(incusInstance(status: 'Stopped')), incusResult());
+    $this->provider->create($this->vm, '#cloud-config');
+    expect(($this->argv)()[1])->toBe([...INCUS_PREFIX, 'start', '--', 'tvm-1']);
+
+    // A guest reboot: start fails, but the VM runs again.
+    ($this->answer)(incusList(incusInstance(status: 'Stopped')), incusResult(exitCode: 1, stderr: 'Error: The instance is already running'), incusList(incusInstance()));
+    $this->provider->create($this->vm, '#cloud-config');
+
+    $stderr = "Error: Failed to run: qemu exit status 1\n".str_repeat('x', 3000);
+    ($this->answer)(incusList(incusInstance(status: 'Stopped')), incusResult(exitCode: 1, stderr: $stderr), incusList(incusInstance(status: 'Stopped')));
+    expect(fn () => $this->provider->create($this->vm, '#cloud-config'))
+        ->toThrow(fn (TaskVmException $e) => expect([$e->errorCode, mb_strlen($e->getMessage()) < 2100, str_starts_with($e->getMessage(), "`incus start` for task VM [tvm-1] failed with exit code [1].\nError: Failed to run: qemu exit status 1")])
+            ->toBe(['task_vm.host_command_failed', true, true]));
+});
+
+it('accepts a failed launch only when the VM runs afterwards', function (): void {
     ($this->answer)(incusList(), incusResult(exitCode: 1, stderr: 'Error: connection lost'), incusList(incusInstance()));
     $this->provider->create($this->vm, '#cloud-config');
 
     ($this->answer)(incusList(), incusResult(exitCode: 1, stderr: "Error: Image not found\n"), incusList());
     expect(fn () => $this->provider->create($this->vm, '#cloud-config'))
         ->toThrow(fn (TaskVmException $e) => expect([$e->errorCode, $e->getMessage()])->toBe(['task_vm.host_command_failed', "`incus launch` for task VM [tvm-1] failed with exit code [1].\nError: Image not found"]));
+
+    // The launch created the VM but could not start it: the launch error is the answer.
+    ($this->answer)(incusList(), incusResult(exitCode: 1, stderr: "Error: Failed to run: qemu exit status 1\n"), incusList(incusInstance(status: 'Stopped')));
+    expect(fn () => $this->provider->create($this->vm, '#cloud-config'))
+        ->toThrow(TaskVmException::class, "`incus launch` for task VM [tvm-1] failed with exit code [1].\nError: Failed to run: qemu exit status 1");
 });
 
 it('observes the VM by its exact name', function (): void {
@@ -181,7 +202,7 @@ it('reads the cloud-init status', function (CommandResult $result, bool $ready):
     ($this->answer)($result);
 
     expect($this->provider->bootstrapReady($this->vm))->toBe($ready)
-        ->and(($this->argv)())->toBe([[...INCUS_PREFIX, 'exec', 'tvm-1', '--', 'cloud-init', 'status', '--format=json']]);
+        ->and(($this->argv)())->toBe([[...INCUS_PREFIX, 'exec', '--', 'tvm-1', 'cloud-init', 'status', '--format=json']]);
 })->with([
     'agent not running' => [incusResult(exitCode: 1, stderr: "Error: VM agent isn't currently running"), false],
     'running' => [incusResult('{"status":"running","errors":[]}'), false],
@@ -206,7 +227,7 @@ it('reads the ed25519 host key fingerprint', function (): void {
     ($this->answer)(incusResult("256 {$fingerprint} root@tvm-1 (ED25519)\n"));
 
     expect($this->provider->sshHostFingerprint($this->vm))->toBe($fingerprint)
-        ->and(($this->argv)())->toBe([[...INCUS_PREFIX, 'exec', 'tvm-1', '--', 'ssh-keygen', '-l', '-f', '/etc/ssh/ssh_host_ed25519_key.pub']]);
+        ->and(($this->argv)())->toBe([[...INCUS_PREFIX, 'exec', '--', 'tvm-1', 'ssh-keygen', '-l', '-f', '/etc/ssh/ssh_host_ed25519_key.pub']]);
 });
 
 it('refuses an invalid fingerprint', function (CommandResult $result, string $code): void {
@@ -223,7 +244,7 @@ it('refuses an invalid fingerprint', function (CommandResult $result, string $co
 it('deletes the VM and accepts an absent one', function (): void {
     ($this->answer)(incusResult());
     $this->provider->destroy($this->vm);
-    expect(($this->argv)())->toBe([[...INCUS_PREFIX, 'delete', 'tvm-1', '--force']]);
+    expect(($this->argv)())->toBe([[...INCUS_PREFIX, 'delete', '--force', '--', 'tvm-1']]);
 
     ($this->answer)(incusResult(exitCode: 1, stderr: 'Error: Instance not found'), incusList());
     $this->provider->destroy($this->vm);

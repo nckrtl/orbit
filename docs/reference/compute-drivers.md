@@ -76,9 +76,9 @@ A job that stops halfway runs again after 1800 seconds. `EnrollTaskVm` checks cl
 
 ### Incus provider
 
-`IncusTaskVmProvider` runs `sudo -n incus --project <project> …` on the host Node over SSH, as the host's managed user. It launches the host's `image` as a VM with the row's `name`, the host's `cpus`, `memory`, and `disk`, and `eth0` pinned to the host's `network`. The NIC keeps port isolation from the project's `default` profile. The user-data goes on stdin. The provider never creates a network.
+`IncusTaskVmProvider` runs `sudo -n incus --project <project> …` on the host Node over SSH, as the host's managed user. It launches the host's `image` as a VM with the row's `name`, the host's `cpus`, `memory`, and `disk`, and `eth0` on the host's `network` with `security.port_isolation=true`. The user-data goes on stdin. The provider never creates a network.
 
-Create and delete are idempotent by name. An existing VM counts as created, and an absent VM counts as deleted. A launch or delete that reports an error but leaves the wanted result also counts. Callers check `task_vms.enabled` first.
+Create and delete are idempotent by name. A running VM counts as created, and an absent VM counts as deleted. Create starts a VM that exists but is stopped, and fails with the `incus start` error when it cannot. A launch that reports an error counts only when the VM runs afterwards. Otherwise create fails with the launch error. A delete that reports an error counts when the VM is gone. Callers check `task_vms.enabled` first.
 
 ### Prepare an Incus host
 
