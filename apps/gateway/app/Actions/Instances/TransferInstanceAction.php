@@ -383,6 +383,13 @@ final readonly class TransferInstanceAction
             throw $this->conflict('instance.lifecycle_conflict', 'The Instance has no authoritative Route.');
         }
 
+        if ($instance->routes->contains(static fn (Route $candidate): bool => $candidate->hasWebRoot())) {
+            throw $this->conflict(
+                'instance.transfer_web_root_routes',
+                'Remove the Routes with a web root before the transfer, and create them again after it.',
+            );
+        }
+
         if ($route->replaced_by_route_id !== null || $route->replaces_route_id !== null) {
             throw $this->conflict(
                 'instance.lifecycle_conflict',

@@ -20,7 +20,7 @@ Both lanes are off by default. [ADR 0200](/decisions/0200-run-each-task-group-in
 
 ## Task VMs
 
-Partly built. [Prepare an Incus host](#prepare-an-incus-host), [Limit fleet traffic on the hub](#limit-fleet-traffic-on-the-hub), and the address allocator's reserved range exist. The other Phase 1 slices of [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm) build the rest of this section. Until they merge, no task VM is created.
+Partly built. The [settings](#configure-task-vms), the `task_vms` table and its [states](#states), the cloud-init user-data, the placement rule, the commands that [prepare an Incus host](#prepare-an-incus-host) and [limit fleet traffic on the hub](#limit-fleet-traffic-on-the-hub), and the address allocator's reserved range exist. The provider, the jobs, and the placement hook are not built yet, so no task VM is created. The Phase 1 slices of [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm) build them.
 
 A task VM is a stock Ubuntu 26.04 cloud VM on an Incus host. The Gateway creates it for one group, enrolls it as an `app-dev` Node, and destroys it when the group ends. After enrollment, the group uses the same code as a shared group, pinned to that Node.
 
@@ -117,23 +117,51 @@ A task VM workspace is a normal Instance on a normal Node, so generic Instance o
 
 ### Configure task VMs
 
-These keys live in the Gateway's `config/task_vms.php`.
+These keys live in the Gateway's `config/task_vms.php`. Set them in the Gateway's environment.
 
-| Key | Meaning |
-| --- | --- |
-| `task_vms.enabled` | Allows new task VMs. Set with `ORBIT_TASK_VMS_ENABLED`. Default `false` |
-| `task_vms.dev_cluster_id` | The Cluster that task VM Nodes join |
-| `task_vms.wireguard_range` | The reserved WireGuard range. It must be inside the WireGuard subnet. Default `10.44.64.0/20` |
-| `task_vms.model_proxy_origin` | The CLIProxyAPI origin that Pi on the VM uses |
-| `task_vms.pi.artifact_path`, `task_vms.pi.artifact_sha256` | The pinned Pi executable and its SHA-256 digest |
-| `task_vms.pi.models` | The models Pi offers |
-| `task_vms.incus.hosts` | A JSON list of hosts, in placement order |
+| Key | Variable | Meaning |
+| --- | --- | --- |
+| `task_vms.enabled` | `ORBIT_TASK_VMS_ENABLED` | Allows new task VMs. Default `false` |
+| `task_vms.dev_cluster_id` | `ORBIT_TASK_VMS_DEV_CLUSTER_ID` | The ID of the Cluster that task VM Nodes join |
+| `task_vms.wireguard_range` | `ORBIT_TASK_VMS_WIREGUARD_RANGE` | The reserved WireGuard range. Default `10.44.0.128/25`, the upper half of the default VPN subnet `10.44.0.0/24` |
+| `task_vms.model_proxy_origin` | `ORBIT_TASK_VMS_MODEL_PROXY_ORIGIN` | The CLIProxyAPI origin that Pi on the VM uses, such as `http://10.44.0.3:8317`. An `http` or `https` origin with no path, query, or credentials |
+| `task_vms.pi.artifact_path` | `ORBIT_TASK_VMS_PI_ARTIFACT_PATH` | The absolute path of the pinned Pi executable on the Gateway |
+| `task_vms.pi.artifact_sha256` | `ORBIT_TASK_VMS_PI_ARTIFACT_SHA256` | Its lowercase SHA-256 digest. Set both Pi artifact values or neither |
+| `task_vms.pi.models` | `ORBIT_TASK_VMS_PI_MODELS` | A JSON list of the models Pi offers. Default `[]` |
+| `task_vms.incus.hosts` | `ORBIT_TASK_VMS_INCUS_HOSTS` | A JSON list of hosts, in placement order. Default `[]` |
 
-Each host has `node_id`, `project`, `network`, `cidr`, `pool`, `image`, `max_vms`, `cpus`, `memory`, and `disk`. `TaskVmSettings` validates the configuration once. While task VMs are enabled, invalid configuration fails on first use.
+Each host is a JSON object with these snake_case keys. Other keys are an error.
+
+| Key | Required | Default | Meaning |
+| --- | --- | --- | --- |
+| `node_id` | Yes | | The ID of the host Node. List each host once |
+| `cidr` | Yes | | The task bridge network, such as `10.251.77.0/24`: a private network from `/16` to `/28`, not a host address. The bridge gets the first usable address and VMs get the others |
+| `max_vms` | Yes | | The most task VMs on the host, from 1 to 64 |
+| `project` | No | `orbit-tasks` | The Incus project |
+| `network` | No | `orbittask0` | The bridge name: `orbittask` and 1 to 6 lowercase letters or digits |
+| `pool` | No | `default` | The Incus storage pool for the VM root disk |
+| `image` | No | `ubuntu-26.04-vm` | The Incus image alias |
+| `cpus` | No | `2` | The vCPUs of each VM, from 1 to 64 |
+| `memory` | No | `4GiB` | The memory of each VM, in `MiB` or `GiB` |
+| `disk` | No | `20GiB` | The root disk of each VM, in `MiB` or `GiB` |
+
+For example, `ORBIT_TASK_VMS_INCUS_HOSTS='[{"node_id":7,"cidr":"10.251.77.0/24","max_vms":4}]'`.
+
+`TaskVmSettings` validates the configuration once, when it is first used. It checks every value that is set, also while task VMs are off, so you can prepare hosts and the hub before you enable task VMs. An unset or empty value stays absent, and malformed JSON is an error. Enabling task VMs also requires `dev_cluster_id`, `model_proxy_origin`, and at least one host.
+
+The reserved range must always be a private network. As soon as task VMs are enabled, or the Cluster, the origin, or a host is set, the range must also be a smaller network inside the Gateway's VPN subnet, and no host's `cidr` may overlap that subnet. While none of them is set, Orbit does not compare the range with the subnet, so a fleet on another subnet keeps working. Invalid configuration fails with `task_vm.invalid_config` (HTTP 500).
 
 ### Errors
 
 `IncusTaskVmProvider` is the only place that reads host and guest output. It checks the instance state and its one IPv4 address inside the bridge range, the cloud-init status, and the host key fingerprint. Invalid output fails with `task_vm.invalid_host_output`. Every task VM error code starts with `task_vm.`. The setup commands report `task_vm.unknown_host`, `task_vm.settings_invalid`, `task_vm.range_outside_vpn_subnet`, `task_vm.range_in_use`, `task_vm.fleet_unavailable`, and `task_vm.setup_failed`, with the last lines of the script's error output. After that check, Orbit trusts its own records.
+
+| Code | HTTP | Cause |
+| --- | --- | --- |
+| `task_vm.invalid_config` | 500 | A `task_vms` value is invalid. See [Configure task VMs](#configure-task-vms) |
+| `task_vm.unknown_host` | 409 | The Node is not in `task_vms.incus.hosts` |
+| `task_vm.invalid_gateway_key` | 500 | The Gateway's SSH public key is not one OpenSSH public key line |
+| `task_vm.workspace_mismatch` | 409 | A group's workspace is not on its ready task VM |
+| `task_vm.foreign_instance` | 409 | An Instance on a task VM Node is not its group's workspace |
 
 ### Limits
 
@@ -331,9 +359,9 @@ Sandbox MCP files are installed through the guest transport. They name the dispo
 
 `SandboxWorkspaceSource` initializes a blank checkout with a sandbox ownership marker, fetches remote refs directly from GitHub with temporary App access, and creates the task branch from its published branch or the Project default. The guest initializes its checkout and fetches the selected refs. Retrying a prepared checkout preserves local commits and uncommitted files. A foreign directory, changed origin, or changed checkout branch fails without replacing its contents.
 
-Before the first fetch in an Incus Orbit sandbox, Orbit configures guest DNS for GitHub domains through `1.1.1.1` and `9.9.9.9`. This bootstrap works before the cloned private Gateway is retargeted. Its persistent resolver drop-in routes only `github.com`, `githubusercontent.com`, and `githubassets.com`; private topology DNS keeps its existing policy. Preparation refuses foreign source ownership or a changed resolver drop-in.
+An Incus Orbit sandbox can fetch from GitHub before the cloned private Gateway is retargeted. Each template guest already resolves public names through `1.1.1.1` and `9.9.9.9`, as described in [Build a cold candidate](#build-a-cold-candidate).
 
-Pair preparation installs the same GitHub resolver on the private Gateway before refreshing dependencies. It also gives that Gateway's dnsmasq backend fixed public upstreams at `1.1.1.1` and `9.9.9.9`, which the host boundary permits. Private records and peer DNS routes stay in place. Orbit checks the source owner and isolated Gateway address before it writes the upstream file. A foreign file or failed validation refuses readiness; failed activation removes only the new owned drop-in.
+Before it refreshes dependencies, pair preparation gives the private Gateway's dnsmasq backend fixed public upstreams at `1.1.1.1` and `9.9.9.9`, which the host boundary permits. Private records and peer DNS routes stay in place. Orbit checks the source owner and isolated Gateway address before it writes the upstream file. A foreign file or failed validation refuses readiness; failed activation removes only the new owned drop-in.
 
 This prepares source only; the claim gate still requires the runtime, model proxy, and topology bootstrap.
 
@@ -475,8 +503,6 @@ Convergence confirms the pinned source commit, the isolated operator profile, an
 Before each agent dispatch, admission compares the private Gateway version with the owned branch commit. It refreshes Gateway dependencies, migrations, and services only when the version differs, then refreshes native pair prerequisites and requires fresh doctor readiness. A running baseline is polled before this preparation can modify the checkout.
 
 The builder can prepare blank workload guests alongside the pair. All guests share the pinned source and verified offline inputs, including Docker prerequisites for workload roles. Convergence enrolls only the operator. Publication audits each workload for prerequisites and absence of enrollment state, then publishes every requested role with the same immutable source descriptor. Pass the same `workload_roles` to the publisher. Adding roles requires a new template; published templates cannot be extended in place.
-
-The source archive can carry a Caddy repository snapshot in `.git/orbit-caddy-source`. Preparation verifies its signing key, signed metadata, package index, and package before copying it into the image's protected package cache. Native role convergence installs the Caddy package from that authenticated local repository. Without a snapshot, convergence downloads the pinned package from the Caddy GitHub release. A changed or incomplete snapshot refuses preparation. See [package sources](/reference/node-provisioning#package-sources) for the trust checks.
 
 Task runtime preparation uses the sandbox’s recorded image roles as its exact private Node inventory. For an expanded resume, it refreshes the private Gateway branch runtime and retries owned workload enrollment before strict retargeting. It retargets every recorded peer, requires an active workload role on each declared Node, and refuses foreign or extra Nodes. The operator stays roleless. Template publication keeps the stricter default-pair check.
 

@@ -29,23 +29,9 @@ final readonly class NativeSshExecutor implements SshExecutor
         return $this->runner->run(new ProcessInvocation(
             arguments: [
                 'ssh',
-                '-i',
-                $connection->identityFile,
-                '-p',
-                (string) $connection->port,
-                '-o',
-                'BatchMode=yes',
-                '-o',
-                'StrictHostKeyChecking=yes',
-                '-o',
-                "UserKnownHostsFile={$connection->knownHostsFile}",
-                '-o',
-                "ConnectTimeout={$connection->connectTimeout}",
-                '-o',
-                'ServerAliveInterval=5',
-                '-o',
-                'ServerAliveCountMax=2',
+                ...$this->options($connection),
                 ...$this->multiplexing($connection),
+                ...$this->proxyJump($connection),
                 '--',
                 "{$connection->user}@{$connection->host}",
                 $command->shellCommand(),
@@ -60,6 +46,57 @@ final readonly class NativeSshExecutor implements SshExecutor
         ));
     }
 
+    /** @return list<string> */
+    private function options(SshConnection $connection): array
+    {
+        return [
+            '-i',
+            $connection->identityFile,
+            '-p',
+            (string) $connection->port,
+            '-o',
+            'BatchMode=yes',
+            '-o',
+            'StrictHostKeyChecking=yes',
+            '-o',
+            "UserKnownHostsFile={$connection->knownHostsFile}",
+            '-o',
+            "ConnectTimeout={$connection->connectTimeout}",
+            '-o',
+            'ServerAliveInterval=5',
+            '-o',
+            'ServerAliveCountMax=2',
+        ];
+    }
+
+    /**
+     * Reaches the host through the jump connection. OpenSSH's `ProxyJump` passes neither `-i` nor
+     * the known-hosts options to the jump hop, so the hop is an explicit `ProxyCommand` with the
+     * same strict options. Its arguments are shell-quoted and their `%` doubled, so only the `-W`
+     * target expands OpenSSH's tokens.
+     *
+     * @return list<string>
+     */
+    private function proxyJump(SshConnection $connection): array
+    {
+        $jump = $connection->proxyJump;
+
+        if ($jump === null) {
+            return [];
+        }
+
+        $quote = static fn (string $argument): string => escapeshellarg(str_replace('%', '%%', $argument));
+
+        return [
+            '-o',
+            'ProxyCommand='.implode(' ', [
+                ...array_map($quote, ['ssh', ...$this->options($jump), '-W']),
+                "'[%h]:%p'",
+                ...array_map($quote, ['--', "{$jump->user}@{$jump->host}"]),
+            ]),
+        ];
+    }
+
     /**
      * Options that run the command as a channel on the Node's shared connection, or none when
      * the socket directory cannot hold a socket, so the command opens its own connection.
@@ -72,6 +109,7 @@ final readonly class NativeSshExecutor implements SshExecutor
 
         if (
             ! $connection->shareConnection
+            || $connection->proxyJump !== null
             || strlen($directory) > self::MaxSocketDirectoryLength
             || ! $this->socketDirectory($directory)
         ) {

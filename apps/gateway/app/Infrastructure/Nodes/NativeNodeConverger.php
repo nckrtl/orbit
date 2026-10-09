@@ -116,7 +116,7 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
         }
 
         $bootstrapConnection = $this->connection($node, $identity->bootstrapUser);
-        $hostKey = $this->hostKeys->scan($bootstrapConnection->host, $bootstrapConnection->port);
+        $hostKey = $this->hostKeys->scan($bootstrapConnection->host, $bootstrapConnection->port, $bootstrapConnection->proxyJump);
 
         if ($node->ssh_host_fingerprint !== null && $node->ssh_host_fingerprint !== $hostKey->fingerprint) {
             throw new NodeProvisioningException(
@@ -288,6 +288,7 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
                 port: $port,
                 identityFile: $this->sshKeys->privateKeyPath(),
                 knownHostsFile: $this->knownHosts->path(),
+                proxyJump: $this->jump($node, $host, $port),
             );
         }
 
@@ -299,7 +300,18 @@ final readonly class NativeNodeConverger implements NodeConverger, RecoverableNo
             port: $port ?? $defaultPort,
             identityFile: $this->sshKeys->privateKeyPath(),
             knownHostsFile: $this->knownHosts->path(),
+            proxyJump: $this->jump($node, $host ?? $defaultHost, $port ?? $defaultPort),
         );
+    }
+
+    /** Public SSH goes through the Node's jump Node, if it has one; WireGuard SSH never does. */
+    private function jump(Node $node, string $host, int $port): ?SshConnection
+    {
+        if ($host !== $node->public_ssh_host || $port !== $node->public_ssh_port) {
+            return null;
+        }
+
+        return NodeSshJump::connection($node, $this->sshKeys->privateKeyPath(), $this->knownHosts->path());
     }
 
     /** @return array{0: string, 1: int} */

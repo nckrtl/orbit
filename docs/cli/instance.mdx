@@ -266,6 +266,8 @@ Show one Instance. When the `annotator` Process has an assigned port, human outp
 
 Production output includes the recorded user, home, selected branch, and deploy steps in phase and placement order.
 
+Human output lists the Instance's Routes with their domain, web root, and status. JSON has them under `routes`; `route` stays the Instance's own Route. See [Serve several web roots](/reference/routes#serve-several-web-roots).
+
 ```bash
 orbit instance:show <instance> [--json]
 ```

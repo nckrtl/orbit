@@ -16,11 +16,17 @@ use Illuminate\Support\Collection;
  */
 final readonly class DevelopmentPhpFpmConfigRenderer
 {
-    /** @param Collection<int, DevelopmentSite> $sites */
+    /**
+     * One pool for each pool name: the Routes of an Instance that serve one application directory share
+     * its pool.
+     *
+     * @param  Collection<int, DevelopmentSite>  $sites
+     */
     public function render(Collection $sites, ManagedUserAccount $account): string
     {
         return $sites
-            ->sortBy('scope')
+            ->unique(static fn (DevelopmentSite $site): string => $site->poolName())
+            ->sortBy(static fn (DevelopmentSite $site): string => $site->poolName())
             ->map(static function (DevelopmentSite $site) use ($account): string {
                 $user = $site->executionUser($account->user);
                 $group = $site->executionUser($account->group);

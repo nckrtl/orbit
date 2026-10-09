@@ -196,19 +196,6 @@ def install(request):
                               text=True, capture_output=True, check=True, timeout=180)
     if json.loads(prepared.stdout).get('head') != manifest['source_template']['commit']:
         raise ValueError('Prepared source commit mismatch')
-    snapshot = SOURCE / '.git/orbit-caddy-source'
-    if snapshot.exists() or snapshot.is_symlink():
-        snapshot_install = runpy.run_path(str(ROOT / 'caddy-source-snapshot.py'))['install']
-        pins_program = ('require "apps/gateway/vendor/autoload.php"; echo json_encode(['
-                        'App\\Infrastructure\\Nodes\\CaddyPackageSourceProgram::KEY_SHA256,'
-                        'App\\Infrastructure\\Nodes\\CaddyPackageSourceProgram::KEY_FINGERPRINT,'
-                        'App\\Domain\\Nodes\\CaddyRelease::MINIMUM]);')
-        pins = json.loads(subprocess.run(['php', '-r', pins_program], cwd=SOURCE, capture_output=True,
-                                        text=True, check=True, timeout=30).stdout)
-        if not isinstance(pins, list) or len(pins) != 3 or not all(isinstance(value, str) for value in pins):
-            raise ValueError('The native Caddy pins are unavailable')
-        snapshot_install(snapshot, Path('/usr/local/share/orbit/caddy-source'),
-                         *pins)
     command('php', '-r', 'exit(extension_loaded("gd") && extension_loaded("pcov") && in_array("sqlite",PDO::getAvailableDrivers(),true) ? 0 : 1);')
     return {'prepared': True, 'role': request['role'], 'packages': verified['packages'], 'ci_run': manifest['ci_run'], 'source_template': manifest['source_template']}
 
