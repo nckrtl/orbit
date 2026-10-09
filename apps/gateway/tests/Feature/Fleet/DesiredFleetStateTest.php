@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Data\Fleet\DesiredFleetStateData;
 use App\Domain\Fleet\CliReleaseCatalog;
 use App\Domain\Fleet\DesiredFleetState;
 use App\Domain\Fleet\ReleaseHistory;
@@ -87,6 +88,161 @@ describe(DesiredFleetState::class, function (): void {
         $this->travel(DesiredFleetState::UnavailableSeconds + 1)->seconds();
 
         expect($state->current()->cli->version)->toBe('0.4681.0');
+    });
+
+    describe('fallback', function (): void {
+        beforeEach(function (): void {
+            $this->commit = str_repeat('a', 40);
+            $this->middle = str_repeat('b', 40);
+            config()->set('app.version', $this->commit);
+            // The commit and its parent have no release; the grandparent has the fixture release cli-v0.4681.0.
+            fake_release_history(commit: $this->commit, count: 4683, ancestors: [$this->middle => 4682, CLI_RELEASE_FIXTURE_COMMIT => 4681]);
+            $this->published = [4681 => CLI_RELEASE_FIXTURE_COMMIT];
+            $this->responses = [];
+            fake_cli_releases($this->published, $this->responses);
+            $this->state = app(DesiredFleetState::class);
+            // The first lookup starts the 30 minutes.
+            $this->state->current();
+        });
+
+        it('names the newest published release of an ancestor once the commit\'s own release is missing for 30 minutes', function (): void {
+            expect($this->state->current()->cli->toArray())->toMatchArray(['status' => 'pending', 'reason' => 'release_missing', 'version' => '0.4683.0', 'commit' => $this->commit]);
+
+            $this->travel(DesiredFleetState::FallbackAfterSeconds - 60)->seconds();
+            expect($this->state->current()->cli->status->value)->toBe('pending');
+
+            $this->travel(61)->seconds();
+            $fallback = $this->state->current();
+
+            expect($fallback->cliFallback())->toBeTrue()
+                ->and($fallback->commit)->toBe($this->commit)
+                ->and($fallback->cli->toArray())->toMatchArray(['status' => 'available', 'reason' => 'release_missing', 'version' => '0.4681.0', 'commit' => CLI_RELEASE_FIXTURE_COMMIT])
+                ->and($this->state->cached()?->cliFallback())->toBeTrue();
+            // Two pending answers ask for the commit's own tag. The fallback asks for it again, for the parent's
+            // missing tag, then for the fixture's tag, release, and SHA256SUMS.
+            Http::assertSentCount(2 + 1 + 1 + 3);
+        });
+
+        it('takes the highest release number, not the order of the history', function (): void {
+            fake_release_history(commit: $this->commit, count: 4683, ancestors: [CLI_RELEASE_FIXTURE_COMMIT => 4681, $this->middle => 4682]);
+            $this->published[4682] = $this->middle;
+            $this->travel(DesiredFleetState::FallbackAfterSeconds + 1)->seconds();
+
+            expect(app(DesiredFleetState::class)->current()->cli->toArray())->toMatchArray(['version' => '0.4682.0', 'commit' => $this->middle]);
+        });
+
+        it('skips an ancestor whose CLI build inputs differ, before it asks GitHub', function (): void {
+            fake_release_history(commit: $this->commit, count: 4683, ancestors: [$this->middle => 4682, CLI_RELEASE_FIXTURE_COMMIT => 4681], cliChanged: [$this->middle]);
+            $this->published[4682] = $this->middle;
+            $this->travel(DesiredFleetState::FallbackAfterSeconds + 1)->seconds();
+
+            expect(app(DesiredFleetState::class)->current()->cli->version)->toBe('0.4681.0');
+            Http::assertNotSent(static fn (Request $request): bool => str_contains($request->url(), 'cli-v0.4682.0'));
+        });
+
+        it('skips an ancestor whose release number tags another commit', function (): void {
+            // A side commit merged into main can reach the same count as a main commit and own its tag.
+            $this->published[4682] = str_repeat('c', 40);
+            $this->travel(DesiredFleetState::FallbackAfterSeconds + 1)->seconds();
+
+            expect($this->state->current()->cli->toArray())->toMatchArray(['version' => '0.4681.0', 'commit' => CLI_RELEASE_FIXTURE_COMMIT]);
+        });
+
+        it('falls back when the commit\'s own release tags another commit or is incomplete', function (string $problem): void {
+            if ($problem === 'mismatch') {
+                $this->published[4683] = str_repeat('d', 40);
+            } else {
+                $this->published[4683] = $this->commit;
+                $this->responses['/repos/nckrtl/orbit/releases/tags/cli-v0.4683.0'] = Http::response(['tag_name' => 'cli-v0.4683.0', 'draft' => true, 'assets' => []]);
+            }
+
+            $this->travel(DesiredFleetState::FallbackAfterSeconds + 1)->seconds();
+
+            // The fallback names why the commit's own release was not used, also once read back from the cache.
+            expect($this->state->current()->cli->toArray())->toMatchArray(['status' => 'available', 'reason' => 'release_'.$problem, 'version' => '0.4681.0'])
+                ->and($this->state->cached()?->cli->reason?->value)->toBe('release_'.$problem);
+        })->with(['mismatch', 'incomplete']);
+
+        it('replaces the fallback with the commit\'s own release once it appears', function (): void {
+            $this->travel(DesiredFleetState::FallbackAfterSeconds + 1)->seconds();
+            expect($this->state->current()->cli->version)->toBe('0.4681.0');
+
+            $this->published[4683] = $this->commit;
+            $this->travel(DesiredFleetState::FallbackSeconds - 30)->seconds();
+            expect($this->state->current()->cli->version)->toBe('0.4681.0');
+
+            $this->travel(31)->seconds();
+            $own = $this->state->current();
+
+            expect($own->cliFallback())->toBeFalse()
+                ->and($own->cli->toArray())->toMatchArray(['status' => 'available', 'reason' => null, 'version' => '0.4683.0', 'commit' => $this->commit]);
+        });
+
+        it('keeps the fallback while GitHub fails, without searching again', function (): void {
+            $this->travel(DesiredFleetState::FallbackAfterSeconds + 1)->seconds();
+            expect($this->state->current()->cli->version)->toBe('0.4681.0');
+
+            $this->responses['/repos/nckrtl/orbit/git/ref/tags/cli-v0.4683.0'] = Http::response(['message' => 'Server Error'], 500);
+            $this->responses['/repos/nckrtl/orbit/git/ref/tags/cli-v0.4681.0'] = Http::response(['message' => 'Server Error'], 500);
+            $this->travel(DesiredFleetState::FallbackSeconds + 1)->seconds();
+            $sent = count(Http::recorded());
+
+            expect($this->state->current()->cli->toArray())->toMatchArray(['status' => 'available', 'version' => '0.4681.0'])
+                ->and(count(Http::recorded()) - $sent)->toBe(1);
+        });
+
+        it('stops the search and names no release while GitHub cannot answer for an ancestor', function (): void {
+            $this->responses['/repos/nckrtl/orbit/git/ref/tags/cli-v0.4682.0'] = Http::response(['message' => 'Server Error'], 500);
+            $this->travel(DesiredFleetState::FallbackAfterSeconds + 1)->seconds();
+
+            expect($this->state->current()->cli->toArray())->toMatchArray(['status' => 'pending', 'version' => '0.4683.0']);
+            Http::assertNotSent(static fn (Request $request): bool => str_contains($request->url(), 'cli-v0.4681.0'));
+        });
+
+        it('searches again only after 5 minutes when no ancestor has a release', function (): void {
+            unset($this->published[4681]);
+            $this->travel(DesiredFleetState::FallbackAfterSeconds + 1)->seconds();
+            expect($this->state->current()->cli->status->value)->toBe('pending');
+            $sent = count(Http::recorded());
+
+            $this->travel(DesiredFleetState::UnavailableSeconds + 1)->seconds();
+            expect($this->state->current()->cli->status->value)->toBe('pending')
+                ->and(count(Http::recorded()))->toBe($sent);
+
+            $this->published[4681] = CLI_RELEASE_FIXTURE_COMMIT;
+            $this->travel(DesiredFleetState::FallbackSeconds)->seconds();
+            expect($this->state->current()->cli->version)->toBe('0.4681.0');
+        });
+
+        it('never falls back while GitHub cannot answer for the commit itself', function (): void {
+            $this->responses['/repos/nckrtl/orbit/git/ref/tags/cli-v0.4683.0'] = Http::response(['message' => 'Server Error'], 500);
+            $this->travel(DesiredFleetState::FallbackAfterSeconds + 1)->seconds();
+
+            expect($this->state->current()->cli->toArray()['reason'])->toBe('github_unavailable');
+            Http::assertNotSent(static fn (Request $request): bool => str_contains($request->url(), 'cli-v0.4681.0'));
+        });
+
+        it('reads the start of the 30 minutes back from a cache that returns numbers as strings', function (): void {
+            // Redis stores the number as text; the first lookup in beforeEach already stored it.
+            $key = 'orbit:desired-fleet-state:v1:missing-since:'.hash('sha256', $this->commit);
+            cache()->put($key, (string) cache()->get($key), DesiredFleetState::AvailableSeconds);
+            $this->travel(DesiredFleetState::FallbackAfterSeconds + 1)->seconds();
+
+            expect($this->state->current()->cli->version)->toBe('0.4681.0');
+        });
+    });
+
+    it('reads a stored state from before releases named their commit', function (): void {
+        $stored = DesiredFleetStateData::fromArray([
+            'commit' => CLI_RELEASE_FIXTURE_COMMIT,
+            'cli' => ['status' => 'available', 'reason' => null, 'version' => '0.4681.0', 'tag' => 'cli-v0.4681.0', 'checksums_url' => 'https://github.com/nckrtl/orbit/releases/download/cli-v0.4681.0/SHA256SUMS', 'assets' => [
+                ['platform' => 'linux-x86_64', 'name' => 'orbit-0.4681.0-linux-x86_64', 'url' => 'https://github.com/nckrtl/orbit/releases/download/cli-v0.4681.0/orbit-0.4681.0-linux-x86_64', 'sha256' => str_repeat('c', 64)],
+            ]],
+            'agent' => ['version' => NodeAgentFootprint::Version, 'assets' => []],
+        ]);
+
+        expect($stored?->cli->commit)->toBeNull()
+            ->and($stored?->cliFallback())->toBeFalse();
     });
 
     it('reports a Gateway version that is not a commit without asking Git or GitHub', function (string $version): void {
