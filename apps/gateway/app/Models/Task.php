@@ -16,6 +16,7 @@ use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskHierarchyException;
 use App\Domain\Tasks\TaskLevelStatusCast;
 use App\Domain\Tasks\TaskMergeStatus;
+use App\Domain\Tasks\TaskQuestions;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskType;
 use BackedEnum;
@@ -291,6 +292,10 @@ final class Task extends Model
             $task->guardHierarchy();
             $task->guardStatus();
             $task->clearAssistanceWhenEnded();
+        });
+
+        self::updated(static function (Task $task): void {
+            $task->settleQuestionsWhenEnded();
         });
     }
 
@@ -796,6 +801,29 @@ final class Task extends Model
 
         if ($ended) {
             $this->assistance_requested = false;
+        }
+    }
+
+    /**
+     * A task that completes or is cancelled leaves no question open or escalated. They become `superseded`.
+     * A query-builder update of subtask statuses skips this hook, so it relies on the task's own update.
+     */
+    private function settleQuestionsWhenEnded(): void
+    {
+        if (! $this->wasChanged('status')) {
+            return;
+        }
+
+        $reason = match ($this->status) {
+            TaskStatus::Completed => 'Subtask completed.',
+            TaskStatus::Cancelled => 'Subtask cancelled.',
+            TaskGroupStatus::Completed => 'Task completed.',
+            TaskGroupStatus::Cancelled => 'Task cancelled.',
+            default => null,
+        };
+
+        if ($reason !== null) {
+            TaskQuestions::settle($this, $reason);
         }
     }
 

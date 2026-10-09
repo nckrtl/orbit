@@ -925,6 +925,11 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         ],
         'tool:list' => [[], ['node' => null, 'json' => false]],
         'tool:manager:list' => [[], ['node' => null, 'json' => false]],
+        'tasks:question:close' => [['question'], [
+            'status' => null,
+            'reason' => null,
+            'json' => false,
+        ]],
         'tasks:question:list' => [[], [
             'project' => null,
             'cause' => null,
@@ -996,6 +1001,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             'tasks:agents', 'tasks:cancel', 'tasks:complete', 'tasks:show', 'tasks:update' => ['group'],
             'tasks:comment:create', 'tasks:comment:list', 'tasks:subtask:cancel', 'tasks:subtask:destroy', 'tasks:subtask:update' => ['group', 'subtask'],
             'tasks:create' => ['title'],
+            'tasks:question:close' => ['question'],
             'tasks:definition:destroy', 'tasks:definition:show', 'tasks:definition:update' => ['name'],
             'tasks:subtask:create' => ['group', 'title'],
             default => [],

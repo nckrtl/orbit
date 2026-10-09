@@ -22,6 +22,7 @@ use Laravel\Prompts\Terminal;
 use Orbit\Sdk\Requests\Projects\ListProjectsRequest;
 use Orbit\Sdk\Requests\Tasks\CancelSubtaskRequest;
 use Orbit\Sdk\Requests\Tasks\CancelTaskGroupRequest;
+use Orbit\Sdk\Requests\Tasks\CloseTaskQuestionRequest;
 use Orbit\Sdk\Requests\Tasks\CreateSubtaskRequest;
 use Orbit\Sdk\Requests\Tasks\CreateTaskCommentRequest;
 use Orbit\Sdk\Requests\Tasks\CreateTaskGroupRequest;
@@ -92,6 +93,12 @@ describe('omitted and invalid input', function (): void {
         'questions with an offset hour of 99' => ['tasks:question:list', ['--since' => '2026-10-07T12:00:00+99:00'], 'tasks.since_invalid'],
         'questions with a fractional minute of 60' => ['tasks:question:list', ['--since' => '2026-10-07T12:60.5Z'], 'tasks.since_invalid'],
         'questions with a fractional minute of 99' => ['tasks:question:list', ['--since' => '2026-10-07T12:99.5Z'], 'tasks.since_invalid'],
+        'question close without question' => ['tasks:question:close', ['--status' => 'superseded', '--reason' => 'Stale.'], 'tasks.question_required'],
+        'question close with invalid question' => ['tasks:question:close', ['question' => 'abc', '--status' => 'superseded', '--reason' => 'Stale.'], 'tasks.question_invalid'],
+        'question close without status' => ['tasks:question:close', ['question' => '98', '--reason' => 'Stale.'], 'tasks.status_required'],
+        'question close with an open status' => ['tasks:question:close', ['question' => '98', '--status' => 'open', '--reason' => 'Stale.'], 'tasks.status_invalid'],
+        'question close without reason' => ['tasks:question:close', ['question' => '98', '--status' => 'superseded'], 'tasks.reason_required'],
+        'question close with a long reason' => ['tasks:question:close', ['question' => '98', '--status' => 'superseded', '--reason' => str_repeat('x', 2001)], 'tasks.reason_invalid'],
         'create without project' => ['tasks:create', ['title' => 'T', '--brief' => 'B'], 'tasks.project_required'],
         'create without title' => ['tasks:create', ['--project' => '1', '--brief' => 'B'], 'tasks.title_required'],
         'create without brief' => ['tasks:create', ['title' => 'T', '--project' => '1'], 'tasks.brief_required'],
@@ -226,6 +233,23 @@ describe('requests', function (): void {
 
         expect(Artisan::call('tasks:question:list'))->toBe(0);
         expect(Artisan::output())->toContain('No questions match.');
+    });
+
+    it('lists superseded questions and closes a question', function (): void {
+        $mock = MockClient::global(gateway_fixture_mock('tasks/tasks-question-list/empty'));
+
+        expect(Artisan::call('tasks:question:list', ['--status' => 'superseded', '--json' => true]))->toBe(0);
+        $mock->assertSent(static fn (Request $request): bool => $request instanceof ListTaskQuestionsRequest
+            && $request->query()->all() === ['status' => 'superseded']);
+
+        MockClient::destroyGlobal();
+        $mock = MockClient::global(gateway_fixture_mock('tasks/tasks-question-close/closed'));
+
+        expect(Artisan::call('tasks:question:close', ['question' => '1', '--status' => 'superseded', '--reason' => 'A later subtask owns the continuation.', '--json' => true]))->toBe(0);
+        expect(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['status'])->toBe('superseded');
+        $mock->assertSent(static fn (Request $request): bool => $request instanceof CloseTaskQuestionRequest
+            && $request->resolveEndpoint() === '/api/v1/task-questions/1/close'
+            && (string) $request->body() === '{"status":"superseded","reason":"A later subtask owns the continuation."}');
     });
 
     it('sends a reduced-precision since filter', function (string $since): void {

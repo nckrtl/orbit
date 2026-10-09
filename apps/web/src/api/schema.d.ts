@@ -3566,6 +3566,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/task-questions/{question}/close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Close a task question
+         * @description Closes an `open` or `escalated` question as `answered` or `superseded`, with the operator's `reason` (1 to 2,000 characters) as its answer and `answered_by` `operator`. Orbit posts one `question_closed` comment on the subtask. Closing delivers no resolution, changes no assistance flag, and counts no consult. Repeating the same status and reason returns the question unchanged. Requires Gateway access. Returns `extension.disabled` while the extension is off, `tasks.question_closed` (409) when the question is already `answered` or `superseded`, and 422 for another status or an empty reason.
+         */
+        post: operations["tasks-question-close"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tasks/status": {
         parameters: {
             query?: never;
@@ -4637,7 +4657,7 @@ export interface components {
             asked_by?: "implementer" | "reviewer" | "operator";
             question?: string;
             /** @enum {string} */
-            status?: "open" | "escalated" | "answered";
+            status?: "open" | "escalated" | "answered" | "superseded";
             /** @enum {string|null} */
             answered_by?: "implementer" | "reviewer" | "operator" | null;
             answer?: string | null;
@@ -18912,7 +18932,7 @@ export interface operations {
     "tasks-comment-list": {
         parameters: {
             query?: {
-                type?: "ready_for_review" | "changes_requested" | "approved" | "blocked" | "answered" | "topology_requested" | "assistance_requested" | "resolution";
+                type?: "ready_for_review" | "changes_requested" | "approved" | "blocked" | "answered" | "topology_requested" | "assistance_requested" | "resolution" | "question_closed";
                 limit?: number;
             };
             header?: never;
@@ -19061,7 +19081,7 @@ export interface operations {
             query?: {
                 project_id?: number;
                 cause?: "brief_unclear" | "contract_gap" | "scope" | "environment" | "missed_contract";
-                status?: "open" | "escalated" | "answered";
+                status?: "open" | "escalated" | "answered" | "superseded";
                 since?: string;
             };
             header?: never;
@@ -19093,6 +19113,80 @@ export interface operations {
             };
             /** @description The tasks extension is disabled (`extension.disabled`). A disabled extension returns HTTP 409 (`extension.disabled`). */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "tasks-question-close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric task question ID. */
+                question: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /**
+                     * @description answered or superseded
+                     * @enum {string}
+                     */
+                    status: "answered" | "superseded";
+                    /** @description Why the question is closed */
+                    reason: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["TaskQuestion"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The tasks extension is disabled (`extension.disabled`), or the question is already answered or superseded (`tasks.question_closed`). A disabled extension returns HTTP 409 (`extension.disabled`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

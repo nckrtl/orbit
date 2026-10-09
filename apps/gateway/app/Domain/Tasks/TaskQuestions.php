@@ -158,6 +158,42 @@ final class TaskQuestions
         }
     }
 
+    /**
+     * Closes one open or escalated question as answered or superseded, with the operator's reason as its answer.
+     * It neither delivers a resolution nor changes assistance, and the question counts stay as they were.
+     */
+    public static function close(TaskQuestion $question, QuestionStatus $status, string $reason, QuestionAsker $by, TaskComment $audit): void
+    {
+        if (! in_array($question->status, QuestionStatus::unresolved(), true)) {
+            return;
+        }
+
+        $question->update([
+            'status' => $status,
+            'answered_by' => $by,
+            'answer' => $reason,
+            'answered_at' => now(),
+            'answered_comment_id' => $audit->id,
+        ]);
+    }
+
+    /**
+     * Supersedes every open or escalated question on a task that ended. A subtask settles its own questions,
+     * and a top-level task settles the questions of all its subtasks.
+     */
+    public static function settle(Task $task, string $reason): void
+    {
+        TaskQuestion::query()
+            ->where($task->isTopLevel() ? 'task_id' : 'subtask_id', $task->id)
+            ->whereIn('status', QuestionStatus::unresolved())
+            ->update([
+                'status' => QuestionStatus::Superseded,
+                'answer' => $reason,
+                'answered_at' => now(),
+                'updated_at' => now(),
+            ]);
+    }
+
     public static function awaitsCause(Task $task): bool
     {
         return self::pending($task) instanceof TaskQuestion;
