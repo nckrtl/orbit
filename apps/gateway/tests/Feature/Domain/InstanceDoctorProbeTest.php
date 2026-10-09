@@ -16,6 +16,7 @@ use App\Domain\Doctor\PrivateRouteProjectionInspector;
 use App\Domain\Doctor\PrivateRouteProjectionObservation;
 use App\Domain\Doctor\PublicRouteEdgeInspector;
 use App\Domain\Doctor\PublicRouteEdgeObservation;
+use App\Domain\Doctor\RouteApplicationUrlInspector;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Projects\ProjectType;
@@ -937,6 +938,97 @@ it('skips unselected private Routers and keeps Node resource field and issue ord
         ->not->toContain((string) $firstRouter->id);
 });
 
+it('checks APP_URL in every directory that a Route with a web root wins', function (): void {
+    [$workload, $router, $instance, $own] = instance_probe_private_cluster_route();
+    $instance->update(['selected_php_version' => '8.5']);
+    $docs = instance_probe_web_root_route($instance, $own, 'apps/docs/public', 'docs');
+    instance_probe_web_root_route($instance, $own, 'apps/docs/public', 'docs-later');
+    $admin = instance_probe_web_root_route($instance, $own, 'apps/admin/public', 'admin', RouteStatus::Activating);
+    $site = instance_probe_web_root_route($instance, $own, 'apps/site/public', 'site', publication: RoutePublication::Public);
+    instance_probe_web_root_route($instance, $own, 'public', 'own-directory');
+    instance_probe_web_root_route($instance, $own, 'apps/old/public', 'old', RouteStatus::Pending);
+    $urls = new InstanceProbeApplicationUrlInspector(['apps/docs' => false, 'apps/admin' => true, 'apps/site' => false]);
+
+    $report = new InstanceDoctorProbe(instance_probe_healthy_inspector(), applicationUrls: $urls)
+        ->inspect(instance_probe_private_scope($workload, $router));
+
+    expect($urls->expected)
+        ->toBe([[
+            'apps/docs' => "https://{$docs->domain}",
+            'apps/admin' => "https://{$admin->domain}",
+            'apps/site' => "https://{$site->domain}",
+        ]])
+        ->and(array_map(static fn ($issue): string => $issue->code, $report->issues))
+        ->toBe(['instance.laravel_url_mismatch', 'instance.laravel_url_mismatch'])
+        ->and(array_map(static fn ($issue): string => $issue->summary, $report->issues))
+        ->toBe([
+            'The Laravel URL in application directory [apps/docs] does not match the Route that serves it.',
+            'The Laravel URL in application directory [apps/site] does not match the Route that serves it.',
+        ])
+        ->and(collect($report->issues)->pluck('resourceId')->unique()->all())
+        ->toBe([$instance->id])
+        ->and(json_encode($report, JSON_THROW_ON_ERROR))
+        ->not->toContain($docs->domain)
+        ->not->toContain((string) $instance->checkout_path);
+});
+
+it('keeps Doctor output unchanged for an Instance whose Routes have no web root', function (): void {
+    [$workload, $router, $instance] = instance_probe_private_cluster_route();
+    $instance->update(['selected_php_version' => '8.5']);
+    $scope = instance_probe_private_scope($workload, $router);
+    $observation = new PrivateRouteProjectionObservation(true, true, true, true, true, true, false);
+    $urls = new InstanceProbeApplicationUrlInspector([]);
+
+    $before = new InstanceDoctorProbe(
+        instance_probe_healthy_inspector(),
+        null,
+        new InstanceProbePrivateProjectionInspector($observation),
+    )->inspect($scope);
+    $after = new InstanceDoctorProbe(
+        instance_probe_healthy_inspector(),
+        null,
+        new InstanceProbePrivateProjectionInspector($observation),
+        applicationUrls: $urls,
+    )->inspect($scope);
+
+    expect($urls->expected)
+        ->toBe([])
+        ->and(json_encode($after, JSON_THROW_ON_ERROR))
+        ->toBe(json_encode($before, JSON_THROW_ON_ERROR))
+        ->and(array_map(static fn ($issue): string => $issue->code, $after->issues))
+        ->toBe(['instance.laravel_url_mismatch']);
+});
+
+it('skips the directory check while the Instance has no PHP runtime', function (): void {
+    [$workload, $router, $instance, $own] = instance_probe_private_cluster_route();
+    instance_probe_web_root_route($instance, $own, 'apps/docs/public', 'docs');
+    $urls = new InstanceProbeApplicationUrlInspector([]);
+
+    $report = new InstanceDoctorProbe(instance_probe_healthy_inspector(), applicationUrls: $urls)
+        ->inspect(instance_probe_private_scope($workload, $router));
+
+    expect($urls->expected)->toBe([])
+        ->and($report->issues)->toBe([]);
+});
+
+it('reports an unverifiable directory check as one inspection failure', function (InstanceProbeApplicationUrlInspector $urls): void {
+    [$workload, $router, $instance, $own] = instance_probe_private_cluster_route();
+    $instance->update(['selected_php_version' => '8.5']);
+    instance_probe_web_root_route($instance, $own, 'apps/docs/public', 'docs');
+    instance_probe_web_root_route($instance, $own, 'apps/admin/public', 'admin');
+
+    $report = new InstanceDoctorProbe(instance_probe_healthy_inspector(), applicationUrls: $urls)
+        ->inspect(instance_probe_private_scope($workload, $router));
+
+    expect(array_map(static fn ($issue): string => $issue->code, $report->issues))
+        ->toBe(['instance.inspection_failed'])
+        ->and($report->status->value)
+        ->toBe('unverifiable');
+})->with([
+    'unreachable' => fn (): InstanceProbeApplicationUrlInspector => new InstanceProbeApplicationUrlInspector(null),
+    'missing directory' => fn (): InstanceProbeApplicationUrlInspector => new InstanceProbeApplicationUrlInspector(['apps/docs' => true]),
+]);
+
 function instance_probe_healthy_inspector(): InstanceStateInspector
 {
     return new class implements InstanceStateInspector
@@ -1252,5 +1344,52 @@ final class InstanceProbePrivateProjectionInspector implements PrivateRouteProje
         $this->routes[] = $route->id;
 
         return $this->observation;
+    }
+}
+
+function instance_probe_private_scope(Node $workload, Node $router): DoctorNodeContext
+{
+    return instance_probe_context($workload)->withScope(new DoctorInspectionScope([
+        $workload->id => instance_probe_context($workload),
+        $router->id => instance_probe_context($router),
+    ]));
+}
+
+function instance_probe_web_root_route(
+    Instance $instance,
+    Route $own,
+    string $webRoot,
+    string $name,
+    RouteStatus $status = RouteStatus::Active,
+    RoutePublication $publication = RoutePublication::Private,
+): Route {
+    $route = Route::query()->create([
+        'project_id' => $instance->project_id,
+        'cluster_id' => $own->cluster_id,
+        'domain' => "{$name}-{$own->id}.doctor.test",
+        'web_root' => $webRoot,
+        'provenance' => RouteProvenance::Explicit,
+        'publication' => $publication,
+        'status' => RouteStatus::Pending,
+    ]);
+    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
+    $route->update(['status' => $status]);
+
+    return $route->fresh();
+}
+
+final class InstanceProbeApplicationUrlInspector implements RouteApplicationUrlInspector
+{
+    /** @var list<array<string, string>> */
+    public array $expected = [];
+
+    /** @param  array<string, bool>|null  $matches  Null fails the inspection. */
+    public function __construct(private readonly ?array $matches) {}
+
+    public function inspect(Instance $instance, array $expected): array
+    {
+        $this->expected[] = $expected;
+
+        return $this->matches ?? throw new DoctorInspectionException;
     }
 }

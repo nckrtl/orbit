@@ -191,7 +191,7 @@ The default directory keeps its pool, `orbit-app-instance-<id>`. Another directo
 
 A Route with a web root keeps its domain, so a domain change returns `route.web_root_domain_immutable`. Send `web_root` on its own; combined with another field it returns `route.web_root_update_separate`.
 
-Doctor checks `APP_URL` only for the Instance's own Route.
+Once the Instance has a PHP runtime, Doctor checks `APP_URL` in each directory that a Route with a web root serves and that holds `artisan`. It compares the value with the domain of the Route that wins the directory, by the rule above. A difference gives `instance.laravel_url_mismatch`, and its summary names the directory. See [Check Routes with Doctor](#check-routes-with-doctor).
 
 ### Web roots on production
 
@@ -528,7 +528,7 @@ Doctor skips an Instance in `removing`. A removal that lasts 10 minutes or more 
 | `instance.private_certificate_mismatch` | A Route certificate is missing or stale. |
 | `instance.private_dns_mismatch` | Private DNS does not answer the domain with the expected address. |
 | `instance.private_firewall_mismatch` | Role firewall rules differ from the Route's expected rules. |
-| `instance.laravel_url_mismatch` | A detected Laravel `APP_URL` differs from the Route domain. |
+| `instance.laravel_url_mismatch` | A detected Laravel `APP_URL` differs from the Route domain, or from the domain of the Route that wins a [web-root directory](#serve-several-web-roots). The summary names that directory. |
 | `instance.target_set_mismatch` | Router Caddy does not publish the Route's ordered target set. |
 | `instance.route_association_mismatch` | An Instance has no Route without a web root, or more than one. |
 | `instance.public_ingress_mismatch` | The Ingress Caddyfile lacks the public site that a build renders for it. |

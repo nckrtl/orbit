@@ -54,6 +54,7 @@ use App\Domain\Doctor\ProcessStateInspector;
 use App\Domain\Doctor\ProjectStateInspector;
 use App\Domain\Doctor\PublicRouteEdgeInspector;
 use App\Domain\Doctor\RoleStateInspector;
+use App\Domain\Doctor\RouteApplicationUrlInspector;
 use App\Domain\Doctor\ScheduleStateInspector;
 use App\Domain\Firewall\FirewallInspector;
 use App\Domain\Firewall\FirewallManager;
@@ -240,6 +241,7 @@ use App\Infrastructure\Doctor\NativeProcessStateInspector;
 use App\Infrastructure\Doctor\NativeProjectStateInspector;
 use App\Infrastructure\Doctor\NativePublicRouteEdgeInspector;
 use App\Infrastructure\Doctor\NativeRoleStateInspector;
+use App\Infrastructure\Doctor\NativeRouteApplicationUrlInspector;
 use App\Infrastructure\Doctor\NativeScheduleStateInspector;
 use App\Infrastructure\Doctor\SharedInstalledPackageInventory;
 use App\Infrastructure\Doctor\SshNodeStateInspector;
@@ -466,6 +468,7 @@ final class ApplicationServiceProvider extends ServiceProvider
         InstanceStateInspector::class => NativeInstanceStateInspector::class,
         PublicRouteEdgeInspector::class => NativePublicRouteEdgeInspector::class,
         PrivateRouteProjectionInspector::class => NativePrivateRouteProjectionInspector::class,
+        RouteApplicationUrlInspector::class => NativeRouteApplicationUrlInspector::class,
         CustomProxyRouteInspector::class => NativeCustomProxyRouteInspector::class,
         MetricsCredentialManager::class => NativeMetricsCredentialManager::class,
         MetricsAccessRevoker::class => NativeMetricsAccessRevoker::class,
