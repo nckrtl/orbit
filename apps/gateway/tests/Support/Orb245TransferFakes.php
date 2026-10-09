@@ -344,6 +344,18 @@ final class Orb245Projection implements DevelopmentRouteProjector, InstanceTrans
 
     public bool $failRetirementOnce = false;
 
+    /** @var list<string> Each projection with the Route it served, such as `converge:12`. */
+    public array $routeCalls = [];
+
+    /** Fails the next convergence of this Route once. */
+    public ?int $failRouteOnce = null;
+
+    public function prepareDestinationCertificates(Instance $instance, Route $route): void
+    {
+        $this->calls[] = 'prepare';
+        $this->routeCalls[] = "prepare:{$route->id}";
+    }
+
     public function retireSource(InstanceTransfer $transfer): void
     {
         $this->calls[] = 'retire';
@@ -356,6 +368,13 @@ final class Orb245Projection implements DevelopmentRouteProjector, InstanceTrans
     public function converge(Instance $instance, Route $route): void
     {
         $this->calls[] = 'converge';
+        $this->routeCalls[] = "converge:{$route->id}";
+
+        if ($this->failRouteOnce === $route->id) {
+            $this->failRouteOnce = null;
+
+            throw new ResourceOperationException('instance.transfer_failed', 'Web-root Route publication failed.', 409);
+        }
 
         if ($this->failOnce) {
             $this->failOnce = false;
