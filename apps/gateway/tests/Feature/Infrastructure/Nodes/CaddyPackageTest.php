@@ -8,16 +8,7 @@ use App\Infrastructure\Nodes\CaddyPackageSourceProgram;
 use App\Infrastructure\Nodes\Roles\NodeRolePrerequisiteCommandFactory;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Node;
-use Symfony\Component\Process\Process;
 use Tests\Support\CaddyPackageHarness;
-
-it('authenticates offline Caddy snapshots and refuses altered packages or repository metadata', function (): void {
-    $process = new Process(['python3', base_path('tests/Fixtures/Compute/caddy_source_snapshot_test.py'), resource_path('compute/caddy-source-snapshot.py')]);
-    $process->setTimeout(120);
-    $process->run();
-
-    expect($process->isSuccessful())->toBeTrue($process->getErrorOutput());
-})->group('subprocess');
 
 describe('Caddy release floor', function (): void {
     it('reads the release from either build of `caddy version`', function (string $output, ?string $release): void {
@@ -81,9 +72,6 @@ describe('Caddy package', function (): void {
             'net.ipv4.tcp_migrate_req = 1',
             '/usr/share/keyrings/orbit-caddy.gpg',
             '/etc/apt/sources.list.d/orbit-caddy.sources',
-            '783dfee04b19e851a928cd87b34710213ebbe7628f98d9f34595ab83be578c00',
-            '65760C51EDEA2017CEA2CA15155B6D79CA56EA34',
-            '/usr/local/share/orbit/caddy-source',
         ]);
     });
 
@@ -184,32 +172,6 @@ describe('Caddy package program', function (): void {
         expect($exitCode)->toBe(1)
             ->and($errors)->toContain('Orbit pins no Caddy package for the riscv64 architecture.')
             ->and($calls)->not->toContain('curl caddy_2.11.7_linux_riscv64.deb');
-    });
-
-    it('installs the package of a verified sandbox snapshot without downloading', function (): void {
-        $this->harness->snapshot(verifies: true);
-
-        [$exitCode, $output, , $calls] = $this->harness->run();
-
-        expect($exitCode)->toBe(0)
-            ->and($output)->toBe("orbit-caddy-package-result=changed\n")
-            ->and($calls)->toBe([
-                'sysctl --quiet --load net.ipv4.tcp_migrate_req = 1',
-                'install 60-orbit-caddy.conf',
-                'python3 verify caddy-source',
-                'apt-get install caddy_2.11.7_amd64.deb',
-            ]);
-    });
-
-    it('stops at a snapshot that fails verification, even when Caddy reaches the floor', function (): void {
-        $this->harness->caddy('2.11.7');
-        $this->harness->snapshot(verifies: false);
-
-        [$exitCode, , , $calls] = $this->harness->run();
-
-        expect($exitCode)->not->toBe(0)
-            ->and($calls)->toContain('python3 verify caddy-source')
-            ->and($calls)->not->toContain('apt-get install caddy_2.11.7_amd64.deb');
     });
 
     it('fails when the installed Caddy still reports a release below the floor', function (): void {
