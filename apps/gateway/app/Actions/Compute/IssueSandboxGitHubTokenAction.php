@@ -36,7 +36,7 @@ final readonly class IssueSandboxGitHubTokenAction
             $group = $sandbox->group;
             $workspace = $group?->taskable;
             $token = $sandbox->pi_token;
-            if ($sandbox->provider !== 'upcloud' || $sandbox->state !== SandboxState::Running || $sandbox->desired_power !== 'running'
+            if (! in_array($sandbox->provider, ['upcloud', 'incus'], true) || $sandbox->state !== SandboxState::Running || $sandbox->desired_power !== 'running'
                 || ! is_string($secret) || $secret === '' || ! is_string($token) || ! hash_equals($token, $secret)
                 || $sandbox->pi_ready_at === null || $sandbox->model_key_revoked_at !== null
                 || $group === null || $group->task_compute !== TaskCompute::Vm || $group->execution_mode !== TaskExecutionMode::Managed

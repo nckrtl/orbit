@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "d2d16cc11e949c051b42b5653be75ff1",
+    "content-hash": "b8dc8bd756d3ee94e834fe2cd0a6edcf",
     "packages": [
         {
             "name": "brick/math",
@@ -6614,16 +6614,16 @@
         },
         {
             "name": "larastan/larastan",
-            "version": "v3.12.2",
+            "version": "v3.12.3",
             "source": {
                 "type": "git",
                 "url": "https://github.com/larastan/larastan.git",
-                "reference": "c328727e6103c1147d1c64cc96b3aedfda26bc20"
+                "reference": "792628d803d92fb154d6909d7e8d5862d81741f1"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/larastan/larastan/zipball/c328727e6103c1147d1c64cc96b3aedfda26bc20",
-                "reference": "c328727e6103c1147d1c64cc96b3aedfda26bc20",
+                "url": "https://api.github.com/repos/larastan/larastan/zipball/792628d803d92fb154d6909d7e8d5862d81741f1",
+                "reference": "792628d803d92fb154d6909d7e8d5862d81741f1",
                 "shasum": ""
             },
             "require": {
@@ -6691,7 +6691,7 @@
             ],
             "support": {
                 "issues": "https://github.com/larastan/larastan/issues",
-                "source": "https://github.com/larastan/larastan/tree/v3.12.2"
+                "source": "https://github.com/larastan/larastan/tree/v3.12.3"
             },
             "funding": [
                 {
@@ -6699,7 +6699,7 @@
                     "type": "github"
                 }
             ],
-            "time": "2026-09-19T10:46:58+00:00"
+            "time": "2026-10-04T20:01:26+00:00"
         },
         {
             "name": "laravel/agent-detector",
@@ -7120,6 +7120,82 @@
                 "source": "https://github.com/laravel/roster"
             },
             "time": "2026-07-18T17:53:15+00:00"
+        },
+        {
+            "name": "laravel/vet",
+            "version": "v0.2.1",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/laravel/vet.git",
+                "reference": "7b10fd2beecf9f386c92731729c9f33a152b213b"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/laravel/vet/zipball/7b10fd2beecf9f386c92731729c9f33a152b213b",
+                "reference": "7b10fd2beecf9f386c92731729c9f33a152b213b",
+                "shasum": ""
+            },
+            "require": {
+                "composer-plugin-api": "^2.0",
+                "ext-dom": "*",
+                "ext-mbstring": "*",
+                "ext-openssl": "*",
+                "ext-phar": "*",
+                "ext-tokenizer": "*",
+                "ext-zip": "*",
+                "php": "^8.4"
+            },
+            "require-dev": {
+                "guzzlehttp/guzzle": "^7.15.5|^8.0",
+                "laravel-zero/foundation": "^13.25",
+                "laravel-zero/framework": "^13.0",
+                "laravel/pint": "^1.32.1",
+                "mockery/mockery": "^1.6.15",
+                "pestphp/pest": "^5.2.1",
+                "pestphp/pest-plugin-phpstan": "^5.2.1",
+                "pestphp/pest-plugin-rector": "^5.0.4",
+                "phpstan/phpstan": "^2.2.16",
+                "rector/rector": "^2.6.7"
+            },
+            "bin": [
+                "builds/vet"
+            ],
+            "type": "composer-plugin",
+            "extra": {
+                "class": "Laravel\\Vet\\Composer\\Plugin"
+            },
+            "autoload": {
+                "psr-4": {
+                    "App\\": "app/",
+                    "Laravel\\Vet\\Composer\\": "src/Composer/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Nuno Maduro",
+                    "email": "enunomaduro@gmail.com"
+                }
+            ],
+            "description": "A dependency audit trust file for PHP.",
+            "keywords": [
+                "Audit",
+                "cli",
+                "composer",
+                "console",
+                "dev",
+                "php",
+                "security",
+                "supply chain"
+            ],
+            "support": {
+                "issues": "https://github.com/laravel/vet/issues",
+                "source": "https://github.com/laravel/vet/tree/v0.2.1"
+            },
+            "time": "2026-09-27T14:39:48+00:00"
         },
         {
             "name": "mockery/mockery",
@@ -8186,11 +8262,11 @@
         },
         {
             "name": "phpstan/phpstan",
-            "version": "2.2.16",
+            "version": "2.3.1",
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/phpstan/phpstan/zipball/46a6d9060e5a7763adfcc21ebcb8b504ebdbcb92",
-                "reference": "46a6d9060e5a7763adfcc21ebcb8b504ebdbcb92",
+                "url": "https://api.github.com/repos/phpstan/phpstan/zipball/6155239b488e95d26d1ebd95c6b4bb294d7f09db",
+                "reference": "6155239b488e95d26d1ebd95c6b4bb294d7f09db",
                 "shasum": ""
             },
             "require": {
@@ -8246,7 +8322,7 @@
                     "type": "github"
                 }
             ],
-            "time": "2026-09-25T09:31:51+00:00"
+            "time": "2026-10-08T21:09:11+00:00"
         },
         {
             "name": "phpunit/php-code-coverage",

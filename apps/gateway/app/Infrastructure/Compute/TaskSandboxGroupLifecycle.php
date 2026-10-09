@@ -13,7 +13,7 @@ use App\Domain\Tasks\TaskExecutionMode;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
-use App\Infrastructure\Tasks\UpCloudWorkspaceProvisioner;
+use App\Infrastructure\Tasks\ProjectSandboxWorkspaceProvisioner;
 use App\Models\Instance;
 use App\Models\Task;
 use App\Models\TaskSandbox;
@@ -25,7 +25,7 @@ final readonly class TaskSandboxGroupLifecycle
 {
     private const string WaitPrefix = 'Sandbox compute: ';
 
-    public function __construct(private TaskExecutionLock $execution, private TaskSandboxDrivers $drivers, private TaskSandboxLifecycle $lifecycle, private UpCloudWorkspaceProvisioner $projects) {}
+    public function __construct(private TaskExecutionLock $execution, private TaskSandboxDrivers $drivers, private TaskSandboxLifecycle $lifecycle, private ProjectSandboxWorkspaceProvisioner $projects) {}
 
     public function review(Task $group): void
     {
@@ -45,6 +45,9 @@ final readonly class TaskSandboxGroupLifecycle
                     throw new ComputeException('compute.rebuild_required', 'The cloud sandbox must be rebuilt from its published branch before preview resumes.');
                 }
                 $this->lifecycle->review($sandbox, $this->drivers->forSandbox($sandbox), $group->preview ?? false, $this->capacityWaiting($group));
+                if ($group->preview && $sandbox->provider === 'incus' && $group->project->slug !== 'orbit') {
+                    $this->projects->resumeLocal($group);
+                }
                 $this->clearWait($group);
             } catch (Throwable $exception) {
                 $this->wait($group, $exception);
@@ -87,6 +90,9 @@ final readonly class TaskSandboxGroupLifecycle
                 $result = $this->lifecycle->activate($sandbox, $this->drivers->forSandbox($sandbox));
                 if ($result->state !== SandboxState::Running || $result->desired_power !== 'running') {
                     throw new ComputeException('compute.starting', 'The sandbox is still starting.');
+                }
+                if ($result->provider === 'incus' && $group->project->slug !== 'orbit') {
+                    $this->projects->resumeLocal($group);
                 }
                 $this->clearWait($group);
 

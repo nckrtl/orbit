@@ -18,6 +18,7 @@ use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskSandbox;
 use Symfony\Component\Process\Process;
+use Tests\Support\IncusRuntimeWorkspace;
 
 use function Pest\Laravel\mock;
 
@@ -148,18 +149,16 @@ it('keeps GitHub DNS scoped and preserves private policy and foreign state', fun
 });
 
 it('leaves project-lane resolver policy unchanged during source preparation', function (): void {
-    $group = source_group();
-    $group->project->update(['slug' => 'application']);
-    $group->taskable->taskSandbox->update(['node_id' => $group->taskable->node_id]);
+    $workspace = IncusRuntimeWorkspace::create();
+    $group = $workspace->taskSandbox->group;
     $operations = [];
-    mock(SshExecutor::class)->shouldReceive('execute')->twice()->andReturnUsing(function ($connection, RemoteCommand $command) use (&$operations): CommandResult {
-        $envelope = json_decode(stream_get_contents($command->protectedInput->stream()), true, flags: JSON_THROW_ON_ERROR);
-        $request = json_decode(base64_decode($envelope['guest']['stdin']), true, flags: JSON_THROW_ON_ERROR);
+    mock(SshExecutor::class)->shouldReceive('execute')->twice()->andReturnUsing(function ($connection, RemoteCommand $command) use ($workspace, &$operations): CommandResult {
+        expect($connection->host)->toBe($workspace->node->wireguard_ip);
+        $request = json_decode($command->input, true, flags: JSON_THROW_ON_ERROR);
         $operations[] = $request['operation'];
         $response = $request['operation'] === 'initialize' ? ['initialized' => true] : ['starting_commit' => str_repeat('a', 40)];
 
-        return new CommandResult(0, json_encode(['name' => 'ot-0a68f778a3', 'role' => 'operator', 'exit_code' => 0,
-            'stdout' => base64_encode(json_encode($response)), 'stderr' => '', 'duration_ms' => 1, 'truncated' => false, 'timed_out' => false]), '', 1, false);
+        return new CommandResult(0, json_encode($response), '', 1, false);
     });
     mock(TaskBaseBranchFetcher::class)->shouldReceive('fetchForTurn')->once();
 

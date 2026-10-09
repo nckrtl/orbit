@@ -1,10 +1,42 @@
 [
   {
-    "id": 1,
+    "id": 5416756442,
+    "node_id": "PRR_kwDODKw3uc8AAAABQt0k2g",
     "user": {
-      "login": "reviewer"
+      "login": "tidy-dev",
+      "id": 75402236,
+      "node_id": "MDQ6VXNlcjc1NDAyMjM2",
+      "avatar_url": "https://avatars.githubusercontent.com/u/75402236?u=947ea06f2740513d9aa999aa354db23fe5b08380&v=4",
+      "gravatar_id": "",
+      "url": "https://api.github.com/users/tidy-dev",
+      "html_url": "https://github.com/tidy-dev",
+      "followers_url": "https://api.github.com/users/tidy-dev/followers",
+      "following_url": "https://api.github.com/users/tidy-dev/following{/other_user}",
+      "gists_url": "https://api.github.com/users/tidy-dev/gists{/gist_id}",
+      "starred_url": "https://api.github.com/users/tidy-dev/starred{/owner}{/repo}",
+      "subscriptions_url": "https://api.github.com/users/tidy-dev/subscriptions",
+      "organizations_url": "https://api.github.com/users/tidy-dev/orgs",
+      "repos_url": "https://api.github.com/users/tidy-dev/repos",
+      "events_url": "https://api.github.com/users/tidy-dev/events{/privacy}",
+      "received_events_url": "https://api.github.com/users/tidy-dev/received_events",
+      "type": "User",
+      "user_view_type": "public",
+      "site_admin": true
     },
+    "body": "\u2728 Thanks!",
     "state": "APPROVED",
+    "html_url": "https://github.com/cli/cli/pull/14592#pullrequestreview-5416756442",
+    "pull_request_url": "https://api.github.com/repos/cli/cli/pulls/14592",
+    "author_association": "CONTRIBUTOR",
+    "_links": {
+      "html": {
+        "href": "https://github.com/cli/cli/pull/14592#pullrequestreview-5416756442"
+      },
+      "pull_request": {
+        "href": "https://api.github.com/repos/cli/cli/pulls/14592"
+      }
+    },
+    "submitted_at": "2026-10-05T15:17:00Z",
     "commit_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   }
 ]

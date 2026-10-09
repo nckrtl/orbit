@@ -436,6 +436,34 @@ it('resets an untouched baseline workspace to the fetched default branch tip wit
     expect(file_get_contents($checkout.'/tracked.txt'))->toBe('Fixed baseline');
 });
 
+it('refuses to reset a baseline workspace that holds manual work', function (string $work): void {
+    $root = TestOrbitHome::scratch('orbit-baseline-manual-work');
+    $checkout = $root.'/checkout';
+    (new Process(['git', 'init', '--quiet', '--bare', $root.'/origin.git']))->mustRun();
+    (new Process(['git', 'init', '--quiet', '-b', 'task-7', $checkout]))->mustRun();
+    $group = fetcher_group($checkout);
+    fetcher_git($checkout, ['remote', 'add', 'origin', $root.'/origin.git']);
+    file_put_contents($checkout.'/tracked.txt', 'Original baseline');
+    fetcher_git($checkout, ['add', 'tracked.txt']);
+    fetcher_git($checkout, ['commit', '--quiet', '-m', 'Original baseline']);
+    fetcher_git($checkout, ['push', '--quiet', 'origin', 'HEAD:refs/heads/main']);
+    file_put_contents($checkout.'/tracked.txt', 'Manual work');
+    match ($work) {
+        'tracked change' => null,
+        'staged change' => fetcher_git($checkout, ['add', 'tracked.txt']),
+        'local commit' => fetcher_git($checkout, ['commit', '--quiet', '-am', 'Manual commit']),
+        'other branch' => fetcher_git($checkout, ['checkout', '--quiet', '-b', 'manual']),
+    };
+    $head = fetcher_git($checkout, ['rev-parse', 'HEAD']);
+    $bases = fetcher(new LocalShellSshExecutor);
+    $bases->fetchForTurn($group);
+
+    expect(fn () => $bases->resetToDefault($group))
+        ->toThrow(TaskPullRequestException::class, 'The baseline workspace could not be reset.');
+    expect(fetcher_git($checkout, ['rev-parse', 'HEAD']))->toBe($head)
+        ->and(file_get_contents($checkout.'/tracked.txt'))->toBe('Manual work');
+})->with(['tracked change', 'staged change', 'local commit', 'other branch']);
+
 it('does not reset a baseline when the default branch name is invalid', function (): void {
     $transport = new AppDevFakeSshExecutor;
     $group = fetcher_group('/srv/orbit/apps/shop/task-7');

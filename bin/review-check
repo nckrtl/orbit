@@ -229,6 +229,8 @@ def main():
     reports = common / 'orbit-checks' / head
     reports.mkdir(parents=True, exist_ok=True)
     directory = Path(tempfile.mkdtemp(prefix='review-', dir=reports))
+    # mkdtemp uses mode 0700. Under an inherited default ACL, the group bits become the ACL mask, so 0700 leaves
+    # mask::--- and disables named entries such as orbit-worker's. 0750 keeps them readable; other stays closed.
     directory.chmod(0o750)
     base, paths = candidate_paths(root, head, committed)
     test_base = task_test_base(root, head)

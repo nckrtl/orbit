@@ -20,6 +20,7 @@ trait InstanceOutput
             'Source layout' => $instance->sourceLayout,
             'Checkout' => $instance->checkoutPath,
             'Vite port' => $instance->vitePort,
+            'SSR port' => $instance->ssrPort,
             'Root override' => $instance->root,
             'Effective root' => $instance->effectiveRoot,
             'Selected branch' => $instance->selectedBranch,

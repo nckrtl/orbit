@@ -116,6 +116,16 @@ class Publication(unittest.TestCase):
             publisher.publish()
         self.assertEqual(before, publisher.calls)
 
+    def test_guest_scan_has_a_bounded_hour_without_changing_host_operation_limits(self):
+        publisher = FakePublisher()
+        calls = []
+        def run(*args, data=None, timeout=1200):
+            calls.append((args, timeout))
+            return '{}'
+        publisher.run = run
+        module['Publisher'].guest(publisher, 'operator', 'print("{}")')
+        self.assertEqual(3600, calls[0][1])
+
     def test_publishes_all_blank_workload_roles_with_the_exact_pair_template(self):
         publisher = FakePublisher(['app-dev', 'app-prod', 'app-prod-2'])
         result = publisher.publish()

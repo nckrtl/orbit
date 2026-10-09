@@ -261,6 +261,45 @@ describe('TaskCheckWorkerUser', function (): void {
     })->with(['inspection', 'relocation', 'failed-inspection', 'failed-relocation']);
 });
 
+describe('TaskCheckWorkerUser', function (): void {
+    it('computes the source digest with a worker orbit-checks review directory in the common dir', function (string $state): void {
+        $fixture = orb918_in_place_fixture();
+        config()->set('orbit.tasks.worker_user', 'nobody');
+        $reports = $fixture['source'].'/.git/orbit-checks/head';
+        $worker = ['sudo', '-n', '-u', 'nobody', '-H', '--'];
+
+        try {
+            // As on a check host, inherited ACLs share the checkout and the Git common dir with both users.
+            expect(orb105_run(['setfacl', '-R', '-m', 'u:nobody:rwX,d:u:nobody:rwX,d:u:'.posix_geteuid().':rwX', '--', $fixture['source_root']])->succeeded())->toBeTrue();
+            new Filesystem()->ensureDirectoryExists($reports, 0o777);
+            // bin/review-check run by the worker: mkdtemp gives mode 0700 and so mask::---. The fixed script then sets 0750.
+            $review = orb105_run([...$worker, 'python3', '-c', 'import os, sys, tempfile; d = tempfile.mkdtemp(prefix="review-", dir=sys.argv[1]); open(os.path.join(d, "check.log"), "w").write("worker"); sys.argv[2] == "fixed" and os.chmod(d, 0o750)', $reports, $state]);
+            expect($review->succeeded())->toBeTrue($review->stderr);
+            if ($state === 'repaired') {
+                // Activity 655003: the digest's read grant cannot enter the review directory.
+                expect(fn () => $fixture['manager']->inspect($fixture['node'], $fixture['destination'], false))
+                    ->toThrow(fn (RuntimeConvergenceException $exception) => expect($exception->result?->stderr)->toContain('PermissionError'));
+                $repair = orb105_run(['python3', '-c', <<<'PYTHON'
+                    import importlib.machinery, importlib.util, sys
+                    loader = importlib.machinery.SourceFileLoader('check', sys.argv[1])
+                    check = importlib.util.module_from_spec(importlib.util.spec_from_loader('check', loader))
+                    loader.exec_module(check)
+                    check.claim_from_worker(sys.argv[2], 'nobody')
+                    PYTHON, resource_path('tasks/check'), $fixture['destination']]);
+                expect($repair->succeeded())->toBeTrue($repair->stderr);
+            }
+
+            $facts = $fixture['manager']->inspect($fixture['node'], $fixture['destination'], false)[0];
+
+            expect($facts->path)->toBe($fixture['destination'])
+                ->and($facts->sourceDigest)->not->toBe('');
+        } finally {
+            orb105_run([...$worker, 'rm', '-rf', '--', $reports]);
+            orb105_remove_relocation_fixture($fixture);
+        }
+    })->with(['fixed', 'repaired']);
+});
+
 final readonly class Orb105DirectorySwapSshExecutor implements SshExecutor
 {
     public function __construct(private string $target, private string $private, private string $log, private int $discovery) {}

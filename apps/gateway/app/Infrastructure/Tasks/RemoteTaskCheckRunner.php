@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Tasks;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\AppDev\SsrEndpoint;
 use App\Domain\Projects\LifecycleStep;
 use App\Domain\Projects\TiaBaselineSetup;
 use App\Domain\Shared\ResourceOperationException;
@@ -158,20 +159,24 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
         if ($instance->checkout_path === '') {
             throw new TaskCheckException('The task workspace has no checkout.');
         }
-        $vpEnvironment = '';
+        $environment = '';
         if ($withVpHome && $instance->task_sandbox_id === null) {
             try {
-                $vpEnvironment = 'export VP_HOME='.escapeshellarg(dirname($this->vp->existingBinary($instance->node), 2))."\n";
+                $environment = 'export VP_HOME='.escapeshellarg(dirname($this->vp->existingBinary($instance->node), 2))."\n";
             } catch (Throwable $exception) {
                 // Only the read-only probe ran: no check can have started, so its reservation may be released.
                 throw new TaskCheckException($unreachable, previous: $exception);
             }
         }
+        // Setup, the check, and deliverable commands inherit the workspace's own Inertia SSR port.
+        foreach (is_int($instance->ssr_port) ? SsrEndpoint::environment($instance->ssr_port) : [] as $name => $value) {
+            $environment .= "export {$name}=".escapeshellarg($value)."\n";
+        }
         try {
             // The check runs as the managed user, so host-dependent tests keep its sudo, ACL and caddy access.
             // It shares what it creates with the task worker before it reports a result.
             $worker = TaskWorkerUser::name($instance) ?? '';
-            $prefix = $vpEnvironment."checkout=\$1\nworker=".escapeshellarg($worker)."\nseed_path=".escapeshellarg($instance->task_sandbox_id === null ? ($instance->seed_path ?? '') : '')."\nseed_commit=".escapeshellarg($instance->task_sandbox_id === null ? ($instance->seed_commit ?? '') : '')."\n".<<<'BASH'
+            $prefix = $environment."checkout=\$1\nworker=".escapeshellarg($worker)."\nseed_path=".escapeshellarg($instance->task_sandbox_id === null ? ($instance->seed_path ?? '') : '')."\nseed_commit=".escapeshellarg($instance->task_sandbox_id === null ? ($instance->seed_commit ?? '') : '')."\n".<<<'BASH'
                 dir="$(git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" rev-parse --absolute-git-dir)/orbit"
                 check_python() {
                     ORBIT_TASK_WORKER_USER="$worker" ORBIT_SEED_PATH="$seed_path" ORBIT_SEED_COMMIT="$seed_commit" python3 "$@"

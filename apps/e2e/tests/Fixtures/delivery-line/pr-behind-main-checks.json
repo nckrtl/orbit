@@ -1,0 +1,17 @@
+{
+  "check_runs": [
+    {
+      "app": {
+        "slug": "github-actions"
+      },
+      "completed_at": "2026-10-05T22:44:33Z",
+      "conclusion": "success",
+      "head_sha": "2a195f577c3e3027df4bef2d7151f63ed35eba60",
+      "id": 112013887808,
+      "name": "Required checks",
+      "started_at": "2026-10-05T22:44:30Z",
+      "status": "completed"
+    }
+  ],
+  "total_count": 1
+}

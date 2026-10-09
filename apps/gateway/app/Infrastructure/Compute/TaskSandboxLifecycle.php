@@ -113,7 +113,7 @@ final readonly class TaskSandboxLifecycle
 
     private function destroyOwned(TaskSandbox $sandbox, ComputeDriver $driver): TaskSandbox
     {
-        $enrolled = $sandbox->provider === 'upcloud' && $sandbox->enrollment !== null;
+        $enrolled = in_array($sandbox->provider, ['upcloud', 'incus'], true) && $sandbox->enrollment !== null;
         if ($enrolled) {
             $this->fleet->assertRemovable($sandbox);
         } elseif ($sandbox->node_id !== null) {

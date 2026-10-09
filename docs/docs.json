@@ -79,6 +79,7 @@
               "reference/schedules",
               "reference/app-dev-runtime-hibernation",
               "reference/assigned-vite-ports",
+              "reference/assigned-ssr-ports",
               "reference/agentation",
               "reference/agent-annotation",
               "reference/php-runtime",
@@ -540,6 +541,7 @@
               "GET /api/v1/task-groups/{group}/tasks/{task}/comments",
               "POST /api/v1/task-groups/{group}/tasks/{task}/comments",
               "GET /api/v1/task-questions",
+              "POST /api/v1/task-questions/{question}/close",
               "GET /api/v1/tasks/status"
             ]
           },

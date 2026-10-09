@@ -14,8 +14,10 @@ use App\Domain\Instances\Environment\InstanceEnvironmentStore;
 use App\Domain\Instances\Environment\InstanceEnvironmentValidator;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Instances\Transfer\InstanceTransferRuntime;
 use App\Domain\Instances\Transfer\InstanceTransferStatus;
 use App\Domain\Instances\Transfer\InstanceTransferStep;
+use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
@@ -24,6 +26,7 @@ use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessAdmissionLock;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessRuntimeManager;
+use App\Domain\Processes\ProcessTargetResolver;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteReplacementStep;
@@ -35,6 +38,7 @@ use App\Domain\Schedules\ScheduleTargetUseGuard;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Instances\NativeInstanceTransferRuntime;
+use App\Infrastructure\Processes\SystemdProcessRenderer;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\InstanceTransfer;
@@ -105,34 +109,7 @@ beforeEach(function (): void {
     $this->projection = new Orb245Projection;
     $this->environmentLock = new Orb245EnvironmentLock;
     $this->routerLock = new Orb368RouterLock;
-    $this->action = new TransferInstanceAction(
-        $this->accounts,
-        app(StorageRootResolver::class),
-        app(NodeSettingsNormalizer::class),
-        app(ManagedCheckoutOverlap::class),
-        $this->destinationGuard,
-        $this->environmentLock,
-        new Orb245SourceLock,
-        $this->sources,
-        $this->runtime,
-        $this->sqlite,
-        new InstanceEnvironmentContextResolver,
-        $this->reader,
-        new InstanceEnvironmentImporter,
-        new InstanceEnvironmentStore(
-            new InstanceEnvironmentContextResolver,
-            new InstanceEnvironmentValidator,
-        ),
-        new InstanceEnvironmentRenderer,
-        $this->writer,
-        new RouteStateResolver,
-        $this->projection,
-        $this->projection,
-        app(DevelopmentProjectionOperationLock::class),
-        $this->routerLock,
-        app(ScheduleTargetUseGuard::class),
-        app(ProcessAdmissionLock::class),
-    );
+    $this->action = orb245_transfer_action($this, $this->runtime);
     $this->data = new TransferInstanceData(
         nodeId: $this->destinationNode->id,
         name: null,
@@ -256,6 +233,61 @@ it('transfers a development Instance to another app-dev Node in the same Cluster
         ->toBe("APP_KEY=\"base64:stored-app-key\"\nAPP_URL=\"https://web.shop.dev.orbit/development\"\nNEW_FROM_ENV=\"imported\"\n");
 })->with(['root public' => ['public', ''], 'nested Laravel' => ['server/web/public', '/server/web']]);
 
+it('transfer rewrites EnvironmentFile to destination for a custom Process', function (string $webRoot, string $suffix): void {
+    $this->instance->update(['root' => $webRoot]);
+    $this->destinationNode->update(['settings' => ['apps' => ['path' => '/home/orbit/apps']]]);
+    $sourceEnvironment = '/srv/orbit/apps/shop/web'.$suffix.'/.env';
+    $this->process->update(['runtime_config' => [
+        'command' => ['/usr/bin/php', 'artisan', 'queue:work'],
+        'environment_file' => $sourceEnvironment,
+    ]]);
+    $processes = new class implements ProcessRuntimeManager
+    {
+        /** @var list<string> */
+        public array $units = [];
+
+        public function assertCanStart(Process $process): void {}
+
+        public function converge(Process $process): void
+        {
+            $this->units[] = new SystemdProcessRenderer()->render(
+                $process,
+                app(ProcessTargetResolver::class)->forInstallation($process),
+                new ManagedUserAccount('orbit', 'orbit', '/home/orbit'),
+            );
+        }
+
+        public function start(Process $process, bool $explicit = false): void {}
+
+        public function stop(Process $process): void {}
+
+        public function restart(Process $process): void {}
+
+        public function remove(Process $process): void {}
+
+        public function status(Process $process): string
+        {
+            return 'absent';
+        }
+
+        public function logs(Process $process, int $lines): string
+        {
+            return '';
+        }
+    };
+    $action = orb245_transfer_action($this, new NativeInstanceTransferRuntime($processes, Mockery::mock(ScheduleRuntimeManager::class)));
+
+    $result = $action->execute($this->instance, $this->data);
+    $destinationEnvironment = '/home/orbit/apps/shop/web'.$suffix.'/.env';
+
+    expect($result['transfer']->status)->toBe(InstanceTransferStatus::Completed)
+        ->and($this->process->refresh()->working_directory)->toBe('/home/orbit/apps/shop/web')
+        ->and($this->process->runtime_config['environment_file'])->toBe($destinationEnvironment)
+        ->and($processes->units)->toHaveCount(1)
+        ->and($processes->units[0])->toContain('EnvironmentFile=-'.$destinationEnvironment."\n")
+        ->not->toContain($sourceEnvironment);
+})->with(['root public' => ['public', ''], 'nested Laravel' => ['server/web/public', '/server/web']]);
+
 it('transfers a development Instance across Clusters and replaces a generated domain', function (): void {
     $this->destinationCluster->update(['tld' => 'other.orbit']);
     $this->destinationNode->update(['tld' => null]);
@@ -356,6 +388,7 @@ it('retains the source Route and Vite reservation until projection retirement ca
         ->and($this->sources->calls)->toBe(['capture', 'materialize'])
         ->and($this->runtime->calls)->toBe(['pause', 'relocate', 'activate']);
     expect(DB::table('vite_port_assignments')->where('instance_id', $this->instance->id)->count())->toBe(2);
+    expect(DB::table('ssr_port_assignments')->where('instance_id', $this->instance->id)->count())->toBe(2);
 
     $result = $this->action->execute($this->instance->refresh(), $this->data);
 
@@ -698,6 +731,7 @@ it('restores the source and discards destination state when transfer fails befor
         ->and($transfer->status)->toBe(InstanceTransferStatus::Failed);
 
     expect(DB::table('vite_port_assignments')->where('instance_id', $this->instance->id)->pluck('node_id')->all())->toBe([$this->sourceNode->id]);
+    expect(DB::table('ssr_port_assignments')->where('instance_id', $this->instance->id)->pluck('node_id')->all())->toBe([$this->sourceNode->id]);
     $this->sources->failMaterialize = false;
     $result = $this->action->execute($this->instance->refresh(), $this->data);
 
@@ -924,12 +958,15 @@ it('reports incomplete old-placement cleanup and retries only cleanup', function
         ->and($this->sources->calls)->toBe(['capture', 'materialize', 'cleanup']);
 
     expect(DB::table('vite_port_assignments')->where('instance_id', $this->instance->id)->count())->toBe(2);
+    expect(DB::table('ssr_port_assignments')->where('instance_id', $this->instance->id)->count())->toBe(2);
     $this->sources->cleanupIncomplete = false;
     $result = $this->action->execute($this->instance->refresh(), $this->data);
 
     expect($result['transfer']->status)->toBe(InstanceTransferStatus::Completed)
         ->and($this->sources->calls)->toBe(['capture', 'materialize', 'cleanup', 'cleanup']);
     expect(DB::table('vite_port_assignments')->where('instance_id', $this->instance->id)->pluck('node_id')->all())->toBe([$this->destinationNode->id]);
+    expect(DB::table('ssr_port_assignments')->where('instance_id', $this->instance->id)->pluck('node_id')->all())->toBe([$this->destinationNode->id]);
+    expect($this->instance->refresh()->ssr_port)->toBeInt()->toBe(DB::table('ssr_port_assignments')->where('instance_id', $this->instance->id)->value('port'));
 });
 
 it('completes transfer from verified placement state without application HTTP health', function (): void {
@@ -938,6 +975,38 @@ it('completes transfer from verified placement state without application HTTP he
     expect($this->projection->httpChecks)->toBe(0)
         ->and($this->projection->calls)->toBe(['converge', 'retire']);
 });
+
+function orb245_transfer_action(object $test, InstanceTransferRuntime $runtime): TransferInstanceAction
+{
+    return new TransferInstanceAction(
+        $test->accounts,
+        app(StorageRootResolver::class),
+        app(NodeSettingsNormalizer::class),
+        app(ManagedCheckoutOverlap::class),
+        $test->destinationGuard,
+        $test->environmentLock,
+        new Orb245SourceLock,
+        $test->sources,
+        $runtime,
+        $test->sqlite,
+        new InstanceEnvironmentContextResolver,
+        $test->reader,
+        new InstanceEnvironmentImporter,
+        new InstanceEnvironmentStore(
+            new InstanceEnvironmentContextResolver,
+            new InstanceEnvironmentValidator,
+        ),
+        new InstanceEnvironmentRenderer,
+        $test->writer,
+        new RouteStateResolver,
+        $test->projection,
+        $test->projection,
+        app(DevelopmentProjectionOperationLock::class),
+        $test->routerLock,
+        app(ScheduleTargetUseGuard::class),
+        app(ProcessAdmissionLock::class),
+    );
+}
 
 /**
  * @return array{Cluster, Node}

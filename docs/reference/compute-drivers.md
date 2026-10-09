@@ -117,7 +117,29 @@ the dedicated bridge. Host firewall access requires the opt-in policy below.
 
 A new local Project reservation records `project_slug` beside its one pinned `operator` image. The host accepts only a private x86_64 VM image with `user.orbit.project.owner=orbit-task-project-image`, `user.orbit.project.slug=<project-slug>`, `user.orbit.project.account=orbit`, and `user.orbit.project.bootstrap=unenrolled`. Image preparation must verify the managed account and absence of fleet or private-topology identity before assigning these properties. An image with Orbit template properties is refused even if it also has Project properties.
 
-Provisioning verifies the Project marker on an existing guest and worktree volume before any mutation. A retry cannot change the Project or adopt an unmarked reservation. These image checks do not enroll the guest or authorize SSH, WireGuard, or hub access. Local Project claim admission remains unavailable until its bootstrap, network, fleet, Route, and cleanup contracts are implemented and accepted.
+Provisioning verifies the Project marker on an existing guest and worktree volume before any mutation. A retry cannot change the Project or adopt an unmarked reservation. These image checks do not enroll the guest or authorize SSH, WireGuard, or hub access. Keep local Project claims disabled until bootstrap, network, fleet, Route, and cleanup acceptance has passed.
+
+### Enroll an owned local Project VM
+
+Local fleet enrollment has its own disabled-by-default `ORBIT_INCUS_ENROLLMENT_ENABLED` gate. Set `ORBIT_INCUS_DEV_CLUSTER_ID`, `ORBIT_INCUS_MODEL_ADDRESS`, and `ORBIT_INCUS_MODEL_PORT` for new reservations. The recorded host, private SSH endpoint, public hub endpoint, one Project image, and subnet must match the owned running guest. Initial admission reads the SSH public key through the host's read-only Incus identity operation before reserving a fleet Node.
+
+The reservation pins both sides of Node ownership, the complete Incus placement, and the SSH key. Retries verify the same guest and key through a separate read-only fleet identity operation. This operation permits existing enrollment files but keeps all host placement and firewall checks. It cannot replace a missing Node or repin a changed key.
+
+The hub confirms the sandbox's fleet limits before native provisioning publishes its peer. Its configured public UDP endpoint must match the recorded bootstrap endpoint, including on retries. Bootstrap uses the recorded private host address and reserved SSH port; enrolled traffic uses the VM's own WireGuard address. The Node joins only as `app-dev`, uses the managed `orbit` account, and has no grants to other Nodes. Local Project workspace admission has a separate disabled-by-default `ORBIT_INCUS_PROJECT_WORKSPACES_ENABLED` gate. Enable it only after local enrollment, runtime, and cleanup acceptance.
+
+### Local Project SSH identity
+
+The typed `project_identity` host operation reads the SSH public key from one running, owned Project VM. It verifies the private image provenance, guest and worktree Project markers, storage pool, subnet and devices first. The bridge must reject traffic by default. It refuses an Orbit topology guest, additional guests, foreign worktree attachments, or changed placement. The Gateway compares the response with the reserved Project, image, pool and subnet and validates the Ed25519 key before using it as a pinned SSH identity. Private key bytes never leave the guest.
+
+### Local Project bootstrap reservation
+
+An Incus host can record `project_bootstrap` with a public IPv4 `wireguard_address` and UDP `wireguard_port`. This requires the host's private `gateway_address`. Allocation records these endpoints with the host's WireGuard SSH address and a port from 24001 through 24254 in the Project reservation. Its subnet keeps that port reserved while parked. Existing reservations retain their endpoints when configuration changes.
+
+The host validates the closed `project_bootstrap` descriptor against its own interface and the separately approved root policy before recording it on the bridge, guest, and worktree volume. A retry refuses changed or missing endpoint markers before mutation. The SSH proxy listens only on the recorded host WireGuard address and reserved port, and forwards to the owned guest at port 22. Host filtering accepts the recorded Gateway on the WireGuard interface only when the connection's original destination is that host address and port. Direct SSH to the guest and other proxy ports remain blocked.
+
+The root policy permits UDP from this guest to the recorded public WireGuard hub endpoint and established replies. Project policy has one guest and grants no topology Pi ingress. Private-network and host exclusions remain in force. Fleet enrollment installs its own hub policy before publishing the peer. New live host and hub paths require separate approval.
+
+This read-only check does not create a bootstrap endpoint, enroll a Node, or change host or hub networking. Those steps remain required before local Project claims can start.
 
 ### Image test baselines
 
@@ -248,9 +270,13 @@ Generic Instance operations refuse sandbox workspaces with `instance.sandbox_man
 
 ### Durable firewall policy on an Incus host
 
-Install the fixed `apps/agent/resources/incus-host-network.py` helper as root-owned `/usr/local/libexec/orbit-sandbox-network` with mode `0755`. Grant the trusted compute account passwordless sudo for that exact executable with no arguments. Never grant a caller-supplied Python script or interpreter. The helper accepts only a bounded JSON request with `operation` (`enabled`, `ensure`, or `remove`), `project`, and `sandbox_id` on standard input.
+Install the fixed `apps/agent/resources/incus-host-network.py` helper as root-owned `/usr/local/libexec/orbit-sandbox-network` with mode `0755`. Grant the trusted compute account passwordless sudo for that exact executable with no arguments. Never grant a caller-supplied Python script or interpreter. The helper accepts only a bounded JSON request with `operation` (`enabled`, `project_enabled`, `verify`, `ensure`, or `remove`), `project`, and `sandbox_id` on standard input.
 
-The root-owned `/etc/orbit/sandbox-network.json` file opts in selected Incus projects. It has exactly `version: 1`, `projects`, `pi_host`, `gateway_address`, `wireguard_interface`, and `blocked_networks`. Use canonical IPv4 values for the host and Gateway WireGuard addresses. Set `wireguard_interface` to the host’s WireGuard interface name. The host address must belong only to that interface, and its link kind must be `wireguard`. Include the host's LAN networks in `blocked_networks`. Keep the file at mode `0644` under directories that only root can write. An absent installation preserves the existing behavior. An incomplete or unsafe installation refuses new provisioning. The helper verifies the installed boot unit, its enablement, and the loaded Incus dependency before granting access.
+The `project_enabled` operation checks the separate Project opt-in. Root verifies an attached Project guest's image provenance, endpoint markers, exact proxy and NIC devices, and worktree ownership before admitting it. Provisioning keeps a new guest stopped until this check passes. Resume checks the restored reservation again before starting it. Public-key identity reads use `verify`, which refuses missing or changed rules and never restores them.
+
+The root-owned `/etc/orbit/sandbox-network.json` file opts in selected Incus projects. Its required fields are `version: 1`, `projects`, `pi_host`, `gateway_address`, `wireguard_interface`, and `blocked_networks`. Optional `project_bootstrap` contains a separate `projects` opt-in list, a public IPv4 `wireguard_address`, and a UDP `wireguard_port`. Its projects must already belong to the main opt-in list. Project reservations must match these endpoints and use `pi_host` as their private SSH host address. Adding this opt-in preserves existing Orbit policy records; each Project record pins its own opt-in and endpoints.
+
+Use canonical IPv4 values for the host and Gateway WireGuard addresses. Set `wireguard_interface` to the host’s WireGuard interface name. The host address must belong only to that interface, and its link kind must be `wireguard`. Include the host's LAN networks in `blocked_networks`. Keep the file at mode `0644` under directories that only root can write. An absent installation preserves the existing behavior. An incomplete or unsafe installation refuses new provisioning. The helper verifies the installed boot unit, its enablement, and the loaded Incus dependency before granting access.
 
 Only new bridges receive `user.orbit.compute.host_network=1`. Existing unmarked bridges retain their current firewall policy. The helper checks the root configuration, project ownership, exact bridge identity, bridge settings, and ACL ownership through local Incus before granting access. It derives the subnet from the bridge and excludes private, metadata, multicast, host, LAN, and other sandbox destinations from public access. The request cannot supply rules, addresses, paths, or commands.
 
@@ -321,9 +347,9 @@ The scheduler reconciles review retention after publication and on later ticks. 
 
 ## Task workspace cleanup
 
-Merge and cancellation remove task workspaces through their sandbox reservations. Under the group admission lock, Orbit checks the group, Project, Instance, reservation, and compute host. It refuses foreign group references and unexpected live Routes, Processes, Schedules, or database connections. Guest checkout paths never reach the shared-host Instance remover.
+Merge and cancellation remove task workspaces through their sandbox reservations. Under the group admission lock, Orbit checks the group, Project, Instance, reservation, and compute host. It refuses foreign group references and unexpected live Routes, Processes, Schedules, or database connections. Guest checkout paths never reach host source inspection or deletion.
 
-For Incus, Orbit revokes the model key, destroys owned compute, and confirms destruction before deleting the workspace row and clearing its task references. A failed operation retains ownership for retry. The reservation remains as audit history. UpCloud cleanup records destruction intent and revokes the model key before removing an exclusive workspace, its native app-dev role and Node, and the owned hub policy. The reservation retains provider IDs throughout. If provider deletion fails after the workspace is removed, cleanup retries through the reservation. A foreign workspace, Node, role, or live resource reference refuses cleanup.
+For an Orbit Incus pair, Orbit revokes the model key, destroys owned compute, and confirms destruction before deleting the workspace row and clearing its task references. A failed operation retains ownership for retry. The reservation remains as audit history. Enrolled Project cleanup on either provider records destruction intent and revokes the model key before removing an exclusive workspace, its native app-dev role and Node, and the owned hub policy. The reservation retains provider IDs throughout. If provider deletion fails after the workspace is removed, cleanup retries through the reservation. A foreign workspace, Node, role, or live resource reference refuses cleanup.
 
 The sweep retries reservations with no Instance when their group has ended, has been deleted, or has already recorded destruction intent. It does not adopt unrecorded host resources or start cleanup of an active group. Failed retries use the workspace sweep's time budget and backoff.
 
@@ -373,7 +399,7 @@ Cold tool inputs include the pinned pnpm package under `opt/orbit-image/pnpm`. T
 
 ### Build a cold candidate
 
-`bin/sandbox-template-build --plan` verifies inputs and refuses existing candidate resources. `--prepare` allocates a new isolated pair through the production Incus helper, installs the pinned offline inputs, creates the managed `orbit` account, and verifies the shared source and CI baseline hashes. `--converge` bootstraps the private Gateway and enrolls its roleless operator through native Orbit commands.
+`bin/sandbox-template-build --plan` verifies inputs and refuses existing candidate resources. `--prepare` allocates a new isolated pair through the production Incus helper, installs the pinned offline inputs, creates the managed `orbit` account, and verifies the shared source and CI baseline hashes. `--converge` installs public DNS upstreams in each owned guest, bootstraps the private Gateway, and enrolls its roleless operator through native Orbit commands. Public DNS uses `1.1.1.1` and `9.9.9.9` with the systemd resolver default route. More specific fleet DNS routes remain authoritative. Guest DNS never depends on access to the Incus host. A foreign resolver file or failed resolver restart refuses readiness.
 
 Each mode accepts the same JSON object with the required fields `project`, `pool`, `sandbox_id`, `budget`, `subnet`, `blocked_networks`, `base_image`, `inputs`, and `source_manifest`. `workload_roles` is an optional ordered list from `app-dev`, `app-prod`, and `app-prod-2`. Omission builds only the pair. The budget must cover all requested guests.
 
@@ -407,7 +433,7 @@ This helper prepares source only. It does not certify ignored files, dependency 
 
 The builder must mark every candidate VM and its source volume with `user.orbit.template.candidate=<template UUID>`. The names and compute ownership must match `sandbox_id`. Only the recorded candidate guests may attach the source volume. The candidate must be running, have only its root disk, source disk, and group network, and contain no task-source or Pi/model runtime state. The command refuses existing template volumes or matching image identities. It never changes a promoted alias or accepts an unmarked pair.
 
-The publisher runs independent guest audits together, bounded by the requested inventory of at most five guests. It waits for every audit before changing source, stopping guests, or creating publication outputs.
+The publisher runs independent guest audits together, bounded by the requested inventory of at most five guests. Each guest command has a 60-minute limit for scanning mounted source and offline inputs. It waits for every audit before changing source, stopping guests, or creating publication outputs.
 
 The command checks guest prerequisites and known credential locations before source changes. It refuses GitHub tokens in guest files or process environments, subscription credentials, and the shared worker account. This audit complements a clean image build; it cannot establish provenance for arbitrary candidate files. The cold builder must still supply verified packages, tools, dependencies, and CI baselines.
 
@@ -437,14 +463,38 @@ The operator then uses its isolated Gateway profile to list the active Gateway a
 
 Provisioning reserves and attaches an owned workspace before preparing source, the isolated pair, and Pi in that order. It holds the group's execution lock during preparation. A failed step retains the reservation and workspace for retry; it never adopts an unrelated workspace or falls back to shared compute. Only successful preparation returns the workspace to the scheduler, which runs the Project's baseline setup and check before starting an implementer.
 
+### Admit a Project claim
+
+Project claims use local Incus capacity first when a host has that Project's development image. An existing reservation keeps its provider. An unavailable host or incomplete local configuration refuses admission; only measured lack of local capacity permits cloud placement. Local enrollment and workspace admission each require their own opt-in. Cloud recovery keeps its recorded provider and restores from the published branch.
+
+An enrolled Project VM runs checks and workspace commands through its own pinned fleet SSH connection. Pi uses the same fleet model endpoint and per-sandbox credentials as the cloud lane. Temporary repository access renews only for the owned, running Node and its Project. Local park retains the Node and bootstrap reservation. Resume verifies the restored guest and SSH key, reinstalls its hub limits, and confirms Pi before another turn starts.
+
+Web-serving Projects get one generated private Route, `task-<id>.<project>.<dev-tld>`, on their enrolled VM. Native development provisioning uses the Project root and prepares PHP, certificates, Caddy, and private DNS.
+
+Laravel previews import their environment through the native Instance environment flow. An empty `APP_KEY` receives one key per workspace; retries synchronize the stored environment and retain its keys instead of importing it again. Only the owned, running Project guest can use this runtime path. Native preview source-access grants use the same ownership guard and target that guest through pinned fleet SSH. Generic source, transfer, and removal actions retain their sandbox guards. Non-web Projects keep a source-only workspace.
+
+Fleet cleanup applies to both providers. After destruction intent and model revocation, it records one native Instance removal journal for the exclusive workspace. Its source inventory names the sandbox reservation; it does not claim to inspect or quarantine a host checkout. Source finalization records retention inside that VM until compute destruction. Guest-local certificates and services remain with it, so cleanup can withdraw publication while the VM is parked.
+
+Native Route withdrawal handles active previews and resumes from recorded evidence after a partial failure. Runtime cleanup and row deletion finish before removal of the native `app-dev` role and peer, hub policy, and compute. A failed Route or peer removal retains reservation ownership for retry. Foreign journals, targets, public Routes, and changed workspace ownership refuse cleanup before mutation.
+
 ### Admit an UpCloud project claim
 
-`ORBIT_SANDBOX_PROJECT_CLAIMS_ENABLED` defaults to false. Its first lane uses UpCloud directly; it refuses project Incus reservations rather than changing their placement. Enable UpCloud compute, enrollment, and the model proxy, and configure Pi models and the pinned artifact before enabling this switch. Orbit projects retain their local pair path.
+`ORBIT_SANDBOX_PROJECT_CLAIMS_ENABLED` defaults to false. Local placement also requires `ORBIT_INCUS_PROJECT_WORKSPACES_ENABLED`; cloud placement requires UpCloud enrollment. Enable UpCloud compute, enrollment, and the model proxy, and configure Pi models and the pinned artifact before enabling this switch. Orbit projects retain their local pair path.
 
-The claim reserves and starts one VM, enrolls its owned Node, attaches one private task workspace, fetches source directly from GitHub, and prepares Pi. It then returns the source-resolved workspace to the scheduler. The scheduler runs the project's setup steps, including the TIA baseline restore, and its baseline check before starting the implementer. Retries keep the reservation and preserve prepared source. The task workspace has no preview Route.
+The claim reserves and starts one VM, enrolls its owned Node, attaches one private task workspace, fetches source directly from GitHub, and prepares Pi. It prepares the private preview for web-serving Projects and then returns the workspace to the scheduler. The scheduler runs the project's setup steps, including the TIA baseline restore, and its baseline check before starting the implementer. Retries keep the reservation and preserve prepared source. Non-web Projects have no preview Route.
 
 Review expiry, merge, and cancellation use the owned cleanup path. A failed cleanup retains destruction intent and provider IDs. Review feedback can use the original running VM during retention.
 
-When review feedback resumes a group whose UpCloud VM was destroyed, Orbit first confirms an open pull request in the Project repository. It reserves a replacement VM only after the old reservation has finished cleanup. It restores `task-{group id}` at the confirmed pull request commit using temporary GitHub App access, prepares fresh Pi and model credentials, and reruns Project setup and baseline checks before starting the implementer. A missing branch or mismatched commit keeps the group waiting; recovery never starts from the default branch. Retries preserve the replacement reservation and local work.
+When review feedback resumes a group whose UpCloud VM was destroyed, Orbit first confirms an open pull request in the Project repository. It reserves a replacement VM only after the old reservation records confirmed destruction, revokes its model and Pi credentials, and releases its fleet Node. Provider server and disk IDs remain in that reservation as audit history; recovery does not require clearing them.
 
-Orbit does not recreate a VM just for preview access because private task workspaces have no preview Route. Keep unattended claims disabled until the complete live UpCloud flow has passed acceptance.
+It restores `task-{group id}` at the confirmed pull request commit using temporary GitHub App access, prepares fresh Pi and model credentials, and reruns Project setup and baseline checks before starting the implementer. A missing branch or mismatched commit keeps the group waiting; recovery never starts from the default branch. Retries preserve the replacement reservation and local work.
+
+A destroyed cloud VM must finish branch recovery before preview access resumes. Keep unattended claims disabled until the complete live UpCloud flow has passed acceptance.
+
+### Publish a local Project development image
+
+`bin/sandbox-project-image --plan`, `--prepare`, and `--publish` use one closed JSON request with `project`, `pool`, `sandbox_id`, `budget`, `project_slug`, `base_image`, and `source_template`. The project must be an owned proof project. The pinned base must be a private `app-dev` image published from the same source template. It must have no aliases. This path never converts an enrolled Node or changes an existing image.
+
+Preparation creates one owned VM with a 20 GiB root disk and no network or source mount. It verifies the managed account, toolchain, PHP extensions, and absence of fleet, task, agent, or repository credentials. The checkout is empty. Publication repeats that audit, stops the VM, and publishes a new private image with Project provenance. Partial failures retain the candidate for inspection. `--destroy` removes only the matching temporary VM and leaves the published image intact. The Project source, environment, setup, and CI baseline are prepared on each task's owned workspace.
+
+Preparation uses the host's running VM budget. Stopped guests keep their ownership and do not consume running capacity; an uncertain power state still does. Incus can retain base properties in the published image as well as the clone configuration. The publisher verifies and removes only the matching inherited Orbit template properties from its temporary candidate and its owned new image. The base image remains unchanged. The published image must carry Project provenance and no Orbit template properties. A failed publication retains its candidate and output for inspection.

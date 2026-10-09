@@ -65,12 +65,27 @@ final readonly class NativeInstanceTransferRuntime implements InstanceTransferRu
         string $sourcePath,
         string $workingDirectory,
     ): void {
-        $instance->loadMissing(['processes', 'schedules']);
+        $instance->loadMissing(['processes', 'schedules', 'project']);
+        $environmentFile = ($instance->source_is_laravel === true
+            ? ApplicationDirectory::resolve($workingDirectory, $instance->root ?? $instance->project->root)
+            : $workingDirectory).'/.env';
 
         foreach ($instance->processes as $process) {
+            $runtimeConfig = $process->runtime_config;
+
+            // An Instance Process environment file is always derived from the application directory,
+            // so every Process that carries one follows the checkout, not only the presets.
+            if (
+                $process->isVpDev()
+                || $process->isAnnotator()
+                || (is_string($runtimeConfig['environment_file'] ?? null) && $runtimeConfig['environment_file'] !== '')
+            ) {
+                $runtimeConfig['environment_file'] = $environmentFile;
+            }
+
             $process->update([
                 'working_directory' => $this->relocatedPath($process->working_directory, $sourcePath, $workingDirectory),
-                ...(($process->isVpDev() || $process->isAnnotator()) ? ['runtime_config' => [...$process->runtime_config, 'environment_file' => ($instance->source_is_laravel === true ? ApplicationDirectory::resolve($workingDirectory, $instance->root ?? $instance->project->root) : $workingDirectory).'/.env']] : []),
+                'runtime_config' => $runtimeConfig,
             ]);
         }
 

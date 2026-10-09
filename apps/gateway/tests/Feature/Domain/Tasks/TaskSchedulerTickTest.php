@@ -1461,6 +1461,58 @@ it('appends one check fixup naming the failed check and its url', function (Task
         ->and($agents->spawned)->toBe([$fixup->id]);
 })->with([TaskGroupStatus::Settling, TaskGroupStatus::WaitingForReview]);
 
+/** The base tip as GitHub reports it: its merge base with the head, and its `Required checks` result. */
+function tick_base_tip(string $head, string $tip, string $mergeBase, string $conclusion): void
+{
+    Http::fake([
+        'https://api.github.com/repos/acme/orbit/commits?*' => Http::response([['sha' => $tip, 'parents' => [['sha' => $mergeBase]]]]),
+        'https://api.github.com/repos/acme/orbit/compare/'.$head.'...'.$tip.'*' => Http::response([
+            'status' => $mergeBase === $tip ? 'ahead' : 'diverged',
+            'base_commit' => ['sha' => $head],
+            'merge_base_commit' => ['sha' => $mergeBase],
+        ]),
+        'https://api.github.com/repos/acme/orbit/commits/'.$tip.'/check-runs*' => Http::response(['total_count' => 1, 'check_runs' => [[
+            'id' => 7, 'name' => 'Required checks', 'head_sha' => $tip, 'status' => 'completed', 'conclusion' => $conclusion,
+            'html_url' => 'https://github.com/acme/orbit/runs/7', 'app' => ['slug' => 'github-actions'],
+        ]]]),
+    ]);
+}
+
+it('puts merge-first in the Fix brief when the base tip is green and ahead of the merge-base', function (): void {
+    tick_settling_group();
+    $agents = tick_running_agents();
+    $head = str_repeat('a', 40);
+    tick_watch_pulls([tick_open_pull(['head' => ['sha' => $head]])], [$head => [[
+        'name' => 'CLI', 'status' => 'completed', 'conclusion' => 'failure', 'html_url' => 'https://github.com/acme/orbit/runs/9',
+    ]]]);
+    tick_base_tip($head, str_repeat('e', 40), str_repeat('b', 40), 'success');
+
+    app(TaskScheduler::class)->tick();
+
+    $fixup = Task::query()->where('fixup_problem', 'check:CLI')->sole();
+    expect($fixup->title)->toBe('Fix CLI')
+        ->and($fixup->brief)->toBe('Merge origin/main first; base may already fix this. Check CLI failed: https://github.com/acme/orbit/runs/9. Do not rebase and do not force-push.')
+        ->and($agents->spawned)->toBe([$fixup->id]);
+});
+
+it('keeps the Fix brief when the base tip is not green and ahead', function (string $mergeBase, string $conclusion): void {
+    tick_settling_group();
+    tick_running_agents();
+    $head = str_repeat('a', 40);
+    tick_watch_pulls([tick_open_pull(['head' => ['sha' => $head]])], [$head => [[
+        'name' => 'CLI', 'status' => 'completed', 'conclusion' => 'failure', 'html_url' => 'https://github.com/acme/orbit/runs/9',
+    ]]]);
+    tick_base_tip($head, str_repeat('e', 40), $mergeBase, $conclusion);
+
+    app(TaskScheduler::class)->tick();
+
+    expect(Task::query()->where('fixup_problem', 'check:CLI')->sole()->brief)
+        ->toBe('Check CLI failed: https://github.com/acme/orbit/runs/9. Do not rebase and do not force-push.');
+})->with([
+    'head already contains the green tip' => [str_repeat('e', 40), 'success'],
+    'red tip ahead' => [str_repeat('b', 40), 'failure'],
+]);
+
 it('runs make check for a fixup on a non-Orbit Project and on orbit', function (string $slug): void {
     $group = tick_settling_group();
     $group->project->update(['slug' => $slug, 'task_check' => 'make check']);
@@ -5693,12 +5745,13 @@ it('starts the reviewer with the first review request when the group has no revi
         ->and(app(TaskTurnReceipts::class)->prepared)->toBe(['reviewer:final']);
 });
 
-function tick_final_approval(): string
+/** @param list<string> $changes */
+function tick_final_approval(array $changes = ['Tasks store their records.']): string
 {
     return json_encode([
         'outcome' => 'approved',
         'summary' => 'Checked the feature.',
-        'pull_request' => ['summary' => 'Adds tick routing.', 'changes' => ['Tasks store their records.'], 'breaking' => []],
+        'pull_request' => ['summary' => 'Adds tick routing.', 'changes' => $changes, 'breaking' => []],
         'nonce' => bin2hex(random_bytes(8)),
     ], JSON_THROW_ON_ERROR);
 }
@@ -5773,6 +5826,31 @@ it('continues an approval tick after Jev recording fails and reaches later work'
         ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Settling)
         ->and($task->fresh()?->status)->toBe(TaskStatus::Completed);
     Exceptions::assertReported(QueryException::class);
+});
+
+it('publishes when a change starts with the last subtask title, without asking Jev', function (): void {
+    [$group, $task, , $signer, $publisher] = tick_review([tick_final_approval(['Models: tasks store their records.'])], last: true);
+    Classification::fake([['subtask_'.$task->id => new BooleanAnswer(0.45)]])->preventStrayClassifications();
+
+    app(TaskScheduler::class)->tick();
+
+    Classification::assertNothingClassified();
+    expect($signer->messages)->toBe(["Models\n\nChecked the feature."])
+        ->and($publisher->pushes)->toBe([$group->id])
+        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Settling)
+        ->and($task->fresh()?->status)->toBe(TaskStatus::Completed);
+});
+
+it('holds the approval when no change starts with the last subtask title and Jev answers no', function (): void {
+    [, $task, , $signer, $publisher] = tick_review([tick_final_approval()], last: true);
+    Classification::fake([['subtask_'.$task->id => new BooleanAnswer(0.45)]])->preventStrayClassifications();
+
+    app(TaskScheduler::class)->tick();
+
+    expect(app(AgentCommandDispatcher::class)->commands[0]['message']['text'])->toContain('The pull request change list does not cover the subtask "Models".')
+        ->and($signer->messages)->toBe([])
+        ->and($publisher->pushes)->toBe([])
+        ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing);
 });
 
 it('commits the last approved subtask, opens the pull request with the reviewer fields, and settles the group', function (): void {
@@ -6819,6 +6897,93 @@ it('never resets a failed baseline workspace after an implementer has started el
     $this->assertDatabaseHas('tasks', ['id' => $task->id, 'assistance_requested' => true, 'resolution_delivered_comment_id' => null]);
     $this->assertDatabaseHas('tasks', ['id' => $group->id, 'assistance_requested' => true]);
 });
+
+/**
+ * A baseline that failed on `$failed`, and GitHub's view of main: the `Required checks` result on the failed
+ * commit and on the tip, and how the tip relates to the failed commit.
+ *
+ * @return array{Task, Task, FakeTaskCheckRunner}
+ */
+function tick_red_main_baseline(string $slug, string $failed, string $tip, string $failedConclusion, string $tipConclusion, string $status = 'ahead'): array
+{
+    app(TaskExtensionState::class)->enable();
+    $group = tick_baseline_group($slug, 'composer check', [], '10.51.0.10');
+    tick_running_agents();
+    $runner = new FakeTaskCheckRunner([TaskCheckReading::finished(1, str_repeat('a', 40), str_repeat('b', 40), [], "main was red\n")]);
+    app()->instance(TaskCheckRunner::class, $runner);
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+    $task = $group->tasks()->sole();
+    expect($task->assistance_requested)->toBeTrue();
+    // The fake runner starts every check on aaaa…; the failed baseline ran on the red main commit.
+    TaskCheck::query()->where('task_id', $task->id)->update(['head_before' => $failed]);
+
+    $group->project->update(['repository_url' => "https://github.com/acme/{$slug}.git"]);
+    GitHubTestSupport::storeApp();
+    $runs = static fn (string $sha, string $conclusion): array => ['total_count' => 1, 'check_runs' => [[
+        'id' => 7, 'name' => 'Required checks', 'head_sha' => $sha,
+        'status' => $conclusion === 'pending' ? 'in_progress' : 'completed', 'conclusion' => $conclusion === 'pending' ? null : $conclusion,
+        'html_url' => "https://github.com/acme/{$slug}/runs/7", 'app' => ['slug' => 'github-actions'],
+    ]]];
+    Http::preventStrayRequests();
+    Http::fake([
+        "https://api.github.com/repos/acme/{$slug}/installation" => Http::response(['id' => 9]),
+        'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_read'], 201),
+        "https://api.github.com/repos/acme/{$slug}/commits?*" => Http::response([['sha' => $tip, 'parents' => [['sha' => $failed]]]]),
+        "https://api.github.com/repos/acme/{$slug}/compare/{$failed}...{$tip}*" => Http::response([
+            'status' => $status, 'base_commit' => ['sha' => $failed], 'merge_base_commit' => ['sha' => $status === 'ahead' ? $failed : str_repeat('d', 40)],
+        ]),
+        "https://api.github.com/repos/acme/{$slug}/commits/{$failed}/check-runs*" => Http::response($runs($failed, $failedConclusion)),
+        "https://api.github.com/repos/acme/{$slug}/commits/{$tip}/check-runs*" => Http::response($runs($tip, $tipConclusion)),
+    ]);
+
+    return [$group, $task, $runner];
+}
+
+it('queues the baseline retry when main was red and its green tip contains the failed commit', function (): void {
+    // Task 1293: the baseline failed on red main 82fcdd38, and main then turned green at e43566fe.
+    $failed = '82fcdd38'.str_repeat('0', 32);
+    $tip = 'e43566fe'.str_repeat('0', 32);
+    [$group, $task, $runner] = tick_red_main_baseline('baseline-red-main', $failed, $tip, 'failure', 'success');
+    $fetcher = mock(TaskBaseBranchFetcher::class);
+    $fetcher->shouldReceive('fetchForTurn')->once()->ordered();
+    $fetcher->shouldReceive('resetToDefault')->once()->ordered()->andReturn($tip);
+
+    app(TaskScheduler::class)->tick();
+
+    $resolution = TaskComment::query()->where('task_id', $task->id)->where('type', 'resolution')->sole();
+    expect($resolution->author)->toBe('orbit')
+        ->and($resolution->body)->toBe('The baseline failed on '.$failed.', where Required checks failed. The default branch tip '.$tip.' contains it and passed Required checks, so Orbit retries the baseline.');
+    $this->assertDatabaseHas('tasks', [
+        'id' => $task->id, 'subtask_start_commit' => $tip, 'assistance_requested' => false,
+        'resolution_delivered_comment_id' => $resolution->id, 'implementer_agent_thread_id' => null,
+    ]);
+    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'assistance_requested' => false]);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($runner->starts)->toBe(2);
+});
+
+it('keeps baseline assistance unless main was red and its tip is green and contains the failed commit', function (string $failedConclusion, string $tipConclusion, string $status): void {
+    $failed = '82fcdd38'.str_repeat('0', 32);
+    [$group, $task, $runner] = tick_red_main_baseline('baseline-not-red-main', $failed, 'e43566fe'.str_repeat('0', 32), $failedConclusion, $tipConclusion, $status);
+    $fetcher = mock(TaskBaseBranchFetcher::class);
+    $fetcher->shouldNotReceive('fetchForTurn');
+    $fetcher->shouldNotReceive('resetToDefault');
+
+    app(TaskScheduler::class)->tick();
+
+    expect(TaskComment::query()->where('task_id', $task->id)->where('type', 'resolution')->exists())->toBeFalse()
+        ->and($task->fresh()?->assistance_requested)->toBeTrue()
+        ->and($group->fresh()?->assistance_requested)->toBeTrue()
+        ->and($runner->starts)->toBe(1);
+})->with([
+    'main was green' => ['success', 'success', 'ahead'],
+    'tip pending' => ['failure', 'pending', 'ahead'],
+    'tip red' => ['failure', 'failure', 'ahead'],
+    'tip does not contain the failed commit' => ['failure', 'success', 'diverged'],
+]);
 
 /**
  * A fresh running task whose baseline has not started.

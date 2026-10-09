@@ -195,12 +195,15 @@ describe('sandbox SSH bootstrap identity', function (): void {
 
 it('preserves existing Node data and triggers through an enrollment schema rollback and upgrade', function (): void {
     $sandbox = fleet_sandbox();
-    $before = DB::table('sqlite_master')->where('type', 'trigger')->pluck('sql', 'name')->all();
+    $before = DB::table('sqlite_master')->where('type', 'trigger')->orderBy('name')->pluck('sql', 'name')->all();
     $migration = require database_path('migrations/2026_10_07_064540_add_fleet_enrollment_to_task_sandboxes.php');
+    $sandboxRemoval = require database_path('migrations/2026_10_19_000000_allow_owned_project_sandbox_instance_removal.php');
+    $sandboxRemoval->down();
     $migration->down();
     expect(Node::query()->count())->toBe(4);
     $migration->up();
-    expect(DB::table('sqlite_master')->where('type', 'trigger')->pluck('sql', 'name')->all())->toBe($before);
+    $sandboxRemoval->up();
+    expect(DB::table('sqlite_master')->where('type', 'trigger')->orderBy('name')->pluck('sql', 'name')->all())->toBe($before);
     $node = app(SandboxFleetIdentity::class)->reserve($sandbox);
     expect(fn () => $sandbox->delete())->toThrow(QueryException::class);
     expect($node->fresh()->compute_sandbox_id)->toBe($sandbox->id);

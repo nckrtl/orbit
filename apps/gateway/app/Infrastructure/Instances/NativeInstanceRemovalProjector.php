@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\Infrastructure\Instances;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\Instances\InstanceSandboxGuard;
 use App\Domain\Instances\ProductionPhpRuntimeIdentity;
 use App\Domain\Instances\ProductionPhpRuntimeManager;
+use App\Domain\Instances\ProjectSandboxRuntimeGuard;
 use App\Domain\Instances\Removal\InstanceRemovalProjector;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Routes\PublicRouteEdgeProjector;
@@ -18,6 +20,7 @@ use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
 use App\Infrastructure\AppDev\RemoteAppDevPhpFpmManager;
 use App\Infrastructure\AppDev\RemoteAppDevRouteFirewallManager;
+use App\Infrastructure\Compute\ProjectSandboxInstanceRemoval;
 use App\Models\Instance;
 use App\Models\InstanceRemovalMember;
 use App\Models\Node;
@@ -40,6 +43,7 @@ final readonly class NativeInstanceRemovalProjector implements InstanceRemovalPr
     public function clearRouteTarget(InstanceRemovalMember $member): string
     {
         $instance = Instance::query()->with('node')->findOrFail($member->instance_id);
+        $sandboxRemoval = $this->sandboxRemoval($instance);
         $route = $member->route_id === null
             ? null
             : Route::query()
@@ -56,6 +60,10 @@ final readonly class NativeInstanceRemovalProjector implements InstanceRemovalPr
                 message: "Instance [{$member->name}] Route identity changed during removal.",
                 status: 409,
             );
+        }
+
+        if ($sandboxRemoval) {
+            ProjectSandboxRuntimeGuard::assertRoute($instance, $route, $member);
         }
 
         if (
@@ -105,14 +113,17 @@ final readonly class NativeInstanceRemovalProjector implements InstanceRemovalPr
         if (
             $member->environment === 'development'
             && $route->sites_published
-            && ($removedTarget
+            && ($removedTarget || $sandboxRemoval
             || $this->certificates->instanceCertificateExists($instance))
         ) {
-            $this->caddy->build($this->servingNode($route, $instance));
+            $serving = $this->servingNode($route, $instance);
+            if (! $sandboxRemoval || ! $serving->is($instance->node)) {
+                $this->caddy->build($serving);
+            }
             $this->dns->converge();
         }
 
-        $this->removeRouteProjection($route, $instance);
+        $this->removeRouteProjection($route, $instance, $sandboxRemoval);
 
         DB::transaction(function () use ($route): void {
             Route::query()->lockForUpdate()->findOrFail($route->id)->delete();
@@ -140,6 +151,9 @@ final readonly class NativeInstanceRemovalProjector implements InstanceRemovalPr
     public function cleanupRuntime(InstanceRemovalMember $member): void
     {
         $instance = Instance::query()->with('node')->findOrFail($member->instance_id);
+        if ($this->sandboxRemoval($instance)) {
+            return;
+        }
         if ($instance->placedOnAppProd()) {
             if (! ProductionPhpRuntimeIdentity::isAbsent($instance)) {
                 if (
@@ -214,7 +228,7 @@ final readonly class NativeInstanceRemovalProjector implements InstanceRemovalPr
      * and the Route row is deleted. A placement change that waits for its withdrawal also leaves
      * sites and certificates on its second placement, so removal withdraws those too.
      */
-    private function removeRouteProjection(Route $route, Instance $instance): void
+    private function removeRouteProjection(Route $route, Instance $instance, bool $sandboxRemoval = false): void
     {
         $route->loadMissing(['transitionCluster.routerAssignment.node']);
         $transitionRouter = $route->transitionCluster?->routerAssignment?->node;
@@ -229,13 +243,17 @@ final readonly class NativeInstanceRemovalProjector implements InstanceRemovalPr
             ->filter(static fn (?Node $node): bool => $node instanceof Node && ! $node->is($instance->node))
             ->unique(static fn (Node $node): int => $node->id)
             ->values();
-        $this->caddy->build($instance->node);
+        if (! $sandboxRemoval) {
+            $this->caddy->build($instance->node);
+        }
 
         foreach ($routers as $serving) {
             $this->caddy->build($serving);
         }
 
-        $this->certificates->removeInstance($instance);
+        if (! $sandboxRemoval) {
+            $this->certificates->removeInstance($instance);
+        }
 
         if ($hadTransition) {
             $this->certificates->removeHostnameChange($instance, $route);
@@ -251,12 +269,26 @@ final readonly class NativeInstanceRemovalProjector implements InstanceRemovalPr
             }
         }
 
-        if ($instance->placedOnAppDev()) {
+        if (! $sandboxRemoval && $instance->placedOnAppDev()) {
             $this->firewall->remove($instance->node, $route->id);
         }
 
         $this->dns->converge();
         $this->refreshIngress($route);
+    }
+
+    private function sandboxRemoval(Instance $instance): bool
+    {
+        if (! InstanceSandboxGuard::isSandbox($instance)) {
+            return false;
+        }
+        $member = $instance->removalMember()->first();
+        if ($member === null) {
+            throw new ResourceOperationException('instance.sandbox_managed', 'The sandbox has no accepted removal journal.', 409);
+        }
+        ProjectSandboxInstanceRemoval::assertJournal($instance, $member);
+
+        return true;
     }
 
     private function removePublicEdge(Route $route): void

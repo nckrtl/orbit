@@ -1,0 +1,13 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Tasks\\CloseTaskQuestionRequest",
+    "route": "POST /api/v1/task-questions/{question}/close",
+    "status": 409,
+    "body": {
+        "error": {
+            "code": "tasks.question_closed",
+            "message": "Question 1 is already superseded.",
+            "details": {}
+        }
+    }
+}

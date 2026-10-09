@@ -1605,6 +1605,37 @@ fi
         self.assertEqual(15, len((self.common / 'calls').read_text().splitlines()))
         self.assertEqual(status, cache.git(self.root, 'status', '--porcelain'))
 
+    @unittest.skipUnless(shutil.which('setfacl') and shutil.which('getfacl'), 'needs setfacl and getfacl')
+    def test_review_directory_keeps_named_acl_entries_effective(self):
+        runner = self.gate_fixture()
+        # Like the check host, where the Git common dir gives orbit-worker d:u:orbit-worker:rwX.
+        subprocess.run(['setfacl', '-d', '-m', 'u:nobody:rwX,m::rwx', str(self.common)], check=True)
+        result = subprocess.run([str(runner)], env=self.gate_env, capture_output=True, text=True)
+        self.assertEqual(0, result.returncode, result.stderr + result.stdout)
+        report = next((self.common / 'orbit-checks').glob('*/review-*/result.json'))
+        directory = report.parent
+        self.assertNotEqual('---', acl_entry(directory.parent, 'mask::'))
+        self.assertNotEqual('---', acl_entry(directory, 'mask::'), 'mkdtemp mode 0700 set the ACL mask to ---')
+        self.assertEqual('---', acl_entry(directory, 'other::'))
+        rights = effective_named_rights(directory, 'nobody')
+        self.assertEqual(('r', 'x'), (rights[0], rights[2]), rights)
+        logs = list(directory.glob('*.log'))
+        self.assertTrue(logs)
+        for path in [report, *logs]:
+            self.assertEqual('r', effective_named_rights(path, 'nobody')[0], path.name)
+
+
+def acl_entry(path, prefix):
+    """Return the rights of the first getfacl entry that starts with prefix."""
+    lines = subprocess.run(['getfacl', '-cp', str(path)], capture_output=True, text=True, check=True).stdout.splitlines()
+    return next(line.split()[0][len(prefix):] for line in lines if line.startswith(prefix))
+
+
+def effective_named_rights(path, user):
+    """A named user entry's rights after the ACL mask, such as r-x."""
+    named, mask = acl_entry(path, f'user:{user}:'), acl_entry(path, 'mask::')
+    return ''.join(right if limit != '-' else '-' for right, limit in zip(named, mask))
+
 
 class TiaRecoveryTest(unittest.TestCase):
     setUp = MainCacheTest.setUp

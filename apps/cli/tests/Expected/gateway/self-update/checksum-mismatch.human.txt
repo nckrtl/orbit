@@ -5,7 +5,7 @@ Updating CLI...
 ┌  Update Orbit
 │
 ├  ● Read desired state
-│    CLI 0.4681.0, agent 0.4.1
+│    CLI 0.4681.0, agent 0.4.2
 │
 ├  ● Update agent
 │    This machine is not a managed Node.

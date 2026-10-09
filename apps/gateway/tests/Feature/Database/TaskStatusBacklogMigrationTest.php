@@ -15,7 +15,7 @@ function task_status_backlog_migration(): object
     config()->set('database.connections.task_status', ['driver' => 'sqlite', 'database' => ':memory:', 'foreign_key_constraints' => true]);
     DB::setDefaultConnection('task_status');
     $paths = array_values(array_filter(glob(database_path('migrations/*.php')), static fn (string $path): bool => ! str_contains($path, 'rename_task_statuses_to_backlog_and_todo')
-        && ! str_contains($path, 'merge_task_groups_into_tasks')));
+        && ! str_contains($path, 'merge_task_groups_into_tasks') && ! str_contains($path, 'allow_owned_project_sandbox_instance_removal')));
     Artisan::call('migrate', ['--database' => 'task_status', '--path' => $paths, '--realpath' => true, '--force' => true]);
 
     return require glob(database_path('migrations/*rename_task_statuses_to_backlog_and_todo.php'))[0];

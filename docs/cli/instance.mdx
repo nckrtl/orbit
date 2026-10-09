@@ -3,7 +3,7 @@ title: "instance"
 description: "Create, register, reconcile a renamed branch or domain, set up, clone, deploy, roll back, and remove Instances."
 covers:
   - apps/cli/app/Commands/Instances/**
-  - apps/gateway/app/Actions/Instances/{CreateInstanceAction,RenameInstanceAction}.php
+  - apps/gateway/app/Actions/Instances/{CreateInstanceAction,CreateInstanceServerDatabaseAction,RenameInstanceAction}.php
   - apps/gateway/app/Data/Instances/{CreateInstanceData,RenameInstanceData}.php
   - apps/gateway/app/Http/Requests/Instances/{StoreInstanceRequest,RenameInstanceRequest}.php
   - packages/php-sdk/src/Requests/Instances/{Create,Register,Rename,Show,Update,Destroy,Clone,Transfer}InstanceRequest.php
@@ -93,6 +93,7 @@ orbit instance:create <project> <node> <name> [options]
 | `--root=PATH` | the Project root | Relative web-root override for this Instance. |
 | `--domain=HOST` | generated | Explicit Route domain for the development source. Without it, Orbit generates a domain from the active Cluster TLD, then the Node TLD. |
 | `--branch=BRANCH` | see [branch selection](/domains/applications#create-a-development-instance) | Explicit source branch. |
+| `--database-server=SLUG` | none | Create the Instance's database on this [Database server](/reference/database-servers) before the setup steps run. Only for an Instance that this create makes; an Instance that finished setup returns `instance.database_server_existing`. See [database on a server](/domains/applications#database-on-a-server). Needs access to the Gateway too. |
 
 Development placement and branch selection follow the requested name.
 
@@ -110,7 +111,7 @@ orbit instance:create 4 7 t3-1a2b3c4d --branch=t3code/1a2b3c4d
 
 A requested origin branch keeps its existing selection behavior. Orbit does not reset an existing local branch to the default commit. A missing fetched `default_branch` when required returns `instance.branch_resolution_failed`, not a different fallback branch. An invalid Git branch name returns `validation.failed` before source changes.
 
-A create that fails before activation removes its owned resources and Instance row without teardown. The response keeps the original error code. Once cleanup completes, a new create can select a different branch. If an interruption or incomplete cleanup leaves a pre-activation Instance, an identical retry resumes it; a retry that changes the root or `--branch` returns `instance.placement_conflict`. Incomplete cleanup reports `details.cleanup = "incomplete"` and a recovery command. [`instance:destroy`](#orbit-instancedestroy) accepts `reserved`, `checkout_prepared`, and `source_resolved` for [pre-activation removal](/reference/instance-removal#pre-activation-removal).
+A create that fails before activation removes its owned resources and Instance row without teardown. The response keeps the original error code. Once cleanup completes, a new create can select a different branch. If an interruption or incomplete cleanup leaves a pre-activation Instance, an identical retry resumes it; a retry that changes the root or `--branch` returns `instance.placement_conflict`. Incomplete cleanup reports `details.cleanup = "incomplete"` and a recovery command. An identical retry finishes a started cleanup first, without `--force`, and then creates the Instance. [`instance:destroy`](#orbit-instancedestroy) accepts `reserved`, `checkout_prepared`, and `source_resolved` for [pre-activation removal](/reference/instance-removal#pre-activation-removal).
 
 <Note>
 The Instance becomes active once Orbit has prepared the source, PHP runtime, Laravel URL, and Route. Setup runs after that. A successful create response also means every setup step succeeded; an empty list counts as success. The application can still fail for other reasons.
@@ -253,7 +254,7 @@ orbit instance:register --path=/srv/orbit/apps/acme/main --include-worktrees --y
 
 ## orbit instance:list
 
-List Instances with their Project, Node, status, Route domain, `vite_port`, and `removal` progress. JSON also includes `annotator_port` and `annotator_url`; both are null when no annotator port is assigned, and the URL is null without a Route.
+List Instances with their Project, Node, status, Route domain, `vite_port`, and `removal` progress. JSON also includes `annotator_port` and `annotator_url`; both are null when no annotator port is assigned, and the URL is null without a Route. JSON includes the [assigned SSR port](/reference/assigned-ssr-ports) as `ssr_port`, which is null when none is assigned.
 
 ```bash
 orbit instance:list [--json]
@@ -261,7 +262,7 @@ orbit instance:list [--json]
 
 ## orbit instance:show
 
-Show one Instance. When the `annotator` Process has an assigned port, human output includes `Annotator port` and `Annotator URL`. The URL uses the Instance's Route, for example `https://commander.test/__orbit/annotator`; without a Route, the display is an em dash. JSON keeps the `annotator_port` and `annotator_url` fields even when they are null. See [Annotator Process](/reference/agentation#annotator-process).
+Show one Instance. When the `annotator` Process has an assigned port, human output includes `Annotator port` and `Annotator URL`. The URL uses the Instance's Route, for example `https://commander.test/__orbit/annotator`; without a Route, the display is an em dash. JSON keeps the `annotator_port` and `annotator_url` fields even when they are null. See [Annotator Process](/reference/agentation#annotator-process). Human output shows the [assigned SSR port](/reference/assigned-ssr-ports) as `SSR port` beside `Vite port`, and JSON has `ssr_port`. Both are empty when no SSR port is assigned.
 
 Production output includes the recorded user, home, selected branch, and deploy steps in phase and placement order.
 
@@ -348,7 +349,7 @@ orbit instance:setup 12
 Record one named setup step on a Project. The step is a command string. Orbit stores the row and does not write a file into a checkout.
 
 ```bash
-orbit instance:setup-step:create <name> --project=<id> --command=<command> [--timeout=<seconds>] [--before=<name>|--after=<name>] [--json]
+orbit instance:setup-step:create <name> --project=<id> --command=<command> [--timeout=<seconds>] [--before=<name>|--after=<name>] [--rebalance=<name>=<seconds>]... [--json]
 ```
 
 | Argument | Required | Meaning |
@@ -362,6 +363,7 @@ orbit instance:setup-step:create <name> --project=<id> --command=<command> [--ti
 | `--timeout=SECONDS` | 240 | Timeout from 1 through 540 seconds. The whole list may total at most 540 seconds. |
 | `--before=NAME` | none | Insert before this step. Exclusive with `--after`. |
 | `--after=NAME` | none | Insert after this step. Exclusive with `--before`. |
+| `--rebalance=NAME=SECONDS` | none | Set another step's timeout in the same write. Repeat for each step. Use it to [make room in a full list](/reference/instance-setup#make-room-in-a-full-list). |
 
 ```bash
 orbit instance:setup-step:create install-php --project=4 --command='composer install --no-interaction'
@@ -379,10 +381,10 @@ orbit instance:setup-step:list --project=<id> [--json]
 
 ## orbit instance:setup-step:update
 
-Change the command, timeout, or position of one setup step.
+Change the command, timeout, or position of one setup step. `--rebalance=NAME=SECONDS` sets other steps' timeouts in the same write, as for create.
 
 ```bash
-orbit instance:setup-step:update <name> --project=<id> [--command=<command>] [--timeout=<seconds>] [--before=<name>|--after=<name>] [--json]
+orbit instance:setup-step:update <name> --project=<id> [--command=<command>] [--timeout=<seconds>] [--before=<name>|--after=<name>] [--rebalance=<name>=<seconds>]... [--json]
 ```
 
 ## orbit instance:setup-step:destroy
@@ -398,7 +400,7 @@ orbit instance:setup-step:destroy <name> --project=<id> [--yes] [--json]
 Record one named teardown step on a Project. The arguments match `instance:setup-step:create`.
 
 ```bash
-orbit instance:teardown-step:create <name> --project=<id> --command=<command> [--timeout=<seconds>] [--before=<name>|--after=<name>] [--json]
+orbit instance:teardown-step:create <name> --project=<id> --command=<command> [--timeout=<seconds>] [--before=<name>|--after=<name>] [--rebalance=<name>=<seconds>]... [--json]
 ```
 
 ```bash
@@ -418,7 +420,7 @@ orbit instance:teardown-step:list --project=<id> [--json]
 Change the command, timeout, or position of one teardown step.
 
 ```bash
-orbit instance:teardown-step:update <name> --project=<id> [--command=<command>] [--timeout=<seconds>] [--before=<name>|--after=<name>] [--json]
+orbit instance:teardown-step:update <name> --project=<id> [--command=<command>] [--timeout=<seconds>] [--before=<name>|--after=<name>] [--rebalance=<name>=<seconds>]... [--json]
 ```
 
 ## orbit instance:teardown-step:destroy

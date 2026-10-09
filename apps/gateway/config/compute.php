@@ -14,6 +14,11 @@ return [
         'models' => json_decode((string) env('ORBIT_SANDBOX_PI_MODELS', '[]'), true),
     ],
     'incus' => [
+        'project_workspaces_enabled' => (bool) env('ORBIT_INCUS_PROJECT_WORKSPACES_ENABLED', false),
+        'enrollment_enabled' => (bool) env('ORBIT_INCUS_ENROLLMENT_ENABLED', false),
+        'dev_cluster_id' => (int) env('ORBIT_INCUS_DEV_CLUSTER_ID', 0),
+        'model_address' => env('ORBIT_INCUS_MODEL_ADDRESS'),
+        'model_port' => (int) env('ORBIT_INCUS_MODEL_PORT', 8317),
         'enabled' => (bool) env('ORBIT_INCUS_ENABLED', false),
         'hosts' => json_decode((string) env('ORBIT_INCUS_HOSTS', '[]'), true),
     ],

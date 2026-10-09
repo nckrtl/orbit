@@ -640,6 +640,9 @@ Route::prefix('v1')->group(function (): void {
         Route::get('tasks/status', [TasksController::class, 'status'])->name('tasks:status');
         Route::get('task-groups', [TaskGroupsController::class, 'index'])->name('tasks:list');
         Route::get('task-questions', [TaskQuestionsController::class, 'index'])->name('tasks:question:list');
+        Route::post('task-questions/{question}/close', [TaskQuestionsController::class, 'close'])
+            ->whereNumber('question')
+            ->name('tasks:question:close');
         Route::post('task-groups', [TaskGroupsController::class, 'store'])->name('tasks:create');
         Route::get('task-groups/{group}', [TaskGroupsController::class, 'show'])
             ->whereNumber('group')

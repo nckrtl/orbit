@@ -42,6 +42,33 @@ trait RendersLifecycleSteps
         return is_int($timeoutSeconds) ? $timeoutSeconds : false;
     }
 
+    /**
+     * Parses repeated `--rebalance=NAME=SECONDS` values. Null when none were given, false when one is malformed.
+     *
+     * @return list<array{name: string, timeout_seconds: int}>|false|null
+     */
+    protected function lifecycleRebalance(mixed $values): array|false|null
+    {
+        if (! is_array($values) || $values === []) {
+            return null;
+        }
+
+        $rebalance = [];
+
+        foreach ($values as $value) {
+            [$name, $seconds] = array_pad(explode('=', is_string($value) ? $value : '', 2), 2, '');
+            $timeout = filter_var($seconds, FILTER_VALIDATE_INT);
+
+            if ($name === '' || ! is_int($timeout)) {
+                return false;
+            }
+
+            $rebalance[] = ['name' => $name, 'timeout_seconds' => $timeout];
+        }
+
+        return $rebalance;
+    }
+
     protected function renderLifecycleStep(LifecycleStepResponse $step): int
     {
         if ($this->option('json') === true) {

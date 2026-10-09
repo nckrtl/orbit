@@ -68,6 +68,21 @@ final readonly class TaskSettlingFixup
         return $plans;
     }
 
+    /**
+     * This check fixup, told to merge the base first. The scheduler uses it when the base tip is green and
+     * strictly ahead of the pull request head's merge base, because the base may already fix the check.
+     * The identity, title, and deliverables stay the same, so the caps do not change.
+     */
+    public function mergingBaseFirst(string $base): self
+    {
+        return new self(
+            identity: $this->identity,
+            title: $this->title,
+            brief: 'Merge origin/'.$base.' first; base may already fix this. '.$this->brief,
+            deliverables: $this->deliverables,
+        );
+    }
+
     /** A per-account cap identity; source review IDs do not reset that identity. */
     public static function reviewPlan(?string $taskCheck, TaskReviewFindingsPacket $packet): self
     {
