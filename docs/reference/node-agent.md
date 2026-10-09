@@ -182,6 +182,8 @@ command. It does not load the live agent secret or join the realtime channel.
 The controller checks the sandbox UUID, project ownership, VM budget, image
 fingerprints, and external network policy before changing resources.
 
+Local Project bootstrap and SSH identity operations require agent 0.4.2 or later. Install the pinned release so fleet convergence keeps the required protocol.
+
 The sandbox protocol uses the exact roles `operator`, `gateway`, `app-dev`, `app-prod`, and `app-prod-2` in image keys and guest commands. Requests with `app-prod2` are invalid. A guest command targets only a running guest in the sandbox’s recorded, owned inventory. Expanded park, resume, and destruction include every recorded role.
 
 Sandbox hosts require Agent 0.4.0 or later. The opt-in durable Incus host firewall policy requires Agent 0.4.1 and its fixed root helper. Release and deploy the required version before enabling VM claims.
@@ -285,7 +287,7 @@ The subscriber accepts `client-log` and `client-log-end` only from `agent.{id}` 
 
 ## Install and upgrade
 
-The Gateway pins agent 0.4.1. It stores the SHA-256 checksum of each architecture's binary and picks the asset for the Node's recorded architecture, `x86_64` or `aarch64`.
+The Gateway pins a released agent version and its architecture checksums. It stores the SHA-256 checksum of each architecture's binary and picks the asset for the Node's recorded architecture, `x86_64` or `aarch64`.
 
 | Item | Path or value |
 | --- | --- |
