@@ -118,13 +118,25 @@ if __name__ != '__main__':
         report.update(prepared=True, audit=self.audit())
         return report
 
-    def output(self, image):
+    def output(self, image, inherited=False):
         properties = image.get('properties', {})
         if (image.get('type') != 'virtual-machine' or image.get('architecture') != 'x86_64' or image.get('public') is not False
                 or image.get('aliases') or any(properties.get(key) != value for key, value in self.properties.items())
-                or any(key.startswith('user.orbit.template.') for key in properties)):
+                or not isinstance(image.get('fingerprint'), str) or not re.fullmatch('[a-f0-9]{64}', image['fingerprint'])
+                or image['fingerprint'] == self.build['base_image']
+                or (not inherited and any(key.startswith('user.orbit.template.') for key in properties))):
             raise Refusal('Published Project image provenance changed.')
         return image['fingerprint']
+
+    def remove_output_template_provenance(self, image):
+        fingerprint = self.output(image, inherited=True)
+        inherited = {key: item for key, item in image.get('properties', {}).items() if key.startswith('user.orbit.template.')}
+        expected = {**self.metadata, 'user.orbit.template.role': 'app-dev'}
+        if any(expected.get(key) != item for key, item in inherited.items()):
+            raise Refusal('Published Project image inherited foreign template provenance.')
+        for key in sorted(inherited):
+            self.run('image', 'unset-property', fingerprint, key)
+        return self.output(self.query('/1.0/images/' + fingerprint))
 
     def remove_template_provenance(self):
         value = self.query('/1.0/instances/' + self.name)
@@ -155,7 +167,8 @@ if __name__ != '__main__':
         images = self.outputs()
         if len(images) != 1:
             raise Refusal('Project image publication is ambiguous; retain its resources.')
-        return {'published': True, 'image': self.output(images[0]), 'project_slug': self.build['project_slug'], 'audit': audit}
+        return {'published': True, 'image': self.remove_output_template_provenance(images[0]),
+                'project_slug': self.build['project_slug'], 'audit': audit}
 
     def destroy(self):
         values = self.candidates()
