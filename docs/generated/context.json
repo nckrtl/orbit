@@ -1121,7 +1121,8 @@
                 "Process",
                 "Project",
                 "Role",
-                "Route"
+                "Route",
+                "Task"
             ],
             "governing_adrs": []
         },
