@@ -66,7 +66,7 @@ final readonly class NativeAnalyticsPublicationManager implements AnalyticsPubli
 
     /**
      * The analytics role has no package step of its own, so the dashboard host is the point where
-     * this Node needs a Caddy Orbit can render against. ADR 0100 owns the pinned source and floor.
+     * this Node needs a Caddy Orbit can render against. `CaddyPackageSourceProgram` owns the pin and floor.
      */
     private function ensureCaddy(Node $node, string $address): void
     {
@@ -83,7 +83,7 @@ final readonly class NativeAnalyticsPublicationManager implements AnalyticsPubli
                 'caddy-package-source',
                 'node_role.convergence_failed',
                 'analytics.caddy_publication_failed',
-                "The Caddy package source failed on node [{$node->name}].",
+                "The Caddy package step failed on node [{$node->name}].",
                 $result,
             );
         }

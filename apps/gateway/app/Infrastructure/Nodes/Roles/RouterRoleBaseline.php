@@ -27,9 +27,9 @@ final readonly class RouterRoleBaseline implements RoleBaseline
     public function converge(Node $node, NodeRole $assignment): void
     {
         $account = $this->accounts->resolve($node);
-        $caddySource = $this->commands->caddySource($node, RoleName::Router);
-        if ($caddySource instanceof RemoteCommand) {
-            $this->ssh->execute($node, $caddySource, 'caddy-package-source', 'router.prerequisite_failed', failureLabel: CaddyRoleFailure::sshLabel(RoleName::Router));
+        $caddyPackage = $this->commands->caddyPackage($node, RoleName::Router);
+        if ($caddyPackage instanceof RemoteCommand) {
+            $this->ssh->execute($node, $caddyPackage, 'caddy-package-source', 'router.prerequisite_failed', failureLabel: CaddyRoleFailure::sshLabel(RoleName::Router));
         }
         $this->ssh->execute(
             $node,

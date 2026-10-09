@@ -255,6 +255,15 @@ final readonly class CreateServerDatabaseAction
         );
     }
 
+    /** The active Database server with this slug, checked before a caller changes anything. */
+    public function activeServer(string $slug): DatabaseServer
+    {
+        $server = $this->server($slug);
+        $this->assertActive($server);
+
+        return $server;
+    }
+
     private function server(string $slug): DatabaseServer
     {
         $server = DatabaseServer::query()->with(['node', 'process'])->where('slug', $slug)->first();

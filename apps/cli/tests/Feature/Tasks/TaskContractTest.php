@@ -149,4 +149,10 @@ describe('tasks contract', function (): void {
         run_task_contract('tasks-question-list/default', 'tasks:question:list', [], 0);
         run_task_contract('tasks-question-list/empty', 'tasks:question:list', [], 0);
     });
+
+    it('renders a closed question and a refused close', function (): void {
+        $arguments = ['question' => '1', '--status' => 'superseded', '--reason' => 'A later subtask owns the continuation.'];
+        run_task_contract('tasks-question-close/closed', 'tasks:question:close', $arguments, 0);
+        run_task_contract('tasks-question-close/already-closed', 'tasks:question:close', $arguments, 1);
+    });
 });

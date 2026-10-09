@@ -10,6 +10,8 @@ use App\Domain\GitHub\GitHubRepository;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskTopology;
+use App\Domain\TaskVms\TaskVmException;
+use App\Domain\TaskVms\TaskVmPlacement;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Compute\SandboxFleetIdentity;
 use App\Infrastructure\Compute\TaskSandboxDrivers;
@@ -17,7 +19,6 @@ use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Instance;
 use App\Models\Node;
-use App\Models\Task;
 use App\Models\TaskSandbox;
 use Illuminate\Support\Str;
 use Throwable;
@@ -33,8 +34,10 @@ final readonly class TaskWorkspaceExecutor
             throw new RuntimeConvergenceException($step, $errorCode, 'The requested sandbox role is unavailable.');
         }
         if ($workspace->task_sandbox_id === null) {
-            if (Task::topLevel()->where('taskable_type', $workspace->getMorphClass())->where('taskable_id', $workspace->id)->where('task_compute', TaskCompute::Vm->value)->exists()) {
-                throw new RuntimeConvergenceException($step, $errorCode, 'The VM task workspace has no sandbox reservation.');
+            try {
+                TaskVmPlacement::assertOwnedWorkspace($workspace);
+            } catch (TaskVmException $exception) {
+                throw new RuntimeConvergenceException($step, $errorCode, $exception->getMessage(), previous: $exception);
             }
 
             return $this->shared->execute($workspace->node, $command, $step, $errorCode, $commandTimeout, $failureLabel);
@@ -54,7 +57,7 @@ final readonly class TaskWorkspaceExecutor
                 || (in_array($role, TaskTopology::Roles, true) && ! $this->workloadSourceMatches($workspace, $sandbox)))) {
                 throw new RuntimeConvergenceException($step, $errorCode, 'The requested sandbox role is unavailable.');
             }
-            if ($sandbox->provider === 'upcloud') {
+            if ($sandbox->provider === 'upcloud' || ($sandbox->provider === 'incus' && $group->project->slug !== 'orbit')) {
                 if ($sandbox->node_id !== $workspace->node_id || $group->project->slug === 'orbit') {
                     throw new RuntimeConvergenceException($step, $errorCode, 'The project sandbox has no matching enrolled Node.');
                 }
@@ -69,7 +72,7 @@ final readonly class TaskWorkspaceExecutor
             $hostId = $sandbox->spec['host_id'] ?? null;
             $settings = array_find($this->drivers->localHosts(), fn (array $candidate): bool => $candidate['node_id'] === $hostId);
             $node = is_int($hostId) ? Node::query()->find($hostId) : null;
-            $expectedNodeId = $group->project->slug === 'orbit' ? $hostId : $sandbox->node_id;
+            $expectedNodeId = $hostId;
             if ($settings === null || ! $node instanceof Node || $workspace->node_id !== $expectedNodeId
                 || ($sandbox->spec['project'] ?? null) !== $settings['project']) {
                 throw new RuntimeConvergenceException($step, $errorCode, 'The recorded sandbox host is unavailable.');

@@ -23,7 +23,7 @@ final readonly class SandboxGitHubAccess
         $repository = GitHubRepository::fromOrigin((string) $workspace->project->repository_url);
         $url = config('app.url');
         $program = file_get_contents(resource_path('compute/guest-github-access.py'));
-        if ($sandbox === null || $sandbox->provider !== 'upcloud' || $sandbox->pi_ready_at === null
+        if ($sandbox === null || ! in_array($sandbox->provider, ['upcloud', 'incus'], true) || $sandbox->pi_ready_at === null
             || ! $repository instanceof GitHubRepository || ! is_string($url) || ! str_starts_with($url, 'https://') || ! is_string($program)) {
             throw new TaskPullRequestException('The sandbox repository access configuration is unavailable.');
         }

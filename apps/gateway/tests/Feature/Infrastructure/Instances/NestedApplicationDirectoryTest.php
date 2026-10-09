@@ -47,7 +47,7 @@ it('detects PHP and configures the Laravel URL in the application directory', fu
         expect($profile->phpVersion)->toBe('8.4')->and($profile->laravel)->toBeTrue();
 
         $configurator->configureLaravelUrl($instance, 'https://nested.test');
-        expect(file_get_contents($application.'/.env'))->toBe("APP_NAME=Nested\nAPP_URL=https://nested.test\n")
+        expect(file_get_contents($application.'/.env'))->toMatch('#^APP_NAME=Nested\nAPP_URL=https://nested\.test\nAPP_KEY="base64:[A-Za-z0-9+/]{43}="\n$#')
             ->and(file_get_contents($application.'/bootstrap/cache/config.php'))->toBe("<?php return ['app' => ['url' => 'https://nested.test']];")
             ->and(fileperms($application.'/.env') & 0777)->toBe(0640);
         if ($relative !== '') {
@@ -83,6 +83,36 @@ it('refuses application metadata reached through a linked parent directory', fun
     } finally {
         $files->deleteDirectory($directory);
     }
+});
+
+describe('route web root', function (): void {
+    it('writes APP_URL only into another Laravel directory of the checkout', function (): void {
+        $checkout = sys_get_temp_dir().'/orbit-route-web-root-'.Str::uuid();
+        $files = new Filesystem;
+        $files->ensureDirectoryExists($checkout.'/apps/docs/public');
+        $files->ensureDirectoryExists($checkout.'/apps/static/public');
+        file_put_contents($checkout.'/apps/docs/artisan', '<?php');
+        file_put_contents($checkout.'/apps/docs/.env', 'APP_KEY=base64:docs
+APP_URL=http://old.test
+');
+        file_put_contents($checkout.'/.env', 'APP_URL=https://acme.test
+');
+
+        try {
+            [$configurator, $instance] = nested_application_configurator($checkout, 'public');
+            $configurator->configureDirectoryUrl($instance, 'apps/docs', 'https://docs.acme.test');
+            $configurator->configureDirectoryUrl($instance, 'apps/static', 'https://static.acme.test');
+
+            expect(file_get_contents($checkout.'/apps/docs/.env'))->toBe('APP_KEY=base64:docs
+APP_URL=https://docs.acme.test
+')
+                ->and(file_exists($checkout.'/apps/static/.env'))->toBeFalse()
+                ->and(file_get_contents($checkout.'/.env'))->toBe('APP_URL=https://acme.test
+');
+        } finally {
+            $files->deleteDirectory($checkout);
+        }
+    });
 });
 
 /** @return array{RemoteDevelopmentInstanceConfigurator, Instance, ManagedUserAccount} */

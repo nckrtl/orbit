@@ -81,7 +81,9 @@ it('converges the pinned Sury Resolute source before package installation', func
             'trap restore_source EXIT',
             'install -m 0644 -o root -g root',
             'mv --',
-            'apt-get -o DPkg::Lock::Timeout=300 update',
+            '-o Dir::Etc::SourceList="$source_path"',
+            '-o Dir::Etc::SourceParts=-',
+            '-o APT::Get::List-Cleanup=0',
             'apt-cache policy',
             'apt-cache madison',
             'expected_origin="${expected_uri%/} $selected_codename/main"',
@@ -1111,6 +1113,57 @@ it('executes the source program with the selected Ubuntu suite', function (
     'wrong candidate architecture' => ['ubuntu', 'resolute', false, null, null, '', 'arm64'],
 ]);
 
+it('refreshes only the Sury source, so an unrelated source that fails cannot fail the PHP step', function (): void {
+    $transport = new AppDevFakeSshExecutor;
+    new RemotePhpPackageManager()->installForAppDev(
+        php_package_node(RoleName::AppDev),
+        collect(['8.5']),
+        php_package_app_dev_ssh($transport),
+    );
+
+    $root = sys_get_temp_dir().'/orbit-php-source-'.bin2hex(random_bytes(6));
+    try {
+        mkdir($root.'/bin', 0777, true);
+        mkdir($root.'/etc/apt/sources.list.d', 0777, true);
+        mkdir($root.'/usr/share/keyrings', 0777, true);
+        file_put_contents($root.'/etc/os-release', "ID=ubuntu\nVERSION_CODENAME=resolute\n");
+        file_put_contents($root.'/etc/apt/sources.list.d/orbit-caddy.sources', "Types: deb\nURIs: https://dl.cloudsmith.io/public/caddy/stable/deb/debian\n");
+        $replace = static fn (string $value): string => str_replace(
+            ['/etc/os-release', '/etc/apt', '/usr/share/keyrings'],
+            [$root.'/etc/os-release', $root.'/etc/apt', $root.'/usr/share/keyrings'],
+            $value,
+        );
+        php_package_write_source_binaries($root, 'resolute', null);
+
+        $run = static function (string $script) use ($root, $transport, $replace): Process {
+            $process = new Process(
+                ['bash', '-seu', '--', ...array_map($replace, array_slice($transport->commands[0]->arguments, 3))],
+                $root,
+                ['PATH' => $root.'/bin:'.getenv('PATH')],
+            );
+            $process->setInput($script);
+            $process->run();
+
+            return $process;
+        };
+
+        $full = $run(preg_replace(
+            '/apt-get -o DPkg::Lock::Timeout=300 \\\\\n(?:\s+-o \S+ \\\\\n)+\s+update/',
+            'apt-get -o DPkg::Lock::Timeout=300 update',
+            $replace($transport->commands[0]->input ?? ''),
+        ) ?? '');
+
+        // The full refresh fails first and restores the files it published, so the scoped run starts clean.
+        $scoped = $run($replace($transport->commands[0]->input ?? ''));
+
+        expect($scoped->getExitCode())->toBe(0, $scoped->getErrorOutput())
+            ->and($full->getExitCode())->toBe(100, $full->getErrorOutput())
+            ->and($full->getErrorOutput())->toContain('402  Payment Required');
+    } finally {
+        new Filesystem()->deleteDirectory($root);
+    }
+});
+
 it('accepts an installed-only policy candidate when Sury publishes another version', function (): void {
     $transport = new AppDevFakeSshExecutor;
     new RemotePhpPackageManager()->installForAppDev(
@@ -1398,7 +1451,12 @@ function php_package_write_source_binaries(
         'printf "%s\\nfpr:::::::::%s:\\nfpr:::::::::%s:\\n" x 15058500A0235D97F5D10063B188E2B695BD4743 45BEA3E529112086C622F8A4B214EAC28059B8AC',
     );
     $write('mktemp', 'exec {{host:mktemp}} "$@"');
-    $write('apt-get', 'exit 0');
+    // Like a Node with an unrelated source that refuses every request: an update fails unless it
+    // refreshes only the Sury source and keeps the other sources' lists.
+    $write(
+        'apt-get',
+        'if [ "${@: -1}" = update ]; then scoped=0; for arg in "$@"; do case "$arg" in Dir::Etc::SourceList=*/etc/apt/sources.list.d/orbit-php.sources|Dir::Etc::SourceParts=-|APT::Get::List-Cleanup=0) scoped=$((scoped + 1));; esac; done; if [ "$scoped" != 3 ]; then printf "E: Failed to fetch https://dl.cloudsmith.io/public/caddy/stable/deb/debian/dists/any-version/InRelease  402  Payment Required\\n" >&2; exit 100; fi; fi',
+    );
     $write('dpkg', 'if [ "$1" = --print-architecture ]; then printf "amd64\\n"; fi');
     $write(
         'apt-cache',

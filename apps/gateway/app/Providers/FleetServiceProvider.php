@@ -29,6 +29,7 @@ use App\Infrastructure\AgentView\CacheAgentStateView;
 use App\Infrastructure\Fleet\Footprint\AgentFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\AnnotatorFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\CaddyFootprintArtifact;
+use App\Infrastructure\Fleet\Footprint\CaddyPackageFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\PrivateDnsFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\ProxyCliFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\RouteResidueFootprintArtifact;
@@ -74,6 +75,7 @@ final class FleetServiceProvider extends ServiceProvider
             NodeFootprint::class,
             static fn (Application $app): NodeFootprint => new NodeFootprint([
                 $app->make(AgentFootprintArtifact::class),
+                $app->make(CaddyPackageFootprintArtifact::class),
                 $app->make(CaddyFootprintArtifact::class),
                 $app->make(PrivateDnsFootprintArtifact::class),
                 $app->make(ProxyCliFootprintArtifact::class),

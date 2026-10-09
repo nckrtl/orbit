@@ -149,7 +149,7 @@ final class MacOsConvergerScanner implements HostKeyScanner
 
     public function __construct(public string $fingerprint) {}
 
-    public function scan(string $host, int $port): HostKey
+    public function scan(string $host, int $port, ?SshConnection $via = null): HostKey
     {
         if ($this->fail) {
             throw new SshHostKeyScanException('scan failed');

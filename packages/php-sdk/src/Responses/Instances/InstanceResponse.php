@@ -20,6 +20,7 @@ use SensitiveParameter;
  *     project: array{id: int, name: string, slug: string}|null,
  *     node: array{id: int, name: string}|null,
  *     vite_port: int|null,
+ *     ssr_port: int|null,
  *     name: string,
  *     source_layout: string,
  *     checkout_path: string,
@@ -35,6 +36,7 @@ use SensitiveParameter;
  *     detached: bool,
  *     status: string,
  *     route: array<string, int|string|null|array{id: int, instance_id: int, position: int}|list<array{id: int, instance_id: int, position: int}>>|null,
+ *     routes: list<array<string, int|string|null|array{id: int, instance_id: int, position: int}|list<array{id: int, instance_id: int, position: int}>>>,
  *     domain: string|null,
  *     url: string|null,
  *     removal: array<string, bool|int|string|null>|null,
@@ -50,6 +52,7 @@ use SensitiveParameter;
  *     project: array{id: int, name: string, slug: string}|null,
  *     node: array{id: int, name: string}|null,
  *     vite_port: int|null,
+ *     ssr_port: int|null,
  *     name: string,
  *     source_layout: string,
  *     checkout_path: string,
@@ -65,6 +68,7 @@ use SensitiveParameter;
  *     detached: bool,
  *     status: string,
  *     route: array<string, int|string|null|array{id: int, instance_id: int, position: int}|list<array{id: int, instance_id: int, position: int}>>|null,
+ *     routes: list<array<string, int|string|null|array{id: int, instance_id: int, position: int}|list<array{id: int, instance_id: int, position: int}>>>,
  *     domain: string|null,
  *     url: string|null,
  *     removal: array<string, bool|int|string|null>|null,
@@ -102,10 +106,13 @@ final readonly class InstanceResponse
         public array $deploySteps,
         public string $requestId,
         public ?int $vitePort = null,
+        public ?int $ssrPort = null,
         public ?string $seedPath = null,
         public ?string $seedCommit = null,
         public ?int $annotatorPort = null,
         public ?string $annotatorUrl = null,
+        /** @var list<RouteResponse> Every Route of the Instance, including Routes with a web root. */
+        public array $routes = [],
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -122,6 +129,7 @@ final readonly class InstanceResponse
             project: ProjectIdentityResponse::tryFromGatewayData($data['project'] ?? null),
             node: NodeIdentityResponse::tryFromGatewayData($data['node'] ?? null),
             vitePort: is_int($data['vite_port'] ?? null) && $data['vite_port'] >= 1024 && $data['vite_port'] <= 65535 ? $data['vite_port'] : null,
+            ssrPort: is_int($data['ssr_port'] ?? null) && $data['ssr_port'] >= 1024 && $data['ssr_port'] <= 65535 ? $data['ssr_port'] : null,
             seedPath: is_string($data['seed_path'] ?? null) ? $data['seed_path'] : null,
             seedCommit: is_string($data['seed_commit'] ?? null) ? $data['seed_commit'] : null,
             annotatorPort: is_int($data['annotator_port'] ?? null) && $data['annotator_port'] >= 1024 && $data['annotator_port'] <= 65535 ? $data['annotator_port'] : null,
@@ -139,6 +147,7 @@ final readonly class InstanceResponse
             detached: ($data['detached'] ?? null) === true,
             status: is_string($data['status'] ?? null) ? $data['status'] : '',
             route: self::route($data['route'] ?? null, $requestId),
+            routes: self::routes($data['routes'] ?? null, $requestId),
             domain: is_string($data['domain'] ?? null) ? $data['domain'] : null,
             url: is_string($data['url'] ?? null) ? $data['url'] : null,
             removal: self::removal($data['removal'] ?? null),
@@ -158,6 +167,7 @@ final readonly class InstanceResponse
             'project' => $this->project?->toArray(),
             'node' => $this->node?->toArray(),
             'vite_port' => $this->vitePort,
+            'ssr_port' => $this->ssrPort,
             'annotator_port' => $this->annotatorPort,
             'annotator_url' => $this->annotatorUrl,
             'name' => $this->name,
@@ -175,6 +185,7 @@ final readonly class InstanceResponse
             'detached' => $this->detached,
             'status' => $this->status,
             'route' => $this->route?->toArray(),
+            'routes' => array_map(static fn (RouteResponse $route): array => $route->toArray(), $this->routes),
             'domain' => $this->domain,
             'url' => $this->url,
             'removal' => $this->removal?->toArray(),
@@ -185,6 +196,19 @@ final readonly class InstanceResponse
             ),
             'request_id' => $this->requestId,
         ];
+    }
+
+    /** @return list<RouteResponse> */
+    private static function routes(#[SensitiveParameter] mixed $value, string $requestId): array
+    {
+        if (! is_array($value)) {
+            return [];
+        }
+
+        return array_values(array_filter(array_map(
+            static fn (mixed $route): ?RouteResponse => self::route($route, $requestId),
+            $value,
+        )));
     }
 
     private static function route(#[SensitiveParameter] mixed $value, string $requestId): ?RouteResponse

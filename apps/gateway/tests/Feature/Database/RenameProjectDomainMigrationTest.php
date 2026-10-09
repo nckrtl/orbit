@@ -57,14 +57,15 @@ function rename_migration_rows(): object
     $project->offsetUnset('task_compute');
     $project->offsetUnset('review_and_merge');
     $project->save();
-    $instance = Instance::query()->create([
+    // The task VM placement check reads a table that this older schema does not have yet.
+    $instance = Instance::withoutEvents(static fn (): Instance => Instance::query()->create([
         'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'dev',
         'source_layout' => 'checkout',
         'checkout_path' => '/srv/rename',
         'status' => 'active',
-    ]);
+    ]));
     InstanceDeployment::query()->create([
         'instance_id' => $instance->id,
         'started_at' => now(),
@@ -109,7 +110,7 @@ function rename_migration_migrate(): void
     $cutoff = RENAME_APP_DOMAIN_MIGRATION.'.php';
     $paths = array_values(array_filter(
         glob(database_path('migrations/*.php')) ?: [],
-        static fn (string $path): bool => ! str_contains($path, 'merge_task_groups_into_tasks')
+        static fn (string $path): bool => ! str_contains($path, 'merge_task_groups_into_tasks') && ! str_contains($path, 'allow_owned_project_sandbox_instance_removal')
             && basename($path) <= $cutoff,
     ));
     Artisan::call('migrate', ['--path' => $paths, '--realpath' => true, '--force' => true]);

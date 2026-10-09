@@ -5817,7 +5817,7 @@
         "tags": [
           "Instances"
         ],
-        "description": "Create a development Instance on an app-dev Node.\n\nCreates a development Instance. New production Instances require a candidate. Use instance:clone.",
+        "description": "Create a development Instance on an app-dev Node.\n\nCreates a development Instance. New production Instances require a candidate. Use instance:clone.\nWith a Database server, Orbit creates the Instance's database there before the setup steps run.",
         "requestBody": {
           "required": true,
           "content": {
@@ -5851,6 +5851,12 @@
                     "type": "string",
                     "maxLength": 255,
                     "description": "Optional explicit source branch"
+                  },
+                  "database_server": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$(?![\\s\\S])",
+                    "maxLength": 63,
+                    "description": "Database server that gets the new Instance database before setup"
                   }
                 },
                 "required": [
@@ -20843,6 +20849,27 @@
                   "after": {
                     "type": "string",
                     "description": "Place after this step"
+                  },
+                  "rebalance": {
+                    "type": "array",
+                    "maxItems": 32,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        },
+                        "timeout_seconds": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "timeout_seconds"
+                      ]
+                    },
+                    "description": "Set another step timeout in the same write, as NAME=SECONDS; repeat as needed"
                   }
                 },
                 "required": [
@@ -21069,6 +21096,27 @@
                   "after": {
                     "type": "string",
                     "description": "Place after this step"
+                  },
+                  "rebalance": {
+                    "type": "array",
+                    "maxItems": 32,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        },
+                        "timeout_seconds": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "timeout_seconds"
+                      ]
+                    },
+                    "description": "Set another step timeout in the same write, as NAME=SECONDS; repeat as needed"
                   }
                 },
                 "additionalProperties": false
@@ -21144,7 +21192,7 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X PATCH \"https://gateway.orbit/api/v1/projects/4/setup-steps/migrate\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"command\": \"/usr/bin/php artisan queue:work\", \"timeout_seconds\": 3600, \"before\": \"example\", \"after\": \"example\"}'\n"
+            "source": "curl -sS -X PATCH \"https://gateway.orbit/api/v1/projects/4/setup-steps/migrate\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"command\": \"/usr/bin/php artisan queue:work\"}'\n"
           }
         ]
       }
@@ -22218,6 +22266,27 @@
                   "after": {
                     "type": "string",
                     "description": "Place after this step"
+                  },
+                  "rebalance": {
+                    "type": "array",
+                    "maxItems": 32,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        },
+                        "timeout_seconds": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "timeout_seconds"
+                      ]
+                    },
+                    "description": "Set another step timeout in the same write, as NAME=SECONDS; repeat as needed"
                   }
                 },
                 "required": [
@@ -22444,6 +22513,27 @@
                   "after": {
                     "type": "string",
                     "description": "Place after this step"
+                  },
+                  "rebalance": {
+                    "type": "array",
+                    "maxItems": 32,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        },
+                        "timeout_seconds": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "timeout_seconds"
+                      ]
+                    },
+                    "description": "Set another step timeout in the same write, as NAME=SECONDS; repeat as needed"
                   }
                 },
                 "additionalProperties": false
@@ -22519,7 +22609,7 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X PATCH \"https://gateway.orbit/api/v1/projects/4/teardown-steps/migrate\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"command\": \"/usr/bin/php artisan queue:work\", \"timeout_seconds\": 3600, \"before\": \"example\", \"after\": \"example\"}'\n"
+            "source": "curl -sS -X PATCH \"https://gateway.orbit/api/v1/projects/4/teardown-steps/migrate\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"command\": \"/usr/bin/php artisan queue:work\"}'\n"
           }
         ]
       }
@@ -23281,6 +23371,13 @@
                       },
                       "instance_id": {
                         "type": "integer"
+                      },
+                      "web_root": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "maxLength": 255
                       }
                     },
                     "required": [
@@ -23654,6 +23751,14 @@
                       "public"
                     ],
                     "description": "New publication intent"
+                  },
+                  "web_root": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 255,
+                    "description": "New web root inside the Instance checkout; empty to serve the Instance root"
                   }
                 },
                 "additionalProperties": false
@@ -23729,7 +23834,7 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X PATCH \"https://gateway.orbit/api/v1/routes/9\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"domain\": \"app.example.test\", \"publication\": \"private\"}'\n"
+            "source": "curl -sS -X PATCH \"https://gateway.orbit/api/v1/routes/9\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"domain\": \"app.example.test\", \"publication\": \"private\", \"web_root\": \"example\"}'\n"
           },
           {
             "lang": "php",
@@ -25688,7 +25793,7 @@
           }
         ],
         "x-orbit-extension": "tasks",
-        "description": "Cancels a backlog, todo, reserved, running, reviewing, or failed Task group, or a settling group without a pull request, and clears its shared Instance. For a settling group with an approved subtask, the Gateway first pushes the workspace HEAD to `task-{group}` on origin; a failed push returns `tasks.push_failed` (502) and keeps the group and Instance. Idempotent for cancelled groups. Route-free source_resolved Instances use database-only cleanup and retain their checkout; other Instances use the forced Instance remover. Requires Gateway access. Returns extension.disabled while the extension is off and tasks.not_cancellable for completed groups and groups in settling or waiting_for_review with a pull request.",
+        "description": "Cancels a backlog, todo, reserved, running, reviewing, or failed Task group, or a settling group without a pull request, and clears its shared Instance. For a settling group with an approved subtask, the Gateway first pushes the workspace HEAD to `task-{group}` on origin; a failed push returns `tasks.push_failed` (502) and keeps the group and Instance. Idempotent for cancelled groups. Workspace cleanup uses forced Instance removal, including Project teardown and checkout deletion. A development source_resolved workspace with no Route or one pending or failed exclusive Route is removed with its Route and target; active or shared Routes still refuse removal. Re-cancelling also removes an unattached leftover matched by Project, task-{group} name, and branch, unless a live claim owns it. Requires Gateway access. Returns extension.disabled while the extension is off and tasks.not_cancellable for completed groups and groups in settling or waiting_for_review with a pull request.",
         "requestBody": {
           "required": false,
           "content": {
@@ -26752,7 +26857,8 @@
                 "answered",
                 "topology_requested",
                 "assistance_requested",
-                "resolution"
+                "resolution",
+                "question_closed"
               ]
             }
           },
@@ -27051,7 +27157,8 @@
               "enum": [
                 "open",
                 "escalated",
-                "answered"
+                "answered",
+                "superseded"
               ]
             }
           },
@@ -27123,6 +27230,135 @@
             "lang": "php",
             "label": "PHP SDK",
             "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Tasks\\ListTaskQuestionsRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ListTaskQuestionsRequest())->dto();\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/task-questions/{question}/close": {
+      "post": {
+        "operationId": "tasks-question-close",
+        "summary": "Close a task question",
+        "tags": [
+          "Tasks"
+        ],
+        "parameters": [
+          {
+            "name": "question",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric task question ID."
+          }
+        ],
+        "x-orbit-extension": "tasks",
+        "description": "Closes an `open` or `escalated` question as `answered` or `superseded`, with the operator's `reason` (1 to 2,000 characters) as its answer and `answered_by` `operator`. Orbit posts one `question_closed` comment on the subtask. Closing delivers no resolution, changes no assistance flag, and counts no consult. Repeating the same status and reason returns the question unchanged. Requires Gateway access. Returns `extension.disabled` while the extension is off, `tasks.question_closed` (409) when the question is already `answered` or `superseded`, and 422 for another status or an empty reason.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "answered",
+                      "superseded"
+                    ],
+                    "description": "answered or superseded"
+                  },
+                  "reason": {
+                    "type": "string",
+                    "maxLength": 2000,
+                    "description": "Why the question is closed"
+                  }
+                },
+                "required": [
+                  "status",
+                  "reason"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/TaskQuestion"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The tasks extension is disabled (`extension.disabled`), or the question is already answered or superseded (`tasks.question_closed`). A disabled extension returns HTTP 409 (`extension.disabled`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/task-questions/1/close\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"status\": \"success\", \"reason\": \"example\"}'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Tasks\\CloseTaskQuestionRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new CloseTaskQuestionRequest(questionId: 1, status: 'success', reason: 'value'))->dto();\n"
           }
         ]
       }
@@ -29106,6 +29342,12 @@
               "null"
             ]
           },
+          "ssr_port": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "seed_path": {
             "type": [
               "string",
@@ -29129,6 +29371,12 @@
               "string",
               "null"
             ]
+          },
+          "routes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Route"
+            }
           }
         }
       },
@@ -29279,6 +29527,12 @@
           "analytics_instance_id": {
             "type": [
               "integer",
+              "null"
+            ]
+          },
+          "web_root": {
+            "type": [
+              "string",
               "null"
             ]
           }
@@ -31667,7 +31921,8 @@
             "enum": [
               "open",
               "escalated",
-              "answered"
+              "answered",
+              "superseded"
             ]
           },
           "answered_by": {

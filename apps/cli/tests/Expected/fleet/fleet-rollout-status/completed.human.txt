@@ -23,7 +23,7 @@ Loading fleet rollout...
  │ # │ NODE     │ OUTCOME   │ STEP        │ CLI      │ AGENT │ ERROR                    │
  ├───┼──────────┼───────────┼─────────────┼──────────┼───────┼──────────────────────────┤
  │ 1 │ app-dev  │ skipped   │ self-update │ —        │ —     │ fleet.self_update_failed │
- │ 2 │ app-prod │ converged │ —           │ 0.4681.0 │ 0.4.1 │ —                        │
+ │ 2 │ app-prod │ converged │ —           │ 0.4681.0 │ 0.4.2 │ —                        │
  └───┴──────────┴───────────┴─────────────┴──────────┴───────┴──────────────────────────┘
 Not in the rollout: gateway (gateway).
 Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844

@@ -4,13 +4,13 @@ sidebarTitle: "Contributor guide"
 description: "Prepare architecture and documentation, build a feature, and submit a complete pull request."
 covers:
   - .agents/skills/reviewing-pull-requests/references/test-*.md
-  - composer.json
-  - bin/{bootstrap,test,pest-plain,review-check,bug-repro,task-group-check,pr-head-check,deploy-verify,docs-merge-check}
-  - "{apps/*,packages/php-sdk}/composer.json"
+  - "{composer,vet}.json"
+  - bin/{bootstrap,test,pest-plain,review-check,bug-repro,task-group-check,pr-head-check,deploy-verify,docs-merge-check,dependency-audit}
+  - "{apps/*,packages/php-sdk}/{composer,vet}.json"
   - "{apps/*,packages/php-sdk}/phpstan.neon"
   - apps/gateway/tests/Support/{LinuxHost,TestToolchain}.php
   - apps/docs/**
-  - .github/workflows/ci.yml
+  - .github/workflows/{ci,dependency-audit}.yml
 ---
 
 # Contributing to Orbit
@@ -116,6 +116,28 @@ The finding pack also rejects a call to `strtotime()`, so use Carbon parsing. In
 
 The CLI and E2E projects each keep one counted `ignoreErrors` entry for a Larastan finding on an inherited command helper. Each entry names the commands, the option, the file, and the count. Do not add an entry or raise a count.
 
+## Dependencies
+
+Routine dependency releases wait seven days before a project takes them:
+
+- Composer: the `laravel/vet` plugin skips releases younger than `minimum-release-age` days, as each project's `vet.json` sets.
+- Bun: `bunfig.toml` sets `install.minimumReleaseAge` to 604800 seconds in `apps/web`, `apps/pi-server`, and `apps/desktop`.
+
+The wait applies only when Composer or Bun resolves a version. `composer install` and `bun install --frozen-lockfile` install the locked versions. Vet keeps no trust entries, so it prints a notice on each install.
+
+Update only the packages that you need, for example `composer update vendor/package --with-dependencies` or `bun update package`. Review the lockfile diff and run the checks.
+
+A fix for a published advisory does not wait:
+
+1. Link the CVE or GHSA advisory in the pull request.
+2. If the fixed release is younger than seven days, add its exact package name to `minimum-release-age-exclude` in `vet.json`, or to `install.minimumReleaseAgeExcludes` in `bunfig.toml`.
+3. Run `composer audit:dependencies` and the checks, and get a review.
+4. Remove the exclusion when the release is seven days old.
+
+Do not hide an advisory that has no fix. Record it in the pull request with the advisory link and the reason that the risk is acceptable.
+
+From the repository root, `composer audit:dependencies` runs `composer audit --locked` for each Composer lockfile and `bun audit` for each Bun lockfile. The Dependency audit workflow runs it every night and on manual dispatch.
+
 ## 4. Submit a complete pull request
 
 Explain the problem, the resulting behavior, the architecture decisions, the documentation changes, the verification results, and the remaining limits. Link an issue when one exists.
@@ -206,6 +228,12 @@ On pull requests, CI's `Docs (merge ref)` job checks out the base repository's `
 The command never fetches. Make both refs available locally before running it. `--help` lists the flags and exit codes: 0 means lint passed, 1 means lint failed, and 2 means the preview could not be checked. Missing refs report `base_unavailable` or `head_unavailable`; conflicts report `merge_conflict` and never fall back to checking the head.
 
 The lint command reads the repository only, with no network, external service, or Incus topology. Live behavior is proved on Incus, separately. A lint rule earns its place only when it protects a current invariant and has tests for a valid and an invalid case.
+
+### Audits stay outside the gate
+
+Advisories appear upstream at any time. An audit in `composer check` or in `Required checks` would block unrelated work for a change that the branch did not make. The nightly audit reports new advisories, and the advisory steps above ship the fix.
+
+Vet runs without a trust baseline. A baseline makes each routine update a manual approval, and the release age already holds back a compromised release while it is found and pulled.
 
 ### A committed context index
 

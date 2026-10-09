@@ -23,7 +23,7 @@ Requesting status...
 │
 ├  CLI release          0.4681.0
 │
-├  Agent version        0.4.1
+├  Agent version        0.4.2
 │
 ├  Release              —
 │

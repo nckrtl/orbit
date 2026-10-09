@@ -20,5 +20,11 @@ final readonly class SshConnection
          * Gateway can reach the Node now.
          */
         public bool $shareConnection = true,
+        /**
+         * The connection to the jump host that this connection goes through. A connection with a
+         * jump host never shares a connection, because hosts behind different jump hosts can have
+         * the same private address.
+         */
+        public ?SshConnection $proxyJump = null,
     ) {}
 }

@@ -34,7 +34,7 @@ final readonly class SandboxWorkspaceProvisioner
         private SandboxWorkspaceSource $source,
         private SandboxPairRuntime $pair,
         private SandboxPiRuntime $pi,
-        private UpCloudWorkspaceProvisioner $projects,
+        private ProjectSandboxWorkspaceProvisioner $projects,
     ) {}
 
     public function provision(Task $reserved): Instance|InstanceProvisionFailure

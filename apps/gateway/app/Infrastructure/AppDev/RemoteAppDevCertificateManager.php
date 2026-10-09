@@ -6,7 +6,6 @@ namespace App\Infrastructure\AppDev;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Certificates\LeafCertificateSigner;
-use App\Domain\Instances\InstanceSandboxGuard;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Infrastructure\Caddy\CaddyPublicationLock;
@@ -26,9 +25,10 @@ final readonly class RemoteAppDevCertificateManager
 
     public function convergeInstance(Instance $instance, Route $route): void
     {
-        InstanceSandboxGuard::assertHostOperation($instance);
         $instance->loadMissing('node');
-        $this->converge($instance->node, "app-instance-{$instance->id}", $route->domain);
+        // A Route with a web root has its own leaf, so the Instance's leaf keeps naming its own Route.
+        $scope = $route->hasWebRoot() ? "route-{$route->id}" : "app-instance-{$instance->id}";
+        $this->converge($instance->node, $scope, $route->domain);
     }
 
     public function convergeRouteRouter(Route $route, Node $router): void
@@ -48,7 +48,6 @@ final readonly class RemoteAppDevCertificateManager
 
     public function convergeInstanceHostnameChange(Instance $instance, string $domain): void
     {
-        InstanceSandboxGuard::assertHostOperation($instance);
         $instance->loadMissing('node');
         $this->converge(
             $instance->node,
@@ -64,7 +63,6 @@ final readonly class RemoteAppDevCertificateManager
 
     public function instanceCertificateExists(Instance $instance): bool
     {
-        InstanceSandboxGuard::assertHostOperation($instance);
         $instance->loadMissing('node');
         $account = $this->accounts->resolve($instance->node);
         $scope = "app-instance-{$instance->id}";
@@ -100,7 +98,6 @@ final readonly class RemoteAppDevCertificateManager
 
     public function removeInstance(Instance $instance): void
     {
-        InstanceSandboxGuard::assertHostOperation($instance);
         $instance->loadMissing('node');
         $this->remove($instance->node, "app-instance-{$instance->id}");
     }
@@ -131,6 +128,12 @@ final readonly class RemoteAppDevCertificateManager
         $this->remove($ingress, "route-{$route->id}-ingress");
     }
 
+    /** Removes the workload leaf of a Route with a web root, or of a custom proxy Route. */
+    public function removeRouteLeaf(Route $route, Node $node): void
+    {
+        $this->remove($node, "route-{$route->id}");
+    }
+
     public function removeCustomProxy(Route $route, Node $node): void
     {
         $this->remove($node, "route-{$route->id}");
@@ -138,7 +141,6 @@ final readonly class RemoteAppDevCertificateManager
 
     public function removeHostnameChange(Instance $instance, Route $route): void
     {
-        InstanceSandboxGuard::assertHostOperation($instance);
         $instance->loadMissing('node');
         $this->remove($instance->node, "app-instance-{$instance->id}-hostname-change");
         $router = $route->cluster?->routerAssignment?->node;

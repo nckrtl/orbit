@@ -112,6 +112,19 @@ describe('Instance requests', function (): void {
         ]);
     });
 
+    it('transports an optional Database server and preserves omission', function (): void {
+        $request = new CreateInstanceRequest(projectId: 3, nodeId: 4, name: 'default', databaseServer: 'beast-mysql');
+
+        expect($request->body()->all())->toBe([
+            'project_id' => 3,
+            'node_id' => 4,
+            'name' => 'default',
+            'database_server' => 'beast-mysql',
+        ])
+            ->and((new CreateInstanceRequest(projectId: 3, nodeId: 4, name: 'default'))->body()->all())
+            ->not->toHaveKey('database_server');
+    });
+
     it('transports an optional Route domain and preserves omission', function (): void {
         $explicit = new CreateInstanceRequest(
             projectId: 3,
@@ -394,6 +407,7 @@ function instance_gateway_data(): array
         'project_id' => 3,
         'node_id' => 4,
         'vite_port' => null,
+        'ssr_port' => null,
         'annotator_port' => null,
         'annotator_url' => null,
         'name' => 'main',
@@ -411,6 +425,7 @@ function instance_gateway_data(): array
         'detached' => false,
         'status' => 'active',
         'route' => instance_gateway_route_data(),
+        'routes' => [],
         'domain' => 'orbit-docs.test',
         'url' => 'https://orbit-docs.test',
         'removal' => null,
@@ -493,6 +508,7 @@ function instance_gateway_route_data(): array
         'targets' => [['id' => 10, 'instance_id' => 7, 'position' => 0]],
         'process_id' => null,
         'upstream' => null,
+        'web_root' => null,
     ];
 }
 

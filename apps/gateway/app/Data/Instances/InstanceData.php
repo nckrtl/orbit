@@ -47,10 +47,13 @@ final class InstanceData extends Data
         /** @var list<DeploymentStepData> */
         public array $deploySteps = [],
         public ?int $vitePort = null,
+        public ?int $ssrPort = null,
         public ?string $seedPath = null,
         public ?string $seedCommit = null,
         public ?int $annotatorPort = null,
         public ?string $annotatorUrl = null,
+        /** @var list<RouteData> */
+        public array $routes = [],
     ) {}
 
     public static function fromModel(Instance $instance): self
@@ -75,6 +78,7 @@ final class InstanceData extends Data
             project: ProjectIdentityData::fromModel($instance->project),
             node: NodeIdentityData::fromModel($instance->node),
             vitePort: $instance->vite_port,
+            ssrPort: $instance->ssr_port,
             seedPath: $instance->seed_path,
             seedCommit: $instance->seed_commit,
             annotatorPort: $instance->annotator_port,
@@ -92,6 +96,10 @@ final class InstanceData extends Data
             detached: $instance->registration_detached,
             status: $instance->status->value,
             route: $route instanceof Route ? RouteData::fromModel($route) : null,
+            routes: array_values($instance->routes
+                ->sortBy('id')
+                ->map(static fn (Route $candidate): RouteData => RouteData::fromModel($candidate))
+                ->all()),
             domain: $route?->domain,
             url: $route instanceof Route ? "https://{$route->domain}" : null,
             removal: $removal instanceof InstanceRemoval

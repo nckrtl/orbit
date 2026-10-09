@@ -12,6 +12,7 @@ describe(InstanceResponse::class, function (): void {
             'project_id' => 3,
             'node_id' => 4,
             'vite_port' => null,
+            'ssr_port' => null,
             'name' => 'main',
             'source_layout' => 'checkout',
             'checkout_path' => '/home/orbit/apps/orbit-docs',
@@ -35,6 +36,7 @@ describe(InstanceResponse::class, function (): void {
             'project' => null,
             'node' => null,
             'vite_port' => null,
+            'ssr_port' => null,
             'annotator_port' => null,
             'annotator_url' => null,
             'name' => 'main',
@@ -52,6 +54,7 @@ describe(InstanceResponse::class, function (): void {
             'detached' => false,
             'status' => 'active',
             'route' => null,
+            'routes' => [],
             'domain' => null,
             'url' => null,
             'removal' => null,
@@ -121,5 +124,13 @@ it('exposes a valid assigned Vite port and rejects invalid transport values', fu
     expect($response->vitePort)->toBe(5210)->and($response->toArray()['vite_port'])->toBe(5210);
     foreach ([0, 1023, 65536, '5173', false] as $invalid) {
         expect(InstanceResponse::fromGatewayData(['vite_port' => $invalid], 'request-id')->vitePort)->toBeNull();
+    }
+});
+
+it('exposes a valid assigned SSR port and rejects invalid transport values', function (): void {
+    $response = InstanceResponse::fromGatewayData(['id' => 7, 'ssr_port' => 13715], 'request-id');
+    expect($response->ssrPort)->toBe(13715)->and($response->toArray()['ssr_port'])->toBe(13715);
+    foreach ([0, 1023, 65536, '13714', false] as $invalid) {
+        expect(InstanceResponse::fromGatewayData(['ssr_port' => $invalid], 'request-id')->ssrPort)->toBeNull();
     }
 });

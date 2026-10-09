@@ -4,10 +4,16 @@ declare(strict_types=1);
 
 use App\Actions\Clusters\SetClusterRouterAction;
 use App\Actions\Routes\ConvergeRouteAction;
+use App\Actions\Routes\CreateRouteAction;
+use App\Actions\Routes\SetRouteTargetAction;
+use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\Broadcasting\RecordBroadcast;
+use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Clusters\ClusterRouterOperationLock;
 use App\Domain\Clusters\ClusterState;
+use App\Domain\Instances\DevelopmentSourceAccess;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\Transfer\InstanceTransferStatus;
 use App\Domain\Instances\Transfer\InstanceTransferStep;
@@ -23,6 +29,7 @@ use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\DevelopmentCaddyConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentDnsConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentPhpFpmConfigRenderer;
@@ -30,13 +37,16 @@ use App\Infrastructure\AppDev\DevelopmentSite;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
+use App\Infrastructure\AppDev\NativeDevelopmentProjectionOperationLock;
 use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
 use App\Infrastructure\AppDev\RemoteAppDevPhpFpmManager;
 use App\Infrastructure\AppDev\RemoteAppDevRouteFirewallManager;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Infrastructure\Instances\NativeDevelopmentRouteProjector;
+use App\Infrastructure\Instances\NativeDevelopmentSourceAccess;
 use App\Infrastructure\Nodes\RemotePhpPackageManager;
+use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
@@ -58,6 +68,7 @@ use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Str;
 use Tests\Support\FakeClusterRouterDnsSelectionReconciler;
+use Tests\Support\IncusRuntimeWorkspace;
 use Tests\Support\SshNodeCaddyBuilds;
 
 it('uses one local workload site when Router and workload roles share a Node', function (): void {
@@ -242,6 +253,106 @@ it('cleans the recorded Router after the source Node changes Cluster membership'
         new Filesystem()->deleteDirectory($home);
     }
 });
+
+it('retires the source leaves and firewall rules of every recorded Route with a web root', function (): void {
+    [$instance, $route, $source, $originalRouter] = orb127_route_projection_models();
+    [$destinationCluster, $destinationRouter] = orb_second_cluster_router();
+    $destination = orb_transfer_destination($destinationCluster);
+    $route->update(['status' => RouteStatus::Active, 'cluster_id' => $destinationCluster->id]);
+    $docs = orb_web_root_route($instance, $destinationCluster, 'docs.acme.test');
+    $transfer = orb368_projection_transfer($instance, $route, $route, $source, $destination, $originalRouter);
+    // Route 999 left after cutover; its record still names its source leaves.
+    $transfer->update(['web_root_route_ids' => [$docs->id, 999]]);
+    [$projector, $ssh, , $home] = orb127_route_projector();
+
+    try {
+        $projector->retireSource($transfer->refresh());
+
+        $deletions = collect($ssh->commands)->filter(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'sudo rm -rf -- "/etc/caddy/orbit-certificates/$scope"'));
+        expect($deletions->map(fn (RemoteCommand $command, int $index): array => [$ssh->hosts[$index], $command->arguments[3]])->values()->all())->toBe([
+            ['10.44.0.10', "app-instance-{$instance->id}"],
+            ['10.44.0.20', "route-{$route->id}-router"],
+            ['10.44.0.10', "route-{$docs->id}"],
+            ['10.44.0.20', "route-{$docs->id}-router"],
+            ['10.44.0.10', 'route-999'],
+            ['10.44.0.20', 'route-999-router'],
+        ]);
+        $firewall = collect($ssh->commands)->filter(static fn (RemoteCommand $command): bool => str_starts_with($command->arguments[3] ?? '', 'orbit:route-'));
+        expect($firewall->map(fn (RemoteCommand $command, int $index): array => [$ssh->hosts[$index], $command->arguments[3]])->values()->all())->toBe([
+            ['10.44.0.10', "orbit:route-{$route->id}-lan"],
+            ['10.44.0.10', "orbit:route-{$docs->id}-lan"],
+            ['10.44.0.10', 'orbit:route-999-lan'],
+        ]);
+        expect(new DevelopmentSiteRepository()->forNode($destinationRouter)->map->certificateDirectory()->all())
+            ->toBe([
+                "/etc/caddy/orbit-certificates/route-{$route->id}-router/current",
+                "/etc/caddy/orbit-certificates/route-{$docs->id}-router/current",
+            ]);
+    } finally {
+        new Filesystem()->deleteDirectory($home);
+    }
+});
+
+it('keeps the Router leaf of a Route with a web root that stays in its Cluster', function (): void {
+    [$instance, $route, $source, $router] = orb127_route_projection_models();
+    $destination = orb_transfer_destination(Cluster::query()->findOrFail($source->cluster_id));
+    $route->update(['status' => RouteStatus::Active]);
+    $docs = orb_web_root_route($instance, Cluster::query()->findOrFail($source->cluster_id), 'docs.acme.test');
+    $transfer = orb368_projection_transfer($instance, $route, $route, $source, $destination, $router);
+    $transfer->update(['web_root_route_ids' => [$docs->id]]);
+    [$projector, $ssh, , $home] = orb127_route_projector();
+
+    try {
+        $projector->retireSource($transfer->refresh());
+
+        $deletions = collect($ssh->commands)->filter(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'sudo rm -rf -- "/etc/caddy/orbit-certificates/$scope"'));
+        expect($deletions->map(fn (RemoteCommand $command, int $index): array => [$ssh->hosts[$index], $command->arguments[3]])->values()->all())->toBe([
+            ['10.44.0.10', "app-instance-{$instance->id}"],
+            ['10.44.0.10', "route-{$docs->id}"],
+        ]);
+    } finally {
+        new Filesystem()->deleteDirectory($home);
+    }
+});
+
+it('issues every destination leaf of a transferred Instance before its first destination build', function (bool $prepared): void {
+    [$instance, $route] = orb127_route_projection_models(phpVersion: '8.5');
+    [$destinationCluster, $destinationRouter] = orb_second_cluster_router();
+    $destination = orb_transfer_destination($destinationCluster);
+    $route->update(['status' => RouteStatus::Active, 'cluster_id' => $destinationCluster->id]);
+    $docs = orb_web_root_route($instance, $destinationCluster, 'docs.acme.test');
+    $instance->update(['node_id' => $destination->id, 'status' => InstanceState::Active, 'provisioning_step' => 'active']);
+    [$projector, $ssh, , $home] = orb127_route_projector();
+
+    try {
+        $instance = $instance->refresh();
+
+        if ($prepared) {
+            $projector->prepareDestinationCertificates($instance, $docs);
+        }
+
+        $projector->converge($instance, $route->refresh());
+        [$mismatches, , $served] = orb_hostname_change_certificate_replay($ssh, []);
+
+        if (! $prepared) {
+            expect($mismatches)->toContain("10.44.0.31: docs.acme.test uses route-{$docs->id} (missing)");
+
+            return;
+        }
+
+        expect($mismatches)->toBe([])
+            ->and($served['10.44.0.31'])->toEqual([
+                'feature.acme.test' => "app-instance-{$instance->id}",
+                'docs.acme.test' => "route-{$docs->id}",
+            ])
+            ->and($served[$destinationRouter->wireguard_ip])->toEqual([
+                'feature.acme.test' => "route-{$route->id}-router",
+                'docs.acme.test' => "route-{$docs->id}-router",
+            ]);
+    } finally {
+        new Filesystem()->deleteDirectory($home);
+    }
+})->with(['prepared' => [true], 'not prepared' => [false]]);
 
 it('keeps source certificates when retirement cannot reconcile Caddy', function (): void {
     [$instance, $route, $source, $router] = orb127_route_projection_models();
@@ -1021,37 +1132,172 @@ it('retains active workload and Router sites while publishing a second Route on 
 
 it('grants source access only to the converging checkout and checkouts nested in it', function (): void {
     [$instance, $route, $node] = orb127_route_projection_models(coLocated: true, phpVersion: '8.5');
-    $served = static function (string $name, string $checkout, bool $releases = false) use ($instance, $route, $node): void {
-        $other = Instance::query()->create([
-            'project_id' => $instance->project_id, 'node_id' => $node->id, 'name' => $name,
-            'checkout_path' => $checkout, 'development_release_layout' => $releases, 'root' => 'public',
-            'branch' => $name, 'starting_commit' => str_repeat('b', 40), 'selected_php_version' => '8.5',
-            'status' => InstanceState::Active,
-        ]);
-        $otherRoute = Route::query()->create([
-            'project_id' => $instance->project_id, 'cluster_id' => $route->cluster_id, 'domain' => "{$name}.acme.test",
-            'provenance' => RouteProvenance::Explicit, 'publication' => RoutePublication::Private,
-            'status' => RouteStatus::Pending,
-        ]);
-        $otherRoute->targets()->create(['instance_id' => $other->id, 'position' => 0]);
-        $otherRoute->publishSites();
-        $otherRoute->update(['status' => RouteStatus::Active]);
-    };
-    $served('sibling', '/home/orbit/apps/acme/other', releases: true);
-    $served('prefix', '/home/orbit/apps/acme/feature-two');
-    $served('nested', '/home/orbit/apps/acme/feature/.worktrees/nested');
+    route_access_served_instance($instance, $route, $node, 'sibling', '/home/orbit/apps/acme/other', releases: true);
+    route_access_served_instance($instance, $route, $node, 'prefix', '/home/orbit/apps/acme/feature-two');
+    route_access_served_instance($instance, $route, $node, 'nested', '/home/orbit/apps/acme/feature/.worktrees/nested');
     [$projector, $ssh, , $home] = orb127_route_projector();
 
     try {
         $projector->converge($instance, $route);
 
-        $access = collect($ssh->commands)->sole(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'u:caddy:r-X'));
-        $checkouts = collect(array_slice($access->arguments, 3))->chunk(3)->map(static fn ($site): mixed => $site->first())->values()->all();
-
-        expect($checkouts)->toBe(['/home/orbit/apps/acme/feature', '/home/orbit/apps/acme/feature/.worktrees/nested']);
+        expect(route_access_walked_checkouts($ssh))->toBe(['/home/orbit/apps/acme/feature', '/home/orbit/apps/acme/feature/.worktrees/nested']);
     } finally {
         new Filesystem()->deleteDirectory($home);
     }
+});
+
+describe('setting a development Route target', function (): void {
+    it('grants source access to the new target checkout only', function (): void {
+        [$instance, $route, $node] = orb127_route_projection_models(coLocated: true, phpVersion: '8.5');
+        $route->publishSites();
+        route_access_served_instance($instance, $route, $node, 'sibling', '/home/orbit/apps/acme/other');
+        $added = route_access_served_instance($instance, $route, $node, 'added', '/home/orbit/apps/acme/added', routed: false);
+        [, $ssh, , $home] = orb127_route_projector();
+
+        try {
+            app(SetRouteTargetAction::class)->execute($route, $added->id);
+
+            expect($route->refresh()->targets->sole()->instance_id)->toBe($added->id)
+                ->and(route_access_walked_checkouts($ssh))->toBe(['/home/orbit/apps/acme/added']);
+        } finally {
+            new Filesystem()->deleteDirectory($home);
+        }
+    });
+
+    it('grants again on a retry and walks nothing for the current target of an active Route', function (): void {
+        [$instance, $route, $node] = orb127_route_projection_models(coLocated: true, phpVersion: '8.5');
+        $route->publishSites();
+        $added = route_access_served_instance($instance, $route, $node, 'added', '/home/orbit/apps/acme/added', routed: false);
+        [, $ssh, , $home] = orb127_route_projector();
+
+        try {
+            app(SetRouteTargetAction::class)->execute($route, $added->id);
+            $ssh->commands = [];
+            app(SetRouteTargetAction::class)->execute($route->refresh(), $added->id);
+
+            expect(route_access_walked_checkouts($ssh))->toBe(['/home/orbit/apps/acme/added']);
+
+            $route->update(['status' => RouteStatus::Active]);
+            $ssh->commands = [];
+            app(SetRouteTargetAction::class)->execute($route->refresh(), $added->id);
+
+            expect($ssh->commands)->toBe([]);
+        } finally {
+            new Filesystem()->deleteDirectory($home);
+        }
+    });
+
+    it('walks nothing while the Route sites are unpublished', function (): void {
+        [$instance, $route, $node] = orb127_route_projection_models(coLocated: true, phpVersion: '8.5');
+        $added = route_access_served_instance($instance, $route, $node, 'added', '/home/orbit/apps/acme/added', routed: false);
+        [, $ssh, , $home] = orb127_route_projector();
+
+        try {
+            app(SetRouteTargetAction::class)->execute($route, $added->id);
+
+            expect($route->refresh()->targets->sole()->instance_id)->toBe($added->id)
+                ->and($ssh->commands)->toBe([]);
+        } finally {
+            new Filesystem()->deleteDirectory($home);
+        }
+    });
+
+    it('returns projection contention before it changes or announces anything', function (): void {
+        [$instance, $route, $node] = orb127_route_projection_models(coLocated: true, phpVersion: '8.5');
+        $route->publishSites();
+        $added = route_access_served_instance($instance, $route, $node, 'added', '/home/orbit/apps/acme/added', routed: false);
+        [, $ssh, , $home] = orb127_route_projector();
+        new Filesystem()->ensureDirectoryExists($home, 0o700);
+        $holder = fopen($home.'/.dnsmasq-projections.lock', 'c+');
+        flock($holder, LOCK_EX);
+        $now = 0.0;
+        app()->instance(DevelopmentProjectionOperationLock::class, new NativeDevelopmentProjectionOperationLock(
+            orbitHome: $home,
+            deadline: app(CommandDeadline::class),
+            clock: static function () use (&$now): float {
+                return $now += 31.0;
+            },
+            wait: static function (int $microseconds): void {},
+        ));
+        Event::fake([RecordBroadcast::class]);
+
+        try {
+            expect(fn () => app(SetRouteTargetAction::class)->execute($route, $added->id))
+                ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('app-dev.projection_busy')
+                    ->and($exception->status)->toBe(409));
+            expect($route->refresh()->targets->sole()->instance_id)->toBe($instance->id)
+                ->and($ssh->commands)->toBe([]);
+            Event::assertNotDispatched(RecordBroadcast::class);
+        } finally {
+            flock($holder, LOCK_UN);
+            fclose($holder);
+            new Filesystem()->deleteDirectory($home);
+        }
+    });
+
+    it('stores and announces the target when the grant fails, and a retry of the same target grants', function (): void {
+        [$instance, $route, $node] = orb127_route_projection_models(coLocated: true, phpVersion: '8.5');
+        $route->publishSites();
+        $added = route_access_served_instance($instance, $route, $node, 'added', '/home/orbit/apps/acme/added', routed: false);
+        $fail = true;
+        [, $ssh, , $home] = orb127_route_projector(static function (RemoteCommand $command) use (&$fail): bool {
+            return $fail && str_contains($command->input ?? '', 'u:caddy:r-X');
+        });
+        Event::fake([RecordBroadcast::class]);
+
+        try {
+            expect(fn () => app(SetRouteTargetAction::class)->execute($route, $added->id))
+                ->toThrow(fn (RuntimeConvergenceException $exception) => expect($exception->errorCode)->toBe('app-dev.source_access_failed')
+                    ->and($exception->step)->toBe('source-access')
+                    ->and($exception->getMessage())->toContain('The Route target is stored.')
+                    ->and($exception->getMessage())->toContain('Set the same target on Route [feature.acme.test] again'));
+            expect($route->refresh()->targets->sole()->instance_id)->toBe($added->id);
+            Event::assertDispatched(
+                RecordBroadcast::class,
+                fn (RecordBroadcast $event): bool => $event->type === RecordEventType::RouteUpdated && $event->id === $route->id,
+            );
+
+            $fail = false;
+            $ssh->commands = [];
+            app(SetRouteTargetAction::class)->execute($route->refresh(), $added->id);
+
+            expect(route_access_walked_checkouts($ssh))->toBe(['/home/orbit/apps/acme/added']);
+        } finally {
+            new Filesystem()->deleteDirectory($home);
+        }
+    });
+
+    it('hands a generated Route target to the replacement Route when the domain changes', function (): void {
+        [$instance, $explicit, $node] = orb127_route_projection_models(coLocated: true, phpVersion: '8.5');
+        $explicit->cluster->update(['tld' => 'acme.test']);
+        $explicit->targets()->delete();
+        $explicit->delete();
+        $route = Route::query()->create([
+            'project_id' => $instance->project_id, 'cluster_id' => $explicit->cluster_id, 'generation_basis_node_id' => $node->id,
+            'domain' => "feature.{$instance->project->slug}.acme.test", 'provenance' => RouteProvenance::Generated,
+            'publication' => RoutePublication::Private, 'status' => RouteStatus::Pending,
+        ]);
+        $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
+        $added = route_access_served_instance($instance, $route, $node, 'added', '/home/orbit/apps/acme/added', routed: false);
+        [, $ssh, , $home] = orb127_route_projector();
+        Event::fake([RecordBroadcast::class]);
+
+        try {
+            $replacement = app(SetRouteTargetAction::class)->execute($route, $added->id);
+
+            expect($replacement->id)->not->toBe($route->id)
+                ->and($replacement->domain)->toBe("added.{$instance->project->slug}.acme.test")
+                ->and($replacement->targets->sole()->instance_id)->toBe($added->id)
+                ->and(Route::query()->find($route->id))->toBeNull()
+                ->and($ssh->commands)->toBe([]);
+            Event::assertDispatched(
+                RecordBroadcast::class,
+                fn (RecordBroadcast $event): bool => $event->type === RecordEventType::RouteUpdated && $event->id === $replacement->id,
+            );
+        } finally {
+            new Filesystem()->deleteDirectory($home);
+        }
+    });
 });
 
 it('uses WireGuard only when the workload has no configured LAN address', function (): void {
@@ -1341,6 +1587,33 @@ function orb_second_cluster_router(): array
     return [$cluster, $router];
 }
 
+/** An app-dev Node in the Cluster that a transfer moves an Instance to. */
+function orb_transfer_destination(Cluster $cluster): Node
+{
+    $destination = Node::query()->create([
+        'name' => 'transfer-destination-'.Str::lower(Str::random(8)), 'cluster_id' => $cluster->id,
+        'status' => LifecycleStatus::Active, 'platform' => 'linux',
+        'wireguard_ip' => '10.44.0.31', 'public_ssh_host' => '192.0.2.31', 'user' => 'orbit',
+    ]);
+    $destination->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
+
+    return $destination;
+}
+
+/** An active Route with a web root that serves `apps/docs/public` of the Instance in the Cluster. */
+function orb_web_root_route(Instance $instance, Cluster $cluster, string $domain): Route
+{
+    $route = Route::query()->create([
+        'project_id' => $instance->project_id, 'cluster_id' => $cluster->id,
+        'domain' => $domain, 'web_root' => 'apps/docs/public', 'provenance' => RouteProvenance::Explicit,
+        'publication' => RoutePublication::Private, 'status' => RouteStatus::Pending,
+    ]);
+    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
+    $route->update(['status' => RouteStatus::Active]);
+
+    return $route->refresh();
+}
+
 function orb_router_candidate(Node $router): Node
 {
     return Node::query()->create([
@@ -1466,6 +1739,7 @@ function orb127_route_projector(?Closure $failSsh = null, bool $failDns = false)
     $certificates = new RemoteAppDevCertificateManager($executor, $signer, $accounts);
     $caddy = new RemoteAppDevCaddyManager(SshNodeCaddyBuilds::over($ssh), $executor);
     $dns = new DnsmasqPrivateDnsManager($processes, new DevelopmentDnsConfigRenderer($sites));
+    $sourceAccess = new NativeDevelopmentSourceAccess($executor);
     $projector = new NativeDevelopmentRouteProjector(
         new RemoteAppDevPhpFpmManager(
             $sites,
@@ -1478,7 +1752,9 @@ function orb127_route_projector(?Closure $failSsh = null, bool $failDns = false)
         $caddy,
         $dns,
         $executor,
+        $sourceAccess,
     );
+    app()->instance(DevelopmentSourceAccess::class, $sourceAccess);
     app()->instance(
         ClusterRouterReplacementProjector::class,
         new NativeClusterRouterReplacementProjector(
@@ -1491,6 +1767,49 @@ function orb127_route_projector(?Closure $failSsh = null, bool $failDns = false)
     );
 
     return [$projector, $ssh, $processes, $home];
+}
+
+/**
+ * An active development Instance on the Route's Node, served by its own active Route unless `$routed` is false.
+ */
+function route_access_served_instance(
+    Instance $instance,
+    Route $route,
+    Node $node,
+    string $name,
+    string $checkout,
+    bool $releases = false,
+    bool $routed = true,
+): Instance {
+    $other = Instance::query()->create([
+        'project_id' => $instance->project_id, 'node_id' => $node->id, 'name' => $name,
+        'checkout_path' => $checkout, 'development_release_layout' => $releases, 'root' => 'public',
+        'branch' => $name, 'starting_commit' => str_repeat('b', 40), 'selected_php_version' => '8.5',
+        'status' => InstanceState::Active,
+    ]);
+
+    if (! $routed) {
+        return $other;
+    }
+
+    $otherRoute = Route::query()->create([
+        'project_id' => $instance->project_id, 'cluster_id' => $route->cluster_id, 'domain' => "{$name}.acme.test",
+        'provenance' => RouteProvenance::Explicit, 'publication' => RoutePublication::Private,
+        'status' => RouteStatus::Pending,
+    ]);
+    $otherRoute->targets()->create(['instance_id' => $other->id, 'position' => 0]);
+    $otherRoute->publishSites();
+    $otherRoute->update(['status' => RouteStatus::Active]);
+
+    return $other;
+}
+
+/** @return list<mixed> The checkouts of the one source-access walk the SSH executor recorded. */
+function route_access_walked_checkouts(Orb127RouteSshExecutor $ssh): array
+{
+    $access = collect($ssh->commands)->sole(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'u:caddy:r-X'));
+
+    return collect(array_slice($access->arguments, 3))->chunk(3)->map(static fn ($site): mixed => $site->first())->values()->all();
 }
 
 function orb368_projection_transfer(
@@ -1578,3 +1897,20 @@ final class Orb127RouteProcessRunner implements ProcessRunner
             : new CommandResult(0, '', '', 1, false);
     }
 }
+
+it('converges the Project sandbox leaf and private preview through native projection', function (): void {
+    $workspace = IncusRuntimeWorkspace::create();
+    $workspace->project->update(['type' => 'laravel-app', 'root' => 'public']);
+    $workspace->update(['task_workspace_routed' => true, 'root' => 'public', 'status' => InstanceState::SourceResolved]);
+    $route = app(CreateRouteAction::class)->ensureForInstance($workspace, null);
+    [$projector, $ssh, $processes, $home] = orb127_route_projector();
+    try {
+        $projector->converge($workspace, $route);
+        expect($route->fresh()->sites_published)->toBeTrue();
+        expect(collect($ssh->commands)->flatMap(fn (RemoteCommand $command): array => $command->arguments))
+            ->toContain('app-instance-'.$workspace->id, 'route-'.$route->id.'-router');
+        expect($processes->invocations)->not->toBeEmpty();
+    } finally {
+        new Filesystem()->deleteDirectory($home);
+    }
+});

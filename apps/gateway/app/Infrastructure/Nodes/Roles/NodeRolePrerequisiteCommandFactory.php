@@ -20,11 +20,10 @@ final readonly class NodeRolePrerequisiteCommandFactory
     ) {}
 
     /**
-     * Publishes the pinned Caddy apt source before the role installs its packages, so `caddy` comes
-     * from the Caddy project rather than the Ubuntu archive. Null when the role needs no Caddy.
-     * ADR 0100 records the decision.
+     * Installs the pinned Caddy project package before the role installs its packages, so `caddy`
+     * comes from the Caddy project rather than the Ubuntu archive. Null when the role needs no Caddy.
      */
-    public function caddySource(Node $node, RoleName $role): ?RemoteCommand
+    public function caddyPackage(Node $node, RoleName $role): ?RemoteCommand
     {
         if (! in_array('caddy', $this->packages->forRole($node, $role), strict: true)) {
             return null;

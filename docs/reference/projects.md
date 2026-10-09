@@ -44,11 +44,11 @@ For a Laravel Instance, the application directory is the effective web root with
 
 The application directory contains `composer.json`, `artisan`, development [environment files](/reference/environment-variables#where-the-file-lives), and Laravel [logs](/reference/instance-logs#know-which-file-the-gateway-reads). PHP-FPM, default systemd Instance Processes, and Instance Schedules use it as their application working directory. Production resolves it through `current`. Setup, teardown, deploy steps, and task-check commands still run from the repository root; a nested Artisan step must change directory explicitly. [Setup and teardown](/reference/instance-setup#run-setup) and [task checks](/reference/tasks#project-check) export `VP_HOME` to the Node's resolved Vite+ store, including for project-local `vp`.
 
-Registration never infers a nested root from source files. Configure the Project's root, or send an explicit Instance root override. This group keeps one effective root and the existing type rules. The [application-directory decision](/decisions/0196-derive-application-directory-from-web-root#target-model-for-the-follow-up-multi-app-group) records the follow-up target: one or more named apps per Project, each with a path and web root, and each Instance serving every app under its own Route. That target is not today's API.
+Registration never infers a nested root from source files. Configure the Project's root, or send an explicit Instance root override. An Instance can serve more directories of its checkout or release through [Routes with a web root](/reference/routes#serve-several-web-roots). Each one derives its application directory with the same rule and gets its own PHP-FPM pool and `APP_URL`.
 
 ## Setup and teardown steps
 
-A Project owns ordered [setup and teardown lists](/reference/instance-setup) for its development Instances. Each named command runs on the Instance's Node from the repository root. Production Instances run neither list.
+A Project owns ordered [setup and teardown lists](/reference/instance-setup) for its development Instances. Each named command runs on the Instance's Node from the repository root. A `default` Instance with the development release layout runs them in its active release. When Orbit cannot read that release, setup returns `instance.active_release_unavailable` and teardown runs in the checkout. Production Instances run neither list.
 
 When a command is missing or not executable on that Node (exit 127 or 126), Orbit returns `instance.setup_step_unavailable` or `instance.teardown_step_unavailable` with the step name and `outcome: missing`. The message names the step, Node, and exit code and says the command was not found or is not executable. Other command failures still return `instance.setup_step_failed` or `instance.teardown_step_failed`. See [Instance setup and teardown](/reference/instance-setup#failure-codes) for retry and removal behavior.
 
@@ -62,8 +62,8 @@ The type belongs to the Project, so every Instance of one repository behaves the
 
 | Type | Route | PHP-FPM | Root `.` allowed | Default `task_check` |
 | --- | --- | --- | --- | --- |
-| `laravel-app` | Exactly one per active Instance | Yes | No | none |
-| `symfony-app` | Exactly one per active Instance | Yes | No | none |
+| `laravel-app` | Exactly one without a web root per active Instance | Yes | No | none |
+| `symfony-app` | Exactly one without a web root per active Instance | Yes | No | none |
 | `monorepo` | Only an explicit Route | Only with a Route to a Laravel source | No | none |
 | `laravel-package` | Only an explicit Route | No | Yes | none |
 | `node-package` | Only an explicit Route | No | Yes | none |
@@ -99,7 +99,7 @@ A public repository and a repository on another host work with `github_app`. A `
 
 ## Repository identity
 
-The Gateway derives a repository identity from the host and path of the URL. Equivalent SSH and HTTPS URLs, with or without `.git`, have the same identity. A second Project for the same repository returns `project.repository_identity_conflict`. Registration uses this identity to find the Project of a checkout.
+The Gateway derives a repository identity from the host and path of the URL. Equivalent SSH and HTTPS URLs, with or without `.git`, have the same identity. A second Project for the same repository returns `project.repository_identity_conflict`. Registration uses this identity to find the Project of a checkout. [Doctor](/cli/doctor#what-each-family-checks) uses it to compare a checkout's origin with the Project, so an SSH origin of an HTTPS Project is not `project.repository_origin_mismatch`.
 
 ## Registration needs a Project
 

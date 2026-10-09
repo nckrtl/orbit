@@ -32,6 +32,15 @@ describe('project lifecycle transport', function (): void {
             ->and($destroy->resolveEndpoint())->toBe('/api/v1/projects/4/'.$collection.'/install');
     })->with(['setup-steps', 'teardown-steps']);
 
+    it('sends other steps\' new timeouts in the same write', function (): void {
+        $rebalance = [['name' => 'build-assets', 'timeout_seconds' => 360]];
+        $create = new CreateProjectLifecycleStepRequest(4, 'setup-steps', 'browsers', 'true', 180, rebalance: $rebalance);
+        $update = new UpdateProjectLifecycleStepRequest(4, 'setup-steps', 'install', rebalance: $rebalance);
+
+        expect($create->body()->all())->toBe(['name' => 'browsers', 'command' => 'true', 'timeout_seconds' => 180, 'rebalance' => $rebalance])
+            ->and($update->body()->all())->toBe(['rebalance' => $rebalance]);
+    });
+
     it('maps ordered command responses while keeping generic diagnostics redacted', function (): void {
         $requestId = '0198e15c-bf97-7c23-8f1f-61b8fe67a846';
         $connector = new GatewayConnector('https://gateway.test');

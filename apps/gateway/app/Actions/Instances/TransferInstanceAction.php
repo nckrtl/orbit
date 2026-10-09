@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace App\Actions\Instances;
 
+use App\Actions\Routes\SynchronizeRouteWebRootUrlsAction;
 use App\Data\Instances\TransferInstanceData;
 use App\Domain\AppDev\AgentationPortAllocator;
 use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
+use App\Domain\AppDev\SsrPortAllocator;
 use App\Domain\AppDev\VitePortAllocator;
 use App\Domain\Clusters\ClusterRouterOperationLock;
 use App\Domain\Clusters\ClusterState;
@@ -21,7 +23,6 @@ use App\Domain\Instances\Environment\InstanceEnvironmentRenderer;
 use App\Domain\Instances\Environment\InstanceEnvironmentStore;
 use App\Domain\Instances\Environment\InstanceEnvironmentWriter;
 use App\Domain\Instances\InstanceDestinationGuard;
-use App\Domain\Instances\InstanceSandboxGuard;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\Sqlite\InstanceSqliteSeeder;
@@ -42,6 +43,7 @@ use App\Domain\Processes\ProcessAdmissionLock;
 use App\Domain\Projects\DevelopmentNodeExclusion;
 use App\Domain\Routes\RoutePlacement;
 use App\Domain\Routes\RouteProvenance;
+use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStateResolver;
 use App\Domain\Routes\RouteStatus;
@@ -56,6 +58,7 @@ use App\Models\InstanceEnvironmentValue;
 use App\Models\InstanceTransfer;
 use App\Models\Node;
 use App\Models\Route;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
@@ -90,7 +93,6 @@ final readonly class TransferInstanceAction
     /** @return array{instance: Instance, transfer: InstanceTransfer, created: bool} */
     public function execute(Instance $instance, TransferInstanceData $data): array
     {
-        InstanceSandboxGuard::assertHostOperation($instance);
         $instance->loadMissing(['project', 'node', 'routes.targets', 'removalMember']);
         $existing = $this->existingTransfer($instance, $data);
 
@@ -258,8 +260,69 @@ final readonly class TransferInstanceAction
 
         $domain = $this->destinationDomain($instance, $route, $name, $placement);
         $this->assertDestinationDomain($instance, $route, $domain);
+        $this->assertTransferableWebRootRoutes(
+            $this->webRootRoutes($instance->id, [$route->id]),
+            $instance->id,
+            $placement->clusterId,
+        );
 
         return [$destination, $path, $domain, $route];
+    }
+
+    /**
+     * The Instance's other sites: Routes with a web root that target it, except the transfer's own
+     * Route, in ID order. Cutover locks them.
+     *
+     * @param  list<int>  $exceptRouteIds
+     * @return EloquentCollection<int, Route>
+     */
+    private function webRootRoutes(int $instanceId, array $exceptRouteIds, bool $lock = false): EloquentCollection
+    {
+        $query = Route::query()
+            ->whereNotNull('web_root')
+            ->whereKeyNot($exceptRouteIds)
+            ->whereHas('targets', static fn ($targets) => $targets->where('instance_id', $instanceId))
+            ->orderBy('id');
+
+        if ($lock) {
+            $query->lockForUpdate()->with(['targets' => static fn ($targets) => $targets->lockForUpdate()]);
+        } else {
+            $query->with('targets');
+        }
+
+        return $query->get();
+    }
+
+    /**
+     * Routes with a web root move with the Instance at cutover and keep their IDs and domains. Each must
+     * be an active, settled site of this Instance alone. Transfer does not move a public edge, so a
+     * public one cannot change Cluster.
+     *
+     * @param  EloquentCollection<int, Route>  $routes
+     */
+    private function assertTransferableWebRootRoutes(EloquentCollection $routes, int $instanceId, ?int $destinationClusterId): void
+    {
+        foreach ($routes as $route) {
+            if (
+                $route->status !== RouteStatus::Active
+                || $route->targets->pluck('instance_id')->all() !== [$instanceId]
+                || $route->replaces_route_id !== null
+                || $route->replaced_by_route_id !== null
+                || $route->hasPlacementTransition()
+            ) {
+                throw $this->conflict(
+                    'instance.lifecycle_conflict',
+                    "Route [{$route->domain}] with a web root is not ready for transfer.",
+                );
+            }
+
+            if ($route->publication === RoutePublication::Public && $route->cluster_id !== $destinationClusterId) {
+                throw $this->conflict(
+                    'instance.transfer_public_web_root_route',
+                    "Public Route [{$route->domain}] with a web root cannot move to another Cluster. Make it private, transfer, and publish it again.",
+                );
+            }
+        }
     }
 
     private function assertEligibleSource(Instance $instance): void
@@ -438,6 +501,8 @@ final readonly class TransferInstanceAction
         if ($transfer->current_step === InstanceTransferStep::Reserved) {
             app(VitePortAllocator::class)->assign($instance);
             app(VitePortAllocator::class)->assign($instance, $destination);
+            app(SsrPortAllocator::class)->assign($instance);
+            app(SsrPortAllocator::class)->assign($instance, $destination);
             $this->runtime->pause($instance);
             $capture = $this->sources->capture($instance, $transfer->sqlite_source_path);
             $this->checkpoint($transfer, InstanceTransferStep::SourceCaptured, [
@@ -639,6 +704,9 @@ final readonly class TransferInstanceAction
         }
 
         $route = Route::query()->findOrFail($transfer->destination_route_id ?? $transfer->source_route_id);
+        // As in every environment synchronization, only a Route without a web root names the Instance's
+        // own domain.
+        $ownRoute = $route->hasWebRoot() ? null : $route;
         $context = new InstanceEnvironmentContext(
             instanceId: $instance->id,
             projectId: $instance->project_id,
@@ -649,8 +717,8 @@ final readonly class TransferInstanceAction
                 : $transfer->destination_path,
             executionUser: $destination->user,
             laravel: $instance->source_is_laravel === true,
-            routeId: $route->id,
-            routeDomain: $transfer->destination_domain,
+            routeId: $ownRoute?->id,
+            routeDomain: $ownRoute instanceof Route ? $transfer->destination_domain : null,
             nodeStatus: $destination->status->value,
             node: $destination,
         );
@@ -683,6 +751,7 @@ final readonly class TransferInstanceAction
             'cluster_id' => $placement->clusterId,
             'generation_basis_node_id' => $destination->id,
             'domain' => $transfer->destination_domain,
+            'web_root' => $route->web_root,
             'provenance' => RouteProvenance::Generated,
             'publication' => $route->publication,
             'status' => RouteStatus::Pending,
@@ -722,6 +791,12 @@ final readonly class TransferInstanceAction
             if ($sourceRoute->cluster_id !== $sourceClusterId) {
                 throw $this->conflict('instance.transfer_cleanup_conflict', 'The source Route placement changed before cutover.');
             }
+            $webRootRoutes = $this->webRootRoutes(
+                $lockedInstance->id,
+                array_values(array_unique([$sourceRoute->id, $destinationRoute->id])),
+                lock: true,
+            );
+            $this->assertTransferableWebRootRoutes($webRootRoutes, $lockedInstance->id, $placement->clusterId);
             $lockedTransfer->update(['source_router_node_id' => $this->sourceRouterId($sourceRoute)]);
 
             $annotationPorts = app(AgentationPortAllocator::class);
@@ -733,6 +808,7 @@ final readonly class TransferInstanceAction
             $lockedInstance->update([
                 'node_id' => $destination->id,
                 'vite_port' => StoredInteger::fromOrZero(DB::table('vite_port_assignments')->where('instance_id', $instance->id)->where('node_id', $destination->id)->value('port')),
+                'ssr_port' => $this->destinationSsrPort($instance, $destination),
                 'annotator_port' => $annotatorPort,
                 'agentation_port' => $agentationPort,
                 'name' => $lockedTransfer->destination_name,
@@ -763,9 +839,25 @@ final readonly class TransferInstanceAction
                 ]);
             }
 
+            // Another site of the Instance has an explicit domain, so it keeps its ID and domain and moves
+            // with the Instance. Source cleanup retires the leaves of every recorded Route with a web root,
+            // the transfer's own Route included when it has one.
+            foreach ($webRootRoutes as $webRootRoute) {
+                $webRootRoute->update([
+                    'node_id' => $placement->nodeId,
+                    'cluster_id' => $placement->clusterId,
+                ]);
+            }
+
+            $movedWebRootRouteIds = [
+                ...($sourceRoute->hasWebRoot() ? [$sourceRoute->id] : []),
+                ...$webRootRoutes->modelKeys(),
+            ];
             $lockedTransfer->update([
                 'status' => InstanceTransferStatus::InProgress,
                 'current_step' => InstanceTransferStep::Cutover,
+                // A transfer that moves no Route with a web root records nothing, as before.
+                'web_root_route_ids' => $movedWebRootRouteIds === [] ? null : $movedWebRootRouteIds,
                 'cutover_at' => now(),
                 'failed_step' => null,
                 'error_code' => null,
@@ -778,7 +870,26 @@ final readonly class TransferInstanceAction
     private function activateDestination(Instance $instance, InstanceTransfer $transfer): void
     {
         $route = Route::query()->findOrFail($transfer->destination_route_id ?? $transfer->source_route_id);
-        $this->projection->converge($instance->refresh()->load('node'), $route);
+        $instance = $instance->refresh()->load('node');
+        $sites = $this->webRootRoutes($instance->id, array_values(array_unique([$transfer->source_route_id, $route->id])))
+            ->filter(static fn (Route $site): bool => $site->status === RouteStatus::Active);
+
+        // Every Caddy build on the destination renders all sites of the Instance, so each leaf they name
+        // exists before the first build.
+        foreach ($sites as $site) {
+            $this->transferProjection->prepareDestinationCertificates($instance, $site);
+        }
+
+        $this->projection->converge($instance, $route);
+
+        foreach ($sites as $site) {
+            $this->projection->converge($instance, $site);
+        }
+
+        if ($route->hasWebRoot() || $sites->isNotEmpty()) {
+            app(SynchronizeRouteWebRootUrlsAction::class)->execute($instance);
+        }
+
         $this->runtime->activate($instance);
     }
 
@@ -824,6 +935,7 @@ final readonly class TransferInstanceAction
             }
 
             app(VitePortAllocator::class)->release($instance, $sourceNode);
+            app(SsrPortAllocator::class)->release($instance, $sourceNode);
             $this->checkpoint($lockedTransfer, InstanceTransferStep::Completed, [
                 'status' => InstanceTransferStatus::Completed,
                 'completed_at' => now(),
@@ -973,6 +1085,7 @@ final readonly class TransferInstanceAction
             try {
                 $this->sources->discardDestination($destination, StoragePath::parse($transfer->destination_path));
                 app(VitePortAllocator::class)->release($instance, $destination);
+                app(SsrPortAllocator::class)->release($instance, $destination);
             } catch (Throwable) {
                 $incomplete[] = 'destination-checkout';
             }
@@ -1025,6 +1138,13 @@ final readonly class TransferInstanceAction
                 'source_path' => $transfer->source_path,
             ],
         ]);
+    }
+
+    private function destinationSsrPort(Instance $instance, Node $destination): ?int
+    {
+        $port = DB::table('ssr_port_assignments')->where('instance_id', $instance->id)->where('node_id', $destination->id)->value('port');
+
+        return $port === null ? null : StoredInteger::from($port);
     }
 
     private function conflict(string $errorCode, string $message): ResourceOperationException

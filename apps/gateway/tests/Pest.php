@@ -121,11 +121,8 @@ pest()->tia()->watch([
     'resources/fpm/opcache-reset.php' => 'tests/Feature/GatewayReleases/GatewayRuntimeHandoffTest.php',
     'resources/private-dns/serve.php' => 'tests/Feature/Infrastructure/AppDev',
     // Sandbox programs, each with the tests that run it or read it. A new program stays unwatched until it is listed.
-    'resources/compute/guest-git-bundle.py' => 'tests/Feature/Infrastructure/Compute/IncusSandboxTest.php',
-    'resources/compute/trusted-git-bundle.py' => 'tests/Feature/Infrastructure/Compute/IncusSandboxTest.php',
     'resources/compute/sandbox-hub-network.py' => 'tests/Feature/Infrastructure/Compute/UpCloudSandboxEnrollmentTest.php',
     'resources/compute/guest-github-access.py' => 'tests/Feature/Infrastructure/Tasks/SandboxGitHubAccessTest.php',
-    'resources/compute/guest-github-dns.py' => 'tests/Feature/Infrastructure/Tasks/SandboxWorkspaceSourceTest.php',
     'resources/compute/guest-workspace-source.py' => 'tests/Feature/Infrastructure/Tasks/SandboxWorkspaceSourceTest.php',
     'resources/compute/guest-pair-dns.py' => 'tests/Feature/Infrastructure/Tasks/SandboxPairRuntimeTest.php',
     'resources/compute/guest-pair-runtime.py' => 'tests/Feature/Infrastructure/Tasks/SandboxPairRuntimeTest.php',
@@ -147,8 +144,6 @@ pest()->tia()->watch([
     'resources/compute/template-lock.py' => 'tests/Feature/Infrastructure/Tasks/SandboxTemplateSourceTest.php',
 ])->watch([
     // A key holds one target, so a second test of the same file needs a second call.
-    'resources/compute/guest-git-bundle.py' => 'tests/Feature/Infrastructure/Tasks/SandboxGitBundlesTest.php',
-    'resources/compute/trusted-git-bundle.py' => 'tests/Feature/Infrastructure/Tasks/SandboxGitBundlesTest.php',
     'resources/compute/guest-workspace-source.py' => 'tests/Feature/Infrastructure/Tasks/SandboxTemplateSourceTest.php',
     'resources/compute/guest-pair-runtime.py' => 'tests/Feature/Infrastructure/Tasks/SandboxTopologyAdmissionTest.php',
 ]);

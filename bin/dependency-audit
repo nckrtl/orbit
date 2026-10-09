@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+
+# Audit every committed Composer and Bun lockfile for published security advisories.
+# This is not part of `composer check`: an advisory published upstream must not block unrelated work.
+# The dependency policy is in docs/contributor-guide.md#dependencies.
+set -o pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+failed=''
+
+for lockfile in $(git -C "$root" ls-files -- 'composer.lock' '*/composer.lock' 'bun.lock' '*/bun.lock' ':!:*/tests/*'); do
+    project="$(dirname "$lockfile")"
+    case "$lockfile" in
+        *composer.lock) command=(composer audit --locked --no-interaction) ;;
+        *) command=(bun audit) ;;
+    esac
+    printf '\n[%s] %s\n' "$project" "${command[*]}"
+    (cd "$root/$project" && "${command[@]}") || failed="$failed $project"
+done
+
+if [ -n "$failed" ]; then
+    printf '\nAdvisories or audit errors in:%s\n' "$failed" >&2
+    exit 1
+fi
+printf '\nNo advisories found.\n'

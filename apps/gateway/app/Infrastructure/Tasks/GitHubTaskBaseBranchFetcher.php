@@ -14,9 +14,9 @@ use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\Tasks\TaskBaseBranchFetcher;
-use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskRemoteBranch;
+use App\Domain\TaskVms\TaskVmPlacement;
 use App\Infrastructure\GitHub\GitReadScript;
 use App\Infrastructure\SourceControl\WorkspaceGit;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -53,7 +53,7 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
         if (! $repository instanceof GitHubRepository || ! $instance instanceof Instance || $instance->checkout_path === ''
             || $instance->project_id !== $group->project_id
             || ($instance->task_sandbox_id !== null && $instance->taskSandbox?->group_id !== $group->id)
-            || ($group->task_compute === TaskCompute::Vm && $instance->task_sandbox_id === null)) {
+            || ($instance->task_sandbox_id === null && ! TaskVmPlacement::allowsWorkspace($group, $instance))) {
             throw new TaskPullRequestException('The base branch could not be fetched.');
         }
 
@@ -110,21 +110,33 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
         $group->loadMissing(['project', 'taskable']);
         $instance = $group->taskable;
         $default = $group->project->default_branch;
+        $local = $instance instanceof Instance && is_string($instance->branch) && $instance->branch !== '' ? $instance->branch : 'task-'.$group->id;
         if (! $instance instanceof Instance || $instance->checkout_path === ''
-            || ! is_string($default) || ! GitBranchName::isValid($default)) {
+            || ! is_string($default) || ! GitBranchName::isValid($default) || ! GitBranchName::isValid($local)) {
             throw new TaskPullRequestException('The baseline workspace could not be reset.');
         }
         $instance->loadMissing('node');
+        // The checks and the reset run in one command: another branch, a commit that is not on the
+        // default branch, or a tracked change is manual work, and the reset refuses it. Content reads
+        // can start filters, so they run as the worker.
         $script = WorkspaceGit::bashPreamble().WorkspaceGit::workerPreamble(TaskWorkerUser::name($instance)).<<<'BASH'
             checkout=$1
             branch=$2
+            local=$3
             tip=$(git -C "$checkout" rev-parse --verify "refs/remotes/origin/$branch^{commit}")
+            if [ "$(git -C "$checkout" symbolic-ref -q HEAD)" != "refs/heads/$local" ] \
+                || ! git -C "$checkout" merge-base --is-ancestor HEAD "$tip" \
+                || ! workspace_git -C "$checkout" diff --quiet --cached HEAD -- \
+                || ! workspace_git -C "$checkout" diff --quiet --; then
+                echo 'The workspace has manual work.' >&2
+                exit 3
+            fi
             workspace_git -C "$checkout" reset --hard --quiet "$tip"
             git -C "$checkout" rev-parse HEAD
             BASH;
         try {
             $result = $this->workspaces->execute($instance, new RemoteCommand(
-                arguments: ['bash', '-seu', '--', $instance->checkout_path, $default],
+                arguments: ['bash', '-seu', '--', $instance->checkout_path, $default, $local],
                 input: $script,
             ), 'task-baseline-reset', 'tasks.baseline_reset_failed');
         } catch (RuntimeConvergenceException $exception) {
@@ -233,7 +245,7 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
         if (! $repository instanceof GitHubRepository || ! $instance instanceof Instance || $instance->checkout_path === ''
             || $instance->project_id !== $group->project_id
             || ($instance->task_sandbox_id !== null && $instance->taskSandbox?->group_id !== $group->id)
-            || ($group->task_compute === TaskCompute::Vm && $instance->task_sandbox_id === null)
+            || ($instance->task_sandbox_id === null && ! TaskVmPlacement::allowsWorkspace($group, $instance))
             || ! is_string($default) || ! GitBranchName::isValid($default)) {
             throw new TaskPullRequestException('The workspace refs could not be fetched.');
         }

@@ -5,8 +5,11 @@ declare(strict_types=1);
 namespace App\Actions\Routes;
 
 use App\Data\Routes\RouteData;
+use App\Domain\AppDev\DevelopmentProjectionOperationLock;
+use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
+use App\Domain\Instances\DevelopmentSourceAccess;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Metrics\MetricsFleetReconciler;
@@ -17,12 +20,14 @@ use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStateResolver;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Routes\RouteTargetWebRoot;
+use App\Domain\Routes\RouteWebRoot;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Shared\StoredInteger;
 use App\Models\Instance;
 use App\Models\Route;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
+use Throwable;
 
 final readonly class SetRouteTargetAction
 {
@@ -30,6 +35,8 @@ final readonly class SetRouteTargetAction
         private InstanceEnvironmentOperationLock $environmentOperations,
         private RouteStateResolver $state,
         private RouteAssociationGuard $associations,
+        private DevelopmentSourceAccess $sourceAccess,
+        private DevelopmentProjectionOperationLock $projections,
         private ?RecordEventBroadcaster $broadcaster = null,
         private ?MetricsFleetReconciler $metrics = null,
     ) {}
@@ -52,9 +59,14 @@ final readonly class SetRouteTargetAction
             ->values()
             ->all();
         $expectedTargetIds = array_values($expectedTargetIds);
-        $result = $this->environmentOperations->run(
+        // The projection owner is taken before the Route is read, so contention returns before any
+        // write. A source-access failure comes after the commit: the stored target is still
+        // announced, and the failure is reported afterwards.
+        [$result, $accessFailure] = $this->environmentOperations->run(
             [...$expectedTargetIds, $instanceId],
-            fn (): Route => $this->executeOwned($route, $instanceId, $expectedTargetIds),
+            fn (): array => $this->projections->run(
+                fn (): array => $this->executeOwned($route, $instanceId, $expectedTargetIds),
+            ),
         );
 
         ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
@@ -65,11 +77,18 @@ final readonly class SetRouteTargetAction
 
         $this->metrics?->reconcile();
 
+        if ($accessFailure instanceof Throwable) {
+            throw $accessFailure;
+        }
+
         return $result;
     }
 
-    /** @param list<int> $expectedTargetIds */
-    private function executeOwned(Route $route, int $instanceId, array $expectedTargetIds): Route
+    /**
+     * @param  list<int>  $expectedTargetIds
+     * @return array{Route, ?Throwable}
+     */
+    private function executeOwned(Route $route, int $instanceId, array $expectedTargetIds): array
     {
         try {
             $updated = DB::transaction(function () use ($route, $instanceId, $expectedTargetIds): Route {
@@ -91,7 +110,12 @@ final readonly class SetRouteTargetAction
                     );
                 }
 
-                RouteTargetWebRoot::assertSupported($target);
+                if ($locked->hasWebRoot()) {
+                    RouteWebRoot::assertRetargetable($target);
+                } else {
+                    RouteTargetWebRoot::assertSupported($target);
+                }
+
                 $currentTarget = $locked->targets()->first();
 
                 if ($currentTarget?->instance_id === $target->id) {
@@ -134,7 +158,10 @@ final readonly class SetRouteTargetAction
                     );
                 }
 
-                $this->associations->assertTargetAssignable($locked, $target);
+                if (! $locked->hasWebRoot()) {
+                    $this->associations->assertTargetAssignable($locked, $target);
+                }
+
                 $this->associations->assertTargetsDetachable($locked);
                 app(RouteReconciliationGuard::class)->assertRouteMutable($locked);
 
@@ -171,8 +198,6 @@ final readonly class SetRouteTargetAction
 
                 return $locked->refresh()->load('targets');
             });
-
-            return $updated;
         } catch (QueryException $exception) {
             throw new ResourceOperationException(
                 errorCode: 'route.target_conflict',
@@ -181,5 +206,44 @@ final readonly class SetRouteTargetAction
                 previous: $exception,
             );
         }
+
+        try {
+            $this->grantSourceAccess($updated, $instanceId);
+        } catch (RuntimeConvergenceException $exception) {
+            return [$updated, new RuntimeConvergenceException(
+                step: $exception->step,
+                errorCode: $exception->errorCode,
+                message: "{$exception->getMessage()} The Route target is stored. Set the same target on Route [{$updated->domain}] again to grant the access.",
+                previous: $exception,
+                result: $exception->result,
+            )];
+        } catch (Throwable $exception) {
+            return [$updated, $exception];
+        }
+
+        return [$updated, null];
+    }
+
+    /**
+     * Setting a target does not build Caddy, but the next build on the target's Node serves the
+     * Route's published sites with it. Route convergence on that Node walks only its own checkout,
+     * so the new target's Web root is made readable here, after the commit and under the caller's
+     * projection owner. A retry of the same target on a Route that is not active grants again, so
+     * it repairs a failed grant. An active Route only accepts its current target, as a no-op, and
+     * its convergence already granted that access.
+     */
+    private function grantSourceAccess(Route $route, int $instanceId): void
+    {
+        if ($route->status === RouteStatus::Active) {
+            return;
+        }
+
+        $target = Instance::query()->with('node')->findOrFail($instanceId);
+
+        if (! $target->placedOnAppDev()) {
+            return;
+        }
+
+        $this->sourceAccess->grant($target);
     }
 }

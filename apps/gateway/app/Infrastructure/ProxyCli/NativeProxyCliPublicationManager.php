@@ -105,7 +105,7 @@ final readonly class NativeProxyCliPublicationManager implements ProxyCliPublica
                 input: CaddyPackageSourceProgram::render(),
             ),
             'proxycli.caddy_publication_failed',
-            "The Caddy package source failed on node [{$node->name}].",
+            "The Caddy package step failed on node [{$node->name}].",
         );
     }
 

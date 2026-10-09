@@ -380,7 +380,8 @@
                 "Process",
                 "Project",
                 "Role",
-                "Route"
+                "Route",
+                "Task"
             ],
             "governing_adrs": []
         },
@@ -505,6 +506,7 @@
             "kind": "product",
             "components": [
                 "apps/cli",
+                "apps/docs",
                 "packages/php-sdk"
             ],
             "concepts": [
@@ -635,6 +637,7 @@
                 "apps/docs",
                 "apps/e2e",
                 "apps/gateway",
+                "apps/web",
                 "packages/php-sdk"
             ],
             "concepts": [
@@ -727,6 +730,7 @@
             "kind": "decision",
             "components": [
                 "apps/cli",
+                "apps/docs",
                 "apps/e2e",
                 "apps/gateway",
                 "apps/web",
@@ -786,6 +790,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Process",
                 "Project",
                 "Route",
                 "Subtask",
@@ -866,6 +871,7 @@
                 "apps/gateway"
             ],
             "concepts": [
+                "Access grant",
                 "Cluster",
                 "Deployment",
                 "Doctor",
@@ -1049,6 +1055,23 @@
             "governing_adrs": []
         },
         {
+            "path": "docs/reference/assigned-ssr-ports.md",
+            "title": "Assigned SSR ports",
+            "kind": "reference",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Project",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
             "path": "docs/reference/assigned-vite-ports.md",
             "title": "Assigned Vite ports",
             "kind": "reference",
@@ -1097,8 +1120,10 @@
                 "Instance",
                 "Node",
                 "Process",
+                "Project",
                 "Role",
-                "Route"
+                "Route",
+                "Task"
             ],
             "governing_adrs": []
         },
@@ -1174,8 +1199,8 @@
                 "apps/gateway"
             ],
             "concepts": [
+                "Access grant",
                 "Cluster",
-                "Deployment",
                 "Doctor",
                 "Extension",
                 "Gateway",
@@ -1282,6 +1307,7 @@
             "title": "Instance releases",
             "kind": "reference",
             "components": [
+                "apps/docs",
                 "apps/gateway",
                 "packages/php-sdk"
             ],
@@ -1827,6 +1853,7 @@
                 "Node",
                 "Node agent",
                 "Process",
+                "Project",
                 "Role",
                 "Route",
                 "Schedule",
@@ -1901,6 +1928,7 @@
                 "apps/gateway"
             ],
             "concepts": [
+                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
@@ -1914,7 +1942,9 @@
                 "Tool",
                 "Turn receipt"
             ],
-            "governing_adrs": []
+            "governing_adrs": [
+                "0200"
+            ]
         },
         {
             "path": "docs/reference/private-dns.md",
@@ -2006,9 +2036,7 @@
                 "Task workspace",
                 "Tool"
             ],
-            "governing_adrs": [
-                "0196"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/proxycli.md",
@@ -2034,6 +2062,7 @@
             "title": "Routes",
             "kind": "reference",
             "components": [
+                "apps/docs",
                 "apps/gateway"
             ],
             "concepts": [
@@ -2147,7 +2176,8 @@
                 "Turn receipt"
             ],
             "governing_adrs": [
-                "0182"
+                "0182",
+                "0200"
             ]
         },
         {

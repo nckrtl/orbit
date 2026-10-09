@@ -10,6 +10,7 @@ enum ServingNode
     case Target;
     case ProjectOwning;
     case InstanceOwning;
+    case InstanceCreation;
     case DeploymentOwning;
     case CandidateClone;
     case InstanceTransfer;

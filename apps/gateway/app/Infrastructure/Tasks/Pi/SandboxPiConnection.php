@@ -8,11 +8,12 @@ use App\Domain\Compute\SandboxState;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentDriverException;
 use App\Domain\Tasks\TaskCompute;
+use App\Domain\TaskVms\TaskVmException;
+use App\Domain\TaskVms\TaskVmPlacement;
 use App\Infrastructure\Compute\SandboxFleetIdentity;
 use App\Infrastructure\Compute\TaskSandboxDrivers;
 use App\Models\Instance;
 use App\Models\Node;
-use App\Models\Task;
 use App\Models\TaskSandbox;
 use Throwable;
 
@@ -26,8 +27,9 @@ final readonly class SandboxPiConnection
             throw $this->unavailable();
         }
         if ($workspace->task_sandbox_id === null) {
-            if (Task::topLevel()->where('taskable_type', $workspace->getMorphClass())->where('taskable_id', $workspace->id)
-                ->where('task_compute', TaskCompute::Vm->value)->exists()) {
+            try {
+                TaskVmPlacement::assertOwnedWorkspace($workspace);
+            } catch (TaskVmException) {
                 throw $this->unavailable();
             }
 
@@ -55,7 +57,7 @@ final readonly class SandboxPiConnection
         } elseif (! in_array($sandbox->provider, ['incus', 'upcloud'], true) || $sandbox->node_id !== $node->id) {
             throw $this->unavailable();
         }
-        if ($sandbox->provider === 'upcloud') {
+        if ($group->project->slug !== 'orbit') {
             try {
                 $this->identity->assertReady($sandbox, $node);
                 if ($sandbox->pi_ready_at === null || $sandbox->model_key === null || $sandbox->model_key_registered_at === null || $sandbox->model_key_revoked_at !== null) {

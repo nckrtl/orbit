@@ -31,7 +31,7 @@ describe(RetargetNodeAction::class, function (): void {
             /** @var list<array{host:string,port:int}> */
             public array $scans = [];
 
-            public function scan(string $host, int $port): HostKey
+            public function scan(string $host, int $port, ?SshConnection $via = null): HostKey
             {
                 $this->scans[] = ['host' => $host, 'port' => $port];
 

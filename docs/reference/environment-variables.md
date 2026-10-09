@@ -18,7 +18,9 @@ The Gateway owns the environment configuration of every Instance. It stores each
 
 `ORBIT_DOCUMENT_CLEANUP_RUNTIME` selects the private local directory for isolated Project Document cleanup-gate fixtures when `APP_ENV=testing`; other environments ignore this override. Its default is `/run/orbit/project-documents/`. Never point it into `ORBIT_HOME`, a checkout, a web directory, or a backup. Installed Gateway services use the default runtime directory. This setting is not an Instance environment value or deletion authorization. See [the restore-time cleanup gate](/reference/project-documents#restore-time-cleanup-gate).
 
-`ORBIT_INCUS_ENABLED` and `ORBIT_INCUS_HOSTS` configure [local sandbox placement](/reference/compute-drivers#configure-local-placement). They default to disabled with no hosts.
+`ORBIT_TASK_VMS_ENABLED`, `ORBIT_TASK_VMS_DEV_CLUSTER_ID`, `ORBIT_TASK_VMS_WIREGUARD_RANGE`, `ORBIT_TASK_VMS_MODEL_PROXY_ORIGIN`, `ORBIT_TASK_VMS_PI_ARTIFACT_PATH`, `ORBIT_TASK_VMS_PI_ARTIFACT_SHA256`, `ORBIT_TASK_VMS_PI_MODELS`, and `ORBIT_TASK_VMS_INCUS_HOSTS` configure [task VMs](/reference/compute-drivers#configure-task-vms) in the Gateway's own environment. They are not Instance keys. Task VMs are off by default, the reserved WireGuard range defaults to `10.44.0.128/25`, and the other values are unset. `ORBIT_TASK_VMS_PI_MODELS` and `ORBIT_TASK_VMS_INCUS_HOSTS` are JSON lists. Task VMs are partly built: the Gateway validates these values, but nothing uses them yet. The settings of the [project lane that is being removed](/reference/compute-drivers#project-lane-being-removed) must stay off.
+
+`ORBIT_INCUS_ENABLED` and `ORBIT_INCUS_HOSTS` configure [Orbit-lane sandbox placement](/reference/compute-drivers#configure-local-placement). They default to disabled with no hosts.
 
 `ORBIT_UPCLOUD_ENABLED`, `ORBIT_UPCLOUD_TOKEN_FILE`, `ORBIT_UPCLOUD_MAX_VMS`, `ORBIT_UPCLOUD_ZONE`, `ORBIT_UPCLOUD_GATEWAY_ADDRESS`, `ORBIT_UPCLOUD_WIREGUARD_ADDRESS`, and `ORBIT_UPCLOUD_WIREGUARD_PORT` configure the Gateway's [compute driver](/reference/compute-drivers#gateway-configuration). They are not Instance keys. The provider token stays in its protected file on the Gateway. `ORBIT_UPCLOUD_ENROLLMENT_ENABLED`, `ORBIT_UPCLOUD_DEV_CLUSTER_ID`, `ORBIT_UPCLOUD_MODEL_ADDRESS`, and `ORBIT_UPCLOUD_MODEL_PORT` configure the separately gated [owned project VM enrollment](/reference/compute-drivers#enroll-an-owned-project-vm). Enrollment stays disabled by default.
 
@@ -28,7 +30,7 @@ The Gateway's own environment is separate from an Instance's stored configuratio
 
 `ORBIT_GATEWAY_CHECKOUT` is the Gateway application directory. It defaults to `/home/orbit/orbit/apps/gateway`, which is a link to the current release in the release layout.
 
-`ORBIT_GATEWAY_RELEASE_MIN_FREE_MB` is the free space, in MiB, that [prepare](/reference/gateway-recovery#prepare-a-release) keeps in the releases directory. It defaults to `1024`. It is not an Instance key. `ORBIT_GATEWAY_RELEASES_KEEP` is how many releases [deploy](/reference/gateway-recovery#deploy-a-release) keeps besides the current and previous one. It defaults to `5`. `ORBIT_GATEWAY_RELEASE_SNAPSHOTS_KEEP` is how many pre-migration [database snapshots](/reference/gateway-recovery#migrations-and-the-snapshot) the Gateway keeps, also `5` by default. `ORBIT_GATEWAY_RELEASE_SCHEDULER_DRAIN_SECONDS` is how long the [runtime handoff](/reference/gateway-recovery#runtime-handoff) lets the old scheduler finish its running commands, `600` by default. `ORBIT_GATEWAY_RELEASE_TICK_CONFIRMATION_SECONDS` is how long a verified release has for its own scheduler to run `tasks:tick` before its [tick confirmation](/reference/gateway-recovery#post-release-tick-confirmation) is missed and alerts, `180` by default and at least `60`.
+`ORBIT_GATEWAY_RELEASE_MIN_FREE_MB` is the free space, in MiB, that [prepare](/reference/gateway-recovery#prepare-a-release) keeps in the releases directory. It defaults to `1024`. It is not an Instance key. `ORBIT_GATEWAY_RELEASES_KEEP` is the most releases [deploy](/reference/gateway-recovery#deploy-a-release) keeps, the current and the previous one included. It defaults to `3`, and a value below `2` counts as `2`. `ORBIT_GATEWAY_RELEASE_SNAPSHOTS_KEEP` is how many pre-migration [database snapshots](/reference/gateway-recovery#migrations-and-the-snapshot) the Gateway keeps, also `5` by default. `ORBIT_GATEWAY_RELEASE_SCHEDULER_DRAIN_SECONDS` is how long the [runtime handoff](/reference/gateway-recovery#runtime-handoff) lets the old scheduler finish its running commands, `600` by default. `ORBIT_GATEWAY_RELEASE_TICK_CONFIRMATION_SECONDS` is how long a verified release has for its own scheduler to run `tasks:tick` before its [tick confirmation](/reference/gateway-recovery#post-release-tick-confirmation) is missed and alerts, `180` by default and at least `60`.
 
 `ORBIT_GATEWAY_VERIFY_ORIGIN` is the origin deploy uses for `/up` and Gateway status. It defaults to `https://gateway.orbit`. It is not an Instance key.
 
@@ -85,7 +87,7 @@ The Gateway derives the file location and the user from the Instance's placement
 | `app-dev` | `.env` in the Instance's application directory within the checkout | The Node's managed user |
 | `app-prod` | `.env` in the production home | The Instance's production user |
 
-For Laravel, the [application directory](/reference/projects#application-directory) is the effective web root without its trailing `/public`. With root `apps/site/public`, development reads and writes `<checkout>/apps/site/.env`, and `.env.testing` lives beside it. A development default uses the same paths in its stable checkout home and copies those files into each candidate's application directory.
+For Laravel, the [application directory](/reference/projects#application-directory) is the effective web root without its trailing `/public`. With root `apps/site/public`, development reads and writes `<checkout>/apps/site/.env`, and `.env.testing` lives beside it. A development default uses the same paths in its stable checkout home and copies those files into each candidate's application directory. Before [setup](/reference/instance-setup#run-setup) runs in the active release, Orbit copies them into that release too, so `instance:setup` after a synchronization sees the new values.
 
 On `app-prod`, every release links `.env` in its application directory to the production home's file. With root `apps/site/public`, `<home>/releases/<name>/apps/site/.env` links to `<home>/.env`; no release-root `.env` link is needed. See [Production release layout](/reference/deployments).
 
@@ -101,7 +103,7 @@ Without `replace`, a file key that is already stored returns `env.import_conflic
 
 For a Laravel Instance, import stores `APP_URL` as `https://{{instance.domain}}`, so the URL follows the Route. It keeps a non-empty `APP_KEY` as the file has it. When the file contains `APP_KEY` with an empty value, import reuses the Instance's non-empty stored key, or generates a cryptographically random 32-byte key with the `base64:` prefix if no usable stored key exists. This also applies to the existing-file import during Instance creation. A missing `APP_KEY` stays missing; other values stay as the file has them. Non-Laravel imports do not generate keys.
 
-When a Route's domain changes, Orbit updates APP_URL in that application's `.env` and Laravel cached configuration, not in an unrelated file at the repository root.
+When a Route's domain changes, Orbit updates APP_URL in that application's `.env` and Laravel cached configuration, not in an unrelated file at the repository root. A [Route with a web root](/reference/routes#serve-several-web-roots) writes `APP_URL` into the `.env` of the directory it serves; the stored Instance environment belongs to the Instance's own Route. On production, that file is `<home>/env/<directory>/.env`, which each release links to.
 
 ## Update
 
@@ -125,7 +127,9 @@ Synchronization takes one snapshot of the Instance, any authoritative Route, and
 
 Before it decrypts a value, the Gateway checks SSH access, the user, the path, the directory's write permission, the file type and owner, read-only storage, and free space. A failed check returns an error and leaves `.env` as it is.
 
-The Gateway renders every stored key in sorted order, as a quoted value. It writes the result as a candidate file with mode `0600`, owned by the runtime user, and renames it over `.env`. A matching file with mode `0600` stays in place and returns `changed: false`. Stored configuration is the only input. Keys and edits that exist only in the file disappear, so import them first when they must stay.
+The Gateway renders every stored key in sorted order, as a quoted value. It writes the result as a candidate file with mode `0600`, owned by the runtime user, and renames it over `.env`. A matching file with mode `0600` stays in place and returns `changed: false`. Stored configuration is the only input. Edits to stored keys disappear.
+
+Before it writes, the Gateway reads the file's key names. A key that stored configuration lacks returns `env.sync_would_drop_keys` (409), and the file stays as it is. The details list the key names, comma-separated, never a value. Orbit owns, and so may remove, only the keys its last synchronization wrote and the keys a detach removed since. To keep the other keys, store them with `env:update`, or import the file with `replace` when its other keys are already stored. Otherwise remove them from the file. A Route transition on a production Instance skips this check, because deploys already own that file.
 
 When the Gateway cannot confirm the write, it returns `env.sync_unconfirmed` (the file may have changed). Repeat the request: it checks the file again and either accepts the matching file or writes it.
 
@@ -183,7 +187,9 @@ A Project slug change updates the Laravel `APP_URL` that the Route domain owns. 
 
 ## Storage and recovery
 
-The Gateway encrypts every stored value, placeholders included, with its own application key before it writes the row. Restoring stored configuration needs that key. Laravel import creates an application's `APP_KEY` only when the source value is empty and no non-empty stored key exists. Synchronization never generates, rotates, or deletes a stored application key. An import without `replace` still refuses conflicting keys, including `APP_KEY`.
+The Gateway encrypts every stored value, placeholders included, with its own application key before it writes the row. Restoring stored configuration needs that key.
+
+Laravel import creates an application's `APP_KEY` only when the source value is empty and no non-empty stored key exists. When development provisioning creates a missing Laravel `.env`, it writes the non-empty stored key, or generates one for that file only when neither the store nor `.env.example` has a key. It does not store the generated key. Import the file to keep it in stored configuration. See [Laravel application URL](/domains/applications#laravel-application-url). Synchronization never generates, rotates, or deletes a stored application key. An import without `replace` still refuses conflicting keys, including `APP_KEY`.
 
 ## Errors
 
@@ -200,6 +206,7 @@ Environment operations return these codes in the Orbit error envelope. None of t
 | `env.reference_unavailable` | 409 | A placeholder is left over after rendering. |
 | `env.operation_busy` | 409 | Another operation holds the Instance's lock. |
 | `env.sync_unconfirmed` | 409 | The Gateway cannot confirm the write. Retry the request. |
+| `env.sync_would_drop_keys` | 409 | The file has keys that stored configuration lacks and Orbit never wrote. Store or import them, or remove them from the file. |
 | `env.testing_tracking_unknown` | 409 | Git cannot report whether the checkout tracks `.env.testing`. `.env` is written; `.env.testing` stays unchanged. |
 
 ## Why it works this way

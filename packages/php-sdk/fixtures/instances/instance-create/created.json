@@ -61,7 +61,8 @@
                 ],
                 "process_id": null,
                 "upstream": null,
-                "analytics_instance_id": null
+                "analytics_instance_id": null,
+                "web_root": null
             },
             "domain": "dev.acme.test",
             "url": "https://dev.acme.test",
@@ -69,10 +70,47 @@
             "transfer": null,
             "deploy_steps": [],
             "vite_port": 5173,
+            "ssr_port": 13714,
             "seed_path": null,
             "seed_commit": null,
             "annotator_port": null,
-            "annotator_url": null
+            "annotator_url": null,
+            "routes": [
+                {
+                    "id": 1,
+                    "kind": "app",
+                    "project_id": 1,
+                    "node_id": 1,
+                    "cluster_id": null,
+                    "generation_basis_node_id": 1,
+                    "domain": "dev.acme.test",
+                    "provenance": "generated",
+                    "publication": "private",
+                    "status": "active",
+                    "failed_step": null,
+                    "error_code": null,
+                    "replaces_route_id": null,
+                    "replaced_by_route_id": null,
+                    "replacement_step": null,
+                    "target_set_step": null,
+                    "target": {
+                        "id": 1,
+                        "instance_id": 1,
+                        "position": 0
+                    },
+                    "targets": [
+                        {
+                            "id": 1,
+                            "instance_id": 1,
+                            "position": 0
+                        }
+                    ],
+                    "process_id": null,
+                    "upstream": null,
+                    "analytics_instance_id": null,
+                    "web_root": null
+                }
+            ]
         },
         "meta": {
             "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"

@@ -62,7 +62,8 @@
                     ],
                     "process_id": null,
                     "upstream": null,
-                    "analytics_instance_id": null
+                    "analytics_instance_id": null,
+                    "web_root": null
                 },
                 "domain": "dev.charlie-shop.test",
                 "url": "https://dev.charlie-shop.test",
@@ -70,10 +71,47 @@
                 "transfer": null,
                 "deploy_steps": [],
                 "vite_port": 5173,
+                "ssr_port": 13714,
                 "seed_path": null,
                 "seed_commit": null,
                 "annotator_port": null,
-                "annotator_url": null
+                "annotator_url": null,
+                "routes": [
+                    {
+                        "id": 1,
+                        "kind": "app",
+                        "project_id": 3,
+                        "node_id": 1,
+                        "cluster_id": null,
+                        "generation_basis_node_id": 1,
+                        "domain": "dev.charlie-shop.test",
+                        "provenance": "generated",
+                        "publication": "private",
+                        "status": "active",
+                        "failed_step": null,
+                        "error_code": null,
+                        "replaces_route_id": null,
+                        "replaced_by_route_id": null,
+                        "replacement_step": null,
+                        "target_set_step": null,
+                        "target": {
+                            "id": 1,
+                            "instance_id": 1,
+                            "position": 0
+                        },
+                        "targets": [
+                            {
+                                "id": 1,
+                                "instance_id": 1,
+                                "position": 0
+                            }
+                        ],
+                        "process_id": null,
+                        "upstream": null,
+                        "analytics_instance_id": null,
+                        "web_root": null
+                    }
+                ]
             },
             {
                 "id": 4,
@@ -132,7 +170,8 @@
                     ],
                     "process_id": null,
                     "upstream": null,
-                    "analytics_instance_id": null
+                    "analytics_instance_id": null,
+                    "web_root": null
                 },
                 "domain": "dev.acme.test",
                 "url": "https://dev.acme.test",
@@ -140,10 +179,47 @@
                 "transfer": null,
                 "deploy_steps": [],
                 "vite_port": 5176,
+                "ssr_port": 13717,
                 "seed_path": null,
                 "seed_commit": null,
                 "annotator_port": null,
-                "annotator_url": null
+                "annotator_url": null,
+                "routes": [
+                    {
+                        "id": 4,
+                        "kind": "app",
+                        "project_id": 1,
+                        "node_id": 1,
+                        "cluster_id": null,
+                        "generation_basis_node_id": 1,
+                        "domain": "dev.acme.test",
+                        "provenance": "generated",
+                        "publication": "private",
+                        "status": "active",
+                        "failed_step": null,
+                        "error_code": null,
+                        "replaces_route_id": null,
+                        "replaced_by_route_id": null,
+                        "replacement_step": null,
+                        "target_set_step": null,
+                        "target": {
+                            "id": 4,
+                            "instance_id": 4,
+                            "position": 0
+                        },
+                        "targets": [
+                            {
+                                "id": 4,
+                                "instance_id": 4,
+                                "position": 0
+                            }
+                        ],
+                        "process_id": null,
+                        "upstream": null,
+                        "analytics_instance_id": null,
+                        "web_root": null
+                    }
+                ]
             },
             {
                 "id": 3,
@@ -202,7 +278,8 @@
                     ],
                     "process_id": null,
                     "upstream": null,
-                    "analytics_instance_id": null
+                    "analytics_instance_id": null,
+                    "web_root": null
                 },
                 "domain": "feature-checkout.charlie-shop.test",
                 "url": "https://feature-checkout.charlie-shop.test",
@@ -210,10 +287,47 @@
                 "transfer": null,
                 "deploy_steps": [],
                 "vite_port": 5175,
+                "ssr_port": 13716,
                 "seed_path": null,
                 "seed_commit": null,
                 "annotator_port": null,
-                "annotator_url": null
+                "annotator_url": null,
+                "routes": [
+                    {
+                        "id": 3,
+                        "kind": "app",
+                        "project_id": 3,
+                        "node_id": 1,
+                        "cluster_id": null,
+                        "generation_basis_node_id": 1,
+                        "domain": "feature-checkout.charlie-shop.test",
+                        "provenance": "generated",
+                        "publication": "private",
+                        "status": "active",
+                        "failed_step": null,
+                        "error_code": null,
+                        "replaces_route_id": null,
+                        "replaced_by_route_id": null,
+                        "replacement_step": null,
+                        "target_set_step": null,
+                        "target": {
+                            "id": 3,
+                            "instance_id": 3,
+                            "position": 0
+                        },
+                        "targets": [
+                            {
+                                "id": 3,
+                                "instance_id": 3,
+                                "position": 0
+                            }
+                        ],
+                        "process_id": null,
+                        "upstream": null,
+                        "analytics_instance_id": null,
+                        "web_root": null
+                    }
+                ]
             },
             {
                 "id": 2,
@@ -272,7 +386,8 @@
                     ],
                     "process_id": null,
                     "upstream": null,
-                    "analytics_instance_id": null
+                    "analytics_instance_id": null,
+                    "web_root": null
                 },
                 "domain": "staging.charlie-shop.test",
                 "url": "https://staging.charlie-shop.test",
@@ -280,10 +395,47 @@
                 "transfer": null,
                 "deploy_steps": [],
                 "vite_port": 5174,
+                "ssr_port": 13715,
                 "seed_path": null,
                 "seed_commit": null,
                 "annotator_port": null,
-                "annotator_url": null
+                "annotator_url": null,
+                "routes": [
+                    {
+                        "id": 2,
+                        "kind": "app",
+                        "project_id": 3,
+                        "node_id": 1,
+                        "cluster_id": null,
+                        "generation_basis_node_id": 1,
+                        "domain": "staging.charlie-shop.test",
+                        "provenance": "generated",
+                        "publication": "private",
+                        "status": "active",
+                        "failed_step": null,
+                        "error_code": null,
+                        "replaces_route_id": null,
+                        "replaced_by_route_id": null,
+                        "replacement_step": null,
+                        "target_set_step": null,
+                        "target": {
+                            "id": 2,
+                            "instance_id": 2,
+                            "position": 0
+                        },
+                        "targets": [
+                            {
+                                "id": 2,
+                                "instance_id": 2,
+                                "position": 0
+                            }
+                        ],
+                        "process_id": null,
+                        "upstream": null,
+                        "analytics_instance_id": null,
+                        "web_root": null
+                    }
+                ]
             }
         ],
         "meta": {

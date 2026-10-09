@@ -660,6 +660,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
                 'root' => null,
                 'domain' => null,
                 'branch' => null,
+                'database-server' => null,
                 'json' => false,
             ],
         ],
@@ -725,6 +726,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
                 'timeout' => null,
                 'before' => null,
                 'after' => null,
+                'rebalance' => [],
                 'json' => false,
             ],
         ],
@@ -738,6 +740,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
                 'timeout' => null,
                 'before' => null,
                 'after' => null,
+                'rebalance' => [],
                 'json' => false,
             ],
         ],
@@ -749,6 +752,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
                 'timeout' => null,
                 'before' => null,
                 'after' => null,
+                'rebalance' => [],
                 'json' => false,
             ],
         ],
@@ -762,6 +766,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
                 'timeout' => null,
                 'before' => null,
                 'after' => null,
+                'rebalance' => [],
                 'json' => false,
             ],
         ],
@@ -877,6 +882,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
                 'node' => null,
                 'upstream' => null,
                 'process' => null,
+                'web-root' => null,
                 'json' => false,
             ],
         ],
@@ -884,7 +890,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'route:show' => [['route'], ['json' => false]],
         'route:target:unset' => [['route'], ['yes' => false, 'json' => false]],
         'route:target:set' => [['route', 'target'], ['targets' => [], 'reassign' => [], 'remove' => [], 'json' => false]],
-        'route:update' => [['route'], ['domain' => null, 'publication' => null, 'json' => false]],
+        'route:update' => [['route'], ['domain' => null, 'publication' => null, 'web-root' => null, 'json' => false]],
         'schedule:enable' => [['schedule'], ['json' => false]],
         'schedule:create' => [[
             'name',
@@ -925,6 +931,11 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         ],
         'tool:list' => [[], ['node' => null, 'json' => false]],
         'tool:manager:list' => [[], ['node' => null, 'json' => false]],
+        'tasks:question:close' => [['question'], [
+            'status' => null,
+            'reason' => null,
+            'json' => false,
+        ]],
         'tasks:question:list' => [[], [
             'project' => null,
             'cause' => null,
@@ -996,6 +1007,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             'tasks:agents', 'tasks:cancel', 'tasks:complete', 'tasks:show', 'tasks:update' => ['group'],
             'tasks:comment:create', 'tasks:comment:list', 'tasks:subtask:cancel', 'tasks:subtask:destroy', 'tasks:subtask:update' => ['group', 'subtask'],
             'tasks:create' => ['title'],
+            'tasks:question:close' => ['question'],
             'tasks:definition:destroy', 'tasks:definition:show', 'tasks:definition:update' => ['name'],
             'tasks:subtask:create' => ['group', 'title'],
             default => [],
@@ -1436,3 +1448,10 @@ it('refuses a malformed lifecycle timeout before contacting the Gateway', functi
         ->expectsOutputToContain('lifecycle_step.timeout_invalid')
         ->assertFailed();
 })->with(['instance:setup-step:create', 'instance:setup-step:update', 'instance:teardown-step:create', 'instance:teardown-step:update']);
+
+it('refuses a malformed lifecycle rebalance before contacting the Gateway', function (string $command, string $rebalance): void {
+    MockClient::destroyGlobal();
+    $this->artisan($command, ['name' => 'install', '--project' => '1', '--command' => 'true', '--rebalance' => [$rebalance], '--json' => true])
+        ->expectsOutputToContain('lifecycle_step.rebalance_invalid')
+        ->assertFailed();
+})->with(['instance:setup-step:create', 'instance:teardown-step:update'])->with(['build-assets', 'build-assets=slow', '=360']);

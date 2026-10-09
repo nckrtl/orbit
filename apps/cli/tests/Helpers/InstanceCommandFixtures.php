@@ -14,6 +14,7 @@ function instance_payload(?array $removal = null): array
         'project' => ['id' => 3, 'name' => 'Orbit docs', 'slug' => 'orbit-docs'],
         'node' => ['id' => 2, 'name' => 'beast'],
         'vite_port' => null,
+        'ssr_port' => null,
         'annotator_port' => null,
         'annotator_url' => null,
         'name' => 'dev',
@@ -31,6 +32,7 @@ function instance_payload(?array $removal = null): array
         'detached' => false,
         'status' => $removal === null ? 'active' : 'removing',
         'route' => instance_route_payload(),
+        'routes' => [instance_route_payload()],
         'domain' => 'dev.orbit.test',
         'url' => 'https://dev.orbit.test',
         'removal' => $removal,
@@ -86,6 +88,7 @@ function registration_json(): string
             $data[$key] = [
                 ...$data[$key],
                 'route' => [...instance_route_payload(), 'request_id' => instance_request_id()],
+                'routes' => [[...instance_route_payload(), 'request_id' => instance_request_id()]],
                 'request_id' => instance_request_id(),
             ];
 
@@ -94,6 +97,7 @@ function registration_json(): string
         $data[$key] = array_map(static fn (array $row): array => [
             ...$row,
             'route' => [...instance_route_payload(), 'request_id' => instance_request_id()],
+            'routes' => [[...instance_route_payload(), 'request_id' => instance_request_id()]],
             'request_id' => instance_request_id(),
         ], $data[$key]);
     }
@@ -126,6 +130,7 @@ function instance_route_payload(): array
         'targets' => [['id' => 9, 'instance_id' => 5, 'position' => 0]],
         'process_id' => null,
         'upstream' => null,
+        'web_root' => null,
     ];
 }
 
@@ -186,6 +191,7 @@ function instance_json(): string
     return json_encode([
         ...instance_payload(),
         'route' => [...instance_route_payload(), 'request_id' => instance_request_id()],
+        'routes' => [[...instance_route_payload(), 'request_id' => instance_request_id()]],
         'request_id' => instance_request_id(),
     ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
 }

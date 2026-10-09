@@ -13,6 +13,7 @@ use App\Domain\Routes\RouteCertificateStaging;
 use App\Domain\Routes\RouteKind;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
+use App\Domain\Routes\RouteWebRoot;
 use App\Infrastructure\Routes\IngressSiteRepository;
 use App\Models\Instance;
 use App\Models\InstanceRemovalMember;
@@ -472,23 +473,33 @@ final readonly class DevelopmentSiteRepository
             ? "{$instance->production_home}/current"
             : ($instance->development_release_layout ? $instance->checkout_path.'/current' : $instance->checkout_path);
 
+        $webRoot = RouteWebRoot::served($route, $instance);
+        // A Route with a web root has its own workload certificate, so the Instance's leaf keeps naming
+        // its own Route's domain.
+        $certificateScope = match (true) {
+            $domainChange => "app-instance-{$instance->id}-hostname-change",
+            $route->hasWebRoot() => "route-{$route->id}",
+            default => null,
+        };
+
         return new DevelopmentSite(
             nodeId: $instance->node_id,
             nodeAddress: $instance->node->wireguard_ip ?? '',
             scope: "app-instance-{$instance->id}",
             checkoutPath: $checkoutPath,
-            documentRoot: $instance->root ?? $instance->project->root ?? '',
+            documentRoot: $webRoot ?? '',
             phpVersion: $instance->selected_php_version,
             domain: $route->domain,
             environment: $instance->defaultAppEnv(),
             productionUser: $instance->production_user,
             productionHome: $instance->production_home,
             projectSlug: $instance->project->slug,
-            certificateScope: $domainChange ? "app-instance-{$instance->id}-hostname-change" : null,
+            certificateScope: $certificateScope,
             productionPhpSocket: $instance->production_php_socket,
             vitePort: $instance->vite_port,
             agentationPort: $this->annotationPort($instance, 'agentation-mcp', $instance->agentation_port),
             annotatorPort: $this->annotationPort($instance, 'annotator', $instance->annotator_port),
+            poolSuffix: $route->hasWebRoot() ? RouteWebRoot::poolSuffix($instance, $webRoot) : null,
         );
     }
 

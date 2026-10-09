@@ -12,7 +12,6 @@ use App\Domain\Instances\Deployment\DeploymentRequest;
 use App\Domain\Instances\Deployment\DeploymentResult;
 use App\Domain\Instances\Deployment\ProductionDeployment;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
-use App\Domain\Instances\InstanceSandboxGuard;
 use App\Domain\Instances\ProductionPhpRuntimeManager;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\CommandDeadline;
@@ -36,7 +35,6 @@ final readonly class RollbackInstanceAction
         string $releaseName,
         ?DeploymentRequest $request = null,
     ): DeploymentResult {
-        InstanceSandboxGuard::assertHostOperation($instance);
         $request ??= DeploymentRequest::withoutOutput();
 
         try {

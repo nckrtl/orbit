@@ -114,11 +114,11 @@ final readonly class ProvisionNodeAction
                 || $data->roles !== [RoleName::AppDev] || $data->user !== 'orbit' || $data->orbitUser !== 'orbit'
                 || $data->wireguardIp !== $node->wireguard_ip || $data->clusterId !== $node->cluster_id
                 || $data->expectedSshHostFingerprint !== $node->ssh_host_fingerprint
-                || $data->platform !== 'linux' || $data->architecture !== 'x86_64' || $data->publicSshPort !== 22
+                || $data->platform !== 'linux' || $data->architecture !== 'x86_64' || $data->publicSshPort !== $node->public_ssh_port
                 || $data->settingsProvided || $data->tldProvided || $data->lanIpProvided
                 || $data->settings !== null || $data->tld !== null || $data->lanIp !== null
                 || $data->wireguardEndpointOverride !== null || $data->dnsServerOverride !== null
-                || ! isset($sandbox->enrollment['hub_confirmed_at'])
+                || ! is_string($node->ssh_host_fingerprint) || ! isset($sandbox->enrollment['hub_confirmed_at'])
                 || $sandbox->network_policy !== 'sealed') {
                 throw new ResourceOperationException('node.sandbox_managed', 'The sandbox Node provisioning intent changed.', 409);
             }
@@ -352,6 +352,7 @@ final readonly class ProvisionNodeAction
             'dns_server_override' => $data->dnsServerOverride ?? $node->dns_server_override,
             'failed_step' => null,
             'error_code' => null,
+            ...($data->sshJumpNodeId === null ? [] : ['ssh_jump_node_id' => $data->sshJumpNodeId]),
         ]);
 
         try {
