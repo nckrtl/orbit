@@ -3,11 +3,13 @@
 declare(strict_types=1);
 
 use App\Documentation\AdrLifecycle;
+use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
 
 function adrLifecycleFixture(): string
 {
     $root = sys_get_temp_dir().'/orbit-adr-lifecycle-'.bin2hex(random_bytes(8));
+    test()->root = $root;
     mkdir($root.'/docs/decisions', 0777, true);
     mkdir($root.'/apps/docs/config', 0777, true);
     file_put_contents($root.'/docs/decisions/overview.mdx', "## Records\n\n## Retired decisions\n\n| Record | Decision | Now in |\n| --- | --- | --- |\n| 0114 | Expand the three-node Incus Cluster | [Topology](/reference/incus-topologies) |\n");
@@ -23,6 +25,12 @@ function adrLifecycleFixture(): string
 
     return $root;
 }
+
+afterEach(function (): void {
+    if (isset($this->root)) {
+        new Filesystem()->deleteDirectory($this->root);
+    }
+});
 
 function expectAdrLifecycleLintFailure(string $root, string $message): void
 {

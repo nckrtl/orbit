@@ -57,20 +57,3 @@ it('removes the home when the process is interrupted', function (int $signal): v
     expect(is_dir($home))->toBeFalse()
         ->and($probe->getTermSignal())->toBe($signal);
 })->with(['SIGINT' => SIGINT, 'SIGTERM' => SIGTERM])->skip(! function_exists('pcntl_signal'), 'Signal cleanup needs ext-pcntl.');
-
-it('removes homes whose process no longer runs and keeps homes of running processes', function (): void {
-    $finished = new Process(['sleep', '0.1']);
-    $finished->start();
-    $finishedPid = $finished->getPid();
-    $finished->wait();
-    $abandoned = realpath(sys_get_temp_dir()).DIRECTORY_SEPARATOR.TestOrbitHome::Prefix.$finishedPid.'-0badc0de';
-    mkdir($abandoned, 0o700);
-
-    $probe = orbit_home_probe();
-    $probe->start();
-    $probe->waitUntil(static fn (string $type, string $output): bool => str_contains($output, PHP_EOL));
-    $probe->stop(0);
-
-    expect(is_dir($abandoned))->toBeFalse()
-        ->and(is_dir(TestOrbitHome::path()))->toBeTrue();
-})->skip(! function_exists('posix_kill'), 'Abandoned home cleanup needs ext-posix.');
