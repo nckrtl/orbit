@@ -545,7 +545,7 @@ final class EnrollmentScanner implements HostKeyScanner
 
     public string $fingerprint = 'SHA256:pinned';
 
-    public function scan(string $host, int $port): HostKey
+    public function scan(string $host, int $port, ?SshConnection $via = null): HostKey
     {
         $this->scans++;
 

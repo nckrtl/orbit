@@ -85,6 +85,36 @@ it('refuses application metadata reached through a linked parent directory', fun
     }
 });
 
+describe('route web root', function (): void {
+    it('writes APP_URL only into another Laravel directory of the checkout', function (): void {
+        $checkout = sys_get_temp_dir().'/orbit-route-web-root-'.Str::uuid();
+        $files = new Filesystem;
+        $files->ensureDirectoryExists($checkout.'/apps/docs/public');
+        $files->ensureDirectoryExists($checkout.'/apps/static/public');
+        file_put_contents($checkout.'/apps/docs/artisan', '<?php');
+        file_put_contents($checkout.'/apps/docs/.env', 'APP_KEY=base64:docs
+APP_URL=http://old.test
+');
+        file_put_contents($checkout.'/.env', 'APP_URL=https://acme.test
+');
+
+        try {
+            [$configurator, $instance] = nested_application_configurator($checkout, 'public');
+            $configurator->configureDirectoryUrl($instance, 'apps/docs', 'https://docs.acme.test');
+            $configurator->configureDirectoryUrl($instance, 'apps/static', 'https://static.acme.test');
+
+            expect(file_get_contents($checkout.'/apps/docs/.env'))->toBe('APP_KEY=base64:docs
+APP_URL=https://docs.acme.test
+')
+                ->and(file_exists($checkout.'/apps/static/.env'))->toBeFalse()
+                ->and(file_get_contents($checkout.'/.env'))->toBe('APP_URL=https://acme.test
+');
+        } finally {
+            $files->deleteDirectory($checkout);
+        }
+    });
+});
+
 /** @return array{RemoteDevelopmentInstanceConfigurator, Instance, ManagedUserAccount} */
 function nested_application_configurator(string $checkout, string $root): array
 {

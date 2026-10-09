@@ -26,6 +26,7 @@ class CreateRouteCommand extends RouteCommand
         {--node= : Custom proxy serving Node}
         {--upstream= : Loopback HTTP URL for a custom proxy Route}
         {--process= : Node Process name or ID for a custom proxy Route}
+        {--web-root= : Web root inside the Instance checkout, such as apps/docs/public}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -103,6 +104,7 @@ class CreateRouteCommand extends RouteCommand
                 domain: $domain,
                 publication: $publication,
                 instanceId: $instanceId,
+                webRoot: $this->stringOption('web-root'),
             ),
             RouteResponse::class,
             ['Create Route', 'Creating Route', 'Created Route'],
@@ -134,6 +136,10 @@ class CreateRouteCommand extends RouteCommand
                 'route.publication_invalid',
                 'A custom proxy Route is private only.',
             );
+        }
+
+        if ($this->stringOption('web-root') !== null) {
+            return $this->renderGatewayFailure('route.web_root_unsupported', 'A custom proxy Route has no web root.');
         }
 
         $upstream = $this->stringOption('upstream');

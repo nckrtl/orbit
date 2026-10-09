@@ -14,6 +14,7 @@ use App\Domain\Doctor\ProcessStateInspector;
 use App\Domain\Doctor\ProjectStateInspector;
 use App\Domain\Doctor\PublicRouteEdgeInspector;
 use App\Domain\Doctor\RoleStateInspector;
+use App\Domain\Doctor\RouteApplicationUrlInspector;
 use App\Domain\Firewall\FirewallInspector;
 use App\Domain\Metrics\MetricsFirewallExpectationProvider;
 use App\Domain\Tools\ToolInspector;
@@ -27,6 +28,7 @@ use App\Infrastructure\Doctor\NativeProcessStateInspector;
 use App\Infrastructure\Doctor\NativeProjectStateInspector;
 use App\Infrastructure\Doctor\NativePublicRouteEdgeInspector;
 use App\Infrastructure\Doctor\NativeRoleStateInspector;
+use App\Infrastructure\Doctor\NativeRouteApplicationUrlInspector;
 use App\Infrastructure\Doctor\SharedInstalledPackageInventory;
 use App\Infrastructure\Doctor\SshNodeStateInspector;
 use App\Infrastructure\Firewall\NativeUfwFirewallInspector;
@@ -52,6 +54,8 @@ it('resolves every read-only inspector through its domain contract', function ()
         ->toBeInstanceOf(NativePublicRouteEdgeInspector::class)
         ->and(app(PrivateRouteProjectionInspector::class))
         ->toBeInstanceOf(NativePrivateRouteProjectionInspector::class)
+        ->and(app(RouteApplicationUrlInspector::class))
+        ->toBeInstanceOf(NativeRouteApplicationUrlInspector::class)
         ->and(app(CustomProxyRouteInspector::class))
         ->toBeInstanceOf(NativeCustomProxyRouteInspector::class)
         ->and(app(ProcessStateInspector::class))

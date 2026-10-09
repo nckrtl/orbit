@@ -14,6 +14,7 @@ use App\Domain\Instances\Environment\InstanceEnvironmentStore;
 use App\Domain\Instances\Environment\InstanceEnvironmentValidator;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Instances\RouteApplicationUrlWriter;
 use App\Domain\Instances\Transfer\InstanceTransferRuntime;
 use App\Domain\Instances\Transfer\InstanceTransferStatus;
 use App\Domain\Instances\Transfer\InstanceTransferStep;
@@ -220,6 +221,7 @@ it('transfers a development Instance to another app-dev Node in the same Cluster
         ->and($transfer->status)->toBe(InstanceTransferStatus::Completed)
         ->and($transfer->current_step)->toBe(InstanceTransferStep::Completed)
         ->and($transfer->cleanup_completed ?? $transfer->completed_at)->not->toBeNull()
+        ->and($transfer->refresh()->web_root_route_ids)->toBeNull()
         ->and($this->sources->calls)->toBe(['capture', 'materialize', 'cleanup'])
         ->and($this->runtime->calls)->toBe(['pause', 'relocate', 'activate', 'cleanup'])
         ->and($this->sqlite->calls)->toBeEmpty()
@@ -975,6 +977,224 @@ it('completes transfer from verified placement state without application HTTP he
     expect($this->projection->httpChecks)->toBe(0)
         ->and($this->projection->calls)->toBe(['converge', 'retire']);
 });
+
+describe('Routes with a web root', function (): void {
+    beforeEach(function (): void {
+        $this->instance->update(['selected_php_version' => '8.5']);
+        $this->urls = new class($this->runtime) implements RouteApplicationUrlWriter
+        {
+            /** @var list<array{int, string, string, bool}> Node, directory, URL, and whether the runtime was active. */
+            public array $writes = [];
+
+            public function __construct(
+                private readonly Orb245TransferRuntime $runtime,
+            ) {}
+
+            public function configureDirectoryUrl(Instance $instance, string $relativeDirectory, string $url): void
+            {
+                $this->writes[] = [$instance->node_id, $relativeDirectory, $url, in_array('activate', $this->runtime->calls, true)];
+            }
+        };
+        app()->instance(RouteApplicationUrlWriter::class, $this->urls);
+    });
+
+    it('moves every site with its ID and domain, serves it on the destination, and retires the source', function (): void {
+        $docs = orb245_web_root_route($this->instance, 'docs.shop.example.test', 'apps/docs/public');
+        $admin = orb245_web_root_route($this->instance, 'admin.shop.example.test', 'apps/admin/public');
+
+        $result = $this->action->execute($this->instance, $this->data);
+        $transfer = $result['transfer'];
+        $own = $result['instance']->authoritativeRoute();
+
+        expect($transfer->status)->toBe(InstanceTransferStatus::Completed)
+            ->and($transfer->web_root_route_ids)->toBe([$docs->id, $admin->id])
+            ->and($own?->id)->not->toBe($this->route->id)
+            ->and($own?->web_root)->toBeNull();
+
+        foreach ([$docs, $admin] as $site) {
+            $moved = $site->fresh('targets');
+            expect($moved?->domain)->toBe($site->domain)
+                ->and($moved?->web_root)->toBe($site->web_root)
+                ->and($moved?->status)->toBe(RouteStatus::Active)
+                ->and($moved?->cluster_id)->toBe($this->destinationCluster->id)
+                ->and($moved?->targets->pluck('instance_id')->all())->toBe([$this->instance->id]);
+        }
+
+        expect($this->projection->routeCalls)->toBe([
+            "prepare:{$docs->id}",
+            "prepare:{$admin->id}",
+            "converge:{$own?->id}",
+            "converge:{$docs->id}",
+            "converge:{$admin->id}",
+        ])
+            ->and($this->projection->calls)->toBe(['prepare', 'prepare', 'converge', 'converge', 'converge', 'retire'])
+            ->and($this->urls->writes)->toBe([
+                [$this->destinationNode->id, 'apps/docs', 'https://docs.shop.example.test', false],
+                [$this->destinationNode->id, 'apps/admin', 'https://admin.shop.example.test', false],
+            ]);
+    });
+
+    it('carries a public site within its Cluster', function (): void {
+        $this->destinationNode->update(['cluster_id' => $this->sourceCluster->id, 'tld' => null]);
+        $docs = orb245_web_root_route($this->instance, 'docs.shop.example.test', 'apps/docs/public', RoutePublication::Public);
+
+        $result = $this->action->execute($this->instance, $this->data);
+
+        expect($result['transfer']->status)->toBe(InstanceTransferStatus::Completed)
+            ->and($result['transfer']->web_root_route_ids)->toBe([$docs->id])
+            ->and($docs->refresh()->publication)->toBe(RoutePublication::Public)
+            ->and($docs->cluster_id)->toBe($this->sourceCluster->id)
+            ->and($this->urls->writes)->toBe([
+                [$this->destinationNode->id, 'apps/docs', 'https://docs.shop.example.test', false],
+            ]);
+    });
+
+    it('refuses a site that cannot move before source mutation', function (RoutePublication $publication, RouteStatus $status, string $code): void {
+        $docs = orb245_web_root_route($this->instance, 'docs.shop.example.test', 'apps/docs/public', $publication);
+        $docs->update(['status' => $status]);
+
+        expect(fn () => $this->action->execute($this->instance->refresh(), $this->data))
+            ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe($code));
+
+        expect(InstanceTransfer::query()->exists())->toBeFalse()
+            ->and($this->sources->calls)->toBeEmpty()
+            ->and($this->runtime->calls)->toBeEmpty()
+            ->and($docs->refresh()->cluster_id)->toBe($this->sourceCluster->id);
+    })->with([
+        'public across Clusters' => [RoutePublication::Public, RouteStatus::Active, 'instance.transfer_public_web_root_route'],
+        'activating' => [RoutePublication::Private, RouteStatus::Activating, 'instance.lifecycle_conflict'],
+    ]);
+
+    it('keeps every site on the source when transfer fails before cutover, and a new request carries it', function (): void {
+        $docs = orb245_web_root_route($this->instance, 'docs.shop.example.test', 'apps/docs/public');
+        $this->sources->failMaterialize = true;
+
+        expect(fn () => $this->action->execute($this->instance, $this->data))
+            ->toThrow(ResourceOperationException::class);
+
+        $transfer = InstanceTransfer::query()->sole();
+        expect($transfer->status)->toBe(InstanceTransferStatus::Failed)
+            ->and($transfer->current_step)->toBe(InstanceTransferStep::Reserved)
+            ->and($transfer->cutover_at)->toBeNull()
+            ->and($transfer->web_root_route_ids)->toBeNull()
+            ->and($this->instance->refresh()->node_id)->toBe($this->sourceNode->id)
+            ->and($docs->refresh()->status)->toBe(RouteStatus::Active)
+            ->and($docs->cluster_id)->toBe($this->sourceCluster->id)
+            ->and($this->runtime->calls)->toBe(['pause', 'restore'])
+            ->and($this->projection->routeCalls)->toBe([])
+            ->and($this->urls->writes)->toBe([]);
+
+        $this->sources->failMaterialize = false;
+        $result = $this->action->execute($this->instance->refresh(), $this->data);
+
+        expect($result['transfer']->id)->not->toBe($transfer->id)
+            ->and($result['transfer']->status)->toBe(InstanceTransferStatus::Completed)
+            ->and($result['transfer']->web_root_route_ids)->toBe([$docs->id])
+            ->and($docs->refresh()->cluster_id)->toBe($this->destinationCluster->id);
+    });
+
+    it('rechecks every site under the cutover locks and rolls back when one became public', function (): void {
+        $docs = orb245_web_root_route($this->instance, 'docs.shop.example.test', 'apps/docs/public');
+        $this->runtime->onPause = static function () use ($docs): void {
+            $docs->update(['publication' => RoutePublication::Public]);
+        };
+
+        expect(fn () => $this->action->execute($this->instance, $this->data))
+            ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('instance.transfer_public_web_root_route'));
+
+        $transfer = InstanceTransfer::query()->sole();
+        expect($transfer->cutover_at)->toBeNull()
+            ->and($transfer->status)->toBe(InstanceTransferStatus::Failed)
+            ->and($transfer->current_step)->toBe(InstanceTransferStep::Reserved)
+            ->and($transfer->destination_route_id)->toBeNull()
+            ->and($this->instance->refresh()->node_id)->toBe($this->sourceNode->id)
+            ->and($this->route->refresh()->status)->toBe(RouteStatus::Active)
+            ->and($this->route->replaced_by_route_id)->toBeNull()
+            ->and($docs->refresh()->cluster_id)->toBe($this->sourceCluster->id)
+            ->and(Route::query()->count())->toBe(2)
+            ->and($this->sources->discarded)->toBe(['/srv/orbit/apps/shop/web'])
+            ->and($this->runtime->calls)->toBe(['pause', 'restore'])
+            ->and($this->projection->routeCalls)->toBe([]);
+    });
+
+    it('finishes every site forward after a failed activation without restoring the source', function (): void {
+        $docs = orb245_web_root_route($this->instance, 'docs.shop.example.test', 'apps/docs/public');
+        $this->projection->failRouteOnce = $docs->id;
+
+        expect(fn () => $this->action->execute($this->instance, $this->data))
+            ->toThrow(ResourceOperationException::class);
+
+        $transfer = InstanceTransfer::query()->sole();
+        $own = Route::query()->findOrFail($transfer->destination_route_id);
+        expect($transfer->cutover_at)->not->toBeNull()
+            ->and($transfer->status)->toBe(InstanceTransferStatus::Failed)
+            ->and($transfer->current_step)->toBe(InstanceTransferStep::Cutover)
+            ->and($transfer->web_root_route_ids)->toBe([$docs->id])
+            ->and($this->instance->refresh()->node_id)->toBe($this->destinationNode->id)
+            ->and($docs->refresh()->cluster_id)->toBe($this->destinationCluster->id)
+            ->and($this->runtime->calls)->toBe(['pause', 'relocate'])
+            ->and($this->urls->writes)->toBe([]);
+
+        $result = $this->action->execute($this->instance->refresh(), $this->data);
+
+        expect($result['created'])->toBeFalse()
+            ->and($result['transfer']->status)->toBe(InstanceTransferStatus::Completed)
+            ->and($result['transfer']->web_root_route_ids)->toBe([$docs->id])
+            ->and($this->sources->calls)->toBe(['capture', 'materialize', 'cleanup'])
+            ->and($this->runtime->calls)->toBe(['pause', 'relocate', 'relocate', 'activate', 'cleanup'])
+            ->and($this->projection->routeCalls)->toBe([
+                "prepare:{$docs->id}",
+                "converge:{$own->id}",
+                "converge:{$docs->id}",
+                "prepare:{$docs->id}",
+                "converge:{$own->id}",
+                "converge:{$docs->id}",
+            ])
+            ->and($this->urls->writes)->toBe([
+                [$this->destinationNode->id, 'apps/docs', 'https://docs.shop.example.test', false],
+            ]);
+    });
+
+    it('gives a replaced own Route its web root and records it for source cleanup', function (): void {
+        $this->instance->environmentValues()->where('env_key', 'APP_URL')->delete();
+        $this->route->update(['web_root' => 'apps/site/public']);
+
+        $result = $this->action->execute($this->instance->refresh(), $this->data);
+        $own = $result['instance']->authoritativeRoute();
+
+        expect($result['transfer']->status)->toBe(InstanceTransferStatus::Completed)
+            ->and($result['transfer']->web_root_route_ids)->toBe([$this->route->id])
+            ->and($own?->id)->not->toBe($this->route->id)
+            ->and($own?->domain)->toBe('web.shop.other.orbit')
+            ->and($own?->web_root)->toBe('apps/site/public')
+            ->and($this->writer->domain)->toBeNull()
+            ->and($this->projection->routeCalls)->toBe(["converge:{$own?->id}"])
+            ->and($this->urls->writes)->toBe([
+                [$this->destinationNode->id, 'apps/site', 'https://web.shop.other.orbit', false],
+            ]);
+    });
+});
+
+function orb245_web_root_route(
+    Instance $instance,
+    string $domain,
+    string $webRoot,
+    RoutePublication $publication = RoutePublication::Private,
+): Route {
+    $route = Route::query()->create([
+        'project_id' => $instance->project_id,
+        'cluster_id' => $instance->node->cluster_id,
+        'domain' => $domain,
+        'web_root' => $webRoot,
+        'provenance' => RouteProvenance::Explicit,
+        'publication' => $publication,
+        'status' => RouteStatus::Pending,
+    ]);
+    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
+    $route->update(['status' => RouteStatus::Active]);
+
+    return $route->refresh();
+}
 
 function orb245_transfer_action(object $test, InstanceTransferRuntime $runtime): TransferInstanceAction
 {

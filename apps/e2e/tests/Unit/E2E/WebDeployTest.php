@@ -122,13 +122,13 @@ it('switches back to a retained release and refuses one that is gone', function 
         ->and(readlink($web.'/current'))->toBe("releases/{$first}");
 });
 
-it('keeps the five newest releases', function (): void {
+it('keeps the three newest releases', function (): void {
     ['root' => $root, 'web' => $web, 'run' => $run, 'environment' => $environment] = webDeployFixture();
     $oldest = substr(trim($run->path($root)->run(['git', 'rev-parse', 'HEAD'])->output()), 0, 12);
     expect($run->path($root)->env($environment)->run(['bin/web-deploy'])->successful())->toBeTrue();
     touch($web."/releases/{$oldest}", time() - 3600);
     $releases = [];
-    foreach (range(1, 5) as $index) {
+    foreach (range(1, 3) as $index) {
         $releases[] = webDeployCommit($run, $root, "release {$index}");
         expect($run->path($root)->env($environment)->run(['bin/web-deploy'])->successful())->toBeTrue();
         touch($web.'/releases/'.end($releases), time() - 3600 + $index * 60);
@@ -136,7 +136,7 @@ it('keeps the five newest releases', function (): void {
 
     expect(array_map(basename(...), glob($web.'/releases/*')))->toEqualCanonicalizing($releases);
 
-    $newest = webDeployCommit($run, $root, 'release 6');
+    $newest = webDeployCommit($run, $root, 'release 4');
     expect($run->path($root)->env($environment)->run(['bin/web-deploy'])->successful())->toBeTrue();
 
     expect(array_map(basename(...), glob($web.'/releases/*')))
@@ -162,7 +162,7 @@ it('never prunes the web build of a retained Gateway release', function (): void
     }
 
     expect(array_map(basename(...), glob($web.'/releases/*')))
-        ->toEqualCanonicalizing([$gatewayRelease, ...$newer]);
+        ->toEqualCanonicalizing([$gatewayRelease, ...array_slice($newer, 2)]);
 });
 
 it('refuses a Gateway releases path that is not plain', function (): void {

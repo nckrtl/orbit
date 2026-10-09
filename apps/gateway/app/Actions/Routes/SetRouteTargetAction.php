@@ -20,6 +20,7 @@ use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStateResolver;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Routes\RouteTargetWebRoot;
+use App\Domain\Routes\RouteWebRoot;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Shared\StoredInteger;
 use App\Models\Instance;
@@ -109,7 +110,12 @@ final readonly class SetRouteTargetAction
                     );
                 }
 
-                RouteTargetWebRoot::assertSupported($target);
+                if ($locked->hasWebRoot()) {
+                    RouteWebRoot::assertRetargetable($target);
+                } else {
+                    RouteTargetWebRoot::assertSupported($target);
+                }
+
                 $currentTarget = $locked->targets()->first();
 
                 if ($currentTarget?->instance_id === $target->id) {
@@ -152,7 +158,10 @@ final readonly class SetRouteTargetAction
                     );
                 }
 
-                $this->associations->assertTargetAssignable($locked, $target);
+                if (! $locked->hasWebRoot()) {
+                    $this->associations->assertTargetAssignable($locked, $target);
+                }
+
                 $this->associations->assertTargetsDetachable($locked);
                 app(RouteReconciliationGuard::class)->assertRouteMutable($locked);
 

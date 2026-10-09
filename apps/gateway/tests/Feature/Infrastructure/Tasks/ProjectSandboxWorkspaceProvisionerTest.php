@@ -312,7 +312,6 @@ it('refreshes local runtime through the same owned guest after park and preview 
                 unset($bootstrap['gateway_time']);
                 expect($bootstrap)->toBe([
                     'public_key' => IncusRuntimeWorkspace::key()->type.' '.IncusRuntimeWorkspace::key()->value,
-                    'recovery_port' => null,
                 ]);
                 $phases[] = 'bootstrap';
                 $result = ['name' => $workspace->taskSandbox->name, 'role' => 'operator', 'exit_code' => 0,

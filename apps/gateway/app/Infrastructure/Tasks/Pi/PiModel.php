@@ -18,10 +18,15 @@ final readonly class PiModel
 {
     public static function forSandbox(string $model): string
     {
-        $qualified = self::forModel($model, 'orbit-sandbox');
-        $name = substr($qualified, strpos($qualified, '/') + 1);
+        return self::onlyProvider($model, 'orbit-sandbox');
+    }
 
-        return 'orbit-sandbox/'.$name;
+    /** A Pi server with one provider, such as a task VM's, runs every model through that provider. */
+    public static function onlyProvider(string $model, string $provider): string
+    {
+        $qualified = self::forModel($model, $provider);
+
+        return $provider.'/'.substr($qualified, strpos($qualified, '/') + 1);
     }
 
     public static function forModel(string $model, ?string $provider = null): string

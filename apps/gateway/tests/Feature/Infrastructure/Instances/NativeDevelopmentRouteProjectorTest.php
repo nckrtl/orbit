@@ -254,6 +254,106 @@ it('cleans the recorded Router after the source Node changes Cluster membership'
     }
 });
 
+it('retires the source leaves and firewall rules of every recorded Route with a web root', function (): void {
+    [$instance, $route, $source, $originalRouter] = orb127_route_projection_models();
+    [$destinationCluster, $destinationRouter] = orb_second_cluster_router();
+    $destination = orb_transfer_destination($destinationCluster);
+    $route->update(['status' => RouteStatus::Active, 'cluster_id' => $destinationCluster->id]);
+    $docs = orb_web_root_route($instance, $destinationCluster, 'docs.acme.test');
+    $transfer = orb368_projection_transfer($instance, $route, $route, $source, $destination, $originalRouter);
+    // Route 999 left after cutover; its record still names its source leaves.
+    $transfer->update(['web_root_route_ids' => [$docs->id, 999]]);
+    [$projector, $ssh, , $home] = orb127_route_projector();
+
+    try {
+        $projector->retireSource($transfer->refresh());
+
+        $deletions = collect($ssh->commands)->filter(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'sudo rm -rf -- "/etc/caddy/orbit-certificates/$scope"'));
+        expect($deletions->map(fn (RemoteCommand $command, int $index): array => [$ssh->hosts[$index], $command->arguments[3]])->values()->all())->toBe([
+            ['10.44.0.10', "app-instance-{$instance->id}"],
+            ['10.44.0.20', "route-{$route->id}-router"],
+            ['10.44.0.10', "route-{$docs->id}"],
+            ['10.44.0.20', "route-{$docs->id}-router"],
+            ['10.44.0.10', 'route-999'],
+            ['10.44.0.20', 'route-999-router'],
+        ]);
+        $firewall = collect($ssh->commands)->filter(static fn (RemoteCommand $command): bool => str_starts_with($command->arguments[3] ?? '', 'orbit:route-'));
+        expect($firewall->map(fn (RemoteCommand $command, int $index): array => [$ssh->hosts[$index], $command->arguments[3]])->values()->all())->toBe([
+            ['10.44.0.10', "orbit:route-{$route->id}-lan"],
+            ['10.44.0.10', "orbit:route-{$docs->id}-lan"],
+            ['10.44.0.10', 'orbit:route-999-lan'],
+        ]);
+        expect(new DevelopmentSiteRepository()->forNode($destinationRouter)->map->certificateDirectory()->all())
+            ->toBe([
+                "/etc/caddy/orbit-certificates/route-{$route->id}-router/current",
+                "/etc/caddy/orbit-certificates/route-{$docs->id}-router/current",
+            ]);
+    } finally {
+        new Filesystem()->deleteDirectory($home);
+    }
+});
+
+it('keeps the Router leaf of a Route with a web root that stays in its Cluster', function (): void {
+    [$instance, $route, $source, $router] = orb127_route_projection_models();
+    $destination = orb_transfer_destination(Cluster::query()->findOrFail($source->cluster_id));
+    $route->update(['status' => RouteStatus::Active]);
+    $docs = orb_web_root_route($instance, Cluster::query()->findOrFail($source->cluster_id), 'docs.acme.test');
+    $transfer = orb368_projection_transfer($instance, $route, $route, $source, $destination, $router);
+    $transfer->update(['web_root_route_ids' => [$docs->id]]);
+    [$projector, $ssh, , $home] = orb127_route_projector();
+
+    try {
+        $projector->retireSource($transfer->refresh());
+
+        $deletions = collect($ssh->commands)->filter(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'sudo rm -rf -- "/etc/caddy/orbit-certificates/$scope"'));
+        expect($deletions->map(fn (RemoteCommand $command, int $index): array => [$ssh->hosts[$index], $command->arguments[3]])->values()->all())->toBe([
+            ['10.44.0.10', "app-instance-{$instance->id}"],
+            ['10.44.0.10', "route-{$docs->id}"],
+        ]);
+    } finally {
+        new Filesystem()->deleteDirectory($home);
+    }
+});
+
+it('issues every destination leaf of a transferred Instance before its first destination build', function (bool $prepared): void {
+    [$instance, $route] = orb127_route_projection_models(phpVersion: '8.5');
+    [$destinationCluster, $destinationRouter] = orb_second_cluster_router();
+    $destination = orb_transfer_destination($destinationCluster);
+    $route->update(['status' => RouteStatus::Active, 'cluster_id' => $destinationCluster->id]);
+    $docs = orb_web_root_route($instance, $destinationCluster, 'docs.acme.test');
+    $instance->update(['node_id' => $destination->id, 'status' => InstanceState::Active, 'provisioning_step' => 'active']);
+    [$projector, $ssh, , $home] = orb127_route_projector();
+
+    try {
+        $instance = $instance->refresh();
+
+        if ($prepared) {
+            $projector->prepareDestinationCertificates($instance, $docs);
+        }
+
+        $projector->converge($instance, $route->refresh());
+        [$mismatches, , $served] = orb_hostname_change_certificate_replay($ssh, []);
+
+        if (! $prepared) {
+            expect($mismatches)->toContain("10.44.0.31: docs.acme.test uses route-{$docs->id} (missing)");
+
+            return;
+        }
+
+        expect($mismatches)->toBe([])
+            ->and($served['10.44.0.31'])->toEqual([
+                'feature.acme.test' => "app-instance-{$instance->id}",
+                'docs.acme.test' => "route-{$docs->id}",
+            ])
+            ->and($served[$destinationRouter->wireguard_ip])->toEqual([
+                'feature.acme.test' => "route-{$route->id}-router",
+                'docs.acme.test' => "route-{$docs->id}-router",
+            ]);
+    } finally {
+        new Filesystem()->deleteDirectory($home);
+    }
+})->with(['prepared' => [true], 'not prepared' => [false]]);
+
 it('keeps source certificates when retirement cannot reconcile Caddy', function (): void {
     [$instance, $route, $source, $router] = orb127_route_projection_models();
     $route->update(['status' => RouteStatus::Active]);
@@ -1485,6 +1585,33 @@ function orb_second_cluster_router(): array
     $router->roles()->create(['cluster_id' => $cluster->id, 'role' => RoleName::Router, 'status' => LifecycleStatus::Active]);
 
     return [$cluster, $router];
+}
+
+/** An app-dev Node in the Cluster that a transfer moves an Instance to. */
+function orb_transfer_destination(Cluster $cluster): Node
+{
+    $destination = Node::query()->create([
+        'name' => 'transfer-destination-'.Str::lower(Str::random(8)), 'cluster_id' => $cluster->id,
+        'status' => LifecycleStatus::Active, 'platform' => 'linux',
+        'wireguard_ip' => '10.44.0.31', 'public_ssh_host' => '192.0.2.31', 'user' => 'orbit',
+    ]);
+    $destination->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
+
+    return $destination;
+}
+
+/** An active Route with a web root that serves `apps/docs/public` of the Instance in the Cluster. */
+function orb_web_root_route(Instance $instance, Cluster $cluster, string $domain): Route
+{
+    $route = Route::query()->create([
+        'project_id' => $instance->project_id, 'cluster_id' => $cluster->id,
+        'domain' => $domain, 'web_root' => 'apps/docs/public', 'provenance' => RouteProvenance::Explicit,
+        'publication' => RoutePublication::Private, 'status' => RouteStatus::Pending,
+    ]);
+    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
+    $route->update(['status' => RouteStatus::Active]);
+
+    return $route->refresh();
 }
 
 function orb_router_candidate(Node $router): Node

@@ -15,6 +15,7 @@ use App\Infrastructure\Firewall\UfwRuleOwnership;
 use App\Infrastructure\Firewall\UfwStatusParser;
 use App\Infrastructure\Firewall\UfwStoredRuleParser;
 use App\Infrastructure\Firewall\UfwStoredRuleProbe;
+use App\Infrastructure\Nodes\NodeSshJump;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -38,7 +39,7 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
     {
         $this->convergeRules(
             $node,
-            [$this->publicSshRule($node), $this->wireguardSshRule($node)],
+            [$this->publicSshRule($node)],
             publicConnection: true,
             enable: true,
             managedUser: $managedUser,
@@ -339,6 +340,9 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
             port: $port,
             identityFile: $this->keys->privateKeyPath(),
             knownHostsFile: $this->knownHosts->path(),
+            proxyJump: $publicConnection
+                ? NodeSshJump::connection($node, $this->keys->privateKeyPath(), $this->knownHosts->path())
+                : null,
         );
     }
 

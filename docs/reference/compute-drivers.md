@@ -20,7 +20,7 @@ Both lanes are off by default. [ADR 0200](/decisions/0200-run-each-task-group-in
 
 ## Task VMs
 
-Not built yet. The Phase 1 slices of [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm) build this section. Until they merge, no task VM code, command, or setting exists.
+Partly built. The [settings](#configure-task-vms), the `task_vms` table and its [states](#states), the cloud-init user-data, the [placement invariant](#placement-invariant), the commands that [prepare an Incus host](#prepare-an-incus-host) and [limit fleet traffic on the hub](#limit-fleet-traffic-on-the-hub), the address allocator's reserved range, the [Caddy guard](#refuse-task-vms-in-caddy), and the [Incus provider](#incus-provider) exist. So do the [Pi runtime](/reference/pi-server#run-pi-on-a-task-vm) and the task code that runs agents, checks, fetch, and push on a task VM Node. The invariant checks every saved Instance and access grant, and the fleet rollout skips task VM Nodes. Orbit creates no task VM yet: the jobs are not built yet. The Phase 1 slices of [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm) build them.
 
 A task VM is a stock Ubuntu 26.04 cloud VM on an Incus host. The Gateway creates it for one group, enrolls it as an `app-dev` Node, and destroys it when the group ends. After enrollment, the group uses the same code as a shared group, pinned to that Node.
 
@@ -41,7 +41,7 @@ The Node `tvm-<id>` has user `orbit`, role `app-dev`, the dev Cluster, and the r
 
 ### Destroy a task VM
 
-When the group ends, Orbit removes its workspace Instance, which also withdraws the Route. Then `DestroyTaskVm` runs:
+When the group ends, Orbit removes its workspace Instance, which also withdraws the Route. Pushes, fetches, checks, and agent turns need the VM `ready`, so they finish before this starts. Then `DestroyTaskVm` runs:
 
 1. It sets the row to `destroying` and revokes the group's model key.
 2. It deletes the VM. A VM that is already gone counts as deleted.
@@ -74,54 +74,126 @@ queue:work task-vms --queue=task-vms --stop-when-empty --max-time=50 --timeout=1
 
 A job that stops halfway runs again after 1800 seconds. `EnrollTaskVm` checks cloud-init every 15 seconds and fails after 10 minutes.
 
+### Incus provider
+
+`IncusTaskVmProvider` runs `sudo -n incus --project <project> …` on the host Node over SSH, as the host's managed user. It launches the host's `image` as a VM with the row's `name`, the host's `cpus`, `memory`, and `disk`, and `eth0` on the host's `network` with `security.port_isolation=true`. The user-data goes on stdin. The provider never creates a network.
+
+Create and delete are idempotent by name. A running VM counts as created, and an absent VM counts as deleted. Create starts a VM that exists but is stopped, and fails with the `incus start` error when it cannot. A launch that reports an error counts only when the VM runs afterwards. Otherwise create fails with the launch error. A delete that reports an error counts when the VM is gone. Callers check `task_vms.enabled` first.
+
 ### Prepare an Incus host
 
 Run `task-vms:prepare-host {node}` once for each host. It sends `resources/task-vms/incus-host.sh` to the host over SSH and runs it with `sudo -n bash -s --`. The script is idempotent and prints `{"ok":true}`. It sets up these parts:
 
 - The Incus project, such as `orbit-tasks`, with `features.networks=false`, and the image alias `ubuntu-26.04-vm` from `images:ubuntu/26.04/cloud`.
-- The bridge, such as `orbittask0`, with IPv4 NAT and no IPv6. Orbit reserves bridge names that start with `orbittask`.
+- The bridge, such as `orbittask0`, with IPv4 NAT and no IPv6.
 - The ACL `<bridge>-egress`, which the bridge gets at creation.
 - ACL egress drops private, link-local, CGNAT, and multicast ranges, and allows the rest.
 - ACL ingress allows TCP 22 from the bridge address and rejects the rest.
 - The project's `default` profile: `eth0` on the bridge with `security.port_isolation=true`, and the root disk on the host's pool.
 - One host rule: `ufw route allow in on orbittask+ comment 'orbit-task-vms'`.
 
+The command takes these values from the host's entry in `task_vms.incus.hosts`, which `TaskVmSettings` has validated. See [Configure task VMs](#configure-task-vms). The script checks the form of each argument again before it passes it to Incus as root, and changes nothing when one is invalid. The bridge and the ACL live in the Incus project `default`, and the script names that project in every network and ACL command.
+
+Orbit reserves bridge names that start with `orbittask`. Every such bridge must carry its egress ACL, because the ufw rule accepts forwarded traffic from all of them. Only `incus-host.sh` creates these bridges, and it attaches the ACL at creation. Never create an `orbittask` bridge in another way.
+
 The dropped egress ranges are `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.0.0/16`, `100.64.0.0/10`, `224.0.0.0/4`, and `240.0.0.0/4`. Port isolation blocks traffic between VMs on the same bridge. Both are needed. The ufw rule lets bridge traffic pass the host's forward policy, and replies use the existing rule for established connections.
 
 ### Limit fleet traffic on the hub
 
-Run `task-vms:prepare-hub` once. It runs `resources/task-vms/hub.sh` on the `vpn` Node with arguments that it takes from Gateway records and settings. The script installs the nft table `inet orbit_task_vms`, and a oneshot unit that loads it after `wg-quick@orbit`. The table filters only the reserved range in `task_vms.wireguard_range`.
+This filter relies on the [Caddy guard](#refuse-task-vms-in-caddy). Reverb shares TCP 443 on the `websocket` Node with every other private Caddy site on that Node, such as `executor.orbit`, so an L4 rule cannot tell the sites apart. Run `task-vms:prepare-hub` only after you configure task VMs and rebuild Caddy on every Node that serves sites.
+
+Run `task-vms:prepare-hub` once, and again when one of the values below changes. It runs `resources/task-vms/hub.sh` on the `vpn` Node. The script installs the nft table `inet orbit_task_vms` and the oneshot unit `orbit-task-vms-hub.service`. The unit loads the table after `nftables.service` and before `wg-quick@orbit` starts. The tunnel pulls the unit in but does not depend on it, so a failed load never stops the fleet VPN. The script checks that the table is loaded, is idempotent, and prints `{"ok":true}`.
+
+The command takes every value from Gateway records and settings:
+
+- the reserved range from `task_vms.wireguard_range`;
+- the VPN DNS address: the `vpn.dns_server` setting, or else the WireGuard address of the `vpn` Node;
+- the Node with the `gateway` role, and the Pi port `orbit.pi.port` (`ORBIT_PI_PORT`, default `3774`);
+- Reverb at `reverb.orbit`, which is TCP 443 on the Node with the `websocket` role;
+- the host and port of `task_vms.model_proxy_origin`;
+- the router of the dev Cluster.
+
+The table filters only the reserved range. Its first rule passes every packet that has no address in the range, so traffic between other Nodes does not change. The range must be inside the WireGuard subnet, because every Node routes only the subnet through the tunnel. `TaskVmSettings` checks that. The command refuses a range that holds the address of a Node not named `tvm-<id>`. It also refuses a missing dev Cluster or origin, and an origin whose host is not an IPv4 address outside the range.
 
 | Direction | Allowed |
 | --- | --- |
-| From task VMs | The Gateway API on TCP 443, CLIProxyAPI on TCP 8317, Reverb, and DNS on the hub |
-| To task VMs | The Gateway on TCP 22 and TCP 3774, and the dev Cluster router on TCP 80, 443, and 5173 |
+| From task VMs | The Gateway API on TCP 443, CLIProxyAPI on TCP 8317, Reverb on TCP 443, and DNS on port 53 of the VPN DNS address |
+| To task VMs | The Gateway on TCP 22 and the Pi port, and the dev Cluster router on TCP 80, 443, and 5173 |
 
 The table accepts established traffic and drops all other traffic to or from the range. The WireGuard address allocator skips the range for other Nodes. Only `AllocateTaskVmAction` assigns addresses in it. A task VM Node has no access grants to other Nodes.
 
+### Refuse task VMs in Caddy
+
+TCP 443 on the Gateway Node and on the `websocket` Node is one Caddy listener for every private site on that Node, so the hub table cannot tell `reverb.orbit` from `executor.orbit` or `analytics.orbit`. Caddy closes that gap. On every Node, every site except `gateway.orbit` and `reverb.orbit` aborts a client in `task_vms.wireguard_range`. [Caddy configuration](/reference/caddy-configuration#listener-addresses) shows the guard.
+
+Caddy renders the guard only after you configure task VMs: you enable them, or you set `dev_cluster_id`, `model_proxy_origin`, or a host. Until then, every Caddyfile stays as it was. The guard reads only that condition and `task_vms.wireguard_range`. Another invalid task VM value never changes a Caddyfile or blocks a build.
+
+The next Gateway release rebuilds only the Gateway Node's Caddyfile. After you set these values, run `php artisan orbit:caddy-build NODE` for every other Node that serves sites, before the first task VM enrolls. Until then, Doctor reports `role.caddy_build_drift` on each of those Nodes. Unset these values only after every task VM is destroyed, because the next build of each Node then drops the guard.
+
+While task VMs are configured and the range is invalid, every Node Caddy build refuses at stage `render` and names the problem, so live Caddyfiles do not change. This includes the Gateway release handoff, which fails with `gateway.release_caddy_failed`. So after [`gateway:release:configure`](/reference/gateway-recovery#apply-an-env-change), run `php artisan orbit:caddy-build NODE --dry-run` for the Gateway Node. It prints `Build refused:` and the problem when the range is invalid.
+
 ### Placement invariant
 
-A task VM workspace is a normal Instance on a normal Node, so generic Instance operations need no sandbox guard. One rule protects the VM: an Instance on a task VM Node must be its group's `task-<group id>` workspace in the group's Project. The rule runs whenever an Instance is saved, so it covers create, clone, transfer, and register. Orbit also refuses an access grant from a task VM Node. The fleet rollout skips task VM Nodes. Shared groups never get a workspace on one.
+A task VM workspace is a normal Instance on a normal Node, so generic Instance operations need no sandbox guard. One rule protects the VM: an Instance on a task VM Node must be its group's `task-<group id>` workspace in the group's Project. The rule runs whenever an Instance is saved, so it covers create, clone, transfer, and register. Any other Instance fails with HTTP 409 `task_vm.foreign_instance`. Orbit also refuses an access grant from a task VM Node with HTTP 409 `task_vm.access_refused`. The fleet rollout skips task VM Nodes with the reason `sandbox`. Shared groups never get a workspace on one.
 
 ### Configure task VMs
 
-These keys live in the Gateway's `config/task_vms.php`.
+These keys live in the Gateway's `config/task_vms.php`. Set them in the Gateway's environment.
 
-| Key | Meaning |
-| --- | --- |
-| `task_vms.enabled` | Allows new task VMs. Set with `ORBIT_TASK_VMS_ENABLED`. Default `false` |
-| `task_vms.dev_cluster_id` | The Cluster that task VM Nodes join |
-| `task_vms.wireguard_range` | The reserved WireGuard range. Default `10.44.64.0/20` |
-| `task_vms.model_proxy_origin` | The CLIProxyAPI origin that Pi on the VM uses |
-| `task_vms.pi.artifact_path`, `task_vms.pi.artifact_sha256` | The pinned Pi executable and its SHA-256 digest |
-| `task_vms.pi.models` | The models Pi offers |
-| `task_vms.incus.hosts` | A JSON list of hosts, in placement order |
+| Key | Variable | Meaning |
+| --- | --- | --- |
+| `task_vms.enabled` | `ORBIT_TASK_VMS_ENABLED` | Allows new task VMs. Default `false` |
+| `task_vms.dev_cluster_id` | `ORBIT_TASK_VMS_DEV_CLUSTER_ID` | The ID of the Cluster that task VM Nodes join |
+| `task_vms.wireguard_range` | `ORBIT_TASK_VMS_WIREGUARD_RANGE` | The reserved WireGuard range. Default `10.44.0.128/25`, the upper half of the default VPN subnet `10.44.0.0/24` |
+| `task_vms.model_proxy_origin` | `ORBIT_TASK_VMS_MODEL_PROXY_ORIGIN` | The CLIProxyAPI origin that Pi on the VM uses, such as `http://10.44.0.3:8317`. An `http` or `https` origin with no path, query, or credentials |
+| `task_vms.pi.artifact_path` | `ORBIT_TASK_VMS_PI_ARTIFACT_PATH` | The absolute path of the pinned Pi executable on the Gateway |
+| `task_vms.pi.artifact_sha256` | `ORBIT_TASK_VMS_PI_ARTIFACT_SHA256` | Its lowercase SHA-256 digest. Set both Pi artifact values or neither |
+| `task_vms.pi.models` | `ORBIT_TASK_VMS_PI_MODELS` | A JSON list of the models Pi offers. Default `[]` |
+| `task_vms.incus.hosts` | `ORBIT_TASK_VMS_INCUS_HOSTS` | A JSON list of hosts, in placement order. Default `[]` |
 
-Each host has `node_id`, `project`, `network`, `cidr`, `pool`, `image`, `max_vms`, `cpus`, `memory`, and `disk`. `TaskVmSettings` validates the configuration once. While task VMs are enabled, invalid configuration fails on first use.
+Each host is a JSON object with these snake_case keys. Other keys are an error.
+
+| Key | Required | Default | Meaning |
+| --- | --- | --- | --- |
+| `node_id` | Yes | | The ID of the host Node. List each host once |
+| `cidr` | Yes | | The task bridge network, such as `10.251.77.0/24`: a private network from `/16` to `/28`, not a host address. The bridge gets the first usable address and VMs get the others |
+| `max_vms` | Yes | | The most task VMs on the host, from 1 to 64 |
+| `project` | No | `orbit-tasks` | The Incus project |
+| `network` | No | `orbittask0` | The bridge name: `orbittask` and 1 to 6 lowercase letters or digits |
+| `pool` | No | `default` | The Incus storage pool for the VM root disk |
+| `image` | No | `ubuntu-26.04-vm` | The Incus image alias |
+| `cpus` | No | `2` | The vCPUs of each VM, from 1 to 64 |
+| `memory` | No | `4GiB` | The memory of each VM, in `MiB` or `GiB` |
+| `disk` | No | `20GiB` | The root disk of each VM, in `MiB` or `GiB` |
+
+For example, `ORBIT_TASK_VMS_INCUS_HOSTS='[{"node_id":7,"cidr":"10.251.77.0/24","max_vms":4}]'`.
+
+`TaskVmSettings` validates the configuration once, when it is first used. It checks every value that is set, also while task VMs are off, so you can prepare hosts and the hub before you enable task VMs. An unset or empty value stays absent, and malformed JSON is an error. Enabling task VMs also requires `dev_cluster_id`, `model_proxy_origin`, and at least one host.
+
+The reserved range must always be a private network. As soon as task VMs are enabled, or the Cluster, the origin, or a host is set, the range must also be a smaller network inside the Gateway's VPN subnet, and no host's `cidr` may overlap that subnet. While none of them is set, Orbit does not compare the range with the subnet, so a fleet on another subnet keeps working. Invalid configuration fails with `task_vm.invalid_config` (HTTP 500).
 
 ### Errors
 
-`IncusTaskVmProvider` is the only place that reads host and guest output. It checks the instance state and its one IPv4 address inside the bridge range, the cloud-init status, and the host key fingerprint. Invalid output fails with `task_vm.invalid_host_output`. Every task VM error code starts with `task_vm.`. After that check, Orbit trusts its own records.
+`IncusTaskVmProvider` is the only place that reads host and guest output. It checks the instance state and its one IPv4 address inside the bridge range, the cloud-init status, and the host key fingerprint. Invalid output fails with `task_vm.invalid_host_output`. Every task VM error code starts with `task_vm.`. The setup commands print the code and message, and for `task_vm.setup_failed` the last lines of the script's error output. After that check, Orbit trusts its own records.
+
+| Code | HTTP | Cause |
+| --- | --- | --- |
+| `task_vm.invalid_config` | 500 | A `task_vms` value is invalid. See [Configure task VMs](#configure-task-vms) |
+| `task_vm.unknown_host` | 409 | The Node is not active or not in `task_vms.incus.hosts` |
+| `task_vm.invalid_gateway_key` | 500 | The Gateway's SSH public key is not one OpenSSH public key line |
+| `task_vm.workspace_mismatch` | 409 | A group's workspace is not on its ready task VM |
+| `task_vm.foreign_instance` | 409 | An Instance on a task VM Node is not its group's workspace |
+| `task_vm.access_refused` | 409 | An access grant names a task VM Node as its consumer |
+| `task_vm.range_in_use` | 409 | A Node not named `tvm-<id>` holds an address in the reserved range |
+| `task_vm.fleet_unavailable` | 409 | The fleet has not exactly one active `vpn`, `gateway`, or `websocket` Node, the dev Cluster has no active router, or one of these Nodes has no WireGuard address |
+| `task_vm.setup_unavailable` | 409 | The setup script is missing, or the target Node has no WireGuard address |
+| `task_vm.setup_failed` | 409 | The setup script failed or did not print `{"ok":true}` |
+| `task_vm.invalid_host_output` | 502 | Incus returned output that fails these checks |
+| `task_vm.host_command_failed` | 502 | An `incus` command on the host failed |
+| `task_vm.bootstrap_failed` | 502 | Cloud-init in the VM reports `error` |
+| `task_vm.not_enrolled` | 409 | The task VM has no Node yet, so Pi cannot be prepared |
+| `task_vm.model_key_failed` | 409 or 502 | CLIProxyAPI did not confirm the group's model key, the proxycli extension holds no management key, or another key operation runs |
+| `task_vm.runtime_failed` | 502 | A Pi step failed on the VM: the executable, its digest, `models.json`, the token, or the `pi-server` Process |
 
 ### Limits
 
@@ -130,6 +202,8 @@ Task VMs have these known limits.
 - Incus accepts DNS before the ACL, so a task VM can query port 53 on any host address. It can read instance names from the DNS of other bridges. This risk is accepted.
 - The first `app-dev` convergence on a new VM installs PHP, Caddy, Docker, and the agent. A job times out after 1500 seconds.
 - Doctor can report task VM Nodes while they exist.
+- The hub filter fails open to keep the fleet VPN up. The tunnel starts even after a failed table load at boot.
+- A later restart of `nftables.service` removes the hub table, but its unit still shows active. Run `task-vms:prepare-hub` again to load the table.
 
 ### Why task VMs work this way
 
@@ -190,7 +264,7 @@ The first build of the web lane is still in the code. The Phase 1 slices of [ADR
 | `ORBIT_INCUS_DEV_CLUSTER_ID`, `ORBIT_INCUS_MODEL_ADDRESS`, `ORBIT_INCUS_MODEL_PORT` | Unset |
 | `ORBIT_SANDBOX_PI_ARTIFACT_PATH`, `ORBIT_SANDBOX_PI_ARTIFACT_SHA256` | Unset |
 
-Generic Instance operations on a sandbox workspace still fail with HTTP 409 `instance.sandbox_managed`. Manage such a workspace through its task group. `bin/sandbox-project-image` still builds Project images for this lane; do not use it. The optional `project_bootstrap` object in `/etc/orbit/sandbox-network.json`, and the helper's `project_enabled` operation, serve only this lane. Leave `project_bootstrap` out.
+`bin/sandbox-project-image` still builds Project images for this lane; do not use it. The optional `project_bootstrap` object in `/etc/orbit/sandbox-network.json`, and the helper's `project_enabled` operation, serve only this lane. Leave `project_bootstrap` out.
 
 ## Local Incus control
 
@@ -418,7 +492,7 @@ The saved Orbit pair needs its network identity updated after cloning. The guest
 
 ## Sandbox power
 
-Task group responses report `sandbox_power` separately from task status. It is `running`, `stopped`, or `destroyed` only when the owned reservation confirms that state. Shared groups, missing ownership, and transitions return `null`. Destroyed reservations remain visible after workspace cleanup. The CLI shows this value as **Sandbox power** for VM groups.
+Task group responses report `sandbox_power` separately from task status. It is `running`, `stopped`, or `destroyed` only when the owned reservation confirms that state. Shared groups, missing ownership, and transitions return `null`. For a [task VM](#task-vms), it is `running` while the VM is `ready` and `destroyed` once it is `destroyed`. In the other states it is `null`, and the group's wait reason names the state. Destroyed reservations remain visible after workspace cleanup. The CLI shows this value as **Sandbox power** for VM groups.
 
 ## Request a preview
 
@@ -463,8 +537,6 @@ Convergence confirms the pinned source commit, the isolated operator profile, an
 Before each agent dispatch, admission compares the private Gateway version with the owned branch commit. It refreshes Gateway dependencies, migrations, and services only when the version differs, then refreshes native pair prerequisites and requires fresh doctor readiness. A running baseline is polled before this preparation can modify the checkout.
 
 The builder can prepare blank workload guests alongside the pair. All guests share the pinned source and verified offline inputs, including Docker prerequisites for workload roles. Convergence enrolls only the operator. Publication audits each workload for prerequisites and absence of enrollment state, then publishes every requested role with the same immutable source descriptor. Pass the same `workload_roles` to the publisher. Adding roles requires a new template; published templates cannot be extended in place.
-
-The source archive can carry a Caddy repository snapshot in `.git/orbit-caddy-source`. Preparation verifies its signing key, signed metadata, package index, and package before copying it into the image's protected package cache. Native role convergence installs the Caddy package from that authenticated local repository. Without a snapshot, convergence downloads the pinned package from the Caddy GitHub release. A changed or incomplete snapshot refuses preparation. See [package sources](/reference/node-provisioning#package-sources) for the trust checks.
 
 Task runtime preparation uses the sandbox’s recorded image roles as its exact private Node inventory. For an expanded resume, it refreshes the private Gateway branch runtime and retries owned workload enrollment before strict retargeting. It retargets every recorded peer, requires an active workload role on each declared Node, and refuses foreign or extra Nodes. The operator stays roleless. Template publication keeps the stricter default-pair check.
 

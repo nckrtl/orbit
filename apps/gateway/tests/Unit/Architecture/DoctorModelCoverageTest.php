@@ -66,6 +66,7 @@ use App\Models\TaskDefinition;
 use App\Models\TaskQuestion;
 use App\Models\TaskReviewedCommit;
 use App\Models\TaskSandbox;
+use App\Models\TaskVm;
 use App\Models\Tool;
 use App\Models\ToolManagerRecord;
 
@@ -102,6 +103,7 @@ it('partitions every persisted model across doctor dispositions', function (): v
     ];
     $excluded = [
         TaskSandbox::class,
+        TaskVm::class,
         GatewayRelease::class,
         FleetRollout::class,
         FleetRolloutNode::class,

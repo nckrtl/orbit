@@ -30,6 +30,7 @@ final readonly class UpdateRouteAction
         private RouteReconciliationGuard $reconciliation,
         private ?RecordEventBroadcaster $broadcaster = null,
         private ?MetricsFleetReconciler $metrics = null,
+        private ?ChangeRouteWebRootAction $webRoots = null,
     ) {}
 
     public function execute(Route $route, UpdateRouteData $data, bool $allowGenerated = false): Route
@@ -50,9 +51,19 @@ final readonly class UpdateRouteAction
             ->values()
             ->all();
         $targetIds = array_values($targetIds);
+        if ($data->webRootProvided && ($data->domainProvided || $data->publicationProvided)) {
+            throw new ResourceOperationException(
+                errorCode: 'route.web_root_update_separate',
+                message: 'Send a Route web root change on its own.',
+                status: 422,
+            );
+        }
+
         $result = $this->environmentOperations->run(
             $targetIds,
-            fn (): Route => $this->executeOwned($route, $data, $targetIds, $allowGenerated),
+            fn (): Route => $data->webRootProvided
+                ? ($this->webRoots ?? app(ChangeRouteWebRootAction::class))->execute($route, $data->webRoot)
+                : $this->executeOwned($route, $data, $targetIds, $allowGenerated),
         );
 
         ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
@@ -93,6 +104,14 @@ final readonly class UpdateRouteAction
 
         $requestedPublication = $data->publicationProvided ? $data->publication : null;
         $domainChanges = $domain !== null && $domain !== $route->domain;
+
+        if ($domainChanges && $route->hasWebRoot()) {
+            throw new ResourceOperationException(
+                errorCode: 'route.web_root_domain_immutable',
+                message: 'A Route with a web root keeps its domain. Create a Route with the new domain and remove this one.',
+                status: 409,
+            );
+        }
 
         // An original-domain request must not bypass a retained replacement as a same-domain no-op.
         if ($domain !== null && ($route->replaced_by_route_id !== null || $route->replaces_route_id !== null)) {

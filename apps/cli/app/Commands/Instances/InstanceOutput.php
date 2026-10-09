@@ -7,6 +7,7 @@ namespace App\Commands\Instances;
 use App\Support\Console\ConsoleWriter;
 use Orbit\Sdk\Responses\Deployments\DeploymentStepResponse;
 use Orbit\Sdk\Responses\Instances\InstanceResponse;
+use Orbit\Sdk\Responses\Routes\RouteResponse;
 
 trait InstanceOutput
 {
@@ -51,6 +52,18 @@ trait InstanceOutput
         }
 
         ConsoleWriter::write($this->output, $this->humanRenderer()->detail("Instance: {$instance->name}", $fields));
+    }
+
+    /** @param list<RouteResponse> $routes */
+    private function writeRoutes(array $routes): void
+    {
+        ConsoleWriter::write($this->output, $this->humanRenderer()->table(
+            ['Route', 'Domain', 'Web root', 'Status'],
+            array_map(static fn (RouteResponse $route): array => [
+                $route->id, $route->domain, $route->webRoot ?? 'Instance root', $route->status,
+            ], $routes),
+            'No Routes.',
+        ));
     }
 
     /** @param list<DeploymentStepResponse> $steps */

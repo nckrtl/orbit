@@ -3,6 +3,7 @@
 declare(strict_types=1);
 use App\Domain\Tasks\TaskReviewRequestLogins;
 use App\Domain\Tasks\TaskReviewTrust;
+use App\Infrastructure\GatewayReleases\GatewayReleasePromoter;
 
 $implementerEffort = env('ORBIT_TASKS_IMPLEMENTER_EFFORT');
 $reviewerEffort = env('ORBIT_TASKS_REVIEWER_EFFORT');
@@ -31,7 +32,7 @@ return [
     // Gateway release limits (docs/reference/gateway-recovery.md#release-layout).
     'gateway_releases' => [
         'min_free_mb' => (int) env('ORBIT_GATEWAY_RELEASE_MIN_FREE_MB', 1024),
-        'keep' => (int) env('ORBIT_GATEWAY_RELEASES_KEEP', 5),
+        'keep' => (int) env('ORBIT_GATEWAY_RELEASES_KEEP', GatewayReleasePromoter::KeptReleases),
         'snapshots_keep' => (int) env('ORBIT_GATEWAY_RELEASE_SNAPSHOTS_KEEP', 5),
         'scheduler_drain_seconds' => (int) env('ORBIT_GATEWAY_RELEASE_SCHEDULER_DRAIN_SECONDS', 600),
         // A verified release whose own scheduler runs no tasks:tick within this many seconds raises one alert.

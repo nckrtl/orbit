@@ -52,6 +52,7 @@ abstract class RouteCommand extends GatewayCommand
             $details['Process'] = $route->processId;
         } else {
             $details['Targets'] = $this->targetList($route);
+            $details['Web root'] = $route->webRoot ?? 'Instance root';
         }
 
         ConsoleWriter::write($this->output, $this->humanRenderer()->detail("Route: {$route->domain}", [
