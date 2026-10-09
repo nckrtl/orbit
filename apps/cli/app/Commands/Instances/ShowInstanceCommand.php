@@ -61,6 +61,9 @@ final class ShowInstanceCommand extends GatewayCommand
         }
 
         $this->writeInstanceDetails($instance);
+        if ($instance->routes !== []) {
+            $this->writeRoutes($instance->routes);
+        }
         // Deploy steps belong to production; a development instance shows none rather than an empty table.
         if ($instance->productionUser !== null || $instance->deploySteps !== []) {
             $this->writeDeploySteps($instance->deploySteps);

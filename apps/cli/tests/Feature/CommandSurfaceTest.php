@@ -882,6 +882,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
                 'node' => null,
                 'upstream' => null,
                 'process' => null,
+                'web-root' => null,
                 'json' => false,
             ],
         ],
@@ -889,7 +890,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'route:show' => [['route'], ['json' => false]],
         'route:target:unset' => [['route'], ['yes' => false, 'json' => false]],
         'route:target:set' => [['route', 'target'], ['targets' => [], 'reassign' => [], 'remove' => [], 'json' => false]],
-        'route:update' => [['route'], ['domain' => null, 'publication' => null, 'json' => false]],
+        'route:update' => [['route'], ['domain' => null, 'publication' => null, 'web-root' => null, 'json' => false]],
         'schedule:enable' => [['schedule'], ['json' => false]],
         'schedule:create' => [[
             'name',

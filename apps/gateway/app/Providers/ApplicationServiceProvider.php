@@ -110,6 +110,7 @@ use App\Domain\Instances\Removal\DevelopmentInstanceSourceFinalizer;
 use App\Domain\Instances\Removal\DevelopmentInstanceSourceRemoval;
 use App\Domain\Instances\Removal\InstanceRemovalProjector;
 use App\Domain\Instances\Removal\ProductionInstanceContentRetention;
+use App\Domain\Instances\RouteApplicationUrlWriter;
 use App\Domain\Instances\Sqlite\InstanceSqliteSeeder;
 use App\Domain\Instances\Sqlite\SqliteSnapshotTransfer;
 use App\Domain\Instances\Transfer\InstanceTransferRouteProjector;
@@ -430,6 +431,7 @@ final class ApplicationServiceProvider extends ServiceProvider
         InstanceRemover::class => RemoveInstanceAction::class,
         InstanceRemovalProjector::class => NativeInstanceRemovalProjector::class,
         DevelopmentInstanceConfigurator::class => RemoteDevelopmentInstanceConfigurator::class,
+        RouteApplicationUrlWriter::class => RemoteDevelopmentInstanceConfigurator::class,
         ProjectUpdateSourceMutator::class => RemoteProjectUpdateSourceMutator::class,
         ProjectUpdateProjectionMutator::class => NativeProjectUpdateProjectionMutator::class,
         DevelopmentInstanceProvisioner::class => NativeDevelopmentInstanceProvisioner::class,

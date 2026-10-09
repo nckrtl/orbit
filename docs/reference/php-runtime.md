@@ -46,7 +46,7 @@ Orbit does not recover missing source profiles on older Instances. [Projects: On
 
 ## Development runtime
 
-Development sites share the distribution service `php<version>-fpm`. Each site has its own pool and socket. The Gateway writes every Orbit pool for a version into one file, `/etc/php/<version>/fpm/pool.d/orbit-scopes.conf`, and rewrites it from stored state at each PHP-FPM convergence on the Node. Instance creation, transfer, and removal run that convergence.
+Development sites share the distribution service `php<version>-fpm`. Each application directory of an Instance has its own pool and socket: `orbit-app-instance-<id>` for the default directory, and a suffixed name for a directory that a [Route with a web root](/reference/routes#serve-several-web-roots) serves. The Gateway writes every Orbit pool for a version into one file, `/etc/php/<version>/fpm/pool.d/orbit-scopes.conf`, and rewrites it from stored state at each PHP-FPM convergence on the Node. Instance creation, transfer, and removal run that convergence.
 
 One PHP-FPM convergence runs these steps:
 

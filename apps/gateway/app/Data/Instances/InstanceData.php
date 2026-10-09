@@ -52,6 +52,8 @@ final class InstanceData extends Data
         public ?string $seedCommit = null,
         public ?int $annotatorPort = null,
         public ?string $annotatorUrl = null,
+        /** @var list<RouteData> */
+        public array $routes = [],
     ) {}
 
     public static function fromModel(Instance $instance): self
@@ -94,6 +96,10 @@ final class InstanceData extends Data
             detached: $instance->registration_detached,
             status: $instance->status->value,
             route: $route instanceof Route ? RouteData::fromModel($route) : null,
+            routes: array_values($instance->routes
+                ->sortBy('id')
+                ->map(static fn (Route $candidate): RouteData => RouteData::fromModel($candidate))
+                ->all()),
             domain: $route?->domain,
             url: $route instanceof Route ? "https://{$route->domain}" : null,
             removal: $removal instanceof InstanceRemoval
