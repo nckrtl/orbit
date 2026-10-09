@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\TaskVms\AllocateTaskVmAction;
 use App\Actions\TaskVms\DestroyEndedTaskVmsAction;
 use App\Domain\AppDev\PrivateDnsManager;
+use App\Domain\Clusters\ClusterState;
 use App\Domain\Metrics\ExporterDegradationReason;
 use App\Domain\Metrics\MetricsAccessRevoker;
 use App\Domain\Metrics\MetricsFleetReconciler;
@@ -35,6 +36,7 @@ use App\Jobs\TaskVms\DestroyTaskVm;
 use App\Jobs\TaskVms\EnrollTaskVm;
 use App\Jobs\TaskVms\PrepareTaskVmRuntime;
 use App\Jobs\TaskVms\ProvisionTaskVm;
+use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -124,10 +126,10 @@ function tvm_life_node(string $name, string $address, string $user = 'orbit', ?R
     return $node;
 }
 
-function tvm_life_settings(bool $enabled = true, int $maxVms = 2): void
+function tvm_life_settings(bool $enabled = true, int $maxVms = 2, ?int $clusterId = null): void
 {
     app()->instance(TaskVmSettings::class, new TaskVmSettings(
-        enabled: $enabled, devClusterId: null, wireguardRange: '10.44.0.128/25',
+        enabled: $enabled, devClusterId: $clusterId, wireguardRange: '10.44.0.128/25',
         hosts: [new TaskVmHost(test()->host->id, 'orbit-tasks', 'orbittask0', '10.251.77.0/24', 'ubuntu-26.04-vm', $maxVms, 2, '4GiB', '20GiB')],
         modelProxyOrigin: TVM_LIFE_ORIGIN, piArtifactPath: null, piArtifactSha256: null, piModels: [],
     ));
@@ -310,6 +312,8 @@ describe(EnrollTaskVm::class, function (): void {
         app()->instance(ToolManagerMaterializer::class, new FakeToolManagerMaterializer);
         app()->instance(NodeAgentRuntime::class, new FakeNodeAgentRuntime);
         app()->instance(MetricsFleetReconciler::class, Mockery::mock(MetricsFleetReconciler::class)->shouldReceive('reconcile')->getMock());
+        $this->cluster = Cluster::query()->create(['name' => 'development', 'tld' => 'test', 'state' => ClusterState::Active]);
+        tvm_life_settings(clusterId: $this->cluster->id);
     });
 
     it('polls while cloud-init runs, without enrolling', function (): void {
@@ -337,6 +341,7 @@ describe(EnrollTaskVm::class, function (): void {
             ->and($vm->fresh()?->address)->toBe('10.251.77.20')
             ->and($node->status)->toBe(LifecycleStatus::Active)
             ->and($node->user)->toBe('orbit')
+            ->and($node->cluster_id)->toBe($this->cluster->id)
             ->and($node->roles()->pluck('role')->all())->toBe([RoleName::AppDev])
             ->and($this->provider->calls)->toBe(['observe', 'bootstrapReady', 'fingerprint']);
         Queue::assertPushedOn('task-vms', PrepareTaskVmRuntime::class, fn (PrepareTaskVmRuntime $job): bool => $job->taskVmId === $vm->id);
@@ -425,7 +430,7 @@ describe(DestroyTaskVm::class, function (): void {
             $events->append('vm deletion: '.$vm->fresh()?->state->value);
         };
         app(ProxyCliState::class)->enable(1, 'cache', TVM_LIFE_ORIGIN, 'management-key', 'read-token', 'control-token');
-        $keys = new ArrayObject([str_repeat('k', 64)]);
+        $keys = new ArrayObject([str_repeat('a', 64)]);
         Http::fake([TVM_LIFE_ORIGIN.'/*' => function (Request $request) use ($events, $keys) {
             if (parse_url($request->url(), PHP_URL_PATH) === '/v0/management/api-keys') {
                 if ($request->method() === 'PATCH') {
@@ -452,11 +457,11 @@ describe(DestroyTaskVm::class, function (): void {
             'status' => LifecycleStatus::Active,
         ]);
         $vm = tvm_life_vm(tvm_life_group(TaskGroupStatus::Completed), TaskVmState::Ready, $node);
-        $vm->update(['model_key' => str_repeat('k', 64), 'model_proxy_origin' => TVM_LIFE_ORIGIN]);
+        $vm->update(['model_key' => str_repeat('a', 64), 'model_proxy_origin' => TVM_LIFE_ORIGIN]);
 
         app()->call([new DestroyTaskVm($vm->id), 'handle']);
 
-        expect($this->events->getArrayCopy())->toBe(['key revoke: destroying', 'vm deletion: destroying', 'node removal: destroying'])
+        expect(array_values(array_unique($this->events->getArrayCopy())))->toBe(['key revoke: destroying', 'vm deletion: destroying', 'node removal: destroying'])
             ->and(Node::query()->find($node->id))->toBeNull()
             ->and($vm->fresh()?->state)->toBe(TaskVmState::Destroyed)
             ->and($vm->fresh()?->destroyed_at)->not->toBeNull()

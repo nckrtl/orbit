@@ -26,12 +26,20 @@ A task VM is a stock Ubuntu 26.04 cloud VM on an Incus host. The Gateway creates
 
 A claim moves a group through these steps. Steps 2 to 5 are queued [jobs](#jobs).
 
-1. The scheduler claims a `vm` group of a Project other than `orbit`. `AllocateTaskVmAction` takes the first host in `task_vms.incus.hosts` that is an active Node and has fewer live task VMs than its `max_vms`. It records a `provisioning` row with the name `tvm-<row id>`, the next free WireGuard address in the reserved range, and a random Pi token. Then it queues `ProvisionTaskVm`.
-2. `ProvisionTaskVm` launches the VM with cloud-init user-data. Cloud-init creates the user `orbit` with passwordless sudo and the Gateway's SSH key, and installs `openssh-server`. It does nothing else. On beast this takes 30 to 50 seconds.
-3. `EnrollTaskVm` checks the VM every 15 seconds until cloud-init reports `done` with no errors and the guest has its bridge address. Then it reads the guest's IPv4 address and its ed25519 host key fingerprint from the host through `incus`. It reads them only here, before any code but cloud-init has run in the VM.
-4. `EnrollTaskVm` then runs the normal [Node provisioning](/reference/node-provisioning#add-a-node) for the Node `tvm-<id>`, through the host as [jump host](/reference/node-provisioning#enroll-through-a-jump-host). Provisioning links the new Node to the row when it creates the Node record, before any convergence, so the Node is a task VM Node from the start. The fleet rollout skips it, and it gets no Orbit CLI.
+1. The scheduler claims a `vm` group of a Project other than `orbit`. `AllocateTaskVmAction` records a `provisioning` row and queues `ProvisionTaskVm`.
+2. `ProvisionTaskVm` launches the VM with cloud-init user-data. On beast this takes 30 to 50 seconds.
+3. `EnrollTaskVm` waits for cloud-init. Then it reads the guest's IPv4 address and its ed25519 host key fingerprint from the host through `incus`.
+4. `EnrollTaskVm` runs the normal [Node provisioning](/reference/node-provisioning#add-a-node) for the Node `tvm-<id>`, through the host as [jump host](/reference/node-provisioning#enroll-through-a-jump-host).
 5. `PrepareTaskVmRuntime` creates the group's CLIProxyAPI key and starts Pi as `orbit`. See [Run Pi on a task VM](/reference/pi-server#run-pi-on-a-task-vm). The row becomes `ready`.
 6. On the next claim, Orbit creates the [task workspace](/reference/tasks#task-vm-workspace) on the VM's Node. It is a normal Instance `task-<group id>` with the private Route `task-<id>.<project>.<dev-tld>`.
+
+`AllocateTaskVmAction` takes the first host in `task_vms.incus.hosts` that is an active Node and has fewer live task VMs than its `max_vms`. The row gets the name `tvm-<row id>`, the next free WireGuard address in the reserved range, and a random Pi token.
+
+Cloud-init creates the user `orbit` with passwordless sudo and the Gateway's SSH key, and installs `openssh-server`. It does nothing else.
+
+`EnrollTaskVm` checks the VM every 15 seconds. It goes on when cloud-init reports `done` with no errors and the guest has its bridge address. It reads the guest values only then, before any code but cloud-init has run in the VM. A guest reboot shows the VM stopped for about a second, so a stopped VM gets a second reading 5 seconds later before enrollment fails.
+
+Provisioning links the new Node to the row when it creates the Node record, before any convergence. So the Node is a task VM Node from the start: the fleet rollout skips it, and it gets no Orbit CLI.
 
 Until the row is `ready`, the claim returns the group to `todo` with a reason, and tries again on the next tick:
 
@@ -53,7 +61,7 @@ Each `tasks:tick` queues `DestroyTaskVm` for every task VM that is not `destroye
 
 1. It sets the row to `destroying` and revokes the group's model key.
 2. It deletes the VM. A VM that is already gone counts as deleted.
-3. It removes the Node offline and with force. The VM is gone, so the Node is unreachable: removal sheds its `app-dev` role, forgets its Process rows, and removes its WireGuard peer and private DNS records.
+3. It removes the Node offline and with force. This sheds its `app-dev` role and removes its Process rows, WireGuard peer, and private DNS records.
 4. It sets the row to `destroyed`.
 
 The Node goes before the row becomes `destroyed`. A row that is not `destroyed` keeps its Node a task VM Node, so Orbit never sends the Gateway's own Pi token to it. When a step fails, the row stays `destroying` with the error, and the job runs again after 1, 5, and then every 15 minutes. Phase 1 does not park task VMs. Phase 2 adds parking.
@@ -87,7 +95,7 @@ The worker stops when the queue is empty, or takes no new job after 50 seconds. 
 | Job | Retries |
 | --- | --- |
 | `ProvisionTaskVm` | Once after 30 seconds |
-| `EnrollTaskVm` | Waits for cloud-init for at most 10 minutes from the row's creation. It fails at once when cloud-init reports an error, or when the VM is absent or still stopped 5 seconds after a stopped reading. It retries other errors twice, 30 seconds apart |
+| `EnrollTaskVm` | Fails at once on a cloud-init error, an absent or stopped VM, or a boot that takes over 10 minutes. Retries other errors twice, 30 seconds apart |
 | `PrepareTaskVmRuntime` | Twice, 30 seconds apart |
 | `DestroyTaskVm` | Until it succeeds |
 
@@ -164,11 +172,13 @@ These keys live in the Gateway's `config/task_vms.php`. Set them in the Gateway'
 | `task_vms.enabled` | `ORBIT_TASK_VMS_ENABLED` | Allows new task VMs. Default `false` |
 | `task_vms.dev_cluster_id` | `ORBIT_TASK_VMS_DEV_CLUSTER_ID` | The ID of the Cluster that task VM Nodes join |
 | `task_vms.wireguard_range` | `ORBIT_TASK_VMS_WIREGUARD_RANGE` | The reserved WireGuard range. Default `10.44.0.128/25`, the upper half of the default VPN subnet `10.44.0.0/24` |
-| `task_vms.model_proxy_origin` | `ORBIT_TASK_VMS_MODEL_PROXY_ORIGIN` | The CLIProxyAPI origin that Pi on the VM uses, such as `http://10.44.0.3:8317`. An `http` or `https` origin with no path, query, or credentials. It must be the CLIProxyAPI URL of the [proxycli extension](/reference/proxycli). Each task VM stores the origin with its model key and revokes the key there, so a changed origin never strands a key |
+| `task_vms.model_proxy_origin` | `ORBIT_TASK_VMS_MODEL_PROXY_ORIGIN` | The CLIProxyAPI origin that Pi on the VM uses, such as `http://10.44.0.3:8317`. An `http` or `https` origin with no path, query, or credentials. It must be the CLIProxyAPI URL of the [proxycli extension](/reference/proxycli) |
 | `task_vms.pi.artifact_path` | `ORBIT_TASK_VMS_PI_ARTIFACT_PATH` | The absolute path of the pinned Pi executable on the Gateway |
 | `task_vms.pi.artifact_sha256` | `ORBIT_TASK_VMS_PI_ARTIFACT_SHA256` | Its lowercase SHA-256 digest. Set both Pi artifact values or neither |
 | `task_vms.pi.models` | `ORBIT_TASK_VMS_PI_MODELS` | A JSON list of the models Pi offers. Default `[]` |
 | `task_vms.incus.hosts` | `ORBIT_TASK_VMS_INCUS_HOSTS` | A JSON list of hosts, in placement order. Default `[]` |
+
+Each task VM stores `model_proxy_origin` with its model key, and revokes the key at that origin. So changing the origin never strands a key. A task VM that holds a key at another origin cannot prepare Pi again.
 
 Each host is a JSON object with these snake_case keys. Other keys are an error.
 

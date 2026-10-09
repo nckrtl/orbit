@@ -1431,9 +1431,7 @@
                 "Task definition",
                 "Tool"
             ],
-            "governing_adrs": [
-                "0200"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/gateway-response-fixtures.md",
@@ -1941,9 +1939,7 @@
                 "Tool",
                 "Turn receipt"
             ],
-            "governing_adrs": [
-                "0200"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/private-dns.md",

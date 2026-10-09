@@ -104,7 +104,9 @@ orbit process:create pi-server \
 
 On a [task VM](/reference/compute-drivers#task-vms), the Gateway installs and starts Pi itself, in the `PrepareTaskVmRuntime` job. There is no `orbit-worker` and no manual install. Pi runs as the VM's managed user `orbit`, which has passwordless sudo.
 
-1. The Gateway creates a CLIProxyAPI key for the group. It refuses with `task_vm.invalid_config` unless the proxycli CLIProxyAPI URL is `task_vms.model_proxy_origin`. It stores the key and the origin on the task VM row first, then registers the key with the management key of the [proxycli extension](/reference/proxycli).
+The proxycli CLIProxyAPI URL must be `task_vms.model_proxy_origin`. Otherwise the job fails with `task_vm.invalid_config` before it creates a key.
+
+1. The Gateway creates a CLIProxyAPI key for the group. It stores the key and the origin on the task VM row first. Then it registers the key with the management key of the [proxycli extension](/reference/proxycli).
 2. It sends the pinned Pi executable from `task_vms.pi.artifact_path` over the Node's normal SSH connection, on standard input.
 3. The VM checks the SHA-256 digest against `task_vms.pi.artifact_sha256` and installs the executable as `~orbit/.local/bin/pi-server`.
 4. It writes `~orbit/.pi/agent/models.json` with the origin in `task_vms.model_proxy_origin`, the models in `task_vms.pi.models`, and the group's key.
