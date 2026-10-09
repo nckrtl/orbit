@@ -420,7 +420,6 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
 
     public function prune(Instance $instance, DeploymentRelease $selected, ?DeploymentRelease $previous): array
     {
-        InstanceSandboxGuard::assertHostOperation($instance);
         [$repository, $user, $home, $root] = $this->identity($instance);
         $this->assertRelease($selected, $home);
 
