@@ -2139,6 +2139,22 @@
             "governing_adrs": []
         },
         {
+            "path": "docs/reference/t3-code.md",
+            "title": "T3 Code layer",
+            "kind": "reference",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Activity",
+                "Gateway",
+                "Node",
+                "Process",
+                "Project"
+            ],
+            "governing_adrs": []
+        },
+        {
             "path": "docs/reference/tasks.md",
             "title": "Tasks",
             "kind": "reference",
