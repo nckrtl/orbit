@@ -47,6 +47,7 @@ final readonly class DevelopmentSite
          */
         public bool $upstreamSystemRoots = false,
         public ?int $annotatorPort = null,
+        public bool $hibernationEnabled = true,
     ) {}
 
     public function asSecondary(): self

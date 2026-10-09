@@ -8,6 +8,7 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Project;
+use Tests\Support\IncusRuntimeWorkspace;
 
 it('applies only to development Instance Processes on an active app-dev Node', function (): void {
     $policy = new DevelopmentHibernationPolicy;
@@ -74,6 +75,19 @@ it('still applies to a keep-alive Process so restart policy stays independent', 
 
     expect($policy->appliesToProcess($queue))->toBeTrue();
 });
+
+it('leaves VM workspace Processes and dependencies under the task group lifecycle', function (bool $linkedReservation): void {
+    $instance = IncusRuntimeWorkspace::create();
+    $process = hibernation_policy_process($instance);
+    if (! $linkedReservation) {
+        $instance->update(['task_sandbox_id' => null]);
+    }
+    $policy = new DevelopmentHibernationPolicy;
+
+    expect($policy->appliesToInstance($instance))->toBeFalse()
+        ->and($policy->appliesToProcess($process))->toBeFalse()
+        ->and($policy->usesOnDemandHostStart($instance))->toBeFalse();
+})->with(['reservation linked' => true, 'group ownership only' => false]);
 
 function hibernation_policy_node(string $name, string $role): Node
 {

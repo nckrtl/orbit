@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Hibernation;
 
+use App\Domain\Instances\InstanceSandboxGuard;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Instance;
@@ -16,7 +17,7 @@ final readonly class DevelopmentHibernationPolicy
     {
         $instance->loadMissing('node.roles');
 
-        return $this->hasActiveAppDevRole($instance->node);
+        return ! InstanceSandboxGuard::isSandbox($instance) && $this->hasActiveAppDevRole($instance->node);
     }
 
     public function appliesToProcess(Process $process): bool

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\AppDev;
 
 use App\Domain\Analytics\AnalyticsTrackingUpstream;
+use App\Domain\Instances\InstanceSandboxGuard;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Routes\ClusterRouterTransition;
 use App\Domain\Routes\CustomProxyUpstream;
@@ -489,6 +490,7 @@ final readonly class DevelopmentSiteRepository
             vitePort: $instance->vite_port,
             agentationPort: $this->annotationPort($instance, 'agentation-mcp', $instance->agentation_port),
             annotatorPort: $this->annotationPort($instance, 'annotator', $instance->annotator_port),
+            hibernationEnabled: ! InstanceSandboxGuard::isSandbox($instance),
         );
     }
 

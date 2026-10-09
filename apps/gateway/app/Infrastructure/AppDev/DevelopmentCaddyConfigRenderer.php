@@ -204,7 +204,7 @@ final readonly class DevelopmentCaddyConfigRenderer
 
     private function hibernationWake(DevelopmentSite $site): ?string
     {
-        if (preg_match('/\Aapp-instance-([1-9][0-9]*)\z/D', $site->scope, $matches) !== 1) {
+        if (! $site->hibernationEnabled || preg_match('/\Aapp-instance-([1-9][0-9]*)\z/D', $site->scope, $matches) !== 1) {
             return null;
         }
 

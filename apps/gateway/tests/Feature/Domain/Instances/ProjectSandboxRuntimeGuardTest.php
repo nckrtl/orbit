@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\AppDev\VitePortRuntime;
+use App\Domain\Hibernation\DevelopmentHibernationPolicy;
 use App\Domain\Instances\DevelopmentInstanceConfigurator;
 use App\Domain\Instances\DevelopmentInstanceProvisioner;
 use App\Domain\Instances\DevelopmentRouteProjector;
@@ -11,6 +12,8 @@ use App\Domain\Instances\InstanceSandboxGuard;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\ProjectSandboxRuntimeGuard;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AppDev\DevelopmentCaddyConfigRenderer;
+use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Task;
@@ -47,6 +50,12 @@ it('prepares a private preview through native provisioning only on the enrolled 
     expect($result->routes()->count())->toBe(1);
     expect($result->routes()->first()->domain)->toBe($workspace->name.'.dlf.test');
     expect($result->routes()->first()->publication->value)->toBe('private');
+    $result->routes()->update(['sites_published' => true]);
+    $preview = new DevelopmentCaddyConfigRenderer()->render(new DevelopmentSiteRepository()->forNode($result->node));
+    expect($preview)->toContain('https://'.$workspace->name.'.dlf.test')
+        ->toContain('root * /home/orbit/orbit/web')->toContain('reverse_proxy 127.0.0.1:5173')
+        ->not->toContain('forward_auth', 'orbit_asleep', '/dev/shm/orbit/hibernation');
+    expect(new DevelopmentHibernationPolicy()->appliesToInstance($result))->toBeFalse();
     expect(fn () => InstanceSandboxGuard::assertHostOperation($result))->toThrow(ResourceOperationException::class);
 })->with(['incus', 'upcloud']);
 
