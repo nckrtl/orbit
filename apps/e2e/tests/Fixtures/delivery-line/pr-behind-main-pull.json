@@ -1,0 +1,15 @@
+{
+  "number": 948,
+  "merged": false,
+  "user": {
+    "login": "orbit-nckrtl[bot]"
+  },
+  "head": {
+    "ref": "task-1001",
+    "sha": "2a195f577c3e3027df4bef2d7151f63ed35eba60"
+  },
+  "base": {
+    "ref": "main",
+    "sha": "4f1924d857cf82658935cb6b875602924a93c77e"
+  }
+}
