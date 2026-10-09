@@ -4,16 +4,27 @@ declare(strict_types=1);
 
 use App\Actions\Instances\RemoveInstanceAction;
 use App\Actions\Routes\SynchronizeRouteWebRootUrlsAction;
+use App\Domain\AppDev\AppDevPhpFpmManager;
+use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Instances\DevelopmentRouteProjector;
+use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Instances\ProductionCloneRouteProjector;
+use App\Domain\Instances\ProductionPhpRuntimeIdentity;
+use App\Domain\Instances\ProductionPhpRuntimeManager;
+use App\Domain\Instances\ProductionRouteProjector;
+use App\Domain\Instances\ProductionWebRootManager;
 use App\Domain\Instances\Removal\DevelopmentInstanceSourceFinalizer;
 use App\Domain\Instances\Removal\DevelopmentInstanceSourceRemoval;
 use App\Domain\Instances\Removal\InstanceRemovalException;
 use App\Domain\Instances\Removal\InstanceSourceInventory;
 use App\Domain\Instances\Removal\InstanceSourceRevalidationState;
+use App\Domain\Instances\Removal\ProductionInstanceContentRetention;
 use App\Domain\Instances\RouteApplicationUrlWriter;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Routes\RouteRemovalProjector;
+use App\Domain\Routes\RouteRemovalStep;
 use App\Domain\Routes\RouteWebRoot;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -21,7 +32,15 @@ use App\Infrastructure\AppDev\DevelopmentCaddyConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentPhpFpmConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentSite;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
+use App\Infrastructure\AppProd\ProductionSshExecutor;
+use App\Infrastructure\Doctor\ProductionInstanceInspectionExpectationFactory;
+use App\Infrastructure\Instances\ProductionPhpRuntimeConfigRenderer;
+use App\Infrastructure\Instances\RemoteProductionDeployment;
+use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Projects\NativeProjectUpdateProjectionMutator;
+use App\Infrastructure\Routes\NativeRouteRemovalProjector;
+use App\Infrastructure\Ssh\KnownHostsStore;
+use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
 use App\Models\Node;
@@ -31,6 +50,7 @@ use Illuminate\Database\QueryException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\FakeRouteRemovalProjector;
 
 beforeEach(function (): void {
@@ -281,19 +301,217 @@ describe('route web root', function (): void {
         expect($this->urls->writes)->toBe([['', 'https://alias.acme.web.test']]);
     });
 
-    it('refuses a web root for a production Instance', function (): void {
-        $node = web_root_node('prod-web', '10.44.0.30', production: true);
-        $instance = web_root_instance($this->project, $node);
-        $own = web_root_route($instance, 'acme.example.com');
+    it('creates a Route with a web root for a production Instance and prepares its release first', function (): void {
+        [$instance, $events] = web_root_production($this->project);
+        web_root_route($instance, 'acme.example.com');
 
         $this->postJson('/api/v1/routes', ['instance_id' => $instance->id, 'domain' => 'docs.example.com', 'web_root' => 'apps/docs/public'])
-            ->assertConflict()
-            ->assertJsonPath('error.code', 'route.web_root_unsupported');
+            ->assertCreated()
+            ->assertJsonPath('data.web_root', 'apps/docs/public')
+            ->assertJsonPath('data.status', 'active');
+
+        expect($events->all)->toBe(['check', 'certificate', 'web-roots', 'runtime', 'firewall', 'workload-caddy', 'router-certificate', 'route-firewall', 'verify-workload', 'router-caddy', 'dns'])
+            ->and($events->locks)->toBe([[$instance->id]])
+            ->and($this->urls->writes)->toBe([['apps/docs', 'https://docs.example.com']]);
+    });
+
+    it('changes the web root of a production Route and keeps the Instance Route', function (): void {
+        [$instance, $events] = web_root_production($this->project);
+        $own = web_root_route($instance, 'acme.example.com');
+        $docs = web_root_route($instance, 'docs.example.com', 'apps/docs/public');
+
+        $this->patchJson("/api/v1/routes/{$docs->id}", ['web_root' => 'apps/admin/public'])
+            ->assertOk()
+            ->assertJsonPath('data.web_root', 'apps/admin/public');
+        expect($events->all)->toBe(['check', 'certificate', 'web-roots', 'runtime', 'workload-caddy'])
+            ->and($events->locks)->toBe([[$instance->id]])
+            ->and($this->urls->writes)->toBe([['apps/admin', 'https://docs.example.com']]);
+
         $this->patchJson("/api/v1/routes/{$own->id}", ['web_root' => 'apps/docs/public'])
             ->assertConflict()
-            ->assertJsonPath('error.code', 'route.web_root_unsupported');
-        expect(Route::query()->pluck('id')->all())->toBe([$own->id])
-            ->and($own->refresh()->web_root)->toBeNull();
+            ->assertJsonPath('error.code', 'route.web_root_conflict');
+        expect($own->refresh()->web_root)->toBeNull();
+    });
+
+    it('refuses an unservable production web root before it stores the Route', function (string $trigger): void {
+        [$instance, $events] = web_root_production($this->project);
+        web_root_route($instance, 'acme.example.com');
+        $webRoot = 'apps/docs/public';
+
+        if ($trigger === 'missing release') {
+            $events->checkFailure = new ResourceOperationException('route.web_root_release_missing', 'Deploy first.', 409);
+        } elseif ($trigger === 'missing directory') {
+            $events->checkFailure = new ResourceOperationException('app-prod.web_root_invalid', 'No such web root.', 409);
+        } elseif ($trigger === 'web root is its application directory') {
+            $webRoot = 'apps/docs';
+        } else {
+            $webRoot = 'public/docs/public';
+        }
+
+        $response = $this->postJson('/api/v1/routes', ['instance_id' => $instance->id, 'domain' => 'docs.example.com', 'web_root' => $webRoot])
+            ->assertConflict();
+
+        expect($response->json('error.code'))->toBe(match ($trigger) {
+            'missing release' => 'route.web_root_release_missing',
+            'missing directory' => 'app-prod.web_root_invalid',
+            default => 'route.web_root_unsafe',
+        })
+            ->and(Route::query()->where('domain', 'docs.example.com')->exists())->toBeFalse()
+            ->and(RouteWebRoot::servedApplications($instance))->toBe([])
+            ->and(web_root_production_deploy_arguments($instance))->toHaveCount(10);
+    })->with(['missing release', 'missing directory', 'web root is its application directory', 'web root inside the Instance root']);
+
+    it('refuses a production web root in the default directory other than the Instance root', function (): void {
+        [$instance] = web_root_production($this->project);
+        $instance->update(['root' => 'apps/site/public']);
+        web_root_route($instance, 'acme.example.com');
+
+        $this->postJson('/api/v1/routes', ['instance_id' => $instance->id, 'domain' => 'site.example.com', 'web_root' => 'apps/site'])
+            ->assertConflict()
+            ->assertJsonPath('error.code', 'route.web_root_unsafe');
+        $this->postJson('/api/v1/routes', ['instance_id' => $instance->id, 'domain' => 'alias.example.com', 'web_root' => 'apps/site/public'])
+            ->assertCreated();
+        expect(RouteWebRoot::servedApplications($instance->refresh()))->toBe([]);
+    });
+
+    it('marks a production web-root Route failed and withdraws its pool when activation fails', function (): void {
+        [$instance, $events] = web_root_production($this->project);
+        web_root_route($instance, 'acme.example.com');
+        $events->failAt = 'runtime';
+
+        $this->postJson('/api/v1/routes', ['instance_id' => $instance->id, 'domain' => 'docs.example.com', 'web_root' => 'apps/docs/public'])
+            ->assertStatus(502);
+        $docs = Route::query()->where('domain', 'docs.example.com')->sole();
+
+        expect($events->all)->toBe(['check', 'certificate', 'web-roots', 'runtime', 'withdraw-pool'])
+            ->and($docs->status->value)->toBe('failed')
+            ->and($docs->sites_published)->toBeFalse()
+            ->and($docs->error_code)->toBe('app-prod.injected_failure')
+            ->and(RouteWebRoot::servedApplications($instance))->toBe([])
+            ->and(RouteWebRoot::servedApplications($instance, $docs))->toHaveCount(1)
+            ->and(web_root_production_deploy_arguments($instance))->toHaveCount(10)
+            ->and(app(ProductionInstanceInspectionExpectationFactory::class)->make($instance)->runtimeConfiguration?->pool)->not->toContain('apps/docs');
+    });
+
+    it('keeps the only Route of a production Instance without a web root', function (): void {
+        [$instance] = web_root_production($this->project);
+        $this->project->update(['type' => 'monorepo']);
+        $own = web_root_route($instance, 'acme.example.com');
+
+        $this->patchJson("/api/v1/routes/{$own->id}", ['web_root' => 'apps/docs/public'])
+            ->assertConflict()
+            ->assertJsonPath('error.code', 'route.web_root_conflict');
+        expect($own->refresh()->web_root)->toBeNull();
+    });
+
+    it('refuses to move a Route with a web root to a production Instance', function (): void {
+        [$instance] = web_root_production($this->project);
+
+        expect(fn () => RouteWebRoot::assertRetargetable($instance))
+            ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('route.web_root_unsupported'));
+        RouteWebRoot::assertRetargetable($this->instance);
+    });
+
+    it('serves a production web root from its own pool and socket in the selected release', function (): void {
+        [$instance] = web_root_production($this->project);
+        web_root_route($instance, 'acme.example.com');
+        web_root_route($instance, 'alias.example.com', 'public');
+        web_root_route($instance, 'docs.example.com', 'apps/docs/public');
+        web_root_route($instance, 'docs-raw.example.com', 'apps/docs');
+        $suffix = substr(hash('sha256', 'apps/docs'), 0, 8);
+        $sites = web_root_sites($instance->node);
+
+        expect(RouteWebRoot::servedApplications($instance))->toBe([
+            ['web_root' => 'apps/docs', 'directory' => 'apps/docs', 'suffix' => $suffix],
+            ['web_root' => 'apps/docs/public', 'directory' => 'apps/docs', 'suffix' => $suffix],
+        ])
+            ->and($sites->get('acme.example.com')->socketPath())->toBe('/run/php/orbit-acme.sock')
+            ->and($sites->get('alias.example.com')->socketPath())->toBe('/run/php/orbit-acme.sock')
+            ->and($sites->get('docs.example.com')->socketPath())->toBe("/run/php/orbit-acme.{$suffix}.sock");
+        expect(new DevelopmentCaddyConfigRenderer()->render(collect([$sites->get('docs.example.com')])))
+            ->toContain('root * /home/orbit-acme/current/apps/docs/public')
+            ->toContain("unix//run/php/orbit-acme.{$suffix}.sock");
+
+        $identity = ProductionPhpRuntimeIdentity::from($instance);
+        $renderer = new ProductionPhpRuntimeConfigRenderer;
+        $pool = $renderer->render($identity, applications: RouteWebRoot::servedApplications($instance))->pool;
+        $initial = $renderer->render($identity, initialRelease: true, applications: RouteWebRoot::servedApplications($instance))->pool;
+
+        expect(substr_count($pool, "\n[orbit-"))->toBe(1)
+            ->and($pool)->toStartWith($renderer->render($identity)->pool)
+            ->toContain("[orbit-orbit-acme-{$suffix}]\n")
+            ->toContain("listen = /run/php/orbit-acme.{$suffix}.sock\n")
+            ->toContain("chdir = /home/orbit-acme/current/apps/docs\n")
+            ->toContain("pm = ondemand\n")
+            ->and($initial)->toContain("chdir = /home/orbit-acme/releases/initial/apps/docs\n")
+            ->and(app(ProductionInstanceInspectionExpectationFactory::class)->make($instance)->runtimeConfiguration?->pool)->toBe($pool);
+    });
+
+    it('withdraws the pool of a production Route with a web root when the Route leaves', function (): void {
+        [$instance] = web_root_production($this->project);
+        $own = web_root_route($instance, 'acme.example.com');
+        $docs = web_root_route($instance, 'docs.example.com', 'apps/docs/public');
+        $runtime = Mockery::mock(ProductionPhpRuntimeManager::class);
+        $runtime->shouldReceive('converge')->once()->withArgs(static fn (Instance $converged): bool => $converged->is($instance));
+        $projector = app()->make(NativeRouteRemovalProjector::class, ['php' => Mockery::mock(AppDevPhpFpmManager::class), 'productionPhp' => $runtime]);
+
+        expect(collect($projector->nodes($docs))->sole()->steps)->toContain(RouteRemovalStep::Php)
+            ->and(collect($projector->nodes($own))->sole()->steps)->not->toContain(RouteRemovalStep::Php);
+        $docs->update(['status' => 'retiring', 'sites_published' => false]);
+        expect(RouteWebRoot::servedApplications($instance))->toBe([]);
+        $projector->cleanupPhp($docs);
+        $projector->cleanupPhp($own);
+    });
+
+    it('keeps the Routes with a web root when it refuses a production Instance removal', function (): void {
+        [$instance] = web_root_production($this->project);
+        $own = web_root_route($instance, 'acme.example.com');
+        $docs = web_root_route($instance, 'docs.example.com', 'apps/docs/public');
+        $removal = new FakeRouteRemovalProjector;
+        app()->instance(RouteRemovalProjector::class, $removal);
+        $content = Mockery::mock(ProductionInstanceContentRetention::class);
+        $content->shouldReceive('inventory')->once()->andThrow(new ResourceOperationException('instance.remove_refused', 'The production home changed.', 409));
+        app()->instance(ProductionInstanceContentRetention::class, $content);
+
+        expect(fn () => app(RemoveInstanceAction::class)->execute($instance, force: false))
+            ->toThrow(ResourceOperationException::class, 'The production home changed.');
+        expect(Route::query()->orderBy('id')->pluck('id')->all())->toBe([$own->id, $docs->id])
+            ->and($removal->routeIds)->toBe([])
+            ->and($instance->refresh()->status)->toBe(InstanceState::Active);
+    });
+
+    it('removes the Routes with a web root once it accepts a production Instance removal', function (): void {
+        [$instance] = web_root_production($this->project);
+        $own = web_root_route($instance, 'acme.example.com');
+        $docs = web_root_route($instance, 'docs.example.com', 'apps/docs/public');
+        $removal = new FakeRouteRemovalProjector;
+        app()->instance(RouteRemovalProjector::class, $removal);
+        $content = Mockery::mock(ProductionInstanceContentRetention::class);
+        $content->shouldReceive('inventory')->andReturn(new InstanceSourceInventory(
+            instanceId: $instance->id,
+            layout: $instance->source_layout,
+            repositoryIdentity: $this->project->repository_identity,
+            checkoutPath: $instance->checkout_path,
+            root: 'public',
+            branch: 'main',
+            startingCommit: str_repeat('a', 40),
+            commonRepositoryPath: $instance->checkout_path,
+            sourceIdentity: "production:{$instance->id}:{$instance->node_id}",
+            linkedWorktreePaths: [],
+            digest: hash('sha256', 'production-web-root'),
+        ));
+        $content->shouldReceive('prepare')->andReturnUsing(static function () use ($removal, $docs): void {
+            expect($removal->routeIds)->toContain($docs->id);
+
+            throw new ResourceOperationException('instance.test_stop', 'Stopped after acceptance.', 409);
+        });
+        app()->instance(ProductionInstanceContentRetention::class, $content);
+
+        expect(fn () => app(RemoveInstanceAction::class)->execute($instance, force: false))
+            ->toThrow(InstanceRemovalException::class);
+        expect(Route::query()->find($docs->id))->toBeNull()
+            ->and(Route::query()->find($own->id))->not->toBeNull()
+            ->and(InstanceRemoval::query()->count())->toBe(1);
     });
 
     it('keeps an existing Instance unchanged after the migration', function (): void {
@@ -374,6 +592,173 @@ function web_root_instance(Project $project, Node $node): Instance
         'selected_php_version' => '8.4',
         'status' => InstanceState::Active,
     ]);
+}
+
+/**
+ * A production Instance whose release projection records each step instead of reaching the Node.
+ *
+ * @return array{Instance, object{all: list<string>}}
+ */
+function web_root_production(Project $project): array
+{
+    $node = web_root_node('prod-web', '10.44.0.30', production: true);
+    $instance = Instance::query()->create([
+        'project_id' => $project->id,
+        'node_id' => $node->id,
+        'name' => 'production',
+        'environment' => 'production',
+        'source_layout' => 'checkout',
+        'checkout_path' => '/home/orbit-acme/releases/initial',
+        'production_user' => 'orbit-acme',
+        'production_home' => '/home/orbit-acme',
+        'branch' => 'main',
+        'starting_commit' => str_repeat('a', 40),
+        'selected_php_version' => '8.4',
+        'source_is_laravel' => true,
+        'provisioning_step' => 'active',
+        'status' => InstanceState::Active,
+    ]);
+    $instance->update(ProductionPhpRuntimeIdentity::forProvisioning($instance->refresh(), '8.4')->attributes());
+    $events = new class
+    {
+        /** @var list<string> */
+        public array $all = [];
+
+        public ?string $failAt = null;
+
+        public ?Throwable $checkFailure = null;
+
+        /** @var list<list<int>> */
+        public array $locks = [];
+
+        public function hit(string $step): void
+        {
+            $this->all[] = $step;
+
+            if ($this->failAt === $step) {
+                throw new RuntimeConvergenceException($step, 'app-prod.injected_failure', "Injected failure at {$step}.");
+            }
+        }
+    };
+    $projection = new class($events) implements ProductionCloneRouteProjector, ProductionRouteProjector
+    {
+        public function __construct(private readonly object $events) {}
+
+        public function prepareRuntime(Instance $instance, Route $route): void
+        {
+            $this->events->hit('runtime');
+        }
+
+        public function prepareCertificate(Instance $instance, Route $route): void
+        {
+            $this->events->hit('certificate');
+        }
+
+        public function prepareFirewall(Instance $instance): void
+        {
+            $this->events->hit('firewall');
+        }
+
+        public function publish(Instance $instance, Route $route): void
+        {
+            $this->events->hit('publish');
+        }
+
+        public function prepareWorkloadCaddy(Instance $instance, Route $route): void
+        {
+            $route->publishSites();
+            $this->events->hit('workload-caddy');
+        }
+
+        public function prepareRouterCertificate(Instance $instance, Route $route): void
+        {
+            $this->events->hit('router-certificate');
+        }
+
+        public function prepareRouteFirewall(Instance $instance, Route $route): void
+        {
+            $this->events->hit('route-firewall');
+        }
+
+        public function verifyWorkload(Instance $instance, Route $route): void
+        {
+            $this->events->hit('verify-workload');
+        }
+
+        public function prepareRouterCaddy(Instance $instance, Route $route): void
+        {
+            $this->events->hit('router-caddy');
+        }
+
+        public function prepareDns(Route $route): void
+        {
+            $this->events->hit('dns');
+        }
+    };
+    app()->instance(ProductionRouteProjector::class, $projection);
+    app()->instance(ProductionCloneRouteProjector::class, $projection);
+    app()->instance(ProductionWebRootManager::class, new class($events) implements ProductionWebRootManager
+    {
+        public function __construct(private readonly object $events) {}
+
+        public function prepare(Instance $instance, ?Route $activating = null): void
+        {
+            $this->events->hit('web-roots');
+        }
+
+        public function assertServable(Instance $instance, string $webRoot): void
+        {
+            $this->events->hit('check');
+
+            if ($this->events->checkFailure instanceof Throwable) {
+                throw $this->events->checkFailure;
+            }
+        }
+    });
+
+    app()->instance(ProductionPhpRuntimeManager::class, new class($events) implements ProductionPhpRuntimeManager
+    {
+        public function __construct(private readonly object $events) {}
+
+        public function converge(Instance $instance, ?Route $activating = null): void
+        {
+            $this->events->hit('withdraw-pool');
+        }
+
+        public function convergeMonitoring(Instance $instance, bool $enabled): void {}
+
+        public function refreshCache(Instance $instance): void {}
+
+        public function remove(Instance $instance): void {}
+    });
+    app()->instance(InstanceEnvironmentOperationLock::class, new class($events) implements InstanceEnvironmentOperationLock
+    {
+        public function __construct(private readonly object $events) {}
+
+        public function run(array $instanceIds, Closure $operation): mixed
+        {
+            $this->events->locks[] = $instanceIds;
+
+            return $operation();
+        }
+    });
+
+    return [$instance->refresh(), $events];
+}
+
+/** @return list<string> The arguments of a later production release preparation. */
+function web_root_production_deploy_arguments(Instance $instance): array
+{
+    $ssh = new AppDevFakeSshExecutor([new CommandResult(0, "20261009-a1\t".str_repeat('b', 40)."\n", '', 1, false)]);
+    $executor = new ProductionSshExecutor(
+        $ssh,
+        Mockery::mock(SshKeyProvider::class)->shouldReceive('privateKeyPath')->andReturn('/unused')->getMock(),
+        Mockery::mock(KnownHostsStore::class)->shouldReceive('path')->andReturn('/unused')->getMock(),
+    );
+    $instance->update(['source_layout' => 'checkout']);
+    new RemoteProductionDeployment($executor, app(RepositoryReadAccess::class), static fn (): string => '20261009-a1')->prepare($instance->refresh(), 'main');
+
+    return $ssh->commands[0]->arguments;
 }
 
 function web_root_route(Instance $instance, string $domain, ?string $webRoot = null): Route
