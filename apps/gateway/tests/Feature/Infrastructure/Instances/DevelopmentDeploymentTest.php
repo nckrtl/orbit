@@ -778,5 +778,4 @@ describe('real development release programs', function (): void {
             ->and(file_get_contents($this->fixture->home.'/current/.cache/warm'))->toBe('previous-cache')
             ->and(trim(DevelopmentDeploymentFixture::command(['git', '-C', $this->fixture->home, 'rev-parse', 'HEAD'])))->toBe($this->fixture->initialCommit);
     });
-
 });
