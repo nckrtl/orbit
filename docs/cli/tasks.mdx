@@ -29,6 +29,7 @@ A task is one feature. A subtask is one ordered child of that task, and a subtas
 | [`tasks:comment:create`](#orbit-taskscommentcreate) | Ask for assistance on a subtask or resolve a request. |
 | [`tasks:comment:list`](#orbit-taskscommentlist) | List a subtask's comments. |
 | [`tasks:question:list`](#orbit-tasksquestionlist) | List the questions agents asked, across tasks. |
+| [`tasks:question:close`](#orbit-tasksquestionclose) | Close an open or escalated question as answered or superseded. |
 | [`tasks:agents`](#orbit-tasksagents) | List a task's agent threads. |
 | [`tasks:definition:list`](#orbit-tasksdefinitionlist) | List task definitions. This command does not start a task. |
 | [`tasks:definition:show`](#orbit-tasksdefinitionshow) | Show one task definition. This command does not start a task. |
@@ -308,12 +309,30 @@ orbit tasks:question:list [--project=ID] [--cause=CAUSE] [--status=STATUS] [--si
 | --- | --- | --- |
 | `--project=ID` | every Project | Only questions from this Project's tasks. |
 | `--cause=CAUSE` | every cause | `brief_unclear`, `contract_gap`, `scope`, `environment`, or `missed_contract`. |
-| `--status=STATUS` | every status | `open`, `escalated`, or `answered`. |
+| `--status=STATUS` | every status | `open`, `escalated`, `answered`, or `superseded`. |
 | `--since=DATE` | no limit | Only questions asked on or after this ISO 8601 date or time. |
 
 An invalid filter fails with `tasks.project_invalid`, `tasks.cause_invalid`, `tasks.status_invalid`, or `tasks.since_invalid` before the request.
 
 Human output prints one header line for each question, with its time, task and subtask reference, asker, status, and cause. The question and the answer follow, each indented by two spaces. An empty list says `No questions match.` JSON holds the records under `questions`. The [tasks reference](/reference/tasks#questions) defines each field, the relay routes, and the consult limit. The limit counts the consult records of the current implementer attempt, and a relay does not count. A direction resolution does not start a new implementer attempt. [Migrate open requests](/reference/tasks#migrate-open-requests) names `2026_10_07_000000_create_task_questions` before `2026_10_07_000001_add_assistance_kind_to_tasks`.
+
+## orbit tasks:question:close
+
+Close a stale question that no one still has to answer. Use it when a resolution already answered the question but the record stayed `escalated`, or when a later subtask made the question moot.
+
+```bash
+orbit tasks:question:close [question] [--status=STATUS] [--reason=TEXT] [--json]
+```
+
+| Argument or option | Prompt | Effect |
+| --- | --- | --- |
+| `question` | a list of open and escalated questions | The numeric question ID. |
+| `--status=STATUS` | `superseded` or `answered` | `superseded` when nobody has to answer the question, `answered` when the reason is its answer. |
+| `--reason=TEXT` | multiline text | Why the question is closed, at most 2,000 characters. It becomes the question's answer. |
+
+In a terminal the command prompts for each omitted input. A noninteractive call fails before the request with `tasks.question_required`, `tasks.status_required`, or `tasks.reason_required`, and an invalid value fails with `tasks.question_invalid`, `tasks.status_invalid`, or `tasks.reason_invalid`. A question that is already `answered` or `superseded` fails with `tasks.question_closed`, unless the status and the reason are the same as before. Then the command returns the question unchanged. The command needs Gateway access.
+
+Human output prints the closed question as `tasks:question:list` does. JSON returns the question record. [Close a question](/reference/tasks#close-a-question) describes what closing changes and what it leaves alone.
 
 ## orbit tasks:agents
 

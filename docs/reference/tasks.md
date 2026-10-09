@@ -222,6 +222,7 @@ List, show, and `tasks:question:list` accept any authorized peer. Update and the
 | `tasks:comment:create` | `POST /api/v1/task-groups/{group}/tasks/{task}/comments` | Gateway |
 | `tasks:comment:list` | `GET /api/v1/task-groups/{group}/tasks/{task}/comments` | Gateway |
 | `tasks:question:list` | `GET /api/v1/task-questions` | Any peer |
+| `tasks:question:close` | `POST /api/v1/task-questions/{question}/close` | Gateway |
 | `tasks:agents` | `GET /api/v1/task-groups/{group}/agents` | Gateway |
 
 Each MCP tool name is the operation name with hyphens, such as `tasks-subtask-create`. The paths keep the `task-groups` segment. `{group}` is the top-level task id, and `{task}` is the subtask id.
@@ -825,7 +826,7 @@ Orbit stores one question record in `task_questions` for each consult and each d
 | `id`, `task_id`, `subtask_id`, `attempt` | The record, and where the question was asked |
 | `asked_by` | `implementer`, `reviewer`, or `operator` |
 | `question` | The one question, from `--question` or the comment body |
-| `status` | `open` while the reviewer consults, `escalated` while the operator answers, then `answered` |
+| `status` | `open` while the reviewer consults, `escalated` while the operator answers, then `answered`. A question nobody still has to answer ends `superseded` |
 | `answered_by`, `answer` | `reviewer` or `operator`, and the answer |
 | `cause` | Why the question arose. The reviewer sets it with `--cause`, and it is empty until then |
 | `asked_at`, `escalated_at`, `answered_at` | When each step happened |
@@ -851,6 +852,16 @@ Each record change is keyed to the stored comment that caused it: a turn receipt
 The consult limit counts consult records for the current `completion_attempt`. A consult record is the row created when an implementer's `blocked` receipt starts a consult. A relay, a third block, a reviewer's `blocked` during a review, and an operator comment are not consult records. A `topology_requested` receipt creates no question record and consumes no additional consult; the existing consult remains open until answered or escalated normally.
 
 [`tasks:question:list`](/cli/tasks#orbit-tasksquestionlist) is `GET /api/v1/task-questions`. Any authorized peer can call it. The filters are `project_id`, `cause`, `status`, and `since`. `since` is an ISO 8601 date or time, and the list holds questions asked at or after it, newest first.
+
+##### Close a question
+
+A resolution answers a question only through the reviewer's next receipt. When the subtask stops asking first, the record can stay `open` or `escalated`. Orbit closes those records in two ways, so `tasks:question:list --status=escalated` shows only questions someone still has to answer.
+
+When a subtask becomes `completed` or `cancelled`, Orbit marks its `open` and `escalated` questions `superseded` in the same write. The answer is `Subtask completed.` or `Subtask cancelled.`, `answered_at` is the time, and `answered_by` stays empty. When a task becomes `completed` or `cancelled`, Orbit does the same for every question of the task, with `Task completed.` or `Task cancelled.` This covers subtask cancel, task cancel, task complete, and every subtask that completes. A record that is already `answered` keeps its answer.
+
+[`tasks:question:close`](/cli/tasks#orbit-tasksquestionclose) is `POST /api/v1/task-questions/{question}/close`. It needs Gateway access. The body holds `status`, `answered` or `superseded`, and `reason`, 1 to 2,000 characters after trimming. The question must be `open` or `escalated`. In one transaction, Orbit posts a `question_closed` comment on the question's subtask, sets the status, stores the reason as the answer with `answered_by` `operator`, links the comment as `answered_comment_id`, and logs a `question closed` activity. It returns the question. Closing an `answered` or `superseded` question returns HTTP 409 `tasks.question_closed`. The same status and reason again return the question unchanged. Another status or an empty reason returns 422.
+
+Closing a question never delivers a resolution, never sets or clears assistance, and never counts as a consult. A `question_closed` comment is not a `resolution`, so the scheduler never sends it to an agent. `escalated_at` stays set, so `questions` and `escalations` still count the record.
 
 ### Assistance and resolution
 

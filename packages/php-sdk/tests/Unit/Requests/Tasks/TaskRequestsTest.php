@@ -7,6 +7,7 @@ use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\GatewayRequest;
 use Orbit\Sdk\Requests\Tasks\CancelSubtaskRequest;
 use Orbit\Sdk\Requests\Tasks\CancelTaskGroupRequest;
+use Orbit\Sdk\Requests\Tasks\CloseTaskQuestionRequest;
 use Orbit\Sdk\Requests\Tasks\CompleteTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\CreateSubtaskRequest;
 use Orbit\Sdk\Requests\Tasks\CreateTaskCommentRequest;
@@ -28,6 +29,7 @@ use Orbit\Sdk\Responses\Tasks\TaskCommentResponse;
 use Orbit\Sdk\Responses\Tasks\TaskCommentsResponse;
 use Orbit\Sdk\Responses\Tasks\TaskGroupResponse;
 use Orbit\Sdk\Responses\Tasks\TaskGroupsResponse;
+use Orbit\Sdk\Responses\Tasks\TaskQuestionResponse;
 use Orbit\Sdk\Responses\Tasks\TaskQuestionsResponse;
 use Orbit\Sdk\Responses\Tasks\TasksStatusResponse;
 use Saloon\Contracts\Body\HasBody;
@@ -54,6 +56,7 @@ describe('task transport', function (): void {
         'comment create' => [new CreateTaskCommentRequest(13, 57, 'resolution', 'Done.', 'nick'), Method::POST, '/api/v1/task-groups/13/tasks/57/comments'],
         'comment list' => [new ListTaskCommentsRequest(13, 57), Method::GET, '/api/v1/task-groups/13/tasks/57/comments'],
         'question list' => [new ListTaskQuestionsRequest, Method::GET, '/api/v1/task-questions'],
+        'question close' => [new CloseTaskQuestionRequest(98, 'superseded', 'Stale.'), Method::POST, '/api/v1/task-questions/98/close'],
         'agents' => [new ListTaskAgentsRequest(13), Method::GET, '/api/v1/task-groups/13/agents'],
     ]);
 
@@ -155,6 +158,7 @@ describe('task responses from recorded Gateway fixtures', function (): void {
         'comment list' => ['tasks-comment-list/default', new ListTaskCommentsRequest(1, 1), TaskCommentsResponse::class],
         'question list' => ['tasks-question-list/default', new ListTaskQuestionsRequest, TaskQuestionsResponse::class],
         'empty question list' => ['tasks-question-list/empty', new ListTaskQuestionsRequest, TaskQuestionsResponse::class],
+        'question close' => ['tasks-question-close/closed', new CloseTaskQuestionRequest(1, 'superseded', 'A later subtask owns the continuation.'), TaskQuestionResponse::class],
         'agents' => ['tasks-agents/default', new ListTaskAgentsRequest(1), TaskAgentsResponse::class],
     ]);
 
@@ -330,6 +334,19 @@ describe('task responses from recorded Gateway fixtures', function (): void {
                 'questions' => 0,
                 'escalations' => 0,
             ]);
+    });
+
+    it('sends the close status and reason, and reads the closed question', function (): void {
+        $request = new CloseTaskQuestionRequest(1, 'superseded', 'A later subtask owns the continuation.');
+        $question = task_fixture_send('tasks-question-close/closed', $request);
+
+        expect($request->body()->all())->toBe('{"status":"superseded","reason":"A later subtask owns the continuation."}')
+            ->and($question)->toBeInstanceOf(TaskQuestionResponse::class);
+        assert($question instanceof TaskQuestionResponse);
+        expect($question->status)->toBe('superseded')
+            ->and($question->answeredBy)->toBe('operator')
+            ->and($question->answer)->toBe('A later subtask owns the continuation.')
+            ->and($question->requestId)->toBe('0198e15c-bf97-7c23-8f1f-61b8fe67a844');
     });
 
     it('reads the task question list', function (): void {
