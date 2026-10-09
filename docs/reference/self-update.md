@@ -235,7 +235,7 @@ The CLI prints it at most once every 24 hours, and only when standard error is a
 
 `orbit self-update` has these limits.
 
-- It replaces only the CLI and, on a managed Linux Node, the agent. The fleet rollout re-applies the Gateway-rendered footprint over SSH.
+- It replaces only the CLI and, on a managed Linux Node, the agent. The fleet rollout re-applies the Gateway-rendered footprint over SSH, such as the Caddyfile or the `tmpfiles` rule.
 - Nothing runs it on an operator machine automatically. The operator runs it after the notice.
 - No agent signal triggers it.
 
