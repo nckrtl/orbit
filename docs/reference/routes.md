@@ -178,7 +178,7 @@ The API takes `web_root` on `POST /api/v1/routes` and `PATCH /api/v1/routes/{rou
 | Instance's own Route | Each Instance has at most one Route without a web root. A `laravel-app` or `symfony-app` Instance keeps it: a web root on it returns `route.web_root_conflict`. |
 | Site | Workload Caddy serves the Route's domain from its web root. The Route has its own leaf, `route-<id>`, so the Instance's leaf keeps naming its own Route. |
 | PHP-FPM | One pool for each application directory. Routes that serve one directory share its pool. |
-| `APP_URL` | The Instance's own Route keeps its directory. Another directory takes the domain of the oldest Route that serves it. |
+| `APP_URL` | The Instance's own Route keeps its directory. Another directory takes the domain of the oldest Route that serves it. A development `default` with releases copies each directory's `.env` into its next [release](/reference/deployments#development-defaults). |
 | Change | Creating, updating, or removing such a Route converges its site, pool, and `APP_URL`. A Project root change moves `APP_URL` to the new winner. |
 | Instance removal | Once every refusal check passes, removes the Instance's Routes with a web root, then the Instance. A refused removal keeps them. |
 | Transfer | Refused with `instance.transfer_web_root_routes`. Remove those Routes, transfer, and create them again. |
@@ -190,7 +190,7 @@ The default directory keeps its pool, `orbit-app-instance-<id>`. Another directo
 
 A Route with a web root keeps its domain, so a domain change returns `route.web_root_domain_immutable`. Send `web_root` on its own; combined with another field it returns `route.web_root_update_separate`.
 
-Follow-ups: production Instances, and the `.env` of other directories in the releases of a development `default`. Doctor checks `APP_URL` only for the Instance's own Route.
+Follow-up: production Instances. Doctor checks `APP_URL` only for the Instance's own Route.
 
 ## Custom proxy Routes
 

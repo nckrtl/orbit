@@ -63,7 +63,11 @@ After a deployment Orbit prunes managed releases, retaining `current`, its previ
 
 Release listing and pruning skip an owned release whose `.git` points to its missing administrative directory under the stable repository's `.git/worktrees/`. The Gateway logs a warning naming that release. Its directory, contents, and ownership receipt remain for operator inspection; healthy releases continue through listing and deployment. Listing still requires a valid `current`. Pruning also requires a valid previous selection and every leased seed before inspecting unused releases. Invalid ownership receipts, symlinks, and foreign or ambiguous Git metadata still fail validation.
 
-A failed candidate is removed without changing `current`. Cleanup never prunes the stable repository or other linked worktrees. Environment files and caches in development releases are copies, not links back into another Instance. The application-directory `.env` and any `.env.testing` are copied from the same relative directory in the default's stable home when a candidate is built, so explicit environment synchronization is picked up by the next deployment without writing into the live seed. Production environment and rollback rules below remain separate.
+A failed candidate is removed without changing `current`. Cleanup never prunes the stable repository or other linked worktrees.
+
+Environment files and caches in development releases are copies, not links back into another Instance. When Orbit builds a candidate, it copies `.env` and any `.env.testing` from the default's stable home into the same relative directory of the candidate. It does this at the checkout root, in the application directory, and in each directory that a [Route with a web root](/reference/routes#serve-several-web-roots) serves. So explicit environment synchronization and a Route's `APP_URL` reach the next deployment without a write into the live seed. Production environment and rollback rules below remain separate.
+
+Orbit skips a directory that is missing from the stable home or from the new commit. A stable directory that leaves the checkout through a link fails the preparation. The stable home keeps the commit of its migration. Orbit writes a Route's `APP_URL` only into a stable directory that holds `artisan`, so an application that a later commit adds gets no `APP_URL` from Orbit.
 
 ## Deploy steps
 
