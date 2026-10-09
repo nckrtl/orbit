@@ -598,7 +598,7 @@ Only `default` can be deployed on an app-dev Node. Other development Instances s
 
 ## orbit instance:release:list
 
-List retained release names and the current selection. See [`instance:deployment:list`](#orbit-instancedeploymentlist) for the recorded run history behind those releases.
+List retained release names and the current selection. A production home keeps at most 3 releases, as [Retained releases](/reference/deployments#retained-releases) describes. See [`instance:deployment:list`](#orbit-instancedeploymentlist) for the recorded run history behind those releases.
 
 ```bash
 orbit instance:release:list <instance> [--json]
@@ -606,7 +606,7 @@ orbit instance:release:list <instance> [--json]
 
 ## orbit instance:rollback
 
-Select one retained release through `current`. Rollback does not fetch Git, synchronize environment values, run deploy steps, or change database files.
+Select one retained release through `current`. A successful deployment keeps the previous selection and one other release, so these are the rollback targets. Rollback does not fetch Git, synchronize environment values, run deploy steps, or change database files.
 
 ```bash
 orbit instance:rollback <instance> --release=NAME [--json]
