@@ -46,14 +46,7 @@ final readonly class InstanceEnvironmentRenderer
                 $this->referenceUnavailable();
             }
 
-            $quoted = strtr($resolved, [
-                '\\' => '\\\\',
-                '"' => '\\"',
-                '$' => '\\$',
-                "\n" => '\\n',
-                "\r" => '\\r',
-            ]);
-            $rendered .= "{$key}=\"{$quoted}\"\n";
+            $rendered .= $key.'='.self::quote($resolved)."\n";
 
             if (strlen($rendered) > InstanceEnvironmentValidator::MaximumFileBytes) {
                 throw new ResourceOperationException(
@@ -68,6 +61,18 @@ final readonly class InstanceEnvironmentRenderer
         }
 
         return $rendered;
+    }
+
+    /** Quote one value as a double-quoted dotenv value. */
+    public static function quote(#[\SensitiveParameter] string $value): string
+    {
+        return '"'.strtr($value, [
+            '\\' => '\\\\',
+            '"' => '\\"',
+            '$' => '\\$',
+            "\n" => '\\n',
+            "\r" => '\\r',
+        ]).'"';
     }
 
     private function referenceUnavailable(): never

@@ -183,7 +183,9 @@ A Project slug change updates the Laravel `APP_URL` that the Route domain owns. 
 
 ## Storage and recovery
 
-The Gateway encrypts every stored value, placeholders included, with its own application key before it writes the row. Restoring stored configuration needs that key. Laravel import creates an application's `APP_KEY` only when the source value is empty and no non-empty stored key exists. Synchronization never generates, rotates, or deletes a stored application key. An import without `replace` still refuses conflicting keys, including `APP_KEY`.
+The Gateway encrypts every stored value, placeholders included, with its own application key before it writes the row. Restoring stored configuration needs that key.
+
+Laravel import creates an application's `APP_KEY` only when the source value is empty and no non-empty stored key exists. When development provisioning creates a missing Laravel `.env`, it writes the non-empty stored key, or generates one for that file only when neither the store nor `.env.example` has a key. It does not store the generated key. Import the file to keep it in stored configuration. See [Laravel application URL](/domains/applications#laravel-application-url). Synchronization never generates, rotates, or deletes a stored application key. An import without `replace` still refuses conflicting keys, including `APP_KEY`.
 
 ## Errors
 

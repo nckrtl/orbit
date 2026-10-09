@@ -23,6 +23,7 @@ class CreateSetupStepCommand extends GatewayCommand
         {--timeout= : Timeout in seconds}
         {--before= : Place before this step}
         {--after= : Place after this step}
+        {--rebalance=* : Set another step timeout in the same write, as NAME=SECONDS; repeat as needed}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -39,10 +40,15 @@ class CreateSetupStepCommand extends GatewayCommand
         $name = $this->lifecycleName();
         $command = $this->stringOption('command');
         $timeout = $this->lifecycleTimeout($this->option('timeout'));
+        $rebalance = $this->lifecycleRebalance($this->option('rebalance'));
 
-        if ($projectId === null || $name === null || $timeout === false) {
+        if ($projectId === null || $name === null || $timeout === false || $rebalance === false) {
             if ($timeout === false) {
                 return $this->renderGatewayFailure('lifecycle_step.timeout_invalid', 'Timeout must be an integer.');
+            }
+
+            if ($rebalance === false) {
+                return $this->renderGatewayFailure('lifecycle_step.rebalance_invalid', 'Rebalance must be NAME=SECONDS with an integer timeout.');
             }
 
             return self::FAILURE;
@@ -66,6 +72,7 @@ class CreateSetupStepCommand extends GatewayCommand
             timeoutSeconds: $timeout,
             before: $this->stringOption('before'),
             after: $this->stringOption('after'),
+            rebalance: $rebalance,
         ), LifecycleStepResponse::class, ['Create step', 'Creating step', 'Created step']);
 
         return $response instanceof LifecycleStepResponse ? $this->renderLifecycleStep($response) : self::FAILURE;

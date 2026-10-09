@@ -15780,6 +15780,11 @@ export interface operations {
                     before?: string;
                     /** @description Place after this step */
                     after?: string;
+                    /** @description Set another step timeout in the same write, as NAME=SECONDS; repeat as needed */
+                    rebalance?: {
+                        name: string;
+                        timeout_seconds: number;
+                    }[];
                 };
             };
         };
@@ -15911,6 +15916,11 @@ export interface operations {
                     before?: string;
                     /** @description Place after this step */
                     after?: string;
+                    /** @description Set another step timeout in the same write, as NAME=SECONDS; repeat as needed */
+                    rebalance?: {
+                        name: string;
+                        timeout_seconds: number;
+                    }[];
                 };
             };
         };
@@ -16427,6 +16437,11 @@ export interface operations {
                     before?: string;
                     /** @description Place after this step */
                     after?: string;
+                    /** @description Set another step timeout in the same write, as NAME=SECONDS; repeat as needed */
+                    rebalance?: {
+                        name: string;
+                        timeout_seconds: number;
+                    }[];
                 };
             };
         };
@@ -16558,6 +16573,11 @@ export interface operations {
                     before?: string;
                     /** @description Place after this step */
                     after?: string;
+                    /** @description Set another step timeout in the same write, as NAME=SECONDS; repeat as needed */
+                    rebalance?: {
+                        name: string;
+                        timeout_seconds: number;
+                    }[];
                 };
             };
         };
