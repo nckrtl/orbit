@@ -260,6 +260,11 @@ function rm_runtime(array $receipts = []): object
             return $this->open;
         }
 
+        public function greenDefaultTipAfter(Task $group, string $sha, string $checkName): ?string
+        {
+            return null;
+        }
+
         public function commit(Instance $instance, string $message): ?string
         {
             $checks = app(TaskCheckRunner::class);

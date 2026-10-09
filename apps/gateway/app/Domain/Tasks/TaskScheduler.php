@@ -259,9 +259,12 @@ final readonly class TaskScheduler
                     $task->refresh();
                     $group = $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
                 }
+                if ($task->status === TaskStatus::Running && $task->assistance_requested && $this->queueBaselineRetryOnGreenTip($group, $task)) {
+                    $task->refresh();
+                }
                 if ($task->status === TaskStatus::Running && $task->assistance_requested && $task->resolution_delivered_comment_id !== null) {
                     try {
-                        if ($this->retryBaseline->recover($task)) {
+                        if (TaskExecutionHold::run($group, fn (): bool => $this->retryBaseline->recover($task)) === true) {
                             $task->refresh();
                             $group = $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
                         }
@@ -4107,6 +4110,41 @@ final readonly class TaskScheduler
     private function progressBlockedByAssistance(Task $group): bool
     {
         return $group->assistance_requested && ! self::isReviewFeedbackReason($group->assistance_reason);
+    }
+
+    /**
+     * A baseline that failed on a red default-branch commit retries once the branch tip is green and contains
+     * that commit, as an operator resolution would. GitHub is read before the lock, at most every five minutes
+     * per check. The queue then locks the rows and validates the retry again. The recovery after it resets.
+     */
+    private function queueBaselineRetryOnGreenTip(Task $group, Task $task): bool
+    {
+        $check = $this->retryBaseline->unrequested($task);
+        if (! $check instanceof TaskCheck || ! Cache::add('tasks.baseline-green-tip.'.$check->id, true, 300)) {
+            return false;
+        }
+        $name = $group->project->mergeCheckName() ?? TaskPullRequestCheck::ROLLUP_NAMES[0];
+        if ($this->merger->requiredCheck($group, $check->head_before, $name) !== RequiredCheckState::Failed) {
+            return false;
+        }
+        $tip = $this->merger->greenDefaultTipAfter($group, $check->head_before, $name);
+        if ($tip === null) {
+            return false;
+        }
+
+        return TaskExecutionHold::run($group, fn (): bool => DB::transaction(function () use ($task, $check, $name, $tip): bool {
+            if ($this->retryBaseline->unrequested($task)?->id !== $check->id) {
+                return false;
+            }
+            $comment = TaskComment::query()->create([
+                'task_group_id' => $task->parent_id, 'task_id' => $task->id, 'completion_attempt' => $task->completion_attempt,
+                'type' => TaskCommentType::Resolution, 'author' => 'orbit', 'posted_at' => now(),
+                'body' => 'The baseline failed on '.$check->head_before.', where '.$name.' failed. The default branch tip '.$tip
+                    .' contains it and passed '.$name.', so Orbit retries the baseline.',
+            ]);
+
+            return $this->retryBaseline->queue($task, $comment);
+        })) === true;
     }
 
     /** @param  Collection<int, Task>  $tasks */

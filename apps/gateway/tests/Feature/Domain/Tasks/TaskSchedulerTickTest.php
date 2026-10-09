@@ -6821,6 +6821,93 @@ it('never resets a failed baseline workspace after an implementer has started el
 });
 
 /**
+ * A baseline that failed on `$failed`, and GitHub's view of main: the `Required checks` result on the failed
+ * commit and on the tip, and how the tip relates to the failed commit.
+ *
+ * @return array{Task, Task, FakeTaskCheckRunner}
+ */
+function tick_red_main_baseline(string $slug, string $failed, string $tip, string $failedConclusion, string $tipConclusion, string $status = 'ahead'): array
+{
+    app(TaskExtensionState::class)->enable();
+    $group = tick_baseline_group($slug, 'composer check', [], '10.51.0.10');
+    tick_running_agents();
+    $runner = new FakeTaskCheckRunner([TaskCheckReading::finished(1, str_repeat('a', 40), str_repeat('b', 40), [], "main was red\n")]);
+    app()->instance(TaskCheckRunner::class, $runner);
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+    $task = $group->tasks()->sole();
+    expect($task->assistance_requested)->toBeTrue();
+    // The fake runner starts every check on aaaa…; the failed baseline ran on the red main commit.
+    TaskCheck::query()->where('task_id', $task->id)->update(['head_before' => $failed]);
+
+    $group->project->update(['repository_url' => "https://github.com/acme/{$slug}.git"]);
+    GitHubTestSupport::storeApp();
+    $runs = static fn (string $sha, string $conclusion): array => ['total_count' => 1, 'check_runs' => [[
+        'id' => 7, 'name' => 'Required checks', 'head_sha' => $sha,
+        'status' => $conclusion === 'pending' ? 'in_progress' : 'completed', 'conclusion' => $conclusion === 'pending' ? null : $conclusion,
+        'html_url' => "https://github.com/acme/{$slug}/runs/7", 'app' => ['slug' => 'github-actions'],
+    ]]];
+    Http::preventStrayRequests();
+    Http::fake([
+        "https://api.github.com/repos/acme/{$slug}/installation" => Http::response(['id' => 9]),
+        'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_read'], 201),
+        "https://api.github.com/repos/acme/{$slug}/commits?*" => Http::response([['sha' => $tip, 'parents' => [['sha' => $failed]]]]),
+        "https://api.github.com/repos/acme/{$slug}/compare/{$failed}...{$tip}*" => Http::response([
+            'status' => $status, 'base_commit' => ['sha' => $failed], 'merge_base_commit' => ['sha' => $status === 'ahead' ? $failed : str_repeat('d', 40)],
+        ]),
+        "https://api.github.com/repos/acme/{$slug}/commits/{$failed}/check-runs*" => Http::response($runs($failed, $failedConclusion)),
+        "https://api.github.com/repos/acme/{$slug}/commits/{$tip}/check-runs*" => Http::response($runs($tip, $tipConclusion)),
+    ]);
+
+    return [$group, $task, $runner];
+}
+
+it('queues the baseline retry when main was red and its green tip contains the failed commit', function (): void {
+    // Task 1293: the baseline failed on red main 82fcdd38, and main then turned green at e43566fe.
+    $failed = '82fcdd38'.str_repeat('0', 32);
+    $tip = 'e43566fe'.str_repeat('0', 32);
+    [$group, $task, $runner] = tick_red_main_baseline('baseline-red-main', $failed, $tip, 'failure', 'success');
+    $fetcher = mock(TaskBaseBranchFetcher::class);
+    $fetcher->shouldReceive('fetchForTurn')->once()->ordered();
+    $fetcher->shouldReceive('resetToDefault')->once()->ordered()->andReturn($tip);
+
+    app(TaskScheduler::class)->tick();
+
+    $resolution = TaskComment::query()->where('task_id', $task->id)->where('type', 'resolution')->sole();
+    expect($resolution->author)->toBe('orbit')
+        ->and($resolution->body)->toBe('The baseline failed on '.$failed.', where Required checks failed. The default branch tip '.$tip.' contains it and passed Required checks, so Orbit retries the baseline.');
+    $this->assertDatabaseHas('tasks', [
+        'id' => $task->id, 'subtask_start_commit' => $tip, 'assistance_requested' => false,
+        'resolution_delivered_comment_id' => $resolution->id, 'implementer_agent_thread_id' => null,
+    ]);
+    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'assistance_requested' => false]);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($runner->starts)->toBe(2);
+});
+
+it('keeps baseline assistance unless main was red and its tip is green and contains the failed commit', function (string $failedConclusion, string $tipConclusion, string $status): void {
+    $failed = '82fcdd38'.str_repeat('0', 32);
+    [$group, $task, $runner] = tick_red_main_baseline('baseline-not-red-main', $failed, 'e43566fe'.str_repeat('0', 32), $failedConclusion, $tipConclusion, $status);
+    $fetcher = mock(TaskBaseBranchFetcher::class);
+    $fetcher->shouldNotReceive('fetchForTurn');
+    $fetcher->shouldNotReceive('resetToDefault');
+
+    app(TaskScheduler::class)->tick();
+
+    expect(TaskComment::query()->where('task_id', $task->id)->where('type', 'resolution')->exists())->toBeFalse()
+        ->and($task->fresh()?->assistance_requested)->toBeTrue()
+        ->and($group->fresh()?->assistance_requested)->toBeTrue()
+        ->and($runner->starts)->toBe(1);
+})->with([
+    'main was green' => ['success', 'success', 'ahead'],
+    'tip pending' => ['failure', 'pending', 'ahead'],
+    'tip red' => ['failure', 'failure', 'ahead'],
+    'tip does not contain the failed commit' => ['failure', 'success', 'diverged'],
+]);
+
+/**
  * A fresh running task whose baseline has not started.
  *
  * @param  list<array{name: string, command: string, timeout_seconds: int, position: int}>  $steps
