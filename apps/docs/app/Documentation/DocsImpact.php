@@ -45,6 +45,7 @@ final readonly class DocsImpact
         'problems:file' => 'docs/reference/tasks.md',
         'tasks:archive-threads' => 'docs/reference/tasks.md',
         'orbit:node-retarget' => 'docs/reference/node-agent.md',
+        'queue:work task-vms --queue=task-vms --stop-when-empty --max-time=50 --timeout=1500' => 'docs/reference/compute-drivers.md',
     ];
 
     /** @param list<string>|null $ratchetPages */

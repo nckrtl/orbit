@@ -26,6 +26,8 @@ use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Schedules\DesiredTimerState;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\TaskCompute;
+use App\Domain\TaskVms\TaskVmState;
 use App\Domain\WireGuard\GatewayPeerProjectionManager;
 use App\Infrastructure\Firewall\UfwRuleOwnership;
 use App\Infrastructure\Metrics\MetricsCadvisorRuntime;
@@ -42,6 +44,8 @@ use App\Models\NodeRole;
 use App\Models\Process;
 use App\Models\Project;
 use App\Models\Schedule;
+use App\Models\Task;
+use App\Models\TaskVm;
 use Illuminate\Support\Facades\Log;
 use Tests\Support\FakeNodeAgentRuntime;
 use Tests\Support\FakeNodeRoleFirewallManager;
@@ -1102,6 +1106,24 @@ it('enforces consent in the action itself, not only at the request boundary', fu
         ->toBeNull()
         ->and(NodeRole::query()->where('node_id', $target->id)->sole()->status)
         ->toBe(LifecycleStatus::Active);
+});
+
+it('refuses a host with a live task VM, and deletes its destroyed task VM rows with it', function (): void {
+    $caller = remove_node_record(name: 'operator', wireguardIp: '10.44.0.2');
+    $host = remove_node_record(name: 'beast', wireguardIp: '10.44.0.7');
+    $project = Project::query()->create(['name' => 'DLF', 'slug' => 'dlf', 'repository_url' => 'https://github.com/acme/dlf.git', 'default_branch' => 'main']);
+    $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Work', 'brief' => 'Work', 'status' => 'cancelled', 'task_compute' => TaskCompute::Vm]);
+    $vm = TaskVm::query()->create(['group_id' => $group->id, 'host_node_id' => $host->id, 'provider' => 'incus', 'name' => 'tvm-1',
+        'state' => TaskVmState::Failed, 'wireguard_ip' => '10.44.0.129', 'pi_token' => str_repeat('p', 64)]);
+
+    expect(fn () => app(RemoveNodeAction::class)->execute($host, $caller))
+        ->toThrow(fn (ResourceOperationException $exception): bool => $exception->errorCode === 'node.has_task_vms');
+    expect($host->refresh()->status)->toBe(LifecycleStatus::Active)->and($this->dns->convergences)->toBe(0);
+
+    $vm->update(['state' => TaskVmState::Destroyed]);
+    app(RemoveNodeAction::class)->execute($host, $caller);
+
+    expect($host->fresh())->toBeNull()->and(TaskVm::query()->count())->toBe(0);
 });
 
 function remove_node_offline_probe(Node $unreachable): void

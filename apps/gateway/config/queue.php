@@ -35,6 +35,16 @@ return [
             'driver' => 'sync',
         ],
 
+        // Task VM jobs only (ADR 0200). The default connection stays sync; see App\Jobs\TaskVms.
+        'task-vms' => [
+            'driver' => 'database',
+            'connection' => null,
+            'table' => 'jobs',
+            'queue' => 'task-vms',
+            'retry_after' => 1800,
+            'after_commit' => true,
+        ],
+
         'database' => [
             'driver' => 'database',
             'connection' => env('DB_QUEUE_CONNECTION'),

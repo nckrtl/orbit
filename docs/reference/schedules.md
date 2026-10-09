@@ -146,7 +146,7 @@ These reasons explain the design. Check them before you propose a change.
 
 ### Native systemd timers
 
-systemd already gives timing, overlap protection, timeouts, and a journal on every managed Node. The timer also keeps running while the Gateway is down. A central scheduler, queue, or run-history store in the Gateway would duplicate this and make the Gateway responsible for timing. Do not add one.
+systemd already gives timing, overlap protection, timeouts, and a journal on every managed Node. The timer also keeps running while the Gateway is down. A central scheduler, queue, or run-history store in the Gateway would duplicate this and make the Gateway responsible for timing. Do not add one. The Gateway's own scheduler and its `task-vms` queue run only Gateway work, such as the [task VM jobs](/reference/compute-drivers#jobs). They never run a Schedule.
 
 ### The command only in a protected script
 

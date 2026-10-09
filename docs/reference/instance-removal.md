@@ -146,6 +146,8 @@ A Route that loses its last target is deleted, with its Caddy, certificate, DNS,
 
 Between `route_target_clear` and Route deletion, a request to a development domain gets `503 Service Unavailable` with the body `Orbit Route unavailable`. It never reaches the old target.
 
+For a workspace on a [task VM](/reference/compute-drivers#a-vm-that-dies-before-its-group-ends) that is `destroying`, the VM is already gone. Route cleanup then leaves that Node alone and withdraws the Route only on the router.
+
 ### Processes and Schedules
 
 Removal cleans up every Process and Schedule the Instance owns, in any state, for systemd and Docker. Orbit checks that each unit, container, or timer belongs to that owner before it removes it. A missing artifact counts as done. An artifact with another owner stops the removal, and Orbit never adopts or deletes it.
