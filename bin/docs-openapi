@@ -649,7 +649,7 @@ SUMMARIES = {
     'process:log-stream:create': 'Open a live Process log stream', 'process:log-stream:renew': 'Renew a live Process log stream', 'process:log-stream:destroy': 'Close a live Process log stream',
     'tasks:status': 'Show Tasks status',
     'tasks:agents': 'List task agent sessions', 'tasks:agent-stream': 'Watch a task agent session',
-    'tasks:list': 'List Task groups', 'tasks:question:list': 'List task questions', 'tasks:create': 'Create a Task group', 'tasks:show': 'Show a Task group', 'tasks:update': 'Update a Task group',
+    'tasks:list': 'List Task groups', 'tasks:question:list': 'List task questions', 'tasks:question:close': 'Close a task question', 'tasks:create': 'Create a Task group', 'tasks:show': 'Show a Task group', 'tasks:update': 'Update a Task group',
     'tasks:subtask:create': 'Create a subtask', 'tasks:subtask:update': 'Update a subtask', 'tasks:subtask:destroy': 'Destroy a subtask', 'tasks:subtask:cancel': 'Cancel a todo or running subtask',
     'tasks:complete': 'Complete a Task group', 'tasks:cancel': 'Cancel a Task group',
 }
@@ -713,6 +713,7 @@ DESCRIPTIONS = {
     'tasks:subtask:destroy': 'Deletes a subtask while its group is in `backlog` (`tasks.not_in_backlog`) and closes the position gap. Returns the deleted subtask. Served by the Node that holds the group\'s Instance, or by the Gateway for a group without one. Returns `extension.disabled` while the extension is off.',
     'tasks:list': 'Lists Task groups, newest first. Optional `project_id` and `status` filters. The group and each subtask include `assistance_requested`, `assistance_kind`, `assistance_question`, and `assistance_reason`. Returns `extension.disabled` while the extension is off.',
     'tasks:question:list': 'Lists task questions, newest first. Optional `project_id`, `cause`, `status`, and `since` filters. `since` is an ISO date and includes questions asked at that moment. Returns `extension.disabled` while the extension is off.',
+    'tasks:question:close': 'Closes an `open` or `escalated` question as `answered` or `superseded`, with the operator\'s `reason` (1 to 2,000 characters) as its answer and `answered_by` `operator`. Orbit posts one `question_closed` comment on the subtask. Closing delivers no resolution, changes no assistance flag, and counts no consult. Repeating the same status and reason returns the question unchanged. Requires Gateway access. Returns `extension.disabled` while the extension is off, `tasks.question_closed` (409) when the question is already `answered` or `superseded`, and 422 for another status or an empty reason.',
     'tasks:show': 'Shows one Task group and its Tasks in position order. The group and each subtask include `assistance_requested`, `assistance_kind`, `assistance_question`, and `assistance_reason`. Returns `extension.disabled` while the extension is off.',
     'tasks:subtask:cancel': 'Cancels a `todo` or `running` subtask. A `todo` subtask may be cancelled when its group is `todo`, `running`, `reviewing`, `settling`, or `waiting_for_review`; this marks it cancelled with `settled_at`, starts nothing, and requests no assistance. If no open subtask remains, including reserved, running, or reviewing siblings, the group moves to `settling`. Cancelling a `running` subtask stops its implementer and its running baseline or handoff check, keeps the group and its Instance, and starts the lowest-position `todo` subtask. That subtask runs the baseline check first when no implementer has started in the group. The group settles only when no open subtask remains. Requires Gateway access. Returns `extension.disabled` while the extension is off, `tasks.subtask_not_running` (409) when the subtask is neither cancellable `todo` nor `running`, and `tasks.subtask_interrupt_failed` (502) when a running subtask implementer or check could not be stopped; the subtask then stays `running`.',
     'tasks:cancel': 'Cancels a backlog, todo, reserved, running, reviewing, or failed Task group, or a settling group without a pull request, and clears its shared Instance. For a settling group with an approved subtask, the Gateway first pushes the workspace HEAD to `task-{group}` on origin; a failed push returns `tasks.push_failed` (502) and keeps the group and Instance. Idempotent for cancelled groups. Workspace cleanup uses forced Instance removal, including Project teardown and checkout deletion. A development source_resolved workspace with no Route or one pending or failed exclusive Route is removed with its Route and target; active or shared Routes still refuse removal. Re-cancelling also removes an unattached leftover matched by Project, task-{group} name, and branch, unless a live claim owns it. Requires Gateway access. Returns extension.disabled while the extension is off and tasks.not_cancellable for completed groups and groups in settling or waiting_for_review with a pull request.',
@@ -785,6 +786,7 @@ PARAM_SCHEMAS = {
     'process': ({'type': 'integer', 'minimum': 1}, 'Numeric Process ID.'),
     'session': ({'type': 'integer', 'minimum': 1}, 'Numeric task agent session ID within this group.'),
     'group': ({'type': 'integer', 'minimum': 1}, 'Numeric Task group ID.'),
+    'question': ({'type': 'integer', 'minimum': 1}, 'Numeric task question ID.'),
     'schedule': ({'type': 'string', 'format': 'uuid'}, 'Schedule UUID.'),
     'step': ({'type': 'string', 'pattern': '^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$'}, 'Deploy step name.'),
     'key': ({'type': 'string', 'pattern': '^[A-Za-z_][A-Za-z0-9_]{0,254}$'}, 'Environment key.'),
@@ -1829,6 +1831,8 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
     if route['name'] == 'tasks:cancel':
         responses['409'] = error_response('The tasks extension is disabled (`extension.disabled`), or the Task group is completed or in settling or waiting_for_review with a pull request (`tasks.not_cancellable`).')
         responses['502'] = error_response('The approved commits of a settling group could not be pushed to its task branch (`tasks.push_failed`). The group and its Instance stay.')
+    if route['name'] == 'tasks:question:close':
+        responses['409'] = error_response('The tasks extension is disabled (`extension.disabled`), or the question is already answered or superseded (`tasks.question_closed`).')
     if route['name'] == 'tasks:subtask:cancel':
         responses['409'] = error_response('The tasks extension is disabled (`extension.disabled`) or the subtask is not running (`tasks.subtask_not_running`).')
         responses['502'] = error_response('The implementer or the running check could not be stopped (`tasks.subtask_interrupt_failed`). The subtask stays running.')

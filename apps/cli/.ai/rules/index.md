@@ -7,7 +7,7 @@ Before planning or editing, find the row whose globs match the file's path and r
 | app/**, design/** | .ai/rules/app.md |
 | app/Commands/** | .ai/rules/commands.md |
 | README.md | .ai/rules/documentation.md |
-| .ai/**, .agents/**, .codex/**, AGENTS.md, app/Providers/LaravelBoostCompatibilityServiceProvider.php, app/Support/LaravelZero*.php, boost.json, composer.json, composer.lock, config/boost.php, tests/Feature/BoostGuidanceTest.php | .ai/rules/repository-bootstrap.md |
+| .ai/**, .agents/**, .codex/**, AGENTS.md, app/Providers/LaravelBoostCompatibilityServiceProvider.php, app/Support/LaravelZero*.php, boost.json, composer.json, composer.lock, config/boost.php, tests/Feature/BoostGuidanceTest.php, vet.json | .ai/rules/repository-bootstrap.md |
 | bootstrap/**, config/**, orbit | .ai/rules/runtime.md |
 | tests/** | .ai/rules/tests.md |
 | .editorconfig, .gitattributes, .gitignore, box.json, phpacker/**, pint.json, phpstan.neon, phpunit.guidance.xml, phpunit.xml.dist, rector.php | .ai/rules/tooling.md |

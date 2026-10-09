@@ -222,6 +222,7 @@ List, show, and `tasks:question:list` accept any authorized peer. Update and the
 | `tasks:comment:create` | `POST /api/v1/task-groups/{group}/tasks/{task}/comments` | Gateway |
 | `tasks:comment:list` | `GET /api/v1/task-groups/{group}/tasks/{task}/comments` | Gateway |
 | `tasks:question:list` | `GET /api/v1/task-questions` | Any peer |
+| `tasks:question:close` | `POST /api/v1/task-questions/{question}/close` | Gateway |
 | `tasks:agents` | `GET /api/v1/task-groups/{group}/agents` | Gateway |
 
 Each MCP tool name is the operation name with hyphens, such as `tasks-subtask-create`. The paths keep the `task-groups` segment. `{group}` is the top-level task id, and `{task}` is the subtask id.
@@ -825,7 +826,7 @@ Orbit stores one question record in `task_questions` for each consult and each d
 | `id`, `task_id`, `subtask_id`, `attempt` | The record, and where the question was asked |
 | `asked_by` | `implementer`, `reviewer`, or `operator` |
 | `question` | The one question, from `--question` or the comment body |
-| `status` | `open` while the reviewer consults, `escalated` while the operator answers, then `answered` |
+| `status` | `open` while the reviewer consults, `escalated` while the operator answers, then `answered`. A question nobody still has to answer ends `superseded` |
 | `answered_by`, `answer` | `reviewer` or `operator`, and the answer |
 | `cause` | Why the question arose. The reviewer sets it with `--cause`, and it is empty until then |
 | `asked_at`, `escalated_at`, `answered_at` | When each step happened |
@@ -851,6 +852,16 @@ Each record change is keyed to the stored comment that caused it: a turn receipt
 The consult limit counts consult records for the current `completion_attempt`. A consult record is the row created when an implementer's `blocked` receipt starts a consult. A relay, a third block, a reviewer's `blocked` during a review, and an operator comment are not consult records. A `topology_requested` receipt creates no question record and consumes no additional consult; the existing consult remains open until answered or escalated normally.
 
 [`tasks:question:list`](/cli/tasks#orbit-tasksquestionlist) is `GET /api/v1/task-questions`. Any authorized peer can call it. The filters are `project_id`, `cause`, `status`, and `since`. `since` is an ISO 8601 date or time, and the list holds questions asked at or after it, newest first.
+
+##### Close a question
+
+A resolution answers a question only through the reviewer's next receipt. When the subtask stops asking first, the record can stay `open` or `escalated`. Orbit closes those records in two ways, so `tasks:question:list --status=escalated` shows only questions someone still has to answer.
+
+When a subtask becomes `completed` or `cancelled`, Orbit marks its `open` and `escalated` questions `superseded` in the same write. The answer is `Subtask completed.` or `Subtask cancelled.`, `answered_at` is the time, and `answered_by` stays empty. When a task becomes `completed` or `cancelled`, Orbit does the same for every question of the task, with `Task completed.` or `Task cancelled.` This covers subtask cancel, task cancel, task complete, and every subtask that completes. A record that is already `answered` keeps its answer.
+
+[`tasks:question:close`](/cli/tasks#orbit-tasksquestionclose) is `POST /api/v1/task-questions/{question}/close`. It needs Gateway access. The body holds `status`, `answered` or `superseded`, and `reason`, 1 to 2,000 characters after trimming. The question must be `open` or `escalated`. In one transaction, Orbit posts a `question_closed` comment on the question's subtask, sets the status, stores the reason as the answer with `answered_by` `operator`, links the comment as `answered_comment_id`, and logs a `question closed` activity. It returns the question. Closing an `answered` or `superseded` question returns HTTP 409 `tasks.question_closed`. The same status and reason again return the question unchanged. Another status or an empty reason returns 422.
+
+Closing a question never delivers a resolution, never sets or clears assistance, and never counts as a consult. A `question_closed` comment is not a `resolution`, so the scheduler never sends it to an agent. `escalated_at` stays set, so `questions` and `escalations` still count the record.
 
 ### Assistance and resolution
 
@@ -984,6 +995,12 @@ When a baseline check fails and no implementer has started in the task, fix the 
 
 Orbit records the retry request with the resolution before moving the workspace. If the reset reply is lost or the Gateway stops before recording the new start commit, a later tick finishes the reset and bookkeeping without another resolution. Assistance stays set until that preparation succeeds.
 
+The reset refuses a workspace that holds manual work: another branch checked out, a commit that is not on the default branch, or a tracked change in the index or working tree. The checks and the reset run in one command. The retry then keeps assistance and records a communication failure.
+
+When main was red, Orbit retries without a resolution. The failed baseline ran on a commit where the Project's `merge_check`, or `Required checks` without one, failed. Once the default branch tip strictly descends from that commit and the check passed on the tip, the tick posts a `resolution` by `orbit` that names both commits and queues the same retry. The check runs follow the [green-commit rules](/reference/github-app#find-the-newest-green-commit).
+
+Orbit reads GitHub at most every five minutes per failed baseline, and never while a database transaction is open. It does not retry while the tip is red or pending, after an implementer started, or while assistance is a direction request. Every retry runs under the task execution lock, which stops it once the watched pull request merged or closed.
+
 ## Review a subtask
 
 When the handoff check and the deliverables pass, the subtask moves to `reviewing`. Its first review starts a fresh reviewer thread with the task's reviewer driver and model and the current configured effort. The task's `reviewer_agent_thread_id` then points at it. A `changes_requested` re-review continues that thread. When the continued thread cannot take a turn, Orbit starts a fresh one with a full packet. The next subtask starts another fresh reviewer.
@@ -1058,7 +1075,11 @@ A failed push or open keeps the subtask in `reviewing` and keeps its commit. It 
 
 The task title is the pull request title. The description holds the summary, a Changes list, a Breaking changes list or `None.`, and one line that says each delivered subtask passed the task check and reviewer approval. Cancelled and failed subtasks are not counted.
 
-Before Orbit commits the approval that opens the pull request, Jev checks the change list. Jev is Orbit's TypeSafe classifier, called through Laravel AI with `TYPESAFE_API_KEY`. Without that key, the call fails with `TypeSafe Jev is not configured. Set TYPESAFE_API_KEY.` For each subtask that is not cancelled or failed, it answers whether a listed change delivers that subtask. A subtask without a "yes" fails `brief_coverage`, and the reviewer's reminder names it. Jev reads briefs and the change list, not code, so it checks coverage, not correctness. A failed Jev call is a communication failure.
+Before Orbit commits the approval that opens the pull request, Orbit checks the change list against each subtask that is not cancelled or failed. First, a change covers a subtask when the change starts with the subtask's exact title, after both are trimmed.
+
+Case and punctuation count, so `Publish preparatory PR (not CLEAN) with report: ...` covers the subtask `Publish preparatory PR (not CLEAN) with report`. The title must end the change, or be followed by a character that is not a letter or a digit, so `Route` does not cover a change that starts with `Routes`. Then Jev checks the subtasks that no change covers this way. When every subtask is covered by its title, Orbit does not call Jev.
+
+Jev is Orbit's TypeSafe classifier, called through Laravel AI with `TYPESAFE_API_KEY`. Without that key, the call fails with `TypeSafe Jev is not configured. Set TYPESAFE_API_KEY.` For each remaining subtask, it answers whether a listed change delivers that subtask, and it counts a probability of at least one half as "yes". Its input lists only the remaining subtasks. A subtask without a "yes" fails `brief_coverage`, and the reviewer's reminder names it. Jev reads briefs and the change list, not code, so it checks coverage, not correctness. A failed Jev call is a communication failure.
 
 ### Watch the branch while subtasks are open
 
@@ -1180,6 +1201,8 @@ Project slugs and CI job names do not change that order. A task gets at most two
 | Conflict | `Merge origin/{base}` | `Merge origin/{base} into the task branch and resolve the conflicts. Do not rebase and do not force-push.` |
 | Failed check | `Fix {name}` | `Check {name} failed: {url}. Do not rebase and do not force-push.` |
 | Trusted requested changes | `Address GitHub review {review_id}` | The immutable findings packet below, with the source head, reviewer identity, review URL, and bounded scope. No rebase or force-push. |
+
+The base may already fix a failed check. Before Orbit appends a check fixup, it reads the tip of the pull request base. When that tip is strictly ahead of its merge base with the head, and the Project's `merge_check` passed on it, the brief starts with `Merge origin/{base} first; base may already fix this.` Without a `merge_check`, Orbit reads `Required checks`. The check runs follow the [green-commit rules](/reference/github-app#find-the-newest-green-commit). The title, identity, and caps do not change. A failed read leaves the brief as shown above.
 
 Conflict and check fixups use the Project's task check as configured when Orbit creates the fixup. When it exists, the fixup has one `command` deliverable, `project-check`, which runs that exact command in `.`. Without a configured check, the fixup has one `review` deliverable, `fixup-review`, that asks the reviewer to confirm the conflict or failed check is resolved from the available evidence. The Gateway adds no CI reproduction command. Changing the Project check later does not rewrite an existing fixup's deliverables; subsequent handoffs use the current Project check as usual.
 

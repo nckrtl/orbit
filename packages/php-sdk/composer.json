@@ -14,6 +14,7 @@
     "require-dev": {
         "laravel/pao": "^1.1",
         "laravel/pint": "^1.32",
+        "laravel/vet": "^0.2.1",
         "nckrtl/pestphp-monorepo": "dev-main",
         "phpstan/phpstan": "^2.2.13",
         "phpunit/phpunit": "^13.0",
@@ -49,6 +50,7 @@
     },
     "config": {
         "allow-plugins": {
+            "laravel/vet": true,
             "pestphp/pest-plugin": true,
             "rector/rector": true
         },

@@ -54,6 +54,8 @@ The recorded file holds the request class, the route, the status, and the body. 
 
 The `tasks/tasks-show/watched` fixture records a running task whose branch pull request was opened outside Orbit. It has `watched_pr_url`, `watched_pr_number`, and `watched_pr_state`, while `pr_url` remains null. The default task fixtures keep the watched fields null. The SDK and CLI replay both cases so a watched pull request cannot become the reviewed pull request by accident. When these fields change, re-record every response that includes a task and update its CLI JSON expectation. The [branch watch](/reference/tasks#watch-the-branch-while-subtasks-are-open) owns their meaning.
 
+The `tasks/tasks-question-close` fixtures record a question closed as `superseded` and the `tasks.question_closed` refusal of a second close with another status. The SDK and the CLI replay both.
+
 ## Validate a fixture
 
 `bin/api-fixtures --check` validates every fixture body against the response schema for its route and status in `docs/openapi.json`. The `apps/docs` checks run it, so a fixture whose body differs from the API reference fails continuous integration. Regenerate the reference with `composer docs-openapi` when a response shape changes on purpose. The inputs that command reads are on [API reference generation](/reference/api-reference).

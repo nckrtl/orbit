@@ -113,3 +113,13 @@ it('plans per-reviewer fixups with mandatory findings review and an optional sna
         ->and($plan->brief)->toBe($packet->brief)
         ->and($plan->deliverables)->not->toBe($later->deliverables);
 })->with([null, '   ', '  composer check  ']);
+
+it('adds merge origin first to a check brief and keeps its identity, title, and deliverables', function (): void {
+    $plan = TaskSettlingFixup::plans('make check', false, 'main', [new TaskPullRequestCheck('CLI', null)])[0];
+    $merged = $plan->mergingBaseFirst('main');
+
+    expect($merged->brief)->toBe('Merge origin/main first; base may already fix this. Check CLI failed. Do not rebase and do not force-push.')
+        ->and($merged->identity)->toBe($plan->identity)
+        ->and($merged->title)->toBe($plan->title)
+        ->and($merged->deliverables)->toBe($plan->deliverables);
+});
