@@ -1749,6 +1749,7 @@
                 "Activity",
                 "Cluster",
                 "Deliverable",
+                "Deployment",
                 "Extension",
                 "Gateway",
                 "Instance",

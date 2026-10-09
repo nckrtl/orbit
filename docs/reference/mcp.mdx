@@ -29,13 +29,15 @@ One MCP request has one 570-second command deadline, the same deadline as one AP
 
 ## Tool list changes
 
-The `/mcp` server declares `tools.listChanged`. A release that changes `tools.json`, or an [extension](/cli/extension) switch, changes the tool list. The Gateway does not push that change. It ends the sessions that were opened under the old list instead:
+The tool list a client caches is the name and input schema of each tool that the enabled [extensions](/cli/extension) offer. A release that changes a name or an input schema in `tools.json`, or an extension switch that adds or removes tools, changes that list. A release that changes only descriptions, titles, or formatting does not. The Gateway does not push a change. It ends the sessions that were opened under the old list instead:
 
 - `initialize` returns an `Mcp-Session-Id` header. The id starts with the tool list version.
 - A request whose session id names an older version receives HTTP 404 with the JSON-RPC error `-32001` `Session not found`. The Gateway does not run that request.
-- The client then sends `initialize` again without a session id and lists the tools again. Claude Code does this itself and retries the tool call once.
+- The streamable HTTP transport says that the client must then send `initialize` again without a session id. The client then lists the tools again.
 
-A release that leaves the tool list unchanged keeps the sessions open. A request without a session id is served as before. The Gateway stores no session state.
+Not every client does this. The reference TypeScript SDK (1.30) raises the 404 as an error and keeps the old session id, so a host built on it must open a new session itself. Until it does, every request receives the same 404. Restart or reconnect the server in such a host; in Claude Code, use `/mcp` and reconnect `orbit`.
+
+The server declares `tools.listChanged` as `false`, because it never sends `notifications/tools/list_changed`. A request without a session id is served as before. The Gateway stores no session state.
 
 A `server/discover` probe receives only the protocol versions that use `initialize`, so a client that probes falls back to `initialize` and gets a session. Requests in the 2026-07-28 revision still work, but a client on that revision is not told of a new tool list until it connects again. `/mcp/search` lists the same two tools after every change, and `search_tools` always searches the current catalogue, so it does not end sessions.
 
@@ -68,7 +70,7 @@ For a disabled extension, a direct `tools/call` returns `isError: true` and cont
 
 `instance-rename` records an externally renamed development branch and can move the Instance's own Route, including a generated Route. Send `instance` and at least one of `branch` or `domain`. The Gateway checks the local checkout before changing its records; the tool never runs `git branch -m`. See [Instance rename](/cli/instance#orbit-instancerename).
 
-`instance-deploy` and `instance-rollback` stream progress over HTTP. As tools they run to completion and return every progress event in order under `events`; the last event carries the result.
+`instance-deploy` and `instance-rollback` stream progress over HTTP. As tools they run to completion and return their progress events in order under `events`. The last event carries the result: a `result` event whose `status` is `succeeded` or `failed`. Step output arrives as `output` events with base64 `data_base64`. Through both endpoints, these events may use half of the 65,536-byte `/mcp/search` output limit. When they would use more, the reply keeps the first 16,384 and the last 16,384 bytes of them. One `{"type": "output_truncated", "dropped_bytes": N}` event replaces the middle and gives the number of output bytes it dropped. Phase events and the result are never dropped, so a long deploy fits in an `execute_tools` reply. To read more of the output, call `instance-deployment-show`, which returns the [stored deployment log](/cli/instance#orbit-instancedeploymentshow).
 
 Machine callbacks and browser pages have no tool: channel signatures, the Node agent endpoints, live log streams, the Grafana access check, the Instance wake page, the Schedule completion report, the annotation event stream, the task agent stream, and the two GitHub App registration pages. `bin/mcp-tools` lists them.
 
@@ -127,7 +129,7 @@ An MCP server that wraps CLI commands keeps the process start and the CLI instal
 
 ### Sessions end instead of a pushed notification
 
-A pushed `notifications/tools/list_changed` needs a stream that stays open: `GET /mcp` in the `initialize` revisions, or `subscriptions/listen` in the 2026-07-28 revision. Each open stream would hold one of the Gateway's eight PHP-FPM workers, and PHP-FPM ends every request after 600 seconds. A session id that names the tool list version needs no stream and no stored state, and every client that follows the streamable HTTP transport opens a new session after a 404.
+A pushed `notifications/tools/list_changed` needs a stream that stays open: `GET /mcp` in the `initialize` revisions, or `subscriptions/listen` in the 2026-07-28 revision. Each open stream would hold one of the Gateway's eight PHP-FPM workers, and PHP-FPM ends every request after 600 seconds. A session id that names the tool list version needs no stream and no stored state. A client that does not handle the 404 must reconnect, so the version covers only names and input schemas, and a reworded description does not end a session.
 
 ### Typed tools, not one command tool
 

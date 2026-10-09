@@ -15,18 +15,6 @@ final class OrbitSearchServer extends OrbitServer
     #[\Override]
     protected string $name = 'Orbit Gateway (search)';
 
-    /**
-     * The two listed tools never change; `search_tools` always searches the current catalogue.
-     *
-     * @var array<string, array<string, bool>>
-     */
-    #[\Override]
-    protected array $capabilities = [
-        self::CAPABILITY_TOOLS => ['listChanged' => false],
-        self::CAPABILITY_RESOURCES => ['listChanged' => false],
-        self::CAPABILITY_PROMPTS => ['listChanged' => false],
-    ];
-
     /** @return array<int|string, mixed> */
     #[\Override]
     protected function catalogue(): array

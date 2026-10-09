@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Routes\RouteRemovalProjector;
 use App\Domain\Shared\LifecycleStatus;
+use App\Http\Mcp\ToolManifest;
 use App\Http\Streaming\DeploymentStreamConnection;
 use App\Http\Streaming\NativeDeploymentStreamConnection;
 use App\Infrastructure\Processes\CommandDeadline;
@@ -38,6 +39,64 @@ function mcp_message(TestResponse $response): array
     preg_match_all('/^data: (.+)$/m', $response->streamedContent(), $matches);
 
     return json_decode((string) end($matches[1]), true);
+}
+
+/**
+ * Serves a copy of the shipped tool manifest, changed by $change and written in a different format.
+ *
+ * @param  Closure(stdClass): mixed  $change
+ */
+function mcp_serve_manifest(mixed $test, Closure $change): void
+{
+    $manifest = json_decode((string) file_get_contents(resource_path('mcp/tools.json')), false, flags: JSON_THROW_ON_ERROR);
+    $change($manifest);
+    $path = (string) tempnam(sys_get_temp_dir(), 'mcp-tools-');
+    $test->manifests[] = $path;
+    file_put_contents($path, json_encode($manifest, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+    app()->instance(ToolManifest::class, new ToolManifest($path));
+}
+
+/** The first tool that no extension switch can remove. */
+function mcp_core_tool(stdClass $manifest): stdClass
+{
+    foreach ($manifest->tools as $tool) {
+        if ($tool->extension === null) {
+            return $tool;
+        }
+    }
+
+    throw new RuntimeException('The manifest has no core tool.');
+}
+
+/**
+ * The tool result text of an `instance-deploy` call, sent directly to /mcp or through `execute_tools`.
+ *
+ * @param  array<string, mixed>  $arguments
+ * @return array{string, list<array<string, mixed>>}
+ */
+function mcp_deploy(mixed $test, string $endpoint, array $arguments): array
+{
+    $call = $endpoint === '/mcp'
+        ? ['name' => 'instance-deploy', 'arguments' => $arguments]
+        : ['name' => 'execute_tools', 'arguments' => ['calls' => [['name' => 'instance-deploy', 'arguments' => $arguments]]]];
+
+    ob_start();
+
+    try {
+        $message = mcp_message(mcp_call($test, 'tools/call', $call, $endpoint));
+    } finally {
+        ob_end_clean();
+    }
+
+    $text = $message['result']['content'][0]['text'];
+    $payload = json_decode($text, true);
+
+    if ($endpoint !== '/mcp') {
+        expect($payload['ok'] ?? null)->toBeTrue((string) json_encode($payload['error'] ?? null));
+        $payload = json_decode($payload['results'][0]['content'][0]['text'], true);
+    }
+
+    return [$text, $payload['events'] ?? []];
 }
 
 beforeEach(function (): void {
@@ -179,6 +238,27 @@ describe('POST /mcp', function (): void {
             ->and(end($events))->toMatchArray(['type' => 'result', 'status' => 'succeeded']);
     });
 
+    it('keeps the result of a deploy with long output inside the reply limit', function (string $endpoint): void {
+        $fixture = Orb220DeploymentApiFixture::create();
+        // Six 16 KiB chunks: about 96 KiB of step output, 128 KiB as base64 events.
+        $fixture->deployment->prepareOutputChunks = 6;
+        $this->withServerVariables(['REMOTE_ADDR' => $fixture->caller->wireguard_ip]);
+
+        [$text, $events] = mcp_deploy($this, $endpoint, ['instance' => $fixture->instance->id]);
+        $truncated = array_values(array_filter($events, static fn (array $event): bool => $event['type'] === 'output_truncated'));
+        $kept = array_sum(array_map(
+            static fn (array $event): int => strlen((string) base64_decode((string) $event['data_base64'], true)),
+            array_filter($events, static fn (array $event): bool => $event['type'] === 'output'),
+        ));
+
+        expect(strlen($text))->toBeLessThan(65_536)
+            ->and($fixture->deployment->activations)->toBe(1)
+            ->and(end($events))->toMatchArray(['type' => 'result', 'status' => 'succeeded'])
+            ->and($truncated)->toHaveCount(1)
+            ->and($kept + $truncated[0]['dropped_bytes'])->toBe(6 * 16 * 1024 + strlen("output-secret\0bytes"))
+            ->and(array_column($events, 'phase'))->toContain('after_activation');
+    })->with(['/mcp', '/mcp/search']);
+
     it('refuses a caller that is not an active WireGuard peer', function (): void {
         $this->withServerVariables(['REMOTE_ADDR' => '203.0.113.9']);
 
@@ -214,10 +294,16 @@ describe('/mcp sessions', function (): void {
         ]);
     });
 
-    it('declares tool list changes and names the tool list in the session id', function (): void {
+    afterEach(function (): void {
+        foreach ($this->manifests ?? [] as $path) {
+            @unlink($path);
+        }
+    });
+
+    it('names the tool list in the session id and does not promise list_changed notifications', function (): void {
         $response = ($this->initialize)();
 
-        expect($response->json('result.capabilities.tools.listChanged'))->toBeTrue()
+        expect($response->json('result.capabilities.tools.listChanged'))->toBeFalse()
             ->and($response->headers->get('Mcp-Session-Id'))->toMatch('/\A[0-9a-f]{16}\.[0-9a-f]{32}\z/');
 
         $session = $response->headers->get('Mcp-Session-Id');
@@ -250,6 +336,44 @@ describe('/mcp sessions', function (): void {
             ->and($names)->toContain('tasks-create');
     });
 
+    it('keeps a session when a release only rewords tools or reformats the manifest', function (): void {
+        $session = ($this->initialize)()->headers->get('Mcp-Session-Id');
+        mcp_serve_manifest($this, static function (stdClass $manifest): void {
+            foreach ($manifest->tools as $tool) {
+                $tool->title .= ' (renamed)';
+                $tool->description .= ' Reworded.';
+            }
+
+            // Reordered schema keys describe the same schema.
+            $tool = mcp_core_tool($manifest);
+            $tool->input_schema = (object) array_reverse((array) $tool->input_schema, true);
+        });
+        $this->withHeader('Mcp-Session-Id', $session);
+
+        $listed = mcp_call($this, 'tools/list');
+
+        $listed->assertOk();
+        expect($listed->json('result.tools.0.description'))->toEndWith('Reworded.');
+    });
+
+    it('ends a session when a release changes what a client may call', function (Closure $change): void {
+        $session = ($this->initialize)()->headers->get('Mcp-Session-Id');
+        mcp_serve_manifest($this, $change);
+        $this->withHeader('Mcp-Session-Id', $session);
+
+        mcp_call($this, 'tools/list')->assertNotFound();
+    })->with([
+        'a renamed tool' => [static function (stdClass $manifest): void {
+            mcp_core_tool($manifest)->name .= '-renamed';
+        }],
+        'a changed input schema' => [static function (stdClass $manifest): void {
+            mcp_core_tool($manifest)->input_schema->properties->added = (object) ['type' => 'string'];
+        }],
+        'a removed tool' => [static function (stdClass $manifest): void {
+            array_shift($manifest->tools);
+        }],
+    ]);
+
     it('keeps serving a client that has no session id', function (): void {
         mcp_call($this, 'tools/list')->assertOk();
     });
@@ -267,7 +391,7 @@ describe('/mcp sessions', function (): void {
 
         $response->assertOk();
         expect($response->json('result.supportedVersions'))->not->toBeEmpty()->not->toContain('2026-07-28')
-            ->and($response->json('result.capabilities.tools.listChanged'))->toBeTrue();
+            ->and($response->json('result.capabilities.tools.listChanged'))->toBeFalse();
     });
 });
 

@@ -12,9 +12,10 @@ use Symfony\Component\HttpFoundation\Response;
 /**
  * Ties each MCP session to the tool list it was opened under.
  *
- * The session id starts with the tool manifest version. When a release or an extension switch changes the
- * tool list, a request with an older session id receives HTTP 404, the MCP answer for an ended session. The
- * client then initializes again and lists the new tools. The Gateway stores no session state.
+ * The session id starts with the tool list version ({@see ToolManifest::version()}): the names and input
+ * schemas of the offered tools. When a release or an extension switch changes them, a request with an older
+ * session id receives HTTP 404, the MCP answer for an ended session, and does not run. A release that only
+ * rewords descriptions keeps the sessions. The Gateway stores no session state.
  */
 final class ExpireOutdatedMcpSessions
 {
