@@ -300,7 +300,7 @@ When `ORBIT_MAIN_CACHE_STORE` is set, a checkout seeds only from that store, eve
 
 The registration is a link at `$XDG_STATE_HOME/orbit/main-cache-stores/<key>`, and `$XDG_STATE_HOME` defaults to `~/.local/state`. The key comes from the origin URL, so the HTTPS and SSH URLs of one repository share it. Each publication registers its store unless another live store already holds the registration. `bin/tia-cache register` takes the registration for the current repository.
 
-Orbit task workspaces are linked worktrees of Orbit's `default` repository, starting at its current release commit. They share its main cache store but keep private tool caches. `bin/bootstrap` and `bin/review-check` seed those private caches from the publications. A Project setup step reflinks each dependency tree and private cache from `ORBIT_SEED_PATH` first. When the store lags fetched `main`, seeding queues a background development deployment for the lagging projects. It does not queue a project whose last refresh failed at that commit or at a later one. Projects without a release keep the independent-clone fallback.
+Orbit task workspaces are linked worktrees of Orbit's `default` repository, starting at the last commit that deployed there. They share its main cache store but keep private tool caches. `bin/bootstrap` and `bin/review-check` seed those private caches from the publications. A Project setup step reflinks each dependency tree and private cache from `ORBIT_SEED_PATH` first. When the store lags fetched `main`, seeding queues a background development deployment for the lagging projects. It does not queue a project whose last refresh failed at that commit or at a later one. Projects whose default has not deployed keep the independent-clone fallback.
 
 ### Publish from bootstrap
 
@@ -310,13 +310,13 @@ After all checks pass, bootstrap publishes its caches when the checkout is clean
 
 `bin/tia-cache refresh --background` records a request and starts one worker when none runs. It returns at once. `bin/worktree-remove` queues it when it removes a merged worktree. A merge without that cleanup, such as a task's pull request, queues nothing. The next seed from the registered store queues the refresh instead. Cache freshness never holds worktree creation, a merge, or cleanup.
 
-For Orbit, the store lives under the stable `default` repository's `.git/orbit-tia/v1` on `/fast`. Register its owner with `bin/tia-cache register --repository=/fast/apps/orbit/default --development-instance=303` after initializing the release layout. The background worker holds the refresh lock and calls `orbit instance:deploy 303 --json`; the managed user's Orbit CLI must have Gateway access. It never fetches, installs, or changes the selected release itself.
+For Orbit, the store lives under the stable `default` repository's `.git/orbit-tia/v1` on `/fast`. Register its owner with `bin/tia-cache register --repository=/fast/apps/orbit/default --development-instance=303`. The background worker holds the refresh lock and calls `orbit instance:deploy 303 --json`; the managed user's Orbit CLI must have Gateway access. It never fetches or installs in the checkout itself, and it reads the commit the deployment checked out.
 
-The Project's last development deploy step runs `bin/tia-cache warm` in the clean, unselected candidate. Pest does not record detached releases, so warm-up temporarily uses a private candidate branch and folds its successful results into the main publication. A durable, ownership-bound journal records this transition before attachment. Warm-up holds its journal lock through child commands and detaches the candidate before removing the journal. If the process dies, the next deployment validates that journal, Git administration, commit and branch creation receipt before detaching and deleting the private branch. It refuses a live lock or foreign state instead of modifying it.
+`bin/tia-cache warm` checks and publishes caches from an unselected default release candidate. A [development default](/reference/deployments#development-defaults) deploys in its checkout and builds no candidate, so no deploy step runs it. Pest does not record detached releases, so warm-up temporarily uses a private candidate branch and folds its successful results into the main publication. A durable, ownership-bound journal records this transition before attachment.
 
 Warm-up installs dependencies and runs `composer test:affected`, `composer format:check`, and `composer analyse` for each project, publishing each successful tool independently.
 
-PCOV or Xdebug is required and each command stops after 30 minutes. A required warm-up failure retains the live release; a best-effort failure is reported and can still switch it. Bootstrap from a task workspace cannot publish into this deployment-owned store.
+PCOV or Xdebug is required and each command stops after 30 minutes. Bootstrap from a task workspace cannot publish into this deployment-owned store.
 
 An unmanaged repository without a development owner retains the private maintenance-checkout fallback. Its worker fetches `main`, fast-forwards that checkout and runs the same checks. This is not Orbit's deployed cache source. After registering Orbit's default store and verifying its publications, stop the old worker and retire the ext4 store's `checkout/` and `repository/`; keep old logs until any recorded failures are resolved.
 
@@ -339,7 +339,7 @@ It sets `PAO_DISABLE=1`, so the commands print their normal output even when an 
 | `bin/tia-cache status` | Prints the publications and the maintenance state |
 | `bin/tia-cache status --json --remote` | Reads `main` from the remote and prints the maintenance state as JSON, without changing anything |
 | `bin/tia-cache register` | Registers this repository's store for its origin; `--development-instance=ID` assigns deployment ownership |
-| `bin/tia-cache warm` | Checks and publishes caches from an unselected default release candidate |
+| `bin/tia-cache warm` | Checks and publishes caches from an unselected default release candidate. A default deployment builds none, so nothing runs it |
 
 Every cache command accepts `--repository=PATH`. `seed`, `refresh`, and `warm` accept repeatable `--project=apps/docs` options, and they cover all five projects by default.
 

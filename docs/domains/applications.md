@@ -77,11 +77,11 @@ The Gateway refuses these requests before it changes anything:
 
 ### Dependency copy
 
-New Instances start from the successful development release of `default` on the same Node. Orbit creates a linked worktree at that release's commit. The Instances API exposes `seed_path` and `seed_commit` on `default`, so external callers can create their own linked worktrees at the same commit before registration.
+New Instances start from the checkout of `default` on the same Node, at the last commit that [deployed](/reference/deployments#development-defaults) there. Orbit creates a linked worktree at that commit. The Instances API exposes `seed_path` and `seed_commit` on `default`, so external callers can create their own linked worktrees at the same commit before registration.
 
-The Project's [setup steps](/reference/instance-setup) own dependency copying. They receive `ORBIT_SEED_PATH` and `ORBIT_SEED_COMMIT` and can reflink all their dependency and cache folders, including nested monorepo projects. Copy only disposable folders that do not hold Instance-specific configuration, absolute links or runtime state. Do not copy `.env`, logs, databases, `public/hot` or configuration caches. A linked worktree shares Git history, never the seed's working files.
+The Project's [setup steps](/reference/instance-setup) own dependency copying. They receive `ORBIT_SEED_PATH` and `ORBIT_SEED_COMMIT` and can reflink all their dependency and cache folders, including nested monorepo projects. Copy only disposable folders that do not hold Instance-specific configuration, absolute links or runtime state. Do not copy `.env`, logs, databases, `public/hot` or configuration caches. A deployment of the default can change these folders while setup copies them, so keep the locked installs after the copy. A linked worktree shares Git history, never the seed's working files.
 
-Use `cp -a --reflink=auto` for an ordinary-copy fallback on filesystems without block cloning, or `--reflink=always` when a Project requires shared blocks. When no release exists, Orbit creates an independent clone; the seed variables are empty and setup installs from lock files. Project setup steps replace the automatic copy of root `vendor` and `node_modules`.
+Use `cp -a --reflink=auto` for an ordinary-copy fallback on filesystems without block cloning, or `--reflink=always` when a Project requires shared blocks. When `default` has not deployed yet, Orbit creates an independent clone; the seed variables are empty and setup installs from lock files. Project setup steps replace the automatic copy of root `vendor` and `node_modules`.
 
 ### Database clone
 
@@ -298,7 +298,7 @@ A create retry resumes only an Instance that carries the create's own mark, neve
 
 ### Copy dependencies, not the checkout
 
-A Project knows its own dependency and cache folders. Copying only the root missed the dependency trees of nested projects. Project setup steps can copy the matching folders from a known release and then install incrementally. Copying a whole checkout is rejected because it brings Instance-specific configuration and runtime state. A ZFS dataset clone per Instance is rejected because it needs per-Instance datasets and privileges; ordinary reflinks work within the existing storage layout.
+A Project knows its own dependency and cache folders. Copying only the root missed the dependency trees of nested projects. Project setup steps can copy the matching folders from the default checkout and then install incrementally. Copying a whole checkout is rejected because it brings Instance-specific configuration and runtime state. A ZFS dataset clone per Instance is rejected because it needs per-Instance datasets and privileges; ordinary reflinks work within the existing storage layout.
 
 ### One application model
 

@@ -164,81 +164,9 @@ class MainCacheTest(unittest.TestCase):
         (state / ('release-' + release.name)).write_text(identity + ':' + release.name + '\n')
         return state
 
-    def prune_development_releases(self, selected):
-        source = Path(cache.__file__).resolve().parent.parent / 'apps/gateway/app/Infrastructure/Instances/DevelopmentReleaseProgram.php'
-        program = subprocess.check_output(['php', '-r', 'require $argv[1]; echo App\\Infrastructure\\Instances\\DevelopmentReleaseProgram::prune();', str(source)], text=True)
-        return subprocess.run(['bash', '-seu', '--', str(self.root), str(self.root), '303', selected.name], input=program, capture_output=True, text=True)
-
-    def test_cache_attachment_recovers_after_process_termination_at_each_transition(self):
-        self.store.mkdir(parents=True)
-        (self.store / 'development-instance.json').write_text(json.dumps({'instance': 303}))
-        selected = self.root / 'releases' / 'selected'
-        cache.git(self.root, 'worktree', 'add', '--detach', str(selected), self.commit)
-        self.own_development_release(selected)
-        (self.root / 'current').symlink_to('releases/selected')
-        release = self.root / 'releases' / 'candidate'
-        for termination in (signal.SIGTERM, signal.SIGKILL):
-            for phase in ('before-ref', 'attached', 'detached', 'deleted-ref'):
-                with self.subTest(termination=termination, phase=phase):
-                    cache.git(self.root, 'worktree', 'add', '--detach', str(release), self.commit)
-                    state = self.own_development_release(release)
-                    child = subprocess.run([sys.executable, '-c', '''
-import importlib.machinery, importlib.util, os, signal, sys
-from pathlib import Path
-loader = importlib.machinery.SourceFileLoader('interrupted_cache', sys.argv[1])
-cache = importlib.util.module_from_spec(importlib.util.spec_from_loader(loader.name, loader))
-loader.exec_module(cache)
-original = cache.git
-phase, termination = sys.argv[4], int(sys.argv[5])
-def interrupted(root, *arguments):
-    if phase == 'before-ref' and arguments[0] == 'update-ref':
-        os.kill(os.getpid(), termination)
-    result = original(root, *arguments)
-    if ((phase == 'attached' and arguments[0] == 'symbolic-ref')
-            or (phase == 'detached' and 'checkout' in arguments)
-            or (phase == 'deleted-ref' and arguments[:2] == ('branch', '-D'))):
-        os.kill(os.getpid(), termination)
-    return result
-cache.git = interrupted
-root, common = Path(sys.argv[2]), Path(sys.argv[3])
-cache.warm_release(root, common, cache.cache_store(common), [])
-''', str(Path(cache.__file__).resolve()), str(release), str(self.common), phase, str(termination)], capture_output=True, text=True)
-                    self.assertEqual(child.returncode, -termination, child.stderr)
-                    self.assertTrue((state / 'cache-branch-candidate').exists())
-                    recovery = self.prune_development_releases(selected)
-                    self.assertEqual(recovery.returncode, 0, recovery.stderr)
-                    self.assertFalse(release.exists())
-                    self.assertFalse((state / 'cache-branch-candidate').exists())
-                    self.assertEqual(cache.git(self.root, 'branch', '--list', 'orbit-cache-*'), '')
-                    self.assertEqual((self.root / 'current').readlink(), Path('releases/selected'))
-
-    def test_cache_recovery_refuses_live_journals_and_foreign_branch_receipts(self):
-        self.store.mkdir(parents=True)
-        (self.store / 'development-instance.json').write_text(json.dumps({'instance': 303}))
-        selected = self.root / 'releases' / 'selected'
-        release = self.root / 'releases' / 'candidate'
-        for path in (selected, release):
-            cache.git(self.root, 'worktree', 'add', '--detach', str(path), self.commit)
-            self.own_development_release(path)
-        (self.root / 'current').symlink_to('releases/selected')
-        branch = 'orbit-cache-candidate'
-        with cache.cache_branch_journal(release, self.common, {'instance': 303}, self.commit, branch) as (journal, identity):
-            cache.git(release, 'update-ref', '--create-reflog', '-m', 'foreign creation', 'refs/heads/' + branch, self.commit)
-            cache.git(release, 'symbolic-ref', 'HEAD', 'refs/heads/' + branch)
-            result = self.prune_development_releases(selected)
-            self.assertNotEqual(result.returncode, 0)
-            self.assertEqual(cache.git(release, 'branch', '--show-current'), branch)
-        result = self.prune_development_releases(selected)
-        self.assertNotEqual(result.returncode, 0)
-        self.assertTrue(journal.exists())
-        self.assertEqual(cache.git(release, 'branch', '--show-current'), branch)
-
     def test_development_refresh_delegates_to_default_deployment(self):
         self.store.mkdir(parents=True)
         (self.store / 'development-instance.json').write_text(json.dumps({'instance': 303}))
-        release = self.root / 'releases' / 'selected'
-        cache.git(self.root, 'worktree', 'add', '--detach', str(release), self.commit)
-        (self.root / 'current').symlink_to(release)
         with cache.queue_lock(self.store):
             cache.enqueue(self.common, self.store, [self.project])
         original_run = cache.run

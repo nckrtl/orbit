@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Instances;
 
+use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Instances\Deployment\DeploymentCommandResult;
@@ -26,9 +27,15 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\ProcessCancelledException;
 use App\Models\Instance;
+use Illuminate\Support\Facades\Log;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Throwable;
 
+/**
+ * Deploys a development default in its own checkout: fetch, check out the branch's newest commit,
+ * and run the Project's development deploy steps there. The default's seed fields record the last
+ * commit whose steps all passed; other Instances on the Node start from that commit.
+ */
 final readonly class DeployDefaultInstanceAction
 {
     public function __construct(
@@ -39,6 +46,7 @@ final readonly class DeployDefaultInstanceAction
         private InstanceDeploymentRecorder $recorder,
         private DevelopmentRouteProjector $routes,
         private DevelopmentProjectionOperationLock $projections,
+        private AppDevSourceOperationLock $sources,
     ) {}
 
     /** Scheduled runs return null for an unchanged commit, without a history row. */
@@ -66,40 +74,38 @@ final readonly class DeployDefaultInstanceAction
                             $request->emitPhase($phase, $stepName);
                         },
                     );
-                    $release = null;
-                    $selected = null;
+                    $commit = null;
                     $commands = [];
                     $boundary = DeploymentFailureBoundary::Preparation;
                     try {
                         $this->assertNotCancelled($output);
                         $output->emitPhase(DeploymentProgressPhase::SourcePreparation);
-                        $this->deployment->initialize($instance);
-                        $selected = $this->deployment->selected($instance);
-                        $instance->update(['seed_path' => $selected->path, 'seed_commit' => $selected->commit, 'seed_repository' => $instance->checkout_path]);
-                        if (! $instance->development_release_layout) {
-                            $instance->update(['development_release_layout' => true, 'development_projection_pending' => true]);
+                        if ($instance->development_release_layout) {
+                            $this->convert($instance);
                         }
-                        // The pending mark is the receipt of remote convergence. Repair before the unchanged
-                        // fast path so a lost process cannot strand migration; a completed projection skips the lock.
+                        // The pending mark is the receipt of route convergence. Repair before the unchanged
+                        // fast path so a lost process cannot strand it; a completed projection skips the lock.
                         if ($instance->development_projection_pending) {
                             $this->projectRoute($instance);
                         }
-                        $commit = $this->deployment->target($instance);
-                        if ($onlyChanged && $selected->commit === $commit) {
+                        $target = $this->deployment->target($instance);
+                        if ($target->releasesRemain) {
+                            $this->removeReleases($instance, $output);
+                        }
+                        if ($onlyChanged && $instance->seed_commit === $target->commit) {
                             return null;
                         }
                         if ($triggeredBy !== null) {
                             $record = $this->recorder->start($instance, $triggeredBy);
                         }
-                        // Remove interrupted candidates before building another; preserve the last two selections.
-                        $this->deployment->prune($instance, $selected);
-                        $release = $this->deployment->prepare($instance, $commit);
+                        $commit = $target->commit;
+                        $this->deployment->checkout($instance, $commit, $output);
                         $boundary = DeploymentFailureBoundary::BeforeActivation;
                         foreach ($steps as $step) {
                             $this->assertNotCancelled($output);
                             $output->emitPhase(DeploymentProgressPhase::BeforeActivation, $step->name);
                             try {
-                                $commands[] = new DeploymentCommandResult($step->name, $this->deployment->executeStep($instance, $release, $step, $output));
+                                $commands[] = new DeploymentCommandResult($step->name, $this->deployment->executeStep($instance, $step, $output));
                             } catch (RuntimeConvergenceException $exception) {
                                 if ($exception->result !== null) {
                                     $commands[] = new DeploymentCommandResult($step->name, $exception->result);
@@ -107,38 +113,15 @@ final readonly class DeployDefaultInstanceAction
                                 if ($step->required || $exception->result === null || $exception->errorCode !== 'deployment.step_failed') {
                                     throw $exception;
                                 }
-                                $output->emit(new DeploymentEvent($step->name, DeploymentOutputStream::Stderr, "Best-effort step failed (exit {$exception->result->exitCode}): {$step->name}; restored the candidate snapshot. Deployment will continue.\n", important: true));
+                                $output->emit(new DeploymentEvent($step->name, DeploymentOutputStream::Stderr, "Best-effort step failed (exit {$exception->result->exitCode}): {$step->name}. Deployment will continue.\n", important: true));
                             }
                         }
-                        $this->assertNotCancelled($output);
-                        $boundary = DeploymentFailureBoundary::Activation;
-                        $output->emitPhase(DeploymentProgressPhase::Activation);
-                        // A crash between the switch and its projection must leave a mark for the next tick.
-                        $instance->update(['development_projection_pending' => true]);
-                        $selected = $this->deployment->activate($instance, $release);
-                        $instance->update(['seed_path' => $selected->path, 'seed_commit' => $selected->commit, 'seed_repository' => $instance->checkout_path]);
-                        // checkout_path remains the repository home, never a disposable release.
-                        $this->projectRoute($instance);
-                        $this->deployment->prune($instance, $selected);
-                        $result = DeploymentResult::succeeded($release, $commands);
+                        $instance->update(['seed_path' => $instance->checkout_path, 'seed_commit' => $commit, 'seed_repository' => $instance->checkout_path]);
+                        $result = DeploymentResult::checkedOut($commit, $commands);
                     } catch (Throwable $exception) {
-                        // An activation error may have occurred after rename; re-read the actual selection.
-                        if ($boundary === DeploymentFailureBoundary::Activation) {
-                            try {
-                                $selected = $this->deployment->selected($instance);
-                                $instance->update(['seed_path' => $selected->path, 'seed_commit' => $selected->commit, 'seed_repository' => $instance->checkout_path]);
-                            } catch (Throwable) {
-                                // Preserve the last observed selection if SSH itself is unavailable.
-                            }
-                        }
-                        $result = DeploymentResult::failed($release, $selected, $boundary, $this->errorCode($exception), $commands);
-                        if ($selected !== null && $selected->name !== $release?->name) {
-                            try {
-                                $this->deployment->prune($instance, $selected);
-                            } catch (Throwable) {
-                                $output->emit(new DeploymentEvent('cleanup', DeploymentOutputStream::Stderr, "Release cleanup failed; a later deployment will retry cleanup.\n"));
-                            }
-                        }
+                        // The checkout stays at the new commit. The seed keeps the last commit that deployed,
+                        // so the next tick retries the steps.
+                        $result = DeploymentResult::failed(null, null, $boundary, $this->errorCode($exception), $commands, $commit);
                         if ($record === null && $triggeredBy !== null) {
                             $record = $this->recorder->start($instance, $triggeredBy);
                         }
@@ -162,6 +145,65 @@ final readonly class DeployDefaultInstanceAction
             || $instance->source_layout !== InstanceSourceLayout::Checkout->value) {
             throw new ResourceOperationException('deployment_config.unavailable', 'Development deployment is available only for an active default checkout on app-dev.', 409);
         }
+    }
+
+    /**
+     * Converts the old release layout once. Its Route then serves the checkout, and every Instance
+     * that a release seeded names the checkout as its seed instead.
+     */
+    private function convert(Instance $instance): void
+    {
+        $commit = $this->deployment->convert($instance);
+        $this->sources->synchronized($instance->node_id, function () use ($instance, $commit): void {
+            $instance->update([
+                'development_release_layout' => false,
+                'development_projection_pending' => true,
+                'seed_path' => $instance->checkout_path,
+                'seed_commit' => $commit,
+                'seed_repository' => $instance->checkout_path,
+            ]);
+            $this->releaseSeeds($instance);
+        });
+    }
+
+    /**
+     * Removes the old releases once no setup or teardown step runs in an Instance that one of them
+     * seeded. A refusal leaves them for a later deployment and does not fail this one.
+     */
+    private function removeReleases(Instance $instance, DeploymentRequest $output): void
+    {
+        try {
+            $consumers = $this->sources->synchronized($instance->node_id, fn (): array => $this->releaseSeeds($instance));
+            $this->deployment->removeReleases($instance, $consumers);
+        } catch (Throwable $exception) {
+            Log::warning('The old development releases remain; a later deployment retries their removal.', [
+                'instance_id' => $instance->id,
+                'error' => $exception instanceof ResourceOperationException || $exception instanceof RuntimeConvergenceException ? $exception->errorCode : $exception::class,
+            ]);
+            $output->emit(new DeploymentEvent('cleanup', DeploymentOutputStream::Stderr, "The old releases remain; a later deployment retries their removal.\n"));
+        }
+    }
+
+    /**
+     * Points every seed in this default's releases at its checkout, and returns the checkouts seeded
+     * from this default. Call it with the Node's source lock held.
+     *
+     * @return list<string>
+     */
+    private function releaseSeeds(Instance $instance): array
+    {
+        $releases = $instance->checkout_path.'/releases/';
+        $checkouts = [];
+        foreach (Instance::query()->where('node_id', $instance->node_id)->where('seed_repository', $instance->checkout_path)->whereKeyNot($instance->id)->get() as $seeded) {
+            if (is_string($seeded->seed_path) && str_starts_with($seeded->seed_path, $releases)) {
+                $seeded->update(['seed_path' => $instance->checkout_path]);
+            }
+            if ($seeded->checkout_path !== '') {
+                $checkouts[] = $seeded->checkout_path;
+            }
+        }
+
+        return $checkouts;
     }
 
     private function projectRoute(Instance $instance): void

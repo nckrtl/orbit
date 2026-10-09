@@ -1,10 +1,10 @@
 ---
 title: "Instance releases"
-description: "How development defaults and production Instances build releases, run deploy steps, and select current code."
+description: "How production Instances build releases and select current code, and how development defaults deploy in their checkout."
 covers:
   - apps/gateway/app/Domain/{Instances/Deployment/**,Instances/ProductionWebRootManager.php,Projects/*DeployStep*.php}
   - apps/gateway/app/Actions/Instances/{DeployInstanceAction,DeployDefaultInstanceAction,RollbackInstanceAction,InstanceDeploymentConfigResolver,UpdateInstanceAction,ListInstanceReleasesAction,ListInstanceDeploymentsAction,*InstanceDeployStep*Action}.php
-  - apps/gateway/app/Infrastructure/Instances/{RemoteProductionDeployment,RemoteDevelopmentDeployment,DevelopmentReleaseProgram,ProductionApplicationPaths,ProductionWebRootProgram,RemoteProductionWebRootManager}.php
+  - apps/gateway/app/Infrastructure/Instances/{RemoteProductionDeployment,RemoteDevelopmentDeployment,DevelopmentCheckoutProgram,ProductionApplicationPaths,ProductionWebRootProgram,RemoteProductionWebRootManager}.php
   - apps/gateway/app/Console/Commands/DeployDevelopmentDefaultsCommand.php
   - apps/gateway/app/Http/Streaming/**
   - apps/gateway/app/Http/{Controllers/Api/{InstanceDeploymentsController,InstanceDeployStepsController,InstanceReleasesController,InstanceRollbacksController,ProjectDevelopmentDeployStepsController},Requests/Projects/*ProjectDevelopmentDeployStepRequest}.php
@@ -44,39 +44,59 @@ A new release without such a directory fails at source preparation. Like any oth
 
 ## Development defaults
 
-A `default` Instance on an `app-dev` Node is a development release seed. Other development Instances remain ordinary working checkouts. `orbit instance:deploy ID`, the existing deployment API (`POST /api/v1/instances/{instance}/deploy` with `{}`), and MCP's Instance deploy operation can deploy a default by hand. The Project's default branch supplies the target commit; production branch overrides do not apply.
+A `default` Instance on an `app-dev` Node is a plain Git checkout that Orbit keeps at the newest commit of the Project's default branch. Other development Instances on the Node start from it. `orbit instance:deploy ID`, the existing deployment API (`POST /api/v1/instances/{instance}/deploy` with `{}`), and MCP's Instance deploy operation can deploy a default by hand. The Project's default branch supplies the target commit; production branch overrides do not apply.
 
-The Gateway checks development defaults every minute with `orbit:deploy-development-defaults`. The GitHub App currently has no push webhook, so this schedule is the push fallback. It fetches the default branch inside the Instance operation lock and skips an unchanged commit. Pushes that arrive during a deployment are picked up on the next tick; intermediate commits coalesce to the newest fetched commit. Only one deployment runs per Instance, including manual requests.
+The Gateway checks development defaults every minute with `orbit:deploy-development-defaults`. The GitHub App currently has no push webhook, so this schedule is the push fallback. It fetches the default branch inside the Instance operation lock and skips a commit that already deployed. Pushes that arrive during a deployment are picked up on the next tick; intermediate commits coalesce to the newest fetched commit. Only one deployment runs per Instance, including manual requests.
 
-An unchanged tick creates no deployment history row. Failed deployments are recorded and retried on a later tick.
+An unchanged tick creates no deployment history row.
 
-A deployment records that the default's route projection is pending before it converges the route, and clears that mark when the converge succeeds. A layout migration also marks the projection pending. A tick reconverges a visitable default's `current` route projection only while the mark is set, so a crash or a failed converge is repaired on the next tick. An unchanged tick with a completed projection does not take the [projection lock](/reference/routes#coordinate-publication), because a full converge rebuilds the Node's PHP-FPM pools, Caddy, and DNS and blocks every other Route operation while it runs.
+A deployment runs in the checkout itself, in two phases.
 
-The existing checkout directory is the release home. Its `.git` repository stays at the same path. `releases/<name>` holds detached linked worktrees, and `current` selects the live one. The first deployment migrates a plain checkout by reflinking its files into an initial release before selecting that release. The original repository and checkout files stay in place: existing task bridges and registered `t3code-<hex>` worktrees keep their Git links. Do not move or delete this repository.
+**Source preparation.** Orbit fetches the default branch and checks out the fetched commit on that branch. Untracked and ignored files stay, so dependencies, caches, `.env` files, and databases carry over.
 
-Orbit writes ownership receipts before creating layout directories, registering releases, or staging `current`. A retry can complete those interrupted operations after validating the receipts and Git registration. It refuses foreign or ambiguous paths instead of adopting or deleting them.
+- When tracked files have uncommitted changes, Orbit refuses with `deployment.checkout_dirty`. The output lists those files, and the checkout stays unchanged.
+- When the checkout would overwrite an untracked file, Git refuses it.
 
-A visitable default serves its Project or Instance web root through `current` after migration; a default without a Route is still deployed. Before switching a visitable default, Orbit validates the candidate's web root and grants Caddy access, so a request does not wait for permissions to catch up with the new link. The shared Git directory stays private even when it is outside the selected worktree; its access changes use the same recovery snapshot.
+**Steps.** The Project's [development deploy steps](#development-deploy-steps) run in list order in the checkout. They report the `before_activation` phase. There is no activation, because the checkout is what the Instance serves.
 
-A candidate starts at the current release's commit. Orbit reflinks its files with `cp --reflink=always`, excluding worktree metadata, then resets tracked code to the newest default-branch commit. This carries dependency and cache folders at any depth without framework-specific folder names. Internal absolute symlinks become relative links in the copy; links outside the release are refused. Releases must share a filesystem that supports reflinks; Orbit refuses a copy fallback. No candidate writes into the live release. Project development deploy steps run in list order in the candidate directory.
+When every required step passes, Orbit records the commit as the default's `seed_commit`. When a required step fails, the later steps do not run and the deployment fails.
 
-Every required step must pass before Orbit atomically renames the new `current` symlink into place. A failed required step keeps the last good selection and is reported. Each best-effort step runs with a reflink snapshot of the candidate. Snapshotting rebases internal absolute symlinks, including links created by earlier required steps. On failure, Orbit restores that snapshot before continuing, so partially written caches do not replace the previous caches. The new release still switches after all required steps pass.
+- The checkout stays at the new commit with the files the steps left. Orbit does not roll it back.
+- The seed keeps the last commit that deployed. So the next tick deploys again and reruns the steps.
 
-Orbit reports the failed step's exit status and names it in a warning. The output and stored events keep that warning even when the overall deployment succeeds or command output reached its storage limit.
+A failed best-effort step (`required: false`) gets a warning that names it and its exit status, and the deployment continues. The output and stored events keep that warning, even when the deployment succeeds or the output reached its storage limit.
 
-After a deployment Orbit prunes managed releases, retaining `current`, its previous selection, and releases recorded as seeds by other Instances on that Node. The seed fields on an Instance are a durable lease: asynchronous setup and interrupted retries can still read that immutable release after later deployments. The lease lasts until the consuming Instance is removed. Pruning reads these leases under the same Node source lock used for seed selection and validates every retained release marker.
+A step and Orbit's checkout take the lock that [setup and teardown steps](/reference/instance-setup) hold on the checkout. While a setup or teardown step runs there, the deployment fails with `instance.lifecycle_busy` and the next tick retries. Steps must not change tracked files: the next deployment would refuse the checkout as dirty.
 
-Release listing and pruning skip an owned release whose `.git` points to its missing administrative directory under the stable repository's `.git/worktrees/`. The Gateway logs a warning naming that release. Its directory, contents, and ownership receipt remain for operator inspection; healthy releases continue through listing and deployment. Listing still requires a valid `current`. Pruning also requires a valid previous selection and every leased seed before inspecting unused releases. Invalid ownership receipts, symlinks, and foreign or ambiguous Git metadata still fail validation.
+Explicit environment synchronization writes the checkout's `.env` files, so the application sees new values at once. A Route's web root serves files from the checkout, and a deployment does not change the Route.
 
-A failed candidate is removed without changing `current`. Cleanup never prunes the stable repository or other linked worktrees.
+A deployment records that the default's Route projection is pending before it converges the Route, and clears that mark when the converge succeeds. A tick reconverges a visitable default's Route only while the mark is set, so a crash or a failed converge is repaired on the next tick. An unchanged tick with a completed projection does not take the [projection lock](/reference/routes#coordinate-publication), because a full converge rebuilds the Node's PHP-FPM pools, Caddy, and DNS and blocks every other Route operation while it runs.
 
-Environment files and caches in development releases are copies, not links back into another Instance. When Orbit builds a candidate, it copies `.env` and any `.env.testing` from the default's stable home into the same relative directory of the candidate. It does this at the checkout root, in the application directory, and in each directory that a [Route with a web root](/reference/routes#serve-several-web-roots) serves. So explicit environment synchronization and a Route's `APP_URL` reach the next deployment without a write into the live seed. Production environment and rollback rules below remain separate.
+### Seeds
 
-Orbit skips a directory that is missing from the stable home or from the new commit. A stable directory that leaves the checkout through a link fails the preparation. The stable home keeps the commit of its migration. Orbit writes a Route's `APP_URL` only into a stable directory that holds `artisan`, so an application that a later commit adds gets no `APP_URL` from Orbit.
+A new development Instance on the same Node starts from the default: Orbit records the default's checkout as its `seed_path` and the default's `seed_commit`, and creates a linked worktree of the default's repository at that commit. [Setup steps](/reference/instance-setup#run-setup) receive the two values as `ORBIT_SEED_PATH` and `ORBIT_SEED_COMMIT` and copy dependency folders from the checkout. The checkout can change while they copy, because a deployment can run at the same time. A copied folder is a quick start, not a matching set: setup must still run its locked installs. A default's own setup gets no seed.
+
+### Converting the old release layout
+
+Earlier Gateways served a default from `releases/<name>` through a `current` link. The first deployment after an upgrade turns that layout back into a plain checkout, once.
+
+First, Orbit checks out the selected release's commit in the checkout, on the default branch. When tracked files have uncommitted changes, it refuses with `deployment.checkout_dirty` and changes nothing.
+
+Then Orbit copies the selected release's untracked and ignored files into the checkout. They replace the checkout's own copies. They hold the dependencies, caches, and runtime data, such as SQLite databases, that the Instance served. A link into the release now points into the checkout.
+
+The checkout keeps its own `.env` and `.env.testing`, because synchronization wrote them there. It also keeps its files that the release does not have.
+
+Next, the Gateway serves the Route from the checkout and records the checkout as the default's seed. Every Instance whose seed named one of the releases now names the checkout.
+
+Last, Orbit removes `current`, the releases, and the layout's state. While a setup or teardown step runs in an Instance seeded from the default, Orbit waits. It holds those Instances' lifecycle locks while it removes. A failed removal does not fail the deployment, and a later deployment retries it.
+
+Orbit keeps a release folder without its ownership receipt. It keeps the layout's state with that folder and logs a warning.
+
+A repeated conversion does nothing more. Until it succeeds, the Route keeps serving the selected release.
 
 ## Deploy steps
 
-All development and production deploy steps run at the release's repository root, not at a nested application's directory. For root `apps/site/public`, an Artisan step must say `cd apps/site && php artisan migrate --force`. Changing the web root does not change the scope of a repository-owned command.
+Development deploy steps run at the checkout's repository root, and production deploy steps at the release's repository root, not at a nested application's directory. For root `apps/site/public`, an Artisan step must say `cd apps/site && php artisan migrate --force`. Changing the web root does not change the scope of a repository-owned command.
 
 A deploy step is a named command that runs during a deployment. Each production Instance stores its own steps. A Project stores a separate ordered development deploy list, shared by its development deployments and independent of setup and teardown. Storing a step does not start a deployment.
 
@@ -88,7 +108,7 @@ Each step has `name`, `command`, `timeout_seconds`, and `required`. Names use lo
 
 A new step appends unless `before` or `after` names another step in this Project's development deploy list. The fields are exclusive. Updates without placement keep their position. Names cannot be renamed. Each list permits at most 32 steps and 3,600 seconds of total timeout. Unknown names, duplicate names, invalid fields, unknown placement, self-placement, and limit violations are refused without changing the list. Node access follows the Project's owning Node. Activity records never include commands.
 
-Required steps must pass before a development deployment switches `current`. A failed best-effort step (`required: false`) is reported but does not prevent the switch; the release retains caches reflinked from the previous release. Use required steps for installs, builds, and migrations, and best-effort steps for cache warm-up.
+Required steps must pass before Orbit records the commit as deployed. A failed best-effort step (`required: false`) is reported but does not fail the deployment, and the files it wrote stay. Use required steps for installs, builds, and migrations, and best-effort steps for cache warm-up.
 
 ### Production deploy steps
 
@@ -122,7 +142,7 @@ A deployment and a rollback run synchronously and stream their progress.
 | --- | --- | --- |
 | `POST /api/v1/instances/{instance}/deploy` | `{}` | Deploys the Instance's branch. |
 | `POST /api/v1/instances/{instance}/rollback` | `{"release": "<name>"}` | Selects one retained release. |
-| `GET /api/v1/instances/{instance}/releases` | none | `releases`, the retained release names, and `selected_release`, which can be null. |
+| `GET /api/v1/instances/{instance}/releases` | none | `releases`, the retained release names, and `selected_release`, which can be null. A development default has none. |
 
 The Gateway validates the request and the access grant before it opens the stream. A refusal there uses the normal JSON error envelope. After that, the response is `application/x-ndjson`. Each line is one event of at most 32 KiB with `type`, an increasing `sequence`, and the `request_id`.
 
@@ -173,7 +193,7 @@ A rollback selects one retained release through `current`. The Gateway checks th
 
 The Gateway records one row for each deployment and each rollback. It writes the row when the run starts and completes it when the run ends. It keeps the last 50 rows for each Instance.
 
-Each row holds `release`, `branch`, `commit`, `started_at`, `finished_at`, `duration_seconds`, `status` (`running`, `succeeded`, or `failed`), `failed_step`, `error_code`, `selected_release`, `triggered_by` (the calling Node's name, or `schedule` for an automatic development deployment), and `events`. `events` holds the phase and output events of the run, with at most 128 KiB of output.
+Each row holds `release`, `branch`, `commit`, `started_at`, `finished_at`, `duration_seconds`, `status` (`running`, `succeeded`, or `failed`), `failed_step`, `error_code`, `selected_release`, `triggered_by` (the calling Node's name, or `schedule` for an automatic development deployment), and `events`. `events` holds the phase and output events of the run, with at most 128 KiB of output. A development deployment records `commit` and leaves `release` and `selected_release` null.
 
 | Request | Result |
 | --- | --- |
@@ -196,15 +216,13 @@ For production, Orbit never deletes an old release by itself. [Instance removal]
 
 These reasons explain the design. Check them before you propose a change.
 
-### A default keeps one stable Git repository
+### A development default is a plain checkout
 
-Moving a plain checkout's repository into a release would break the administrative paths of its existing linked worktrees. Development defaults therefore leave `.git` in place and register detached release worktrees against it. A layout marker binds the release home to the Instance and repository. Each managed release has its own marker; pruning refuses an unmarked worktree even when it shares the same repository.
+A default serves development, so it updates in place like any working checkout: fetch, check out, and run the steps. Releases, a `current` link, snapshots, and pruning are what make a production switch atomic and reversible. A development default needs neither, and that machinery cost disk space, broke when a release lost its Git link, and served a stale checkout to Processes and Schedules that ran outside the release. Release layouts stay where something is served to users: the Gateway's own releases and production homes.
 
-Reflinking the release tree carries dependencies and caches at any depth, without a framework-specific folder catalog. A clone followed by fresh installs is a rejected alternative because it discards the seed's useful state. Falling back to byte copies is also rejected: it hides a filesystem prerequisite and turns a quick incremental deployment into a full dependency copy.
+A failed step leaves the new commit checked out instead of rolling back. A rollback would need the old dependencies too, and the next tick reruns the steps, so a passing retry repairs the checkout. Refusing uncommitted tracked changes keeps someone's edit from being discarded; untracked files carry the dependencies, so the checkout keeps them.
 
-### Best-effort steps cannot publish partial caches
-
-Orbit does not know which files a Project's cache command writes. It snapshots the candidate before each best-effort step and restores it on failure. Ignoring only the exit code is a rejected alternative because a command can fail after corrupting a cache. A separate remote receipt confirms restoration, even when command output was truncated. Failure to restore is an infrastructure failure and blocks activation.
+Seeds name the checkout, not a frozen copy. Setup always runs locked installs after it copies, so a copy taken during a deployment only costs install time. Leases that kept frozen releases alive for other Instances are a rejected alternative: they grew without bound and blocked cleanup.
 
 ### Orbit owns releases, you own the steps
 

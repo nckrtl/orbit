@@ -850,10 +850,9 @@ def drain(common, store, lock):
             try:
                 owner = development_owner(store)
                 if owner is not None:
-                    # Deployment owns candidate creation, warm-up, switching and pruning.
-                    # Never install or run checks in the immutable selected release.
+                    # The default's deployment owns installs and warm-up in its checkout.
                     run(common, 'orbit', 'instance:deploy', str(owner['instance']), '--json', capture=False)
-                    commit = git(common.parent / 'current', 'rev-parse', 'HEAD')
+                    commit = git(common.parent, 'rev-parse', 'HEAD')
                     results = load_requests(store)['results']
                     for project in batch:
                         previous = results.get(project, {})
@@ -1026,8 +1025,6 @@ def main():
         return warm_release(root, common, store, projects)
     elif args.action == 'register':
         if args.development_instance is not None:
-            if not (common.parent / '.git/orbit-development-releases-owner').is_file():
-                raise ValueError('Development cache owner requires an initialized default repository.')
             atomic_write(store / 'development-instance.json', json.dumps({'instance': args.development_instance}).encode())
         if not has_publications(store) and args.development_instance is None:
             raise ValueError(f'{store} has no main publications to register.')

@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Domain\Projects;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
-use App\Domain\Instances\Deployment\DevelopmentDeployment;
 use App\Domain\Instances\ProjectSandboxRuntimeGuard;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
@@ -14,7 +13,6 @@ use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Tools\VpToolManager;
 use App\Models\Instance;
-use Illuminate\Support\Facades\Log;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Throwable;
 
@@ -26,7 +24,6 @@ final readonly class ProjectLifecycleRunner
         private CommandDeadline $deadline,
         private VpToolManager $vp,
         private TiaBaselineSetup $tia,
-        private DevelopmentDeployment $deployment,
     ) {}
 
     public function run(Instance $instance, LifecyclePhase $phase): bool
@@ -53,16 +50,6 @@ final readonly class ProjectLifecycleRunner
             );
         }
 
-        $directory = $this->servedDirectory($instance, $phase, $checkout);
-        $inRelease = $directory !== $checkout;
-        // A default Instance's seed is its own active release. Setup that runs in a release has no
-        // other seed, even when the stored seed still names an older release.
-        $seeded = $phase === LifecyclePhase::Setup && ! $inRelease;
-        // Synchronization writes `.env` and `.env.testing` in the checkout. Setup in a release copies
-        // them in first, as a deploy does, so a migration sees the database that was just attached.
-        $environmentDirectory = $phase === LifecyclePhase::Setup && $inRelease
-            ? $this->environmentDirectory($instance, $checkout)
-            : null;
         $program = file_get_contents(resource_path('instances/lifecycle.py'));
 
         if (! is_string($program) || $program === '') {
@@ -98,15 +85,17 @@ final readonly class ProjectLifecycleRunner
                     }
                 }
 
+                // Read the seed for each step: converting an old default release layout moves it to the checkout.
+                $seed = $phase === LifecyclePhase::Setup ? Instance::query()->whereKey($instance->id)->first(['seed_path', 'seed_commit']) : null;
+                // A default records its own checkout as its seed; its setup has no other seed.
+                $seeded = $seed !== null && $seed->seed_path !== $checkout;
                 $input = ProtectedInput::fromString(json_encode([
                     'checkout' => $checkout,
-                    'directory' => $directory,
-                    ...($environmentDirectory === null ? [] : ['environment_directory' => $environmentDirectory]),
                     'command' => $command,
                     'environment' => [
                         'VP_HOME' => $vpHome,
-                        'ORBIT_SEED_PATH' => $seeded ? ($instance->seed_path ?? '') : '',
-                        'ORBIT_SEED_COMMIT' => $seeded ? ($instance->seed_commit ?? '') : '',
+                        'ORBIT_SEED_PATH' => $seeded ? ($seed->seed_path ?? '') : '',
+                        'ORBIT_SEED_COMMIT' => $seeded ? ($seed->seed_commit ?? '') : '',
                     ],
                     'timeout' => $timeout - 5.0,
                 ], JSON_THROW_ON_ERROR));
@@ -181,63 +170,6 @@ final readonly class ProjectLifecycleRunner
         }
 
         return true;
-    }
-
-    /**
-     * The directory the Instance serves. A default Instance with the development release layout
-     * serves the release that `current` selects, and its checkout stays at the commit it was
-     * cloned at. Steps such as migrations must see the code that runs, so they run in that release.
-     *
-     * Teardown runs only while the Instance is removed. When Orbit cannot read the active release
-     * there, for example because a release lost its worktree entry, teardown runs in the checkout,
-     * so the removal can still finish.
-     */
-    private function servedDirectory(Instance $instance, LifecyclePhase $phase, string $checkout): string
-    {
-        if (! $instance->development_release_layout) {
-            return $checkout;
-        }
-
-        try {
-            $release = $this->deployment->selected($instance);
-        } catch (Throwable $exception) {
-            if ($phase === LifecyclePhase::Teardown) {
-                Log::warning('Teardown runs in the checkout because the active release is unavailable.', [
-                    'instance_id' => $instance->id,
-                    'error' => $exception instanceof ResourceOperationException ? $exception->errorCode : $exception::class,
-                ]);
-
-                return $checkout;
-            }
-
-            throw new ResourceOperationException(
-                errorCode: 'instance.active_release_unavailable',
-                message: 'Setup did not start: Orbit could not read the active release of the Instance.',
-                status: 409,
-                previous: $exception,
-            );
-        }
-
-        return $release->path;
-    }
-
-    /**
-     * Where synchronization keeps the environment files, relative to the checkout: the Laravel
-     * application directory, or the checkout root. The release has the same layout.
-     */
-    private function environmentDirectory(Instance $instance, string $checkout): string
-    {
-        $path = $instance->source_is_laravel === true ? $instance->applicationDirectory() : $checkout;
-
-        if ($path === $checkout) {
-            return '';
-        }
-
-        if (! str_starts_with($path, $checkout.'/')) {
-            throw new ResourceOperationException('instance.setup_step_failed', 'The application directory is outside the checkout.', 422);
-        }
-
-        return substr($path, strlen($checkout) + 1);
     }
 
     /**

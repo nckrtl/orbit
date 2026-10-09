@@ -469,6 +469,7 @@ final readonly class DevelopmentSiteRepository
         Route $route,
         bool $domainChange = false,
     ): DevelopmentSite {
+        // A development default in the old release layout serves through `current` until its next deployment converts it.
         $checkoutPath = $instance->placedOnAppProd()
             ? "{$instance->production_home}/current"
             : ($instance->development_release_layout ? $instance->checkout_path.'/current' : $instance->checkout_path);
