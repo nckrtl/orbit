@@ -38,7 +38,8 @@ final class SeparateFilesystem
         }
 
         if (self::separate('/dev/shm')) {
-            return self::$root = '/dev/shm';
+            // Nothing ages /dev/shm, so this process removes what its tests left there when it ends.
+            return self::$root = TestTemporaryDirectory::create('/dev/shm');
         }
 
         if (PHP_OS_FAMILY === 'Darwin') {

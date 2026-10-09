@@ -899,7 +899,7 @@ The rollout updates only the Nodes of the [rollout set](#rollout-set-and-order).
 
 The rollout visits one Node at a time, so it takes longer as the fleet grows. A halted rollout blocks every later rollout until an operator resumes it.
 
-The Gateway pushes the rendered footprint over SSH. `orbit self-update` replaces only the CLI and the agent. Caddy, cAdvisor, the FPM exporter, Prometheus, Grafana, Plausible, and Reverb keep their own update paths.
+The Gateway pushes the rendered footprint over SSH, such as the Caddyfile or the [`tmpfiles` rule](/reference/node-provisioning#converge-the-orbit-footprint) of an `app-dev` Node. A new artifact changes the footprint digest of each Node it applies to, so the next rollout writes it there. `orbit self-update` replaces only the CLI and the agent. Caddy, cAdvisor, the FPM exporter, Prometheus, Grafana, Plausible, and Reverb keep their own update paths.
 
 ### Not built
 

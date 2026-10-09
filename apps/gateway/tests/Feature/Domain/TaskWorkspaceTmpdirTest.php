@@ -393,9 +393,11 @@ describe('workspace TMPDIR', function (): void {
         $foreign = $root.'/orbit-gateway-tests-'.bin2hex(random_bytes(4));
         mkdir($foreign, 0700);
         $this->allocated[] = $foreign;
-        $escape = $allocated.'/../orbit-sibling-'.bin2hex(random_bytes(4));
+        $escapeName = 'orbit-sibling-'.bin2hex(random_bytes(4));
+        $escape = $allocated.'/../'.$escapeName;
         mkdir($escape, 0700);
-        $this->allocated[] = $escape;
+        // The test removes $allocated, so clean up through a path that does not pass through it.
+        $this->allocated[] = dirname($allocated).'/'.$escapeName;
 
         expect(tmpdir_remove(''))->toBeFalse()
             ->and(tmpdir_remove('/tmp'))->toBeFalse()

@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Fleet\FootprintArtifactSkipped;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
@@ -12,9 +13,11 @@ use App\Infrastructure\Fleet\Footprint\CaddyFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\CaddyPackageFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\PrivateDnsFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\SourceDigest;
+use App\Infrastructure\Fleet\Footprint\TmpfilesFootprintArtifact;
 use App\Infrastructure\Nodes\CaddyPackageSourceProgram;
 use App\Infrastructure\Processes\CommandResult;
 use App\Models\Node;
+use App\Models\NodeRole;
 use Tests\Support\FakeNodeCaddyBuilds;
 use Tests\Support\Fleet\FleetFixtures;
 use Tests\Support\Fleet\FleetTestSsh;
@@ -112,6 +115,37 @@ describe('footprint digests', function (): void {
         expect(fn () => $artifact->apply($node))->toThrow(function (ResourceOperationException $exception): void {
             expect($exception->errorCode)->toBe('node.footprint_caddy_package_failed')
                 ->and($exception->getMessage())->toContain('does not match the Orbit pin');
+        });
+    });
+
+    it('publishes the tmpfiles rule on active Linux app-dev Nodes only', function (): void {
+        $ssh = new ScriptedSshExecutor;
+        $artifact = new TmpfilesFootprintArtifact(FleetTestSsh::shell($ssh));
+        $dev = FleetFixtures::node('dev', [RoleName::AppDev]);
+        $pending = FleetFixtures::node('pending');
+        NodeRole::query()->create(['node_id' => $pending->id, 'role' => RoleName::AppDev, 'status' => LifecycleStatus::Provisioning]);
+
+        expect($artifact->name())->toBe('tmpfiles')
+            ->and($artifact->applies($dev))->toBeTrue()
+            ->and($artifact->applies(FleetFixtures::node('database', [RoleName::Database])))->toBeFalse()
+            ->and($artifact->applies(FleetFixtures::node('mac', [RoleName::AppDev], 'macos')))->toBeFalse()
+            ->and($artifact->applies($pending->load('roles')))->toBeFalse()
+            ->and($artifact->digest($dev))->toBe(hash('sha256', TmpfilesFootprintArtifact::Rule))
+            ->and(TmpfilesFootprintArtifact::Rule)->toContain("\ne /tmp/orbit-* - - - 1d\ne /dev/shm/orbit-* - - - 1d\n");
+
+        $ssh->on('/sudo bash/', new CommandResult(0, '', '', 1, false));
+        expect($artifact->apply($dev))->toBeFalse()
+            ->and($ssh->commands[0]->arguments)->toBe(['sudo', 'bash', '-seu', '--', '/etc/tmpfiles.d/orbit.conf', base64_encode(TmpfilesFootprintArtifact::Rule)]);
+
+        $ssh = new ScriptedSshExecutor;
+        $ssh->on('/sudo bash/', new CommandResult(0, "changed\n", '', 1, false));
+        expect(new TmpfilesFootprintArtifact(FleetTestSsh::shell($ssh))->apply($dev))->toBeTrue();
+
+        $ssh = new ScriptedSshExecutor;
+        $ssh->on('/sudo bash/', new CommandResult(1, '', "mv: cannot move\n", 1, false));
+        expect(fn () => new TmpfilesFootprintArtifact(FleetTestSsh::shell($ssh))->apply($dev))->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('node.footprint_tmpfiles_failed')
+                ->and($exception->getMessage())->toContain('cannot move');
         });
     });
 });
