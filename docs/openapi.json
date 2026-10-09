@@ -29196,6 +29196,12 @@
               "null"
             ]
           },
+          "ssr_port": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "seed_path": {
             "type": [
               "string",

@@ -388,6 +388,7 @@ it('retains the source Route and Vite reservation until projection retirement ca
         ->and($this->sources->calls)->toBe(['capture', 'materialize'])
         ->and($this->runtime->calls)->toBe(['pause', 'relocate', 'activate']);
     expect(DB::table('vite_port_assignments')->where('instance_id', $this->instance->id)->count())->toBe(2);
+    expect(DB::table('ssr_port_assignments')->where('instance_id', $this->instance->id)->count())->toBe(2);
 
     $result = $this->action->execute($this->instance->refresh(), $this->data);
 
@@ -730,6 +731,7 @@ it('restores the source and discards destination state when transfer fails befor
         ->and($transfer->status)->toBe(InstanceTransferStatus::Failed);
 
     expect(DB::table('vite_port_assignments')->where('instance_id', $this->instance->id)->pluck('node_id')->all())->toBe([$this->sourceNode->id]);
+    expect(DB::table('ssr_port_assignments')->where('instance_id', $this->instance->id)->pluck('node_id')->all())->toBe([$this->sourceNode->id]);
     $this->sources->failMaterialize = false;
     $result = $this->action->execute($this->instance->refresh(), $this->data);
 
@@ -956,12 +958,15 @@ it('reports incomplete old-placement cleanup and retries only cleanup', function
         ->and($this->sources->calls)->toBe(['capture', 'materialize', 'cleanup']);
 
     expect(DB::table('vite_port_assignments')->where('instance_id', $this->instance->id)->count())->toBe(2);
+    expect(DB::table('ssr_port_assignments')->where('instance_id', $this->instance->id)->count())->toBe(2);
     $this->sources->cleanupIncomplete = false;
     $result = $this->action->execute($this->instance->refresh(), $this->data);
 
     expect($result['transfer']->status)->toBe(InstanceTransferStatus::Completed)
         ->and($this->sources->calls)->toBe(['capture', 'materialize', 'cleanup', 'cleanup']);
     expect(DB::table('vite_port_assignments')->where('instance_id', $this->instance->id)->pluck('node_id')->all())->toBe([$this->destinationNode->id]);
+    expect(DB::table('ssr_port_assignments')->where('instance_id', $this->instance->id)->pluck('node_id')->all())->toBe([$this->destinationNode->id]);
+    expect($this->instance->refresh()->ssr_port)->toBeInt()->toBe(DB::table('ssr_port_assignments')->where('instance_id', $this->instance->id)->value('port'));
 });
 
 it('completes transfer from verified placement state without application HTTP health', function (): void {

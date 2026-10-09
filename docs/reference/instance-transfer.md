@@ -59,7 +59,7 @@ Orbit imports the source `.env` into the [stored environment](/reference/environ
 
 At cutover, every Process that has an environment file gets the destination `.env` in the [application directory](/reference/projects#application-directory). This covers custom systemd Processes as well as presets such as `vp-dev` and `annotator`. Activation then rewrites each destination unit, so its `EnvironmentFile=` names the destination file, never the source Node's path.
 
-Process records keep their IDs, definitions, and desired states. Orbit stops their source units, creates them on the destination, and leaves no duplicate. The destination gets its own [Vite port](/reference/assigned-vite-ports), and Orbit releases the source port after cleanup.
+Process records keep their IDs, definitions, and desired states. Orbit stops their source units, creates them on the destination, and leaves no duplicate. The destination gets its own [Vite port](/reference/assigned-vite-ports) and [SSR port](/reference/assigned-ssr-ports), and Orbit releases the source ports after cleanup.
 
 An assigned annotator port is reassigned under the destination Node lock at cutover. The source assignment stays in `annotation_port_assignments` until source Caddy retirement succeeds, including after a failed destination activation or interrupted cleanup. Another Instance cannot claim that port while the old proxy may still exist. Allocation skips both annotator and Agentation assignments on that Node. The destination units use the new port and Route domain, and the stored `ANNOTATOR_URL` placeholder stays unchanged. See [Annotator Process](/reference/agentation#annotator-process).
 

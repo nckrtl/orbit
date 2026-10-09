@@ -190,7 +190,7 @@ Interactive registration asks for default-No consent that names the source. JSON
 
 ## Provision the application endpoint
 
-Before it prepares the source, the Gateway assigns the Instance a [Vite port](/reference/assigned-vite-ports) and reserves its Route domain. `--domain` sets an explicit domain. Otherwise the domain is generated from the Cluster or Node TLD, as [Routes](/reference/routes#select-a-domain-and-scope) describes. A `laravel-app` or `symfony-app` Instance gets one Route. Other Project types get no Route.
+Before it prepares the source, the Gateway assigns the Instance a [Vite port](/reference/assigned-vite-ports) and an [SSR port](/reference/assigned-ssr-ports) and reserves its Route domain. `--domain` sets an explicit domain. Otherwise the domain is generated from the Cluster or Node TLD, as [Routes](/reference/routes#select-a-domain-and-scope) describes. A `laravel-app` or `symfony-app` Instance gets one Route. Other Project types get no Route.
 
 After the source is ready, the Gateway continues in this order:
 

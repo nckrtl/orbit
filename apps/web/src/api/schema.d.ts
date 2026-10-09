@@ -4007,6 +4007,7 @@ export interface components {
             transfer?: components["schemas"]["InstanceTransfer"] | null;
             deploy_steps?: components["schemas"]["DeploymentStep"][];
             vite_port?: number | null;
+            ssr_port?: number | null;
             seed_path?: string | null;
             seed_commit?: string | null;
             annotator_port?: number | null;
