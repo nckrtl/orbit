@@ -474,7 +474,7 @@ final class Orb199ProductionPhpRuntime implements ProductionPhpRuntimeManager
     /** @var list<int> */
     public array $converged = [];
 
-    public function converge(Instance $instance): void
+    public function converge(Instance $instance, ?Route $activating = null): void
     {
         $this->converged[] = $instance->id;
     }

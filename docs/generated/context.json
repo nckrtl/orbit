@@ -1305,6 +1305,7 @@
             "title": "Instance releases",
             "kind": "reference",
             "components": [
+                "apps/docs",
                 "apps/gateway",
                 "packages/php-sdk"
             ],

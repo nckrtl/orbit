@@ -34,6 +34,7 @@ use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Process;
 use App\Models\Project;
+use App\Models\Route;
 use Illuminate\Support\Facades\DB;
 
 it('captures one configuration and preserves the complete deployment order', function (): void {
@@ -659,7 +660,7 @@ final readonly class Orb219PhpRuntime implements ProductionPhpRuntimeManager
 {
     public function __construct(private Orb219DeploymentTrace $trace) {}
 
-    public function converge(Instance $instance): void
+    public function converge(Instance $instance, ?Route $activating = null): void
     {
         $entry = 'converge:'.basename($instance->checkout_path);
         $this->trace->runtimeEvents[] = $entry;

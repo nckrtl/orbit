@@ -429,6 +429,7 @@ final readonly class RemoveInstanceAction implements InstanceRemover
         $this->assertSupported($snapshot);
         $route = $this->productionRoute($snapshot);
         $inventory = $this->productionContent->inventory($snapshot);
+        $this->removeWebRootRoutes(collect([$snapshot]));
 
         $operation = $this->processAdmissions->run([$snapshot->id], fn (): InstanceRemoval => DB::transaction(function () use ($snapshot, $route, $inventory, $force): InstanceRemoval {
             $locked = Instance::query()->lockForUpdate()->findOrFail($snapshot->id);
@@ -437,6 +438,10 @@ final readonly class RemoveInstanceAction implements InstanceRemover
                 ->lockForUpdate()
                 ->findOrFail($route->id);
             $locked->load(['project', 'node', 'routes.targets']);
+
+            if (Route::query()->whereNotNull('web_root')->whereHas('targets', static fn ($query) => $query->where('instance_id', $locked->id))->exists()) {
+                $this->conflict($snapshot);
+            }
 
             if (
                 $locked->status !== InstanceState::Active
@@ -737,7 +742,9 @@ final readonly class RemoveInstanceAction implements InstanceRemover
             return null;
         }
 
-        if ($instance->routes->count() !== 1) {
+        $routes = $this->ownRoutes($instance);
+
+        if ($routes->count() !== 1) {
             throw new ResourceOperationException(
                 errorCode: 'instance.remove_refused',
                 message: "Production Instance [{$instance->name}] does not have one removable Route.",
@@ -745,7 +752,7 @@ final readonly class RemoveInstanceAction implements InstanceRemover
             );
         }
 
-        $route = $instance->routes->sole();
+        $route = $routes->sole();
 
         if (! $this->productionRouteIsSafe($route, $instance)) {
             throw new ResourceOperationException(

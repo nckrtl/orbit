@@ -63,6 +63,8 @@ A failed SSH command makes the Node unreachable, and the `node` family reports `
 
 For a nested Laravel root such as `apps/site/public`, Doctor uses the same [application directory](/reference/projects#application-directory) as the runtime. It checks that app's environment, cached APP_URL, PHP-FPM working directory, and production release `.env` link; Git identity and checkout-layout checks still cover the whole repository. Doctor does not infer a different app directory from discovered files.
 
+On `app-prod`, the expected `pool.conf` also holds the pool of each directory that a [Route with a web root](/reference/routes#web-roots-on-production) serves, so those pools are not drift. Doctor checks the release `.env` link and `APP_URL` of the default directory only.
+
 Repository probes pass `-c core.hooksPath=/dev/null` and `-c core.fsmonitor=false` to Git. Doctor does not use a checkout's hooks or custom filesystem monitor while checking repository identity and source metadata. It leaves the stored Git configuration unchanged.
 
 Checks that read root-owned files run through passwordless `sudo` on the Node. Every check that reads the live Caddyfile is one of them, because Orbit publishes each Caddyfile version under `/etc/caddy/orbit-versions` as `root:caddy` with mode `0750`.
