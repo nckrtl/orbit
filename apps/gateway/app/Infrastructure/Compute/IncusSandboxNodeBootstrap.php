@@ -10,6 +10,8 @@ use App\Domain\Compute\ComputeException;
 use App\Domain\Nodes\RoleName;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
+use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Tasks\IncusSandboxHost;
 use App\Models\Node;
 use App\Models\TaskSandbox;
@@ -19,7 +21,7 @@ use Throwable;
 final readonly class IncusSandboxNodeBootstrap
 {
     public function __construct(private IncusSandboxHost $transport, private TaskSandboxDrivers $drivers,
-        private SandboxFleetIdentity $identity, private KnownHostsStore $hosts, private ProvisionNodeAction $nodes) {}
+        private SandboxFleetIdentity $identity, private KnownHostsStore $hosts, private ProvisionNodeAction $nodes, private SshKeyProvider $keys) {}
 
     public function identity(TaskSandbox $sandbox): HostKey
     {
@@ -48,6 +50,25 @@ final readonly class IncusSandboxNodeBootstrap
         }
         $this->hosts->put($node->public_ssh_host, $node->public_ssh_port, $key);
         $this->hosts->put($node->wireguard_ip, 22, $key);
+        $hostId = $sandbox->spec['host_id'];
+        $host = is_int($hostId) ? Node::query()->find($hostId) : null;
+        $settings = array_find($this->drivers->localHosts(), fn (array $candidate): bool => $candidate['node_id'] === $hostId);
+        $program = file_get_contents(resource_path('compute/guest-project-ssh.py'));
+        if (! $host instanceof Node || $settings === null || ! is_string($program)) {
+            throw new ComputeException('compute.bootstrap_not_ready', 'The Project SSH bootstrap is unavailable.');
+        }
+        try {
+            $result = $this->transport->executeGuest($host, $settings['project'], $sandbox->id, $settings['max_vms'],
+                new RemoteCommand(['sudo', '-n', 'python3', '-I', '-c', $program], input: json_encode([
+                    'public_key' => $this->keys->publicKey(),
+                    'recovery_port' => $sandbox->enrolled_at === null ? $node->public_ssh_port : null,
+                ], JSON_THROW_ON_ERROR), timeout: 30, maxOutputBytes: 1024));
+            if (! $result->succeeded() || $result->truncated || json_decode($result->stdout, true) !== ['ready' => true]) {
+                throw new ComputeException('compute.bootstrap_not_ready', 'The Project SSH bootstrap was not confirmed.');
+            }
+        } catch (Throwable) {
+            throw new ComputeException('compute.bootstrap_not_ready', 'The Project SSH bootstrap was not confirmed.');
+        }
     }
 
     public function enroll(TaskSandbox $sandbox, Node $node): Node

@@ -125,7 +125,9 @@ Local fleet enrollment has its own disabled-by-default `ORBIT_INCUS_ENROLLMENT_E
 
 The reservation pins both sides of Node ownership, the complete Incus placement, and the SSH key. Retries verify the same guest and key through a separate read-only fleet identity operation. This operation permits existing enrollment files but keeps all host placement and firewall checks. It cannot replace a missing Node or repin a changed key.
 
-The hub confirms the sandbox's fleet limits before native provisioning publishes its peer. Its configured public UDP endpoint must match the recorded bootstrap endpoint, including on retries. Bootstrap uses the recorded private host address and reserved SSH port; enrolled traffic uses the VM's own WireGuard address. The Node joins only as `app-dev`, uses the managed `orbit` account, and has no grants to other Nodes. Local Project workspace admission has a separate disabled-by-default `ORBIT_INCUS_PROJECT_WORKSPACES_ENABLED` gate. Enable it only after local enrollment, runtime, and cleanup acceptance.
+The hub confirms the sandbox's fleet limits before native provisioning publishes its peer. Its configured public UDP endpoint must match the recorded bootstrap endpoint, including on retries. After verifying the owned guest's SSH identity, the Gateway installs its public SSH key through the Incus control channel. A clean Project image contains no fleet keys. The bootstrap key file accepts only that key and refuses unsafe paths or foreign keys.
+
+Bootstrap uses the recorded private host address and reserved SSH port; enrolled traffic uses the VM's own WireGuard address. The Node joins only as `app-dev`, uses the managed `orbit` account, and has no grants to other Nodes. Local Project workspace admission has a separate disabled-by-default `ORBIT_INCUS_PROJECT_WORKSPACES_ENABLED` gate. Enable it only after local enrollment, runtime, and cleanup acceptance.
 
 ### Local Project SSH identity
 
@@ -135,7 +137,13 @@ The typed `project_identity` host operation reads the SSH public key from one ru
 
 An Incus host can record `project_bootstrap` with a public IPv4 `wireguard_address` and UDP `wireguard_port`. This requires the host's private `gateway_address`. Allocation records these endpoints with the host's WireGuard SSH address and a port from 24001 through 24254 in the Project reservation. Its subnet keeps that port reserved while parked. Existing reservations retain their endpoints when configuration changes.
 
-The host validates the closed `project_bootstrap` descriptor against its own interface and the separately approved root policy before recording it on the bridge, guest, and worktree volume. A retry refuses changed or missing endpoint markers before mutation. The SSH proxy listens only on the recorded host WireGuard address and reserved port, and forwards to the owned guest at port 22. Host filtering accepts the recorded Gateway on the WireGuard interface only when the connection's original destination is that host address and port. Direct SSH to the guest and other proxy ports remain blocked.
+The host validates the closed `project_bootstrap` descriptor against its own interface and the separately approved root policy before recording it on the bridge, guest, and worktree volume. A retry refuses changed or missing endpoint markers before mutation. The SSH proxy listens only on the recorded host WireGuard address and reserved port, and forwards to the owned guest at port 22. Host filtering accepts the recorded Gateway on the WireGuard interface only when the connection's original destination is that host address and port.
+
+The host translates the source of only that bootstrap flow to its bridge address, so SSH replies keep their return path when the guest starts WireGuard. Enrolled SSH uses the guest's WireGuard address. Direct SSH to the guest and other proxy ports remain blocked.
+
+The guest's temporary SSH recovery rule accepts its bridge address at guest port 22. The host proxy port is an external endpoint and is never opened inside the guest. Before an unfinished enrollment retries its SSH scan, the owned host restores this recovery rule. It replaces only the exact older Orbit rule for the recorded proxy port and refuses other rule drift. Native role convergence removes the recovery rule after fleet SSH is ready. A completed enrollment does not reopen it.
+
+Native base-host convergence installs the existing WireGuard member rule through the bootstrap connection before checking SSH through the tunnel. This check does not depend on the temporary recovery rule allowing traffic to the WireGuard address.
 
 The root policy permits UDP from this guest to the recorded public WireGuard hub endpoint and established replies. Project policy has one guest and grants no topology Pi ingress. Private-network and host exclusions remain in force. Fleet enrollment installs its own hub policy before publishing the peer. New live host and hub paths require separate approval.
 
@@ -416,6 +424,8 @@ Convergence confirms the pinned source commit, the isolated operator profile, an
 Before each agent dispatch, admission compares the private Gateway version with the owned branch commit. It refreshes Gateway dependencies, migrations, and services only when the version differs, then refreshes native pair prerequisites and requires fresh doctor readiness. A running baseline is polled before this preparation can modify the checkout.
 
 The builder can prepare blank workload guests alongside the pair. All guests share the pinned source and verified offline inputs, including Docker prerequisites for workload roles. Convergence enrolls only the operator. Publication audits each workload for prerequisites and absence of enrollment state, then publishes every requested role with the same immutable source descriptor. Pass the same `workload_roles` to the publisher. Adding roles requires a new template; published templates cannot be extended in place.
+
+The source archive can carry a Caddy repository snapshot in `.git/orbit-caddy-source`. Preparation verifies its signing key, signed metadata, package index, and package before copying it into the image's protected package cache. Native role convergence uses that authenticated local repository. A missing snapshot keeps the public-source path; a changed or incomplete snapshot refuses preparation. See [package sources](/reference/node-provisioning#package-sources) for the trust checks.
 
 Task runtime preparation uses the sandbox’s recorded image roles as its exact private Node inventory. For an expanded resume, it refreshes the private Gateway branch runtime and retries owned workload enrollment before strict retargeting. It retargets every recorded peer, requires an active workload role on each declared Node, and refuses foreign or extra Nodes. The operator stays roleless. Template publication keeps the stricter default-pair check.
 

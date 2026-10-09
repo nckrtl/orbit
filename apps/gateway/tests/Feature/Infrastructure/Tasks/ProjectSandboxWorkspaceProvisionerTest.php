@@ -288,7 +288,9 @@ it('refreshes local runtime through the same owned guest after park and preview 
     fwrite($file, str_repeat('x', 128));
     config(['app.url' => 'https://gateway.orbit', 'compute.pi.artifact_path' => stream_get_meta_data($file)['uri'],
         'compute.pi.artifact_sha256' => hash('sha256', str_repeat('x', 128)), 'compute.pi.models' => [['id' => 'probe']]]);
-    mock(SshKeyProvider::class)->shouldReceive('privateKeyPath')->andReturn('/keys/private');
+    $keys = mock(SshKeyProvider::class);
+    $keys->shouldReceive('privateKeyPath')->andReturn('/keys/private');
+    $keys->shouldReceive('publicKey')->once()->andReturn(IncusRuntimeWorkspace::key()->type.' '.IncusRuntimeWorkspace::key()->value);
     $hosts = mock(KnownHostsStore::class);
     $hosts->shouldReceive('path')->andReturn('/keys/known_hosts');
     $hosts->shouldReceive('put')->twice();
@@ -297,14 +299,26 @@ it('refreshes local runtime through the same owned guest after park and preview 
     mock(SandboxNetworkPolicy::class)->shouldReceive('ensure')->once()->andReturnUsing(function () use (&$phases): void {
         $phases[] = 'hub';
     });
-    mock(SshExecutor::class)->shouldReceive('execute')->times(4)->andReturnUsing(function ($connection, RemoteCommand $command) use ($workspace, &$phases): CommandResult {
+    mock(SshExecutor::class)->shouldReceive('execute')->times(5)->andReturnUsing(function ($connection, RemoteCommand $command) use ($workspace, &$phases): CommandResult {
         $request = json_decode(fgets($command->protectedInput->stream()), true, flags: JSON_THROW_ON_ERROR);
         if (isset($request['operation'])) {
             expect($connection->host)->toBe('10.44.0.20');
-            expect($request['operation'])->toBe('project_fleet_identity');
-            $phases[] = 'identity';
-            $result = ['name' => $workspace->taskSandbox->name, 'guest' => $workspace->taskSandbox->name.'-operator', 'project_slug' => 'dlf', 'image' => str_repeat('a', 64), 'pool' => 'proof',
-                'subnet' => '10.233.201.0/24', 'address' => '10.233.201.10', 'ssh_key' => IncusRuntimeWorkspace::key()->type.' '.IncusRuntimeWorkspace::key()->value];
+            if ($request['operation'] === 'guest_command') {
+                expect($request['guest']['role'])->toBe('operator');
+                expect($request['guest']['argv'])->toBe(['sudo', '-n', 'python3', '-I', '-c', file_get_contents(resource_path('compute/guest-project-ssh.py'))]);
+                expect(json_decode(base64_decode($request['guest']['stdin']), true))->toBe([
+                    'public_key' => IncusRuntimeWorkspace::key()->type.' '.IncusRuntimeWorkspace::key()->value,
+                    'recovery_port' => null,
+                ]);
+                $phases[] = 'bootstrap';
+                $result = ['name' => $workspace->taskSandbox->name, 'role' => 'operator', 'exit_code' => 0,
+                    'stdout' => base64_encode(json_encode(['ready' => true])), 'stderr' => base64_encode(''), 'duration_ms' => 1, 'truncated' => false, 'timed_out' => false];
+            } else {
+                expect($request['operation'])->toBe('project_fleet_identity');
+                $phases[] = 'identity';
+                $result = ['name' => $workspace->taskSandbox->name, 'guest' => $workspace->taskSandbox->name.'-operator', 'project_slug' => 'dlf', 'image' => str_repeat('a', 64), 'pool' => 'proof',
+                    'subnet' => '10.233.201.0/24', 'address' => '10.233.201.10', 'ssh_key' => IncusRuntimeWorkspace::key()->type.' '.IncusRuntimeWorkspace::key()->value];
+            }
         } else {
             expect($connection->host)->toBe($workspace->node->wireguard_ip);
             $phase = isset($request['sha256']) ? 'artifact' : (isset($request['ca']) ? 'github' : 'pi');
@@ -323,7 +337,7 @@ it('refreshes local runtime through the same owned guest after park and preview 
         $result = app(ProjectSandboxWorkspaceProvisioner::class)->resumeLocal($group);
         expect($result->id)->toBe($workspace->id);
         expect($result->taskSandbox->pi_ready_at)->not->toBeNull();
-        expect($phases)->toBe(['identity', 'hub', 'artifact', 'pi', 'github']);
+        expect($phases)->toBe(['identity', 'bootstrap', 'hub', 'artifact', 'pi', 'github']);
     } finally {
         fclose($file);
     }

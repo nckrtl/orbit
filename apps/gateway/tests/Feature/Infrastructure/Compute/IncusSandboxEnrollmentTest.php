@@ -8,6 +8,7 @@ use App\Data\Nodes\ProvisionNodeData;
 use App\Domain\Compute\ComputeException;
 use App\Domain\Compute\SandboxNetworkPolicy;
 use App\Domain\Compute\SandboxState;
+use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeObservation;
@@ -20,6 +21,8 @@ use App\Domain\Tools\ToolManagerMaterializer;
 use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\Compute\IncusSandboxNodeBootstrap;
 use App\Infrastructure\Compute\SandboxFleetIdentity;
+use App\Infrastructure\Firewall\NativeUfwFirewallManager;
+use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -29,6 +32,7 @@ use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Tasks\IncusSandboxHost;
 use App\Models\Cluster;
+use App\Models\FirewallRule;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
@@ -75,19 +79,31 @@ function incus_fleet_sandbox(): TaskSandbox
                 'wireguard_address' => '93.184.216.35', 'wireguard_port' => 51820]]]);
 }
 
-function incus_fleet_transport(TaskSandbox $sandbox, array &$operations, ?string $changedKey = null): void
+function incus_fleet_transport(TaskSandbox $sandbox, array &$operations, ?string $changedKey = null, bool $bootstrapFailed = false): void
 {
-    mock(SshKeyProvider::class)->shouldReceive('privateKeyPath')->andReturn('/private-key');
+    $keys = mock(SshKeyProvider::class);
+    $keys->shouldReceive('privateKeyPath')->andReturn('/private-key');
+    $keys->shouldReceive('publicKey')->andReturn('ssh-ed25519 '.incus_fleet_key()->value);
     $hosts = mock(KnownHostsStore::class);
     $hosts->shouldReceive('path')->andReturn('/known-hosts');
     $hosts->shouldReceive('put')->withArgs(fn (string $host, int $port, HostKey $key): bool => (($host === '10.44.0.20' && $port === 24201) || (str_starts_with($host, '10.44.') && $port === 22))
         && $key->fingerprint === incus_fleet_key()->fingerprint);
-    mock(SshExecutor::class)->shouldReceive('execute')->andReturnUsing(function (SshConnection $connection, RemoteCommand $command) use ($sandbox, &$operations, $changedKey): CommandResult {
+    mock(SshExecutor::class)->shouldReceive('execute')->andReturnUsing(function (SshConnection $connection, RemoteCommand $command) use ($sandbox, &$operations, $changedKey, $bootstrapFailed): CommandResult {
         expect($connection->host)->toBe('10.44.0.20');
         expect($command->arguments)->toBe(['/usr/local/bin/orbit-agent', 'sandbox']);
         $input = json_decode(stream_get_contents($command->protectedInput->stream()), true, flags: JSON_THROW_ON_ERROR);
         $operations[] = $input['operation'];
+        if ($input['operation'] === 'guest_command') {
+            expect($input['guest']['role'])->toBe('operator');
+            expect($input['guest']['argv'])->toBe(['sudo', '-n', 'python3', '-I', '-c', file_get_contents(resource_path('compute/guest-project-ssh.py'))]);
+            expect(json_decode(base64_decode($input['guest']['stdin']), true))->toBe([
+                'public_key' => 'ssh-ed25519 '.incus_fleet_key()->value,
+                'recovery_port' => $sandbox->fresh()->enrolled_at === null ? 24201 : null,
+            ]);
+        }
         $result = match ($input['operation']) {
+            'guest_command' => ['name' => $sandbox->name, 'role' => 'operator', 'exit_code' => $bootstrapFailed ? 1 : 0,
+                'stdout' => base64_encode(json_encode(['ready' => true])), 'stderr' => base64_encode(''), 'duration_ms' => 1, 'truncated' => false, 'timed_out' => false],
             'observe' => ['name' => $sandbox->name, 'power' => 'running', 'instances' => [['name' => $sandbox->name.'-operator', 'state' => 'running']]],
             'project_identity', 'project_fleet_identity' => ['name' => $sandbox->name, 'guest' => $sandbox->name.'-operator', 'project_slug' => 'dlf',
                 'image' => str_repeat('a', 64), 'pool' => 'proof', 'subnet' => '10.233.201.0/24', 'address' => '10.233.201.10',
@@ -112,7 +128,7 @@ it('pins the private bootstrap endpoint and both ownership records before hub or
         $steps[] = 'hub';
     });
     mock(NodeConverger::class)->shouldReceive('converge')->once()->andReturnUsing(function (Node $node, NodeProvisioningIdentity $identity, ?string $fingerprint) use (&$steps): NodeObservation {
-        expect($steps)->toBe(['observe', 'project_identity', 'project_fleet_identity', 'hub']);
+        expect($steps)->toBe(['observe', 'project_identity', 'project_fleet_identity', 'guest_command', 'hub']);
         expect($node->public_ssh_host)->toBe('10.44.0.20');
         expect($node->public_ssh_port)->toBe(24201);
         expect($fingerprint)->toBe(incus_fleet_key()->fingerprint);
@@ -130,7 +146,7 @@ it('pins the private bootstrap endpoint and both ownership records before hub or
     expect(Node::query()->where('compute_sandbox_id', $sandbox->id)->count())->toBe(1);
     expect($node->roles()->pluck('role')->all())->toBe([RoleName::AppDev]);
     expect($node->accessibleNodes()->count())->toBe(0);
-    expect($steps)->toBe(['observe', 'project_identity', 'project_fleet_identity', 'hub', 'observe', 'project_fleet_identity', 'hub']);
+    expect($steps)->toBe(['observe', 'project_identity', 'project_fleet_identity', 'guest_command', 'hub', 'observe', 'project_fleet_identity', 'guest_command', 'hub']);
 });
 
 it('retains a pinned Node when hub policy fails without publishing a peer', function (): void {
@@ -147,7 +163,7 @@ it('retains a pinned Node when hub policy fails without publishing a peer', func
     expect($sandbox->enrolled_at)->toBeNull();
     expect($node->wireguard_public_key)->toBeNull();
     expect(app(SandboxFleetIdentity::class)->reserve($sandbox)->id)->toBe($node->id);
-    expect($steps)->toBe(['observe', 'project_identity', 'project_fleet_identity']);
+    expect($steps)->toBe(['observe', 'project_identity', 'project_fleet_identity', 'guest_command']);
 });
 
 it('refuses private placement drift and grants before retrying enrollment', function (string $change): void {
@@ -202,7 +218,55 @@ it('keeps initial admission separate from a reserved fleet retry', function (): 
 
     expect(fn () => app(IncusSandboxHost::class)->projectIdentity($host, $sandbox, 9))->toThrow(ResourceOperationException::class);
     app(IncusSandboxNodeBootstrap::class)->prepare($sandbox, $node);
-    expect($steps)->toBe(['project_fleet_identity']);
+    expect($steps)->toBe(['project_fleet_identity', 'guest_command']);
+});
+
+it('opens only guest SSH from the bridge during local bootstrap and protects its guest port', function (): void {
+    $sandbox = incus_fleet_sandbox();
+    $node = app(SandboxFleetIdentity::class)->reserve($sandbox, incus_fleet_key());
+
+    $recovery = app(NodeFirewallRuleCatalog::class)->publicSshRecovery($node);
+
+    expect($recovery->arguments)->toBe(['sudo', 'ufw', 'allow', 'in', 'proto', 'tcp', 'from', '10.233.201.1',
+        'to', '10.233.201.10', 'port', '22', 'comment', 'orbit:public-ssh-recovery']);
+    expect($node->public_ssh_port)->toBe(24201);
+    $rule = new FirewallRule(['action' => 'deny', 'port' => '22', 'protocol' => 'tcp', 'source' => 'any']);
+    $rule->setRelation('node', $node);
+    mock(SshExecutor::class)->shouldNotReceive('execute');
+
+    expect(fn () => app(NativeUfwFirewallManager::class)->converge($rule))->toThrow(FirewallOperationException::class, 'would deny');
+});
+
+it('does not reopen guest recovery after completed local enrollment', function (): void {
+    $sandbox = incus_fleet_sandbox();
+    $node = app(SandboxFleetIdentity::class)->reserve($sandbox, incus_fleet_key());
+    $sandbox->update(['enrolled_at' => now()]);
+    $steps = [];
+    incus_fleet_transport($sandbox, $steps);
+
+    app(IncusSandboxNodeBootstrap::class)->prepare($sandbox, $node);
+
+    expect($steps)->toBe(['project_fleet_identity', 'guest_command']);
+});
+
+it('refuses a local recovery rule when the recorded fleet identity changed', function (): void {
+    $sandbox = incus_fleet_sandbox();
+    $node = app(SandboxFleetIdentity::class)->reserve($sandbox, incus_fleet_key());
+    $node->public_ssh_port = 22;
+
+    expect(fn () => app(NodeFirewallRuleCatalog::class)->publicSshRecovery($node))->toThrow(ComputeException::class);
+});
+
+it('refuses SSH bootstrap failure before publishing the hub policy or peer', function (): void {
+    $sandbox = incus_fleet_sandbox();
+    $steps = [];
+    incus_fleet_transport($sandbox, $steps, bootstrapFailed: true);
+    mock(SandboxNetworkPolicy::class)->shouldNotReceive('ensure');
+    mock(NodeConverger::class)->shouldNotReceive('converge');
+
+    expect(fn () => app(EnrollIncusSandboxAction::class)->execute($sandbox))->toThrow(ComputeException::class, 'bootstrap was not confirmed');
+    expect($sandbox->fresh()->error_code)->toBe('compute.bootstrap_not_ready');
+    expect(Node::query()->findOrFail($sandbox->fresh()->node_id)->wireguard_public_key)->toBeNull();
 });
 
 it('refuses a changed host-attested SSH key without repinning it', function (): void {
