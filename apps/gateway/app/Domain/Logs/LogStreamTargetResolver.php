@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Domain\Logs;
 
-use App\Domain\Instances\InstanceSandboxGuard;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessTargetResolver;
@@ -30,7 +29,6 @@ final readonly class LogStreamTargetResolver
 
     public function forInstance(Instance $instance): LogStreamTarget
     {
-        InstanceSandboxGuard::assertHostOperation($instance);
         $checkout = StoragePath::tryParse($instance->source_is_laravel === true ? $instance->applicationDirectory() : $instance->checkout_path);
 
         if ($checkout === null) {

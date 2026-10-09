@@ -20,7 +20,7 @@ Both lanes are off by default. [ADR 0200](/decisions/0200-run-each-task-group-in
 
 ## Task VMs
 
-Partly built. The [settings](#configure-task-vms), the `task_vms` table and its [states](#states), the cloud-init user-data, and the placement rule exist. Nothing uses them yet. The provider, the jobs, the commands, the hub filter, and the placement hook are not built yet. The Phase 1 slices of [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm) build them.
+Partly built. The [settings](#configure-task-vms), the `task_vms` table and its [states](#states), the cloud-init user-data, and the [placement invariant](#placement-invariant) exist. The invariant checks every saved Instance and access grant, and the fleet rollout skips task VM Nodes. Orbit creates no task VM yet: the provider, the jobs, the commands, and the hub filter are not built yet. The Phase 1 slices of [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm) build them.
 
 A task VM is a stock Ubuntu 26.04 cloud VM on an Incus host. The Gateway creates it for one group, enrolls it as an `app-dev` Node, and destroys it when the group ends. After enrollment, the group uses the same code as a shared group, pinned to that Node.
 
@@ -101,7 +101,7 @@ The table accepts established traffic and drops all other traffic to or from the
 
 ### Placement invariant
 
-A task VM workspace is a normal Instance on a normal Node, so generic Instance operations need no sandbox guard. One rule protects the VM: an Instance on a task VM Node must be its group's `task-<group id>` workspace in the group's Project. The rule runs whenever an Instance is saved, so it covers create, clone, transfer, and register. Orbit also refuses an access grant from a task VM Node. The fleet rollout skips task VM Nodes. Shared groups never get a workspace on one.
+A task VM workspace is a normal Instance on a normal Node, so generic Instance operations need no sandbox guard. One rule protects the VM: an Instance on a task VM Node must be its group's `task-<group id>` workspace in the group's Project. The rule runs whenever an Instance is saved, so it covers create, clone, transfer, and register. Any other Instance fails with HTTP 409 `task_vm.foreign_instance`. Orbit also refuses an access grant from a task VM Node with HTTP 409 `task_vm.access_refused`. The fleet rollout skips task VM Nodes with the reason `sandbox`. Shared groups never get a workspace on one.
 
 ### Configure task VMs
 
@@ -150,6 +150,7 @@ The reserved range must always be a private network. As soon as task VMs are ena
 | `task_vm.invalid_gateway_key` | 500 | The Gateway's SSH public key is not one OpenSSH public key line |
 | `task_vm.workspace_mismatch` | 409 | A group's workspace is not on its ready task VM |
 | `task_vm.foreign_instance` | 409 | An Instance on a task VM Node is not its group's workspace |
+| `task_vm.access_refused` | 409 | An access grant names a task VM Node as its consumer |
 
 ### Limits
 
@@ -218,7 +219,7 @@ The first build of the web lane is still in the code. The Phase 1 slices of [ADR
 | `ORBIT_INCUS_DEV_CLUSTER_ID`, `ORBIT_INCUS_MODEL_ADDRESS`, `ORBIT_INCUS_MODEL_PORT` | Unset |
 | `ORBIT_SANDBOX_PI_ARTIFACT_PATH`, `ORBIT_SANDBOX_PI_ARTIFACT_SHA256` | Unset |
 
-Generic Instance operations on a sandbox workspace still fail with HTTP 409 `instance.sandbox_managed`. Manage such a workspace through its task group. `bin/sandbox-project-image` still builds Project images for this lane; do not use it. The optional `project_bootstrap` object in `/etc/orbit/sandbox-network.json`, and the helper's `project_enabled` operation, serve only this lane. Leave `project_bootstrap` out.
+`bin/sandbox-project-image` still builds Project images for this lane; do not use it. The optional `project_bootstrap` object in `/etc/orbit/sandbox-network.json`, and the helper's `project_enabled` operation, serve only this lane. Leave `project_bootstrap` out.
 
 ## Local Incus control
 
