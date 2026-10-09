@@ -107,9 +107,11 @@ Each record has one source, the same one that its one-shot read uses.
 
 | Record | Source | Lines |
 | --- | --- | --- |
-| Instance | `storage/logs/laravel.log` in the Instance's application directory (inside the checkout or selected release), or the newest `laravel-*.log` when it is absent, as [Instance logs](/reference/instance-logs#know-which-file-the-gateway-reads) describes | Each line of the file |
+| Instance | `storage/logs/laravel.log` in the application directory of the Instance's sole app (inside the checkout or selected release), or the newest `laravel-*.log` when it is absent, as [Instance logs](/reference/instance-logs#know-which-file-the-gateway-reads) describes | Each line of the file |
 | systemd Process | The journal entries of `orbit-process-{id}-{name}.service`, and systemd's own messages about that unit | `2026-09-25T10:15:02+00:00 host name[pid]: message`, as `journalctl --output short-iso --utc` prints it |
 | Docker Process | The output of container `orbit-process-{id}-{name}` | Each line of standard output and standard error, in the order the container wrote them |
+
+Instance logs have no app selector. A Project with several apps returns `app.required`.
 
 The agent follows a daily log file to the next day's file. When an earlier file becomes the newest again, it continues where it left that file, so no line is sent twice. It starts from the beginning of a file that was truncated.
 
