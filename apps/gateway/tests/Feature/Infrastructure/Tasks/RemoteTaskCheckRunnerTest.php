@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Domain\AppDev\SsrPortAllocator;
+use App\Domain\AppDev\VitePortRuntime;
 use App\Domain\Projects\LifecycleStep;
 use App\Domain\Projects\TiaBaselineSetup;
 use App\Domain\Projects\TiaBaselineSource;
@@ -41,6 +43,7 @@ use Illuminate\Support\Facades\File;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Symfony\Component\Process\Process;
 use Tests\Support\AppDevFakeSshExecutor;
+use Tests\Support\FakeVitePortRuntime;
 use Tests\Support\LocalShellSshExecutor;
 use Tests\Support\TiaBaselineTestSource;
 
@@ -1291,3 +1294,46 @@ it('selects shared feedback only when the check has a worker account', function 
 
     expect($reading->exitCode)->toBe(0);
 })->with([true, false]);
+
+describe('ssr port', function (): void {
+    it('starts the check of two workspaces on one Node with their own allocated ssr ports and never the held 13719', function (): void {
+        $node = Node::query()->create(['name' => 'shared-check-node', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'public_ssh_host' => '10.44.0.161', 'wireguard_ip' => '10.44.0.161', 'user' => 'orbit']);
+        orbit_test_set_app_placement_role($node, false);
+        $runtime = new FakeVitePortRuntime;
+        $runtime->occupied[$node->id] = range(SsrPortAllocator::FIRST_PORT, 13719);
+        app()->instance(VitePortRuntime::class, $runtime);
+        $project = Project::query()->create(['name' => 'Recall', 'slug' => 'recall', 'repository_url' => 'git@github.com:acme/recall.git', 'default_branch' => 'main']);
+        $started = '{"pid":4100,"started":"now","head":"abc","tree":"def"}';
+        $transport = new AppDevFakeSshExecutor([new CommandResult(0, $started, '', 1, false), new CommandResult(0, $started, '', 1, false)]);
+        $runner = check_runner($transport);
+        $ports = [];
+
+        foreach (['task-a', 'task-b'] as $name) {
+            $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => $name, 'checkout_path' => "/fast/apps/recall/{$name}", 'branch' => $name, 'status' => 'source_resolved']);
+            $ports[] = app(SsrPortAllocator::class)->assign($instance);
+            $runner->start($instance, 'composer check');
+        }
+
+        expect($ports)->toBe([13720, 13721])
+            ->and($transport->commands[0]->input)->toContain("export ORBIT_SSR_PORT='13720'\nexport INERTIA_SSR_URL='http://127.0.0.1:13720'\n")
+            ->and($transport->commands[1]->input)->toContain("export ORBIT_SSR_PORT='13721'\nexport INERTIA_SSR_URL='http://127.0.0.1:13721'\n")
+            ->and($transport->commands[0]->input.$transport->commands[1]->input)->not->toContain('13719');
+    });
+
+    it('hands the allocated ssr port to setup, the check, and deliverable commands', function (): void {
+        config()->set('orbit.tasks.worker_user', null);
+        $checkout = check_runner_checkout('printf "%s %s" "$ORBIT_SSR_PORT" "$INERTIA_SSR_URL" > check-ssr');
+        $instance = check_runner_instance($checkout);
+        $instance->forceFill(['ssr_port' => 13722])->save();
+        $runner = check_runner(new LocalShellSshExecutor);
+
+        $reading = check_runner_wait($runner, $instance, $runner->start($instance, 'composer check', [
+            ['name' => 'ssr setup', 'command' => 'printf "%s" "$INERTIA_SSR_URL" > setup-ssr', 'timeout_seconds' => 10],
+        ], ['commands' => [['id' => 'ssr', 'command' => 'printf "%s" "$ORBIT_SSR_PORT"', 'directory' => '.', 'fails_on_base' => false, 'paths' => []]]]));
+
+        expect($reading->exitCode)->toBe(0)
+            ->and(file_get_contents($checkout.'/setup-ssr'))->toBe('http://127.0.0.1:13722')
+            ->and(file_get_contents($checkout.'/check-ssr'))->toBe('13722 http://127.0.0.1:13722')
+            ->and($reading->deliverables['commands']['ssr']['output'] ?? null)->toBe('13722');
+    });
+});

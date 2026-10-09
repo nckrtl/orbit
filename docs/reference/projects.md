@@ -48,7 +48,7 @@ Registration never infers a nested root from source files. Configure the Project
 
 ## Setup and teardown steps
 
-A Project owns ordered [setup and teardown lists](/reference/instance-setup) for its development Instances. Each named command runs on the Instance's Node from the repository root. Production Instances run neither list.
+A Project owns ordered [setup and teardown lists](/reference/instance-setup) for its development Instances. Each named command runs on the Instance's Node from the repository root. A `default` Instance with the development release layout runs them in its active release. When Orbit cannot read that release, setup returns `instance.active_release_unavailable` and teardown runs in the checkout. Production Instances run neither list.
 
 When a command is missing or not executable on that Node (exit 127 or 126), Orbit returns `instance.setup_step_unavailable` or `instance.teardown_step_unavailable` with the step name and `outcome: missing`. The message names the step, Node, and exit code and says the command was not found or is not executable. Other command failures still return `instance.setup_step_failed` or `instance.teardown_step_failed`. See [Instance setup and teardown](/reference/instance-setup#failure-codes) for retry and removal behavior.
 

@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\AppDev\VitePortRuntime;
 use App\Domain\Instances\DevelopmentInstanceConfigurator;
 use App\Domain\Instances\DevelopmentInstanceProvisioner;
 use App\Domain\Instances\DevelopmentRouteProjector;
@@ -11,6 +12,7 @@ use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\ProjectSandboxRuntimeGuard;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
+use App\Models\Node;
 use App\Models\Task;
 use Tests\Support\IncusRuntimeWorkspace;
 use Tests\Support\UpCloudRuntimeWorkspace;
@@ -21,6 +23,9 @@ it('prepares a private preview through native provisioning only on the enrolled 
     $workspace = $provider === 'incus' ? IncusRuntimeWorkspace::create() : UpCloudRuntimeWorkspace::create();
     $workspace->project->update(['type' => 'laravel-app', 'root' => 'web']);
     $workspace->update(['task_workspace_routed' => true, 'root' => 'web', 'status' => InstanceState::SourceResolved]);
+    mock(VitePortRuntime::class)->shouldReceive('selectPort')->twice()
+        ->withArgs(fn (Node $node, int $preferred, array $excluded): bool => $node->id === $workspace->node_id && in_array($preferred, [5173, 13714], true))
+        ->andReturnUsing(fn (Node $node, int $preferred, array $excluded): int => $preferred);
     $configuration = mock(DevelopmentInstanceConfigurator::class);
     $configuration->shouldReceive('inspect')->once()->andReturn(new DevelopmentSourceProfile('8.5', true));
     $configuration->shouldReceive('configureLaravelUrl')->once()
@@ -36,6 +41,9 @@ it('prepares a private preview through native provisioning only on the enrolled 
     $development->reserve($result, null);
     $development->complete($result, null);
     expect($result->status)->toBe(InstanceState::Active);
+    expect($result->vite_port)->toBe(5173);
+    expect($result->ssr_port)->toBe(13714);
+    $this->assertDatabaseHas('ssr_port_assignments', ['instance_id' => $result->id, 'node_id' => $workspace->node_id, 'port' => 13714]);
     expect($result->routes()->count())->toBe(1);
     expect($result->routes()->first()->domain)->toBe($workspace->name.'.dlf.test');
     expect($result->routes()->first()->publication->value)->toBe('private');

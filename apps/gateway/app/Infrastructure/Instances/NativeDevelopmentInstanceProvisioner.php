@@ -7,6 +7,7 @@ namespace App\Infrastructure\Instances;
 use App\Actions\Routes\CreateRouteAction;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\AppDev\SsrPortAllocator;
 use App\Domain\AppDev\VitePortAllocator;
 use App\Domain\Instances\DevelopmentInstanceConfigurator;
 use App\Domain\Instances\DevelopmentInstanceProvisioner;
@@ -33,6 +34,7 @@ final readonly class NativeDevelopmentInstanceProvisioner implements Development
     {
         ProjectSandboxRuntimeGuard::assertRuntime($instance);
         app(VitePortAllocator::class)->assign($instance);
+        app(SsrPortAllocator::class)->assign($instance);
 
         if (! $instance->requiresRoute()) {
             return;

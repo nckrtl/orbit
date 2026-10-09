@@ -5817,7 +5817,7 @@
         "tags": [
           "Instances"
         ],
-        "description": "Create a development Instance on an app-dev Node.\n\nCreates a development Instance. New production Instances require a candidate. Use instance:clone.",
+        "description": "Create a development Instance on an app-dev Node.\n\nCreates a development Instance. New production Instances require a candidate. Use instance:clone.\nWith a Database server, Orbit creates the Instance's database there before the setup steps run.",
         "requestBody": {
           "required": true,
           "content": {
@@ -5851,6 +5851,12 @@
                     "type": "string",
                     "maxLength": 255,
                     "description": "Optional explicit source branch"
+                  },
+                  "database_server": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$(?![\\s\\S])",
+                    "maxLength": 63,
+                    "description": "Database server that gets the new Instance database before setup"
                   }
                 },
                 "required": [
@@ -29185,6 +29191,12 @@
             }
           },
           "vite_port": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "ssr_port": {
             "type": [
               "integer",
               "null"

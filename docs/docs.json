@@ -79,6 +79,7 @@
               "reference/schedules",
               "reference/app-dev-runtime-hibernation",
               "reference/assigned-vite-ports",
+              "reference/assigned-ssr-ports",
               "reference/agentation",
               "reference/agent-annotation",
               "reference/php-runtime",
