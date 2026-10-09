@@ -35,13 +35,16 @@ final class RouteWebRoot
         return $webRoot;
     }
 
-    /** Production Instances serve only their effective root for now. */
-    public static function assertSupportedTarget(Instance $instance): void
+    /**
+     * A Route with a web root takes a production Instance only when it is created for it. Moving it to
+     * a production Instance later is not supported.
+     */
+    public static function assertRetargetable(Instance $instance): void
     {
         if ($instance->placedOnAppProd()) {
             throw new ResourceOperationException(
                 errorCode: 'route.web_root_unsupported',
-                message: 'A Route web root is supported only for development Instances.',
+                message: 'A Route with a web root cannot move to a production Instance. Create the Route for that Instance instead.',
                 status: 409,
             );
         }
@@ -70,6 +73,106 @@ final class RouteWebRoot
         return $directory === self::relativeDirectory($instance->root ?? $instance->project->root)
             ? null
             : substr(hash('sha256', $directory), 0, 8);
+    }
+
+    /**
+     * The web roots that the Instance's active Routes with a web root serve outside its default
+     * application directory, ordered by web root. Each names its relative application directory and the
+     * pool suffix of that directory. Production renders one PHP-FPM pool and one stable `.env` for each
+     * distinct directory, and grants Caddy access to each web root.
+     *
+     * Only active Routes count, plus the Route that the caller is activating. A Route whose creation
+     * stopped part way never reaches release, pool, or Doctor work.
+     *
+     * @return list<array{web_root: string, directory: string, suffix: string}>
+     */
+    public static function servedApplications(Instance $instance, ?Route $activating = null): array
+    {
+        $instance->loadMissing('project');
+        $default = self::relativeDirectory($instance->root ?? $instance->project->root);
+        $webRoots = Route::query()
+            ->whereNotNull('web_root')
+            ->where('status', RouteStatus::Active->value)
+            ->whereHas('targets', static fn ($query) => $query->where('instance_id', $instance->id))
+            ->pluck('web_root');
+
+        if ($activating instanceof Route && $activating->hasWebRoot()
+            && $activating->targets()->where('instance_id', $instance->id)->exists()) {
+            $webRoots->push($activating->web_root);
+        }
+
+        $webRoots = $webRoots
+            ->filter(static fn (mixed $webRoot): bool => is_string($webRoot))
+            ->unique()
+            ->sort()
+            ->values();
+        $served = [];
+
+        foreach ($webRoots as $webRoot) {
+            $directory = self::relativeDirectory($webRoot);
+
+            if ($directory !== $default) {
+                $served[] = ['web_root' => $webRoot, 'directory' => $directory, 'suffix' => substr(hash('sha256', $directory), 0, 8)];
+            }
+        }
+
+        return $served;
+    }
+
+    /**
+     * A production release links each served directory's `.env` to its stable file, and a web root must
+     * not hold a link. So no web root of the Instance, its own root included, may contain the `.env` of
+     * the default directory or of a directory that a Route with a web root serves. A web root in the
+     * default directory must be the Instance root itself, which activation already checks.
+     */
+    public static function assertProductionLayout(Instance $instance, string $webRoot, ?Route $changing = null): void
+    {
+        $instance->loadMissing('project');
+        $root = $instance->root ?? $instance->project->root;
+        $default = self::relativeDirectory($root);
+
+        if (self::relativeDirectory($webRoot) === $default && $webRoot !== $root) {
+            self::unsafe("Web root [{$webRoot}] is in the default application directory of the production Instance. Only the Instance root [{$root}] can serve it.");
+        }
+
+        $others = Route::query()
+            ->whereNotNull('web_root')
+            ->whereIn('status', [RouteStatus::Active->value, RouteStatus::Activating->value])
+            ->whereHas('targets', static fn ($query) => $query->where('instance_id', $instance->id))
+            ->when($changing instanceof Route, static fn ($query) => $query->whereKeyNot($changing?->id))
+            ->pluck('web_root')
+            ->filter(static fn (mixed $value): bool => is_string($value))
+            ->all();
+        $webRoots = array_values(array_filter([$root, $webRoot, ...$others], static fn (mixed $value): bool => is_string($value) && $value !== '' && $value !== '.'));
+        $directories = array_unique([$default, ...array_map(self::relativeDirectory(...), [$webRoot, ...$others])]);
+
+        foreach ($directories as $directory) {
+            $environment = $directory === '' ? '.env' : "{$directory}/.env";
+
+            foreach ($webRoots as $served) {
+                if (str_starts_with($environment, "{$served}/")) {
+                    self::unsafe("Web root [{$served}] would serve [{$environment}]. A production web root must not contain an application .env.");
+                }
+            }
+        }
+    }
+
+    private static function unsafe(string $message): never
+    {
+        throw new ResourceOperationException(errorCode: 'route.web_root_unsafe', message: $message, status: 409);
+    }
+
+    /**
+     * The Routes that decide `APP_URL`: the active and activating Routes that target the Instance.
+     *
+     * @return Collection<int, Route>
+     */
+    public static function applicationUrlCandidates(Instance $instance): Collection
+    {
+        return Route::query()
+            ->whereIn('status', [RouteStatus::Active->value, RouteStatus::Activating->value])
+            ->whereHas('targets', static fn ($query) => $query->where('instance_id', $instance->id))
+            ->get();
     }
 
     /**

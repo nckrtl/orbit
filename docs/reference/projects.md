@@ -44,7 +44,7 @@ For a Laravel Instance, the application directory is the effective web root with
 
 The application directory contains `composer.json`, `artisan`, development [environment files](/reference/environment-variables#where-the-file-lives), and Laravel [logs](/reference/instance-logs#know-which-file-the-gateway-reads). PHP-FPM, default systemd Instance Processes, and Instance Schedules use it as their application working directory. Production resolves it through `current`. Setup, teardown, deploy steps, and task-check commands still run from the repository root; a nested Artisan step must change directory explicitly. [Setup and teardown](/reference/instance-setup#run-setup) and [task checks](/reference/tasks#project-check) export `VP_HOME` to the Node's resolved Vite+ store, including for project-local `vp`.
 
-Registration never infers a nested root from source files. Configure the Project's root, or send an explicit Instance root override. A development Instance can serve more directories of its checkout through [Routes with a web root](/reference/routes#serve-several-web-roots). Each one derives its application directory with the same rule and gets its own PHP-FPM pool and `APP_URL`.
+Registration never infers a nested root from source files. Configure the Project's root, or send an explicit Instance root override. An Instance can serve more directories of its checkout or release through [Routes with a web root](/reference/routes#serve-several-web-roots). Each one derives its application directory with the same rule and gets its own PHP-FPM pool and `APP_URL`.
 
 ## Setup and teardown steps
 

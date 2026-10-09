@@ -48,7 +48,8 @@ final readonly class NativeProductionRouteProjector implements ProductionCloneRo
             );
         }
 
-        $this->productionPhp->converge($instance);
+        // A Route with a web root counts before it is active, so its pool starts with it.
+        $this->productionPhp->converge($instance, $route->hasWebRoot() ? $route : null);
     }
 
     public function prepareCertificate(Instance $instance, Route $route): void

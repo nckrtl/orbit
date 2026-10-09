@@ -10,7 +10,6 @@ use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Instances\DevelopmentInstanceBranchInspector;
 use App\Domain\Instances\DevelopmentInstanceSourceLifecycle;
 use App\Domain\Instances\DevelopmentSourceResolution;
-use App\Domain\Instances\InstanceSandboxGuard;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\Storage\CheckoutRemovalBoundary;
@@ -38,7 +37,6 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
 
     public function prepare(Instance $instance, bool $allowExisting): void
     {
-        InstanceSandboxGuard::assertHostOperation($instance);
         app(SelectInstanceSeedAction::class)->execute($instance);
         if ($instance->seed_commit !== null) {
             $instance->update(['source_layout' => InstanceSourceLayout::Worktree->value]);
@@ -96,7 +94,6 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
 
     public function inspectPrepared(Instance $instance): void
     {
-        InstanceSandboxGuard::assertHostOperation($instance);
         $context = $this->context($instance);
         $this->ssh->execute(
             $instance->node,
@@ -123,7 +120,6 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
 
     public function resolve(Instance $instance): DevelopmentSourceResolution
     {
-        InstanceSandboxGuard::assertHostOperation($instance);
         $context = $this->context($instance);
         $defaultBranch = $this->defaultBranch($instance);
         $script = GitReadScript::for($this->access->for($context['repository'], $instance->project->source_access), self::preparedRepositoryGuard($instance->source_prepare_id, $instance->seed_repository).<<<'BASH'
@@ -184,7 +180,6 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
 
     public function assertBranchCheckedOut(Instance $instance, ?string $branch): void
     {
-        InstanceSandboxGuard::assertHostOperation($instance);
         $context = $this->context($instance);
         try {
             $result = $this->ssh->execute(
@@ -252,7 +247,6 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
 
     public function inspectResolved(Instance $instance): DevelopmentSourceResolution
     {
-        InstanceSandboxGuard::assertHostOperation($instance);
         $context = $this->context($instance);
         $result = $this->ssh->execute(
             $instance->node,

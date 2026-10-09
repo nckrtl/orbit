@@ -273,7 +273,7 @@ orbit node:access:add <consumer> <serving> [--json]
 | `consumer` | Numeric ID of the Node that sends commands. |
 | `serving` | Numeric ID of the Node that the commands act on. |
 
-Both Nodes must be active. Adding a grant that exists reports that it already exists.
+Both Nodes must be active. Adding a grant that exists reports that it already exists. A [task VM](/reference/compute-drivers#placement-invariant) Node never consumes a grant: the command fails with `task_vm.access_refused`.
 
 A grant to the active `gateway` Node lets the consumer act on every Node. The `gateway` Node itself, and the machine that the Gateway bootstrap recorded as its serving host, act on every Node without a grant.
 

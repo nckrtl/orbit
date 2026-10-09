@@ -5,9 +5,15 @@ declare(strict_types=1);
 namespace App\Infrastructure\Tasks;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\TaskVms\TaskVmPlacement;
 use App\Models\Instance;
+use App\Models\Node;
+use App\Models\TaskVm;
 
-/** The task account is optional during rollout, but a configured account never falls back to SSH's user. */
+/**
+ * The task account is optional during rollout, but a configured account never falls back to SSH's user.
+ * A task VM has no task account: its managed user `orbit` runs the agents and the checks.
+ */
 final readonly class TaskWorkerUser
 {
     public static function name(?Instance $workspace = null): ?string
@@ -17,6 +23,9 @@ final readonly class TaskWorkerUser
         }
         $worker = config('orbit.tasks.worker_user');
         if ($worker === null || $worker === '') {
+            return null;
+        }
+        if ($workspace?->node instanceof Node && TaskVmPlacement::forNode($workspace->node) instanceof TaskVm) {
             return null;
         }
         if (! is_string($worker) || preg_match('/\A[a-z_][a-z0-9_-]{0,31}\z/D', $worker) !== 1 || $worker === 'root') {

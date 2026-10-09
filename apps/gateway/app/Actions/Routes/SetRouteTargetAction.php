@@ -111,7 +111,7 @@ final readonly class SetRouteTargetAction
                 }
 
                 if ($locked->hasWebRoot()) {
-                    RouteWebRoot::assertSupportedTarget($target);
+                    RouteWebRoot::assertRetargetable($target);
                 } else {
                     RouteTargetWebRoot::assertSupported($target);
                 }
