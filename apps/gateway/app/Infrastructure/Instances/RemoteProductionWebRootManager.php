@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Infrastructure\Instances;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
-use App\Domain\Instances\InstanceSandboxGuard;
 use App\Domain\Instances\ProductionWebRootManager;
 use App\Domain\Routes\RouteWebRoot;
 use App\Domain\Shared\ResourceOperationException;
@@ -22,7 +21,6 @@ final readonly class RemoteProductionWebRootManager implements ProductionWebRoot
 
     public function prepare(Instance $instance, ?Route $activating = null): void
     {
-        InstanceSandboxGuard::assertHostOperation($instance);
         $instance->loadMissing(['project', 'node']);
         $applications = RouteWebRoot::servedApplications($instance, $activating);
         $user = $instance->production_user;
@@ -79,7 +77,6 @@ final readonly class RemoteProductionWebRootManager implements ProductionWebRoot
 
     public function assertServable(Instance $instance, string $webRoot): void
     {
-        InstanceSandboxGuard::assertHostOperation($instance);
         $instance->loadMissing(['project', 'node']);
         $user = $instance->production_user;
         $home = $instance->production_home;

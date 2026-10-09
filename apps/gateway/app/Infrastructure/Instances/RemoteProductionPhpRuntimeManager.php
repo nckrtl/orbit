@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Infrastructure\Instances;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
-use App\Domain\Instances\InstanceSandboxGuard;
 use App\Domain\Instances\ProductionPhpRuntimeIdentity;
 use App\Domain\Instances\ProductionPhpRuntimeManager;
 use App\Domain\Routes\RouteWebRoot;
@@ -31,13 +30,11 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
 
     public function converge(Instance $instance, ?Route $activating = null): void
     {
-        InstanceSandboxGuard::assertHostOperation($instance);
         $this->convergeWithTuning($instance, activating: $activating);
     }
 
     public function convergeMonitoring(Instance $instance, bool $enabled): void
     {
-        InstanceSandboxGuard::assertHostOperation($instance);
         $this->convergeWithTuning($instance, $enabled, 'monitor');
     }
 
@@ -99,7 +96,6 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
 
     public function remove(Instance $instance): void
     {
-        InstanceSandboxGuard::assertHostOperation($instance);
         $identity = ProductionPhpRuntimeIdentity::from($instance);
 
         $this->ssh->execute(
@@ -132,7 +128,6 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
 
     public function refreshCache(Instance $instance): void
     {
-        InstanceSandboxGuard::assertHostOperation($instance);
         $identity = ProductionPhpRuntimeIdentity::from($instance);
 
         try {

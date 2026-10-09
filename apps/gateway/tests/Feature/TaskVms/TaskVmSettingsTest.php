@@ -99,6 +99,36 @@ describe('off but configured', function (): void {
             ->and($settings->host(7)->bridgeAddress())->toBe('10.251.77.1');
     });
 
+    it('gives Caddy the range once the Cluster, the origin, or a host is set, but not for the range or Pi alone', function (array $values, ?string $range): void {
+        task_vms_off($values);
+
+        expect(TaskVmSettings::caddyGuardRange())->toBe($range);
+    })->with([
+        'nothing set' => [[], null],
+        'range and Pi only' => [['wireguard_range' => '10.44.0.192/26', 'pi' => ['models' => ['proxy/coder-large']]], null],
+        'invalid range alone' => [['wireguard_range' => 'not a range'], null],
+        'invalid Pi artifact alone' => [['pi' => ['artifact_path' => '/home/orbit/pi']], null],
+        'enabled' => [['enabled' => true], '10.44.0.128/25'],
+        'Cluster' => [['dev_cluster_id' => 4], '10.44.0.128/25'],
+        'origin' => [['model_proxy_origin' => 'http://10.44.0.3:8317'], '10.44.0.128/25'],
+        'host' => [task_vm_hosts([]), '10.44.0.128/25'],
+        'malformed hosts JSON' => [['incus' => ['hosts' => null]], '10.44.0.128/25'],
+        'invalid values beside the range' => [['dev_cluster_id' => '4x', 'model_proxy_origin' => 'http://10.44.0.3:8317/v1', 'pi' => ['artifact_path' => '/home/orbit/pi']], '10.44.0.128/25'],
+        'range outside the VPN subnet' => [['dev_cluster_id' => 4, 'wireguard_range' => '10.45.0.128/25'], '10.45.0.128/25'],
+    ]);
+
+    it('refuses an invalid range for Caddy once task VMs are configured', function (): void {
+        task_vms_off(['dev_cluster_id' => 4, 'wireguard_range' => '10.44.0.129/25']);
+
+        try {
+            TaskVmSettings::caddyGuardRange();
+            Assert::fail('The invalid range was accepted.');
+        } catch (TaskVmException $exception) {
+            expect($exception->errorCode)->toBe('task_vm.invalid_config')
+                ->and($exception->getMessage())->toContain('wireguard_range must be an IPv4 network');
+        }
+    });
+
     it('treats empty values as unset', function (): void {
         task_vms_off(['dev_cluster_id' => '', 'model_proxy_origin' => '', 'pi' => ['artifact_path' => '', 'artifact_sha256' => '']]);
 

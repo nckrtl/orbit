@@ -13,10 +13,13 @@ use App\Domain\Tasks\AgentThreadEvent;
 use App\Domain\Tasks\AgentThreadStart;
 use App\Domain\Tasks\AgentThreadState;
 use App\Domain\Tasks\TaskCompute;
+use App\Domain\TaskVms\TaskVmPlacement;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
+use App\Infrastructure\TaskVms\TaskVmRuntime;
 use App\Models\AgentThread;
 use App\Models\Instance;
 use App\Models\Node;
+use App\Models\TaskVm;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -57,7 +60,11 @@ final readonly class PiDriver implements AgentDriver
         $this->client->create($node, [
             'id' => $id,
             'cwd' => $cwd,
-            'model' => $node instanceof PiEndpoint ? PiModel::forSandbox($intent->model) : PiModel::forModel($intent->model, $this->configuredProvider()),
+            'model' => match (true) {
+                $node instanceof PiEndpoint => PiModel::forSandbox($intent->model),
+                TaskVmPlacement::forNode($node) instanceof TaskVm => PiModel::onlyProvider($intent->model, TaskVmRuntime::PiProvider),
+                default => PiModel::forModel($intent->model, $this->configuredProvider()),
+            },
             'thinkingLevel' => $intent->effort,
             'appendSystemPrompt' => null,
         ]);
@@ -279,7 +286,7 @@ final readonly class PiDriver implements AgentDriver
      */
     private function redact(array $data, Node|PiEndpoint $node): array
     {
-        $tokens = $node instanceof PiEndpoint ? $node->secrets() : [$this->connection->token($node)];
+        $tokens = $this->connection->secrets($node);
         array_walk_recursive($data, static function (mixed &$value) use ($tokens): void {
             if (is_string($value)) {
                 $value = str_replace($tokens, '[REDACTED]', $value);
@@ -346,6 +353,16 @@ final readonly class PiDriver implements AgentDriver
         }
         $group = $thread->parent()->with('taskable')->first();
         $workspace = $group?->taskable;
+        if ($group?->task_compute === TaskCompute::Vm && $workspace instanceof Instance && $workspace->task_sandbox_id === null
+            && ! str_starts_with($thread->runtime_key, 'sandbox:')) {
+            // A task VM is a normal Node: the thread stays on the Node of the group's ready task VM.
+            if ($thread->runtime_key !== 'node:'.$node->id || ! TaskVmPlacement::allowsWorkspace($group, $workspace)
+                || $workspace->node_id !== $node->id) {
+                throw new AgentDriverException('The original task VM Pi server is unavailable.');
+            }
+
+            return $node;
+        }
         if ($group?->task_compute === TaskCompute::Vm || str_starts_with($thread->runtime_key, 'sandbox:')
             || ($workspace instanceof Instance && $workspace->task_sandbox_id !== null)) {
             if (! $workspace instanceof Instance || $workspace->task_sandbox_id === null

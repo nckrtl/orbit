@@ -390,7 +390,7 @@ The unit runs `gateway:release:run <record>`, which claims the record and runs t
 | `gateway.release_migrations_unreadable` | The `migrations` table could not be read. Nothing changed. |
 | `gateway.release_snapshot_failed`, `gateway.release_snapshot_unavailable` | The pre-migration snapshot failed, or the database is not SQLite. Nothing changed. |
 | `gateway.release_migrate_failed` | The release's migrations failed. The release pauses. |
-| `gateway.release_caddy_failed`, `gateway.release_fpm_failed`, `gateway.release_units_failed` | The handoff could not publish Caddy, reload PHP-FPM, or install the Gateway units. |
+| `gateway.release_caddy_failed`, `gateway.release_fpm_failed`, `gateway.release_units_failed` | The handoff could not publish Caddy, reload PHP-FPM, or install the Gateway units. Caddy also fails while task VMs are configured and `task_vms.wireguard_range` is invalid: see [Refuse task VMs in Caddy](/reference/compute-drivers#refuse-task-vms-in-caddy). |
 | `gateway.release_scheduler_busy` | After the drain limit, a tasks tick held its lock for more than 330 seconds, so the scheduler was not stopped. See below. |
 | `gateway.release_scheduler_failed` | The scheduler unit did not stop, start, or become active. |
 | `gateway.release_handoff_failed` | The release printed no handoff result. |
@@ -758,7 +758,7 @@ The rollout visits a Node when all of these hold:
 
 Roleless Nodes, such as operator machines, and macOS Nodes stay out. Their operators run `orbit self-update`. The Gateway's own Node stays out too. Each release's [runtime handoff](#gateway-node-agent) updates its agent, and its CLI is the release's own `apps/cli`. `fleet:rollout:status` lists every Node it leaves out, with the reason `sandbox`, `inactive`, `platform`, `unmanaged`, `gateway`, `roleless`, or `foreign_cli`.
 
-A task sandbox is an `app-dev` Node that a [task VM](/reference/compute-drivers#task-vms) (not built yet) or an [UpCloud sandbox reservation](/reference/compute-drivers#enroll-an-owned-project-vm) owns. The Gateway creates it for one task group and removes it when the group ends or its review window expires ([ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm)). Provisioning gives it the agent and footprint of the Gateway's release at that time.
+A task sandbox is an `app-dev` Node that a [task VM](/reference/compute-drivers#task-vms) or an [UpCloud sandbox reservation](/reference/compute-drivers#enroll-an-owned-project-vm) owns. The rollout leaves out the Node of every task VM that is not `destroyed`, with the reason `sandbox`. Orbit does not create or remove task VMs yet: that part is not built yet ([ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm)). The Gateway creates an UpCloud sandbox for one task group and removes it when the group ends or its review window expires. Provisioning gives it the agent and footprint of the Gateway's release at that time.
 
 The rollout and the catch-up never visit a task sandbox, provisioning installs no Orbit CLI on it, and Doctor reports no `node.release_lag` for it. A group that resumes after its sandbox was destroyed gets a new sandbox Node, provisioned from the current release. The `sandbox` reason comes first, so a sandbox shows it in every state.
 

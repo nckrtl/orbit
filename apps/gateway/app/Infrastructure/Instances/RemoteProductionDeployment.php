@@ -12,7 +12,6 @@ use App\Domain\Instances\Deployment\DeploymentReleaseState;
 use App\Domain\Instances\Deployment\DeploymentRequest;
 use App\Domain\Instances\Deployment\DeploymentStep;
 use App\Domain\Instances\Deployment\ProductionDeployment;
-use App\Domain\Instances\InstanceSandboxGuard;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Routes\RouteWebRoot;
 use App\Domain\Shared\ResourceOperationException;
@@ -42,7 +41,6 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
 
     public function prepare(Instance $instance, string $branch): DeploymentRelease
     {
-        InstanceSandboxGuard::assertHostOperation($instance);
         [$repository, $user, $home, $root] = $this->identity($instance);
         $name = ($this->releaseName)();
         $this->assertReleaseName($name);
@@ -147,7 +145,6 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
         DeploymentStep $step,
         DeploymentRequest $request,
     ): CommandResult {
-        InstanceSandboxGuard::assertHostOperation($instance);
         [, $user, $home] = $this->identity($instance);
         $this->assertRelease($release, $home);
         $stepName = $step->name;
@@ -252,7 +249,6 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
 
     public function activate(Instance $instance, DeploymentRelease $release): DeploymentRelease
     {
-        InstanceSandboxGuard::assertHostOperation($instance);
         [$repository, $user, $home, $root] = $this->identity($instance);
         $this->assertRelease($release, $home);
         $served = $this->servedWebRoots($instance);
@@ -350,7 +346,6 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
 
     public function selected(Instance $instance): ?DeploymentRelease
     {
-        InstanceSandboxGuard::assertHostOperation($instance);
         [$repository, $user, $home, $root] = $this->identity($instance);
         $result = $this->execute(
             $instance,
@@ -372,7 +367,6 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
 
     public function retained(Instance $instance, string $name): DeploymentRelease
     {
-        InstanceSandboxGuard::assertHostOperation($instance);
         $this->assertReleaseName($name);
         [$repository, $user, $home, $root] = $this->identity($instance);
         $result = $this->execute(
@@ -401,7 +395,6 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
 
     public function releases(Instance $instance): DeploymentReleaseState
     {
-        InstanceSandboxGuard::assertHostOperation($instance);
         [$repository, $user, $home, $root] = $this->identity($instance);
         $result = $this->execute(
             $instance,
