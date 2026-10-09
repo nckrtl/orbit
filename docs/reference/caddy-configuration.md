@@ -114,6 +114,21 @@ The guard closes two paths that the listener alone leaves open. Linux accepts a 
 
 The TLS handshake completes before the abort, and Caddy shares its certificate cache across listeners. A client that names a private hostname on the public listener therefore completes TLS with that site's certificate. Then it gets Caddy's empty `200` response, because no private site is on that listener.
 
+After an operator configures [task VMs](/reference/compute-drivers#refuse-task-vms-in-caddy), every site except `gateway.orbit` and `reverb.orbit` also aborts a client in the reserved task VM range, `task_vms.wireguard_range`. That range lies inside the VPN subnet. A task VM needs TCP 443 on the Gateway and `websocket` Nodes for the Gateway API and Reverb, and one listener there serves every private site. A site that admits every client gets only the task VM pair:
+
+```caddy
+analytics.orbit {
+    bind 10.44.0.3
+    @orbit_outside not remote_ip 10.44.0.0/24
+    abort @orbit_outside
+    @orbit_task_vms remote_ip 10.44.0.128/25
+    abort @orbit_task_vms
+    ...
+}
+```
+
+Until task VMs are configured, no site has the task VM pair.
+
 Caddy cannot start with a missing listen address. So every build first checks that each specific address it binds exists on the Node. When a stored LAN address is missing, for example after a DHCP lease changed, the build stops at stage `addresses`, leaves the live Caddyfile unchanged, and names the address:
 
 ```text
@@ -171,6 +186,8 @@ The next convergence of a Caddy role on the Node installs Caddy and builds the N
 ### When a build fails
 
 A failed build does not publish a new file. A build fails when a site cannot render from stored state, when two sites collide, when Caddy is below the floor, or when the Node lacks an address the file binds. It also fails when `caddy validate` rejects the file, or when Caddy fails to reload.
+
+While [task VMs](/reference/compute-drivers#refuse-task-vms-in-caddy) are configured and `task_vms.wireguard_range` is invalid, every build on every Node fails at stage `render`, because Orbit cannot render the task VM guard. That includes the Gateway release handoff, which then fails with `gateway.release_caddy_failed`. Correct the range in the Gateway's environment and run `gateway:release:configure`. No other task VM value affects a build.
 
 A failed reload leaves Caddy on the configuration it already runs. The script points `/etc/caddy/Caddyfile` back at the previous version and asks Caddy to load it again. It never restarts a running Caddy. It starts Caddy only when Caddy is not running.
 

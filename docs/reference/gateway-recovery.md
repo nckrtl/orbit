@@ -390,7 +390,7 @@ The unit runs `gateway:release:run <record>`, which claims the record and runs t
 | `gateway.release_migrations_unreadable` | The `migrations` table could not be read. Nothing changed. |
 | `gateway.release_snapshot_failed`, `gateway.release_snapshot_unavailable` | The pre-migration snapshot failed, or the database is not SQLite. Nothing changed. |
 | `gateway.release_migrate_failed` | The release's migrations failed. The release pauses. |
-| `gateway.release_caddy_failed`, `gateway.release_fpm_failed`, `gateway.release_units_failed` | The handoff could not publish Caddy, reload PHP-FPM, or install the Gateway units. |
+| `gateway.release_caddy_failed`, `gateway.release_fpm_failed`, `gateway.release_units_failed` | The handoff could not publish Caddy, reload PHP-FPM, or install the Gateway units. Caddy also fails while task VMs are configured and `task_vms.wireguard_range` is invalid: see [Refuse task VMs in Caddy](/reference/compute-drivers#refuse-task-vms-in-caddy). |
 | `gateway.release_scheduler_busy` | After the drain limit, a tasks tick held its lock for more than 330 seconds, so the scheduler was not stopped. See below. |
 | `gateway.release_scheduler_failed` | The scheduler unit did not stop, start, or become active. |
 | `gateway.release_handoff_failed` | The release printed no handoff result. |

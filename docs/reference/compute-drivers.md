@@ -20,7 +20,7 @@ Both lanes are off by default. [ADR 0200](/decisions/0200-run-each-task-group-in
 
 ## Task VMs
 
-Partly built. The [settings](#configure-task-vms), the `task_vms` table and its [states](#states), the cloud-init user-data, the [placement invariant](#placement-invariant), the commands that [prepare an Incus host](#prepare-an-incus-host) and [limit fleet traffic on the hub](#limit-fleet-traffic-on-the-hub), the address allocator's reserved range, and the [Incus provider](#incus-provider) exist. So do the [Pi runtime](/reference/pi-server#run-pi-on-a-task-vm) and the task code that runs agents, checks, fetch, and push on a task VM Node. The invariant checks every saved Instance and access grant, and the fleet rollout skips task VM Nodes. Orbit creates no task VM yet: the jobs are not built yet. The Phase 1 slices of [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm) build them.
+Partly built. The [settings](#configure-task-vms), the `task_vms` table and its [states](#states), the cloud-init user-data, the [placement invariant](#placement-invariant), the commands that [prepare an Incus host](#prepare-an-incus-host) and [limit fleet traffic on the hub](#limit-fleet-traffic-on-the-hub), the address allocator's reserved range, the [Caddy guard](#refuse-task-vms-in-caddy), and the [Incus provider](#incus-provider) exist. So do the [Pi runtime](/reference/pi-server#run-pi-on-a-task-vm) and the task code that runs agents, checks, fetch, and push on a task VM Node. The invariant checks every saved Instance and access grant, and the fleet rollout skips task VM Nodes. Orbit creates no task VM yet: the jobs are not built yet. The Phase 1 slices of [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm) build them.
 
 A task VM is a stock Ubuntu 26.04 cloud VM on an Incus host. The Gateway creates it for one group, enrolls it as an `app-dev` Node, and destroys it when the group ends. After enrollment, the group uses the same code as a shared group, pinned to that Node.
 
@@ -100,7 +100,7 @@ The dropped egress ranges are `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `
 
 ### Limit fleet traffic on the hub
 
-Not built yet: the Caddy guard that this filter relies on. Do not run `task-vms:prepare-hub` before it is built. Reverb shares TCP 443 on the `websocket` Node with every other private Caddy site on that Node, such as `executor.orbit`. Caddy admits the whole VPN subnet on its WireGuard listeners, and the reserved range is inside that subnet. An L4 rule cannot tell the sites apart, so the hub rules for Reverb and the Gateway API are safe only with a Caddy guard that admits the task VM range on `reverb.orbit` and `gateway.orbit` and on no other WireGuard site.
+This filter relies on the [Caddy guard](#refuse-task-vms-in-caddy). Reverb shares TCP 443 on the `websocket` Node with every other private Caddy site on that Node, such as `executor.orbit`, so an L4 rule cannot tell the sites apart. Run `task-vms:prepare-hub` only after you configure task VMs and rebuild Caddy on every Node that serves sites.
 
 Run `task-vms:prepare-hub` once, and again when one of the values below changes. It runs `resources/task-vms/hub.sh` on the `vpn` Node. The script installs the nft table `inet orbit_task_vms` and the oneshot unit `orbit-task-vms-hub.service`. The unit loads the table after `nftables.service` and before `wg-quick@orbit` starts. The tunnel pulls the unit in but does not depend on it, so a failed load never stops the fleet VPN. The script checks that the table is loaded, is idempotent, and prints `{"ok":true}`.
 
@@ -121,6 +121,16 @@ The table filters only the reserved range. Its first rule passes every packet th
 | To task VMs | The Gateway on TCP 22 and the Pi port, and the dev Cluster router on TCP 80, 443, and 5173 |
 
 The table accepts established traffic and drops all other traffic to or from the range. The WireGuard address allocator skips the range for other Nodes. Only `AllocateTaskVmAction` assigns addresses in it. A task VM Node has no access grants to other Nodes.
+
+### Refuse task VMs in Caddy
+
+TCP 443 on the Gateway Node and on the `websocket` Node is one Caddy listener for every private site on that Node, so the hub table cannot tell `reverb.orbit` from `executor.orbit` or `analytics.orbit`. Caddy closes that gap. On every Node, every site except `gateway.orbit` and `reverb.orbit` aborts a client in `task_vms.wireguard_range`. [Caddy configuration](/reference/caddy-configuration#listener-addresses) shows the guard.
+
+Caddy renders the guard only after you configure task VMs: you enable them, or you set `dev_cluster_id`, `model_proxy_origin`, or a host. Until then, every Caddyfile stays as it was. The guard reads only that condition and `task_vms.wireguard_range`. Another invalid task VM value never changes a Caddyfile or blocks a build.
+
+The next Gateway release rebuilds only the Gateway Node's Caddyfile. After you set these values, run `php artisan orbit:caddy-build NODE` for every other Node that serves sites, before the first task VM enrolls. Until then, Doctor reports `role.caddy_build_drift` on each of those Nodes. Unset these values only after every task VM is destroyed, because the next build of each Node then drops the guard.
+
+While task VMs are configured and the range is invalid, every Node Caddy build refuses at stage `render` and names the problem, so live Caddyfiles do not change. This includes the Gateway release handoff, which fails with `gateway.release_caddy_failed`. So after [`gateway:release:configure`](/reference/gateway-recovery#apply-an-env-change), run `php artisan orbit:caddy-build NODE --dry-run` for the Gateway Node. It prints `Build refused:` and the problem when the range is invalid.
 
 ### Placement invariant
 
