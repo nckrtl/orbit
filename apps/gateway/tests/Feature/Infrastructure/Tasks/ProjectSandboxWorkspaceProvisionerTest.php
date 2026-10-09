@@ -142,7 +142,8 @@ it('enrolls and prepares one owned workspace through initial admission or cloud 
         $configuration->shouldReceive('inspect')->once()->andReturn(new DevelopmentSourceProfile('8.5', true));
         $configuration->shouldReceive('configureLaravelUrl')->once();
         mock(DevelopmentRouteProjector::class)->shouldReceive('converge')->once();
-        mock(InstanceEnvironmentReader::class)->shouldReceive('read')->once()->andReturn("APP_KEY=\nAPP_URL=https://template.invalid\n");
+        // One import read, and one key check before each of the two synchronizations.
+        mock(InstanceEnvironmentReader::class)->shouldReceive('read')->times(3)->andReturn("APP_KEY=\nAPP_URL=https://template.invalid\n");
         $preflight = mock(InstanceOperationPreflight::class);
         $preflight->shouldReceive('assertEnvironmentWritable')->twice();
         mock(InstanceEnvironmentWriter::class)->shouldReceive('write')->twice()

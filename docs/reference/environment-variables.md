@@ -125,7 +125,9 @@ Synchronization takes one snapshot of the Instance, any authoritative Route, and
 
 Before it decrypts a value, the Gateway checks SSH access, the user, the path, the directory's write permission, the file type and owner, read-only storage, and free space. A failed check returns an error and leaves `.env` as it is.
 
-The Gateway renders every stored key in sorted order, as a quoted value. It writes the result as a candidate file with mode `0600`, owned by the runtime user, and renames it over `.env`. A matching file with mode `0600` stays in place and returns `changed: false`. Stored configuration is the only input. Keys and edits that exist only in the file disappear, so import them first when they must stay.
+The Gateway renders every stored key in sorted order, as a quoted value. It writes the result as a candidate file with mode `0600`, owned by the runtime user, and renames it over `.env`. A matching file with mode `0600` stays in place and returns `changed: false`. Stored configuration is the only input. Edits to stored keys disappear.
+
+Before it writes, the Gateway reads the file's key names. A key that stored configuration lacks returns `env.sync_would_drop_keys` (409), and the file stays as it is. The details list the key names, comma-separated, never a value. Orbit owns, and so may remove, only the keys its last synchronization wrote and the keys a detach removed since. Run `env:import` to keep the other keys, or remove them from the file. A Route transition on a production Instance skips this check, because deploys already own that file.
 
 When the Gateway cannot confirm the write, it returns `env.sync_unconfirmed` (the file may have changed). Repeat the request: it checks the file again and either accepts the matching file or writes it.
 
@@ -202,6 +204,7 @@ Environment operations return these codes in the Orbit error envelope. None of t
 | `env.reference_unavailable` | 409 | A placeholder is left over after rendering. |
 | `env.operation_busy` | 409 | Another operation holds the Instance's lock. |
 | `env.sync_unconfirmed` | 409 | The Gateway cannot confirm the write. Retry the request. |
+| `env.sync_would_drop_keys` | 409 | The file has keys that stored configuration lacks and Orbit never wrote. Import them, or remove them from the file. |
 | `env.testing_tracking_unknown` | 409 | Git cannot report whether the checkout tracks `.env.testing`. `.env` is written; `.env.testing` stays unchanged. |
 
 ## Why it works this way

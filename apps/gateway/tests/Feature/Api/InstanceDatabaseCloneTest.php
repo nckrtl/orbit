@@ -250,7 +250,8 @@ describe('instance:create database clone', function (): void {
             ->toContain('CREATE DATABASE `acme_feature_x_test`;')
             ->toContain("GRANT ALL PRIVILEGES ON `acme\\_feature\\_x\\_test%`.* TO 'acme_feature_x'@'%';")
             ->and(DatabaseConnectionTarget::query()->where('instance_id', $instance->id)->sole()->database_connection_id)->toBe($clone->id)
-            ->and($this->environment->reads)->toBe(1)
+            // The import reads `.env`, and the synchronization checks its keys before the write.
+            ->and($this->environment->reads)->toBe(2)
             ->and($env['APP_URL'])->toStartWith('https://feature-x.')
             ->and($env)->toMatchArray([
                 'APP_KEY' => 'base64:kept',
@@ -550,7 +551,7 @@ describe('environment import before the first synchronization', function (): voi
         $this->postJson('/api/v1/instances', database_clone_request($this->project, $this->node))->assertCreated();
 
         expect(array_keys(database_clone_env((string) $this->environment->contents)))->toBe(['DB_CONNECTION', 'DB_DATABASE'])
-            ->and($this->environment->reads)->toBe(1);
+            ->and($this->environment->reads)->toBe(2);
     });
 });
 
@@ -783,6 +784,7 @@ describe('.env.testing', function (): void {
         $route->targets()->create(['instance_id' => $this->default->id, 'position' => 0]);
         $route->update(['status' => 'active']);
         $this->default->environmentValues()->create(['env_key' => 'APP_KEY', 'env_value' => 'base64:default']);
+        $this->environment->missing = true;
 
         app(SynchronizeInstanceEnvironmentAction::class)->execute($this->default);
 
@@ -1002,7 +1004,7 @@ final class DatabaseCloneEnvironmentFakes implements InstanceEnvironmentReader, 
             throw new ResourceOperationException('env.import_source_missing', 'The recorded Instance environment file does not exist.', 404);
         }
 
-        return $this->source;
+        return $this->contents ?? $this->source;
     }
 
     public function write(InstanceEnvironmentContext $context, #[SensitiveParameter] string $contents): InstanceEnvironmentWriteResult
