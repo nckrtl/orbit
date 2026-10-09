@@ -125,7 +125,9 @@ Local fleet enrollment has its own disabled-by-default `ORBIT_INCUS_ENROLLMENT_E
 
 The reservation pins both sides of Node ownership, the complete Incus placement, and the SSH key. Retries verify the same guest and key through a separate read-only fleet identity operation. This operation permits existing enrollment files but keeps all host placement and firewall checks. It cannot replace a missing Node or repin a changed key.
 
-The hub confirms the sandbox's fleet limits before native provisioning publishes its peer. Its configured public UDP endpoint must match the recorded bootstrap endpoint, including on retries. Bootstrap uses the recorded private host address and reserved SSH port; enrolled traffic uses the VM's own WireGuard address. The Node joins only as `app-dev`, uses the managed `orbit` account, and has no grants to other Nodes. Local Project workspace admission has a separate disabled-by-default `ORBIT_INCUS_PROJECT_WORKSPACES_ENABLED` gate. Enable it only after local enrollment, runtime, and cleanup acceptance.
+The hub confirms the sandbox's fleet limits before native provisioning publishes its peer. Its configured public UDP endpoint must match the recorded bootstrap endpoint, including on retries. After verifying the owned guest's SSH identity, the Gateway installs its public SSH key through the Incus control channel. A clean Project image contains no fleet keys. The bootstrap key file accepts only that key and refuses unsafe paths or foreign keys.
+
+Bootstrap uses the recorded private host address and reserved SSH port; enrolled traffic uses the VM's own WireGuard address. The Node joins only as `app-dev`, uses the managed `orbit` account, and has no grants to other Nodes. Local Project workspace admission has a separate disabled-by-default `ORBIT_INCUS_PROJECT_WORKSPACES_ENABLED` gate. Enable it only after local enrollment, runtime, and cleanup acceptance.
 
 ### Local Project SSH identity
 
