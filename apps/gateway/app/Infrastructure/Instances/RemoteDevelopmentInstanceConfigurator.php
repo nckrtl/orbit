@@ -182,6 +182,7 @@ final readonly class RemoteDevelopmentInstanceConfigurator implements Developmen
                         if updated != original or not env.exists(): atomic(env, updated, mode)
                         elif env.stat().st_mode & 0o007: os.chmod(env, mode)
 
+                        replacement = ('APP_URL=' + url).encode()
                         testing = root / '.env.testing'
                         safe_regular(testing)
                         if testing.exists():

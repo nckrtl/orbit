@@ -1289,7 +1289,7 @@ describe('setting a development Route target', function (): void {
             $replacement = app(SetRouteTargetAction::class)->execute($route, $added->id);
 
             expect($replacement->id)->not->toBe($route->id)
-                ->and($replacement->domain)->toBe("added.{$instance->project->slug}.acme.test")
+                ->and($replacement->domain)->toBe("web.added.{$instance->project->slug}.acme.test")
                 ->and($replacement->targets->sole()->instance_id)->toBe($added->id)
                 ->and(Route::query()->find($route->id))->toBeNull()
                 ->and($ssh->commands)->toBe([]);

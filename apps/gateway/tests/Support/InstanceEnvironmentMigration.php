@@ -67,6 +67,7 @@ function drop_app_era_instance_leftovers_for_migration_test(): void
 
 function roll_back_app_instance_environment_for_migration_test(): void
 {
+    undo_named_app_removal_inventory_guard_for_migration_test();
     (require base_path('database/migrations/2026_10_19_000000_allow_source_resolved_workspace_route_removal.php'))->down();
     owned_interrupted_creation_removal_migration()->down();
     (require base_path('database/migrations/2026_10_10_000000_add_instance_source_prepare_id.php'))->down();
@@ -98,4 +99,20 @@ function restore_app_instance_environment_schema_for_migration_test(): void
 
     run_legacy_schema_migration(app_instance_environment_migration(), 'up');
     drop_app_era_instance_leftovers_for_migration_test();
+}
+
+/**
+ * Named-app ownership rewrites a missing removal Route as an empty Route inventory. Older migrations
+ * edit that guard by its original text, so turn the inventory test back before rolling them back.
+ */
+function undo_named_app_removal_inventory_guard_for_migration_test(): void
+{
+    $inventory = "json_array_length(COALESCE(NEW.route_ids, CASE WHEN NEW.route_id IS NULL THEN '[]' ELSE json_array(NEW.route_id) END))";
+    $sql = DB::table('sqlite_master')->where('type', 'trigger')->where('name', 'instance_removal_members_insert')->value('sql');
+    if (! is_string($sql) || ! str_contains($sql, $inventory)) {
+        return;
+    }
+
+    DB::statement('DROP TRIGGER instance_removal_members_insert');
+    DB::statement(str_replace([$inventory.' = 0', $inventory.' > 0'], ['NEW.route_id IS NULL', 'NEW.route_id IS NOT NULL'], $sql));
 }

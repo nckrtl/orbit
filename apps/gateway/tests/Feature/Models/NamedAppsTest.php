@@ -78,7 +78,7 @@ it('migrates each legacy root and explicit override independently to a named app
     $project = named_app_project(['root' => $root, 'type' => $type]);
     $node = Node::query()->create(['name' => 'named-app-node', 'status' => 'active', 'platform' => 'linux', 'public_ssh_host' => 'node.example.test']);
     $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'default', 'checkout_path' => '/srv/repo', 'root' => $override, 'status' => 'active']);
-    $migration = require database_path('migrations/2026_10_19_000000_add_named_apps_to_projects.php');
+    $migration = require database_path('migrations/2026_10_21_000000_add_named_apps_to_projects.php');
     // The predecessor schema cannot retain guards installed by its dependent runtime migration.
     $runtimeGuards = DB::table('sqlite_master')->where('type', 'trigger')->get(['name', 'sql'])->filter(static fn ($trigger): bool => str_contains($trigger->sql, 'projects.apps') || str_contains($trigger->sql, 'SELECT apps FROM projects') || str_contains($trigger->sql, 'app_overrides'));
     foreach ($runtimeGuards as $trigger) {
@@ -178,7 +178,7 @@ it('requires a named app selector on several apps and refuses unknown names', fu
 
 it('refuses rollback that would discard changed named app configuration', function (): void {
     named_app_project(['apps' => [['name' => 'site', 'path' => 'apps/site', 'web_root' => 'public', 'type' => 'laravel-app']]]);
-    $migration = require database_path('migrations/2026_10_19_000000_add_named_apps_to_projects.php');
+    $migration = require database_path('migrations/2026_10_21_000000_add_named_apps_to_projects.php');
 
     expect(fn () => $migration->down())->toThrow(RuntimeException::class, 'Cannot discard named apps');
     expect(Schema::hasColumn('projects', 'apps'))->toBeTrue();
@@ -189,7 +189,7 @@ it('refuses rollback that would discard an explicit named app override', functio
     $project = named_app_project();
     $node = Node::query()->create(['name' => 'rollback-node', 'status' => 'active', 'platform' => 'linux', 'public_ssh_host' => 'node.example.test']);
     Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'default', 'checkout_path' => '/srv/repo', 'app_overrides' => ['web' => ['path' => 'apps/preview', 'web_root' => 'public']]]);
-    $migration = require database_path('migrations/2026_10_19_000000_add_named_apps_to_projects.php');
+    $migration = require database_path('migrations/2026_10_21_000000_add_named_apps_to_projects.php');
 
     expect(fn () => $migration->down())->toThrow(RuntimeException::class, 'Cannot discard named app overrides');
     expect(Schema::hasColumn('projects', 'apps'))->toBeTrue();

@@ -29,6 +29,7 @@ use App\Domain\Clusters\ClusterRouterOperationLock;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Instances\DevelopmentInstanceBranchInspector;
 use App\Domain\Instances\DevelopmentInstanceConfigurator;
+use App\Domain\Instances\DevelopmentSourceAccess;
 use App\Domain\Instances\DevelopmentSourceProfile;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Metrics\MetricsFleetReconciler;
@@ -2068,6 +2069,11 @@ it('keeps every per-app route domain distinct in Node and Cluster proposals and 
 })->with(['node-tld', 'cluster-tld', 'attach', 'detach']);
 
 it('preserves the docs app on a pending generated per-app route target replacement', function (): void {
+    // The served web app's checkout would get a Caddy access walk; this test covers only the records.
+    app()->instance(DevelopmentSourceAccess::class, new class implements DevelopmentSourceAccess
+    {
+        public function grant(Instance $instance): void {}
+    });
     $this->orbitApp->update(['apps' => [
         ['name' => 'web', 'path' => 'apps/web', 'web_root' => 'public', 'type' => 'laravel-app'],
         ['name' => 'docs', 'path' => 'apps/docs', 'web_root' => 'public', 'type' => 'laravel-app'],

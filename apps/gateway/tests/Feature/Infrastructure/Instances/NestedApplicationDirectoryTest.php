@@ -141,7 +141,8 @@ it('converges per-app route APP_URL files and cached URLs without rewriting a si
         foreach (['web', 'docs'] as $app) {
             $url = 'https://'.$active->authoritativeRoute($app)->domain;
             $directory = $checkout.'/apps/'.$app;
-            expect(file_get_contents($directory.'/.env'))->toBe("APP_NAME={$app}\nAPP_URL={$url}\n")
+            // A new .env also gets a usable APP_KEY.
+            expect(file_get_contents($directory.'/.env'))->toMatch('/\AAPP_NAME='.$app.'\nAPP_URL='.preg_quote($url, '/').'\nAPP_KEY="base64:[A-Za-z0-9+\/]{43}="\n\z/')
                 ->and(file_get_contents($directory.'/.env.testing'))->toBe("APP_ENV=testing\nAPP_URL={$url}\n")
                 ->and(file_get_contents($directory.'/bootstrap/cache/config.php'))->toBe("<?php return ['app' => ['url' => '{$url}']];")
                 ->and($instance->environmentValues()->where('app', $app)->where('env_key', 'APP_URL')->first()->env_value)->toBe($url);

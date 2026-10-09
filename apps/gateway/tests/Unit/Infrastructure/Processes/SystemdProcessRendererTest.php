@@ -453,7 +453,7 @@ it('projects AGENTATION_URL onto the Antigravity watcher unit', function (): voi
 });
 
 it('projects the assigned ssr port as ORBIT_SSR_PORT and INERTIA_SSR_URL and adds nothing without one', function (?string $routeDomain): void {
-    $instance = new Instance(['ssr_port' => 13721]);
+    $instance = systemd_renderer_instance(['ssr_port' => 13721]);
     $instance->id = 7;
     $target = new ProcessTarget(node: new Node, user: 'orbit', checkoutPath: '/apps/recall/task-a', instance: $instance, routeDomain: $routeDomain);
     $process = new Process(['name' => 'ssr', 'working_directory' => '/apps/recall/task-a', 'runtime_config' => ['command' => ['/usr/bin/php', 'artisan', 'inertia:start-ssr'], 'environment' => ['INERTIA_SSR_URL' => 'http://127.0.0.1:13719', 'ORBIT_SSR_PORT' => '13719']], 'restart_policy' => 'on-failure']);

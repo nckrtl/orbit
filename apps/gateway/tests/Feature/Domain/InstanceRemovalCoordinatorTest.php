@@ -1216,6 +1216,7 @@ it('keeps normal source refusals for a source-resolved workspace with a pending 
 it('upgrades and reverses the routed workspace removal persistence guards', function (): void {
     $instance = orb1193_coordinator_workspace();
     $migration = require database_path('migrations/2026_10_19_000000_allow_source_resolved_workspace_route_removal.php');
+    undo_named_app_removal_inventory_guard_for_migration_test();
     $migration->down();
     try {
         expect(fn () => $this->orb181Coordinator->execute($instance, false))
