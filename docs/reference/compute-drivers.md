@@ -287,7 +287,7 @@ A started cloud server does not prove that a task can run, so provider state and
 
 ## Project lane (being removed)
 
-The first build of the web lane is still in the code. The Phase 1 slices of [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm) delete it. Keep it off. These Gateway settings still exist, with their required values:
+The first build of the web lane is still in the code, but no claim reaches it: `vm` groups of web Projects use [task VMs](#task-vms). The Phase 1 slices of [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm) delete it. Keep it off. These Gateway settings still exist, with their required values:
 
 | Setting | Required value |
 | --- | --- |
@@ -501,7 +501,7 @@ The scheduler reconciles review retention after publication and on later ticks. 
 
 ## Task workspace cleanup
 
-Merge and cancellation remove task workspaces through their sandbox reservations. Under the group admission lock, Orbit checks the group, Project, Instance, reservation, and compute host. It refuses foreign group references and unexpected live Routes, Processes, Schedules, or database connections. Guest checkout paths never reach host source inspection or deletion.
+Merge and cancellation remove the workspaces of Orbit-lane groups through their sandbox reservations. A [task VM](#destroy-a-task-vm) workspace is a normal Instance, and Orbit removes it as it removes a shared workspace. Under the group admission lock, Orbit checks the group, Project, Instance, reservation, and compute host. It refuses foreign group references and unexpected live Routes, Processes, Schedules, or database connections. Guest checkout paths never reach host source inspection or deletion.
 
 For an Orbit Incus pair, Orbit revokes the model key, destroys owned compute, and confirms destruction before deleting the workspace row and clearing its task references. A failed operation retains ownership for retry. The reservation remains as audit history. A foreign workspace, Node, role, or live resource reference refuses cleanup.
 
