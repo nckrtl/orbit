@@ -50,6 +50,7 @@ describe('development defaults in place', function (): void {
             ->and(plain_git($home, 'symbolic-ref', '--short', 'HEAD'))->toBe('main')
             ->and(file_get_contents($home.'/public/index.php'))->toContain('second')
             ->and(file_exists($home.'/old.txt'))->toBeFalse()
+            ->and(file_exists($home.'/packages'))->toBeFalse()
             ->and(file_get_contents($home.'/step-ran-in'))->toBe($home)
             ->and(file_get_contents($home.'/.cache/warm'))->toBe('previous-cache')
             ->and(file_get_contents($home.'/.env'))->toBe("APP_ENV=development\n")
@@ -104,6 +105,31 @@ describe('development defaults in place', function (): void {
             ->and(plain_git($home, 'rev-parse', 'HEAD'))->toBe($this->fixture->initialCommit)
             ->and(file_get_contents($home.'/public/index.php'))->toBe('<?php echo "local edit";')
             ->and(implode('', $events))->toContain('public/index.php');
+    });
+
+    it('refuses a local branch with commits that the target commit does not contain', function (): void {
+        $home = $this->fixture->home;
+        plain_git($home, '-c', 'user.email=dev935@example.test', '-c', 'user.name=Local', 'commit', '--allow-empty', '-m', 'local only');
+        $local = plain_git($home, 'rev-parse', 'HEAD');
+        $this->fixture->push('second');
+
+        $result = app(DeployDefaultInstanceAction::class)->execute($this->fixture->instance);
+
+        expect($result?->failure?->errorCode)->toBe('deployment.branch_diverged')
+            ->and(plain_git($home, 'rev-parse', 'HEAD'))->toBe($local)
+            ->and(plain_git($home, 'rev-parse', 'main'))->toBe($local);
+    });
+
+    it('runs back-to-back steps when an earlier step leaves a process behind', function (): void {
+        plain_steps($this->fixture->instance, [
+            new DevelopmentDeployStep('daemon', 'setsid -f sleep 5 >/dev/null 2>&1 </dev/null'),
+            ...array_map(static fn (int $step): DevelopmentDeployStep => new DevelopmentDeployStep('step-'.$step, 'true'), range(1, 8)),
+        ]);
+
+        $result = app(DeployDefaultInstanceAction::class)->execute($this->fixture->instance);
+
+        expect($result?->succeeded)->toBeTrue()
+            ->and($result?->commands)->toHaveCount(9);
     });
 
     it('waits for a setup step that runs in the checkout', function (): void {
@@ -175,6 +201,7 @@ describe('converting an old release layout', function (): void {
             ->and(file_get_contents($home.'/.env'))->toBe("APP_ENV=development\n")
             ->and(file_get_contents($home.'/.env.testing'))->toBe("APP_ENV=testing\n")
             ->and(file_get_contents($home.'/home-only.log'))->toBe('kept')
+            ->and(file_exists($home.'/packages'))->toBeFalse()
             ->and(readlink($home.'/public/storage'))->toBe($home.'/storage/app/public')
             ->and(file_get_contents($home.'/public/storage/upload.txt'))->toBe('upload')
             ->and(file_exists($home.'/releases'))->toBeFalse()
@@ -223,18 +250,40 @@ describe('converting an old release layout', function (): void {
             ->and(file_get_contents($home.'/database.sqlite'))->toBe('written-after-conversion');
     });
 
-    it('keeps a release folder without an ownership receipt and the layout state', function (): void {
+    it('keeps a release folder without an ownership receipt, names it once, and ends the layout', function (): void {
         $home = $this->fixture->home;
         mkdir($home.'/releases/foreign');
         file_put_contents($home.'/releases/foreign/data', 'must-survive');
+        Log::spy();
 
         expect(app(DeployDefaultInstanceAction::class)->execute($this->fixture->instance, onlyChanged: true, triggeredBy: 'schedule'))->toBeNull()
+            ->and(app(DeployDefaultInstanceAction::class)->execute($this->fixture->instance, onlyChanged: true, triggeredBy: 'schedule'))->toBeNull()
             ->and(file_get_contents($home.'/releases/foreign/data'))->toBe('must-survive')
             ->and(is_dir($this->leased))->toBeFalse()
             ->and(is_dir($this->release))->toBeFalse()
             ->and(file_exists($home.'/current'))->toBeFalse()
-            ->and(file_exists($home.'/.git/orbit-development-releases-owner'))->toBeTrue()
+            ->and(file_exists($home.'/.git/orbit-development-releases'))->toBeFalse()
+            ->and(file_exists($home.'/.git/orbit-development-releases-owner'))->toBeFalse()
             ->and(array_map(basename(...), glob($home.'/.git/worktrees/*')))->toBe(['t3code-ab12', 'task-935-e2e']);
+        Log::shouldHaveReceived('warning')->once()->with('Orbit kept release folders it does not own; remove them by hand.', [
+            'instance_id' => $this->fixture->instance->id, 'releases' => ['foreign'],
+        ]);
+    });
+
+    it('stops the conversion before it changes anything when the release cannot be listed', function (): void {
+        $home = $this->fixture->home;
+        $admin = plain_git($this->release, 'rev-parse', '--absolute-git-dir');
+        file_put_contents($admin.'/index', 'not an index');
+
+        $result = app(DeployDefaultInstanceAction::class)->execute($this->fixture->instance, onlyChanged: true, triggeredBy: 'schedule');
+
+        expect($result?->failure?->errorCode)->toBe('deployment.convert_failed')
+            ->and(plain_git($home, 'rev-parse', 'HEAD'))->toBe($this->first)
+            ->and(file_get_contents($home.'/database.sqlite'))->toBe('stale-data')
+            ->and(file_exists($home.'/.git/orbit-development-releases/converted'))->toBeFalse()
+            ->and(readlink($home.'/current'))->toBe('releases/20261009164518-56c418b8ebd18e71')
+            ->and(is_dir($this->leased))->toBeTrue()
+            ->and($this->fixture->instance->fresh()->development_release_layout)->toBeTrue();
     });
 
     it('refuses to convert a checkout with uncommitted changes to tracked files', function (): void {

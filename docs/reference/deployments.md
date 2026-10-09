@@ -54,7 +54,10 @@ A deployment runs in the checkout itself, in two phases.
 
 **Source preparation.** Orbit fetches the default branch and checks out the fetched commit on that branch. Untracked and ignored files stay, so dependencies, caches, `.env` files, and databases carry over.
 
+The exception is a directory that the new commit no longer has, such as a removed package. Git would leave that directory's untracked and ignored files, for example its `node_modules`. Orbit deletes them before the checkout, so a [seed](#seeds) copy finds only directories that the commit has.
+
 - When tracked files have uncommitted changes, Orbit refuses with `deployment.checkout_dirty`. The output lists those files, and the checkout stays unchanged.
+- When the local default branch has commits that the fetched commit does not contain, Orbit refuses with `deployment.branch_diverged` and changes nothing. A checkout would drop those commits.
 - When the checkout would overwrite an untracked file, Git refuses it.
 
 **Steps.** The Project's [development deploy steps](#development-deploy-steps) run in list order in the checkout. They report the `before_activation` phase. There is no activation, because the checkout is what the Instance serves.
@@ -66,7 +69,7 @@ When every required step passes, Orbit records the commit as the default's `seed
 
 A failed best-effort step (`required: false`) gets a warning that names it and its exit status, and the deployment continues. The output and stored events keep that warning, even when the deployment succeeds or the output reached its storage limit.
 
-A step and Orbit's checkout take the lock that [setup and teardown steps](/reference/instance-setup) hold on the checkout. While a setup or teardown step runs there, the deployment fails with `instance.lifecycle_busy` and the next tick retries. Steps must not change tracked files: the next deployment would refuse the checkout as dirty.
+A step and Orbit's checkout take the lock that [setup and teardown steps](/reference/instance-setup) hold on the checkout. While a setup or teardown step runs there, the deployment fails with `instance.lifecycle_busy` and the next tick retries. A step's processes do not inherit the lock, so a process that a step leaves running cannot hold up the next step. Steps must not change tracked files: the next deployment would refuse the checkout as dirty.
 
 Explicit environment synchronization writes the checkout's `.env` files, so the application sees new values at once. A Route's web root serves files from the checkout, and a deployment does not change the Route.
 
@@ -80,17 +83,17 @@ A new development Instance on the same Node starts from the default: Orbit recor
 
 Earlier Gateways served a default from `releases/<name>` through a `current` link. The first deployment after an upgrade turns that layout back into a plain checkout, once.
 
-First, Orbit checks out the selected release's commit in the checkout, on the default branch. When tracked files have uncommitted changes, it refuses with `deployment.checkout_dirty` and changes nothing.
+First, Orbit lists the selected release's untracked and ignored files. When it cannot list them, the conversion stops before it changes anything. Then Orbit checks out the release's commit in the checkout, on the default branch, after it deletes leftovers in directories that the commit does not have, as a [deployment](#development-defaults) does. When tracked files have uncommitted changes, it refuses with `deployment.checkout_dirty`, and when the local branch has commits that the release's commit does not contain, with `deployment.branch_diverged`. Either refusal changes nothing.
 
-Then Orbit copies the selected release's untracked and ignored files into the checkout. They replace the checkout's own copies. They hold the dependencies, caches, and runtime data, such as SQLite databases, that the Instance served. A link into the release now points into the checkout.
+Then Orbit copies the selected release's untracked and ignored files into the checkout. They replace the checkout's own copies. They hold the dependencies, caches, and runtime data, such as SQLite databases, that the Instance served. A link into the release now points into the checkout. The release keeps serving while Orbit copies, so a write to a database in the few seconds before the Route switches is lost.
 
-The checkout keeps its own `.env` and `.env.testing`, because synchronization wrote them there. It also keeps its files that the release does not have.
+The checkout keeps its own `.env` and `.env.testing`, because synchronization wrote them there. It also keeps its other files that the release does not have, such as old logs.
 
 Next, the Gateway serves the Route from the checkout and records the checkout as the default's seed. Every Instance whose seed named one of the releases now names the checkout.
 
-Last, Orbit removes `current`, the releases, and the layout's state. While a setup or teardown step runs in an Instance seeded from the default, Orbit waits. It holds those Instances' lifecycle locks while it removes. A failed removal does not fail the deployment, and a later deployment retries it.
+Last, Orbit removes `current`, the releases, and the layout's state. It waits while an Instance seeded from the default runs a setup step, a teardown step, or a [task baseline](/reference/tasks#project-check): a baseline reads its seed once, when it starts. Orbit holds those Instances' lifecycle locks while it removes. A failed removal does not fail the deployment, and a later deployment retries it.
 
-Orbit keeps a release folder without its ownership receipt. It keeps the layout's state with that folder and logs a warning.
+Orbit keeps a release folder without its ownership receipt, because it does not own it. The deployment output names each such folder, and the Gateway logs one warning. The layout's state goes anyway, so Orbit does not retry. Delete the folder by hand.
 
 A repeated conversion does nothing more. Until it succeeds, the Route keeps serving the selected release.
 

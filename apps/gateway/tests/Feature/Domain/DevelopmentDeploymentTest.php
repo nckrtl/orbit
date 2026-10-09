@@ -17,6 +17,11 @@ use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Projects\DevelopmentDeployStep;
 use App\Domain\Projects\ProjectDevelopmentDeployStepStore;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\TaskCheckKind;
+use App\Domain\Tasks\TaskCheckStatus;
+use App\Domain\Tasks\TaskExecutionMode;
+use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskStatus;
 use App\Infrastructure\AppDev\DevelopmentCaddyConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\Processes\CommandResult;
@@ -25,6 +30,9 @@ use App\Models\InstanceDeployment;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
+use App\Models\Task;
+use App\Models\TaskCheck;
+use Illuminate\Support\Facades\Log;
 
 beforeEach(function (): void {
     $this->remote = new Dev935Deployment;
@@ -129,6 +137,57 @@ describe('development default deployments', function (): void {
             ->and($this->remote->trace)->toBe(['target:main', 'remove-releases:', 'checkout:'.str_repeat('b', 40)])
             ->and($events[0]->step)->toBe('cleanup')
             ->and($events[0]->value)->toContain('later deployment retries');
+    });
+
+    it('waits for a running task baseline in a seeded Instance before it removes the old releases', function (): void {
+        $instance = $this->instance;
+        $instance->update(['seed_path' => $instance->checkout_path, 'seed_commit' => str_repeat('a', 40), 'seed_repository' => $instance->checkout_path]);
+        $workspace = Instance::query()->create(['project_id' => $instance->project_id, 'node_id' => $instance->node_id, 'name' => 'task-1', 'checkout_path' => '/fast/apps/dev935/task-1',
+            'source_layout' => 'worktree', 'status' => 'active', 'seed_selected' => true, 'seed_path' => $instance->checkout_path.'/releases/initial', 'seed_commit' => str_repeat('a', 40), 'seed_repository' => $instance->checkout_path]);
+        $group = Task::topLevel()->create(['project_id' => $instance->project_id, 'title' => 'Baseline', 'brief' => 'Baseline.', 'status' => TaskGroupStatus::Running, 'execution_mode' => TaskExecutionMode::Managed]);
+        $group->taskable()->associate($workspace);
+        $group->save();
+        $subtask = Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'First', 'brief' => 'First.', 'status' => TaskStatus::Running]);
+        $check = TaskCheck::query()->create(['task_id' => $subtask->id, 'kind' => TaskCheckKind::Baseline, 'status' => TaskCheckStatus::Running, 'pid' => 4100,
+            'process_started' => 'Fri Oct  9 18:00:00 2026', 'head_before' => str_repeat('a', 40), 'tree_before' => str_repeat('b', 40), 'started_at' => now()]);
+        $this->remote->releasesRemain = true;
+        $events = [];
+
+        $result = app(DeployDefaultInstanceAction::class)->execute($instance, new DeploymentRequest(static function (DeploymentEvent $event) use (&$events): void {
+            $events[] = $event;
+        }));
+
+        expect($result?->succeeded)->toBeTrue()
+            ->and($this->remote->trace)->toBe(['target:main', 'checkout:'.str_repeat('b', 40)])
+            ->and($events[0]->value)->toContain('task baseline')
+            ->and($workspace->fresh()->seed_path)->toBe($instance->checkout_path);
+
+        $check->update(['status' => TaskCheckStatus::Passed]);
+        $this->remote->trace = [];
+        app(DeployDefaultInstanceAction::class)->execute($instance);
+
+        expect($this->remote->trace)->toBe(['target:main', 'remove-releases:/fast/apps/dev935/task-1', 'checkout:'.str_repeat('b', 40)]);
+    });
+
+    it('names release folders it does not own once and does not retry them', function (): void {
+        $this->instance->update(['seed_path' => $this->instance->checkout_path, 'seed_commit' => str_repeat('a', 40), 'seed_repository' => $this->instance->checkout_path]);
+        $this->remote->releasesRemain = true;
+        $this->remote->kept = ['20261007052308-1b0d6f48ae4d81bd'];
+        Log::spy();
+        $events = [];
+
+        $result = app(DeployDefaultInstanceAction::class)->execute($this->instance, new DeploymentRequest(static function (DeploymentEvent $event) use (&$events): void {
+            $events[] = $event;
+        }));
+        app(DeployDefaultInstanceAction::class)->execute($this->instance);
+
+        expect($result?->succeeded)->toBeTrue()
+            ->and($events[0]->important)->toBeTrue()
+            ->and($events[0]->value)->toContain('remove them by hand: 20261007052308-1b0d6f48ae4d81bd')
+            ->and(array_values(array_filter($this->remote->trace, static fn (string $entry): bool => str_starts_with($entry, 'remove-releases'))))->toHaveCount(1);
+        Log::shouldHaveReceived('warning')->once()->with('Orbit kept release folders it does not own; remove them by hand.', [
+            'instance_id' => $this->instance->id, 'releases' => ['20261007052308-1b0d6f48ae4d81bd'],
+        ]);
     });
 
     it('fails without changing the seed when a conversion fails', function (): void {
@@ -367,6 +426,9 @@ final class Dev935Deployment implements DevelopmentDeployment
 
     public ?Throwable $removalFailure = null;
 
+    /** @var list<string> */
+    public array $kept = [];
+
     public function __construct()
     {
         $this->targetCommit = str_repeat('b', 40);
@@ -417,12 +479,14 @@ final class Dev935Deployment implements DevelopmentDeployment
         return new CommandResult(0, '', '', 1, false);
     }
 
-    public function removeReleases(Instance $instance, array $consumers): void
+    public function removeReleases(Instance $instance, array $consumers): array
     {
         $this->trace[] = 'remove-releases:'.implode(',', $consumers);
         if ($this->removalFailure !== null) {
             throw $this->removalFailure;
         }
         $this->releasesRemain = false;
+
+        return $this->kept;
     }
 }

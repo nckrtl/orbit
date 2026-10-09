@@ -24,9 +24,14 @@ use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Projects\ProjectDevelopmentDeployStepStore;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\TaskCheckKind;
+use App\Domain\Tasks\TaskCheckStatus;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\ProcessCancelledException;
 use App\Models\Instance;
+use App\Models\TaskCheck;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Throwable;
@@ -167,43 +172,64 @@ final readonly class DeployDefaultInstanceAction
     }
 
     /**
-     * Removes the old releases once no setup or teardown step runs in an Instance that one of them
-     * seeded. A refusal leaves them for a later deployment and does not fail this one.
+     * Removes the old releases once no setup step, teardown step, or task baseline runs in an Instance
+     * that this default seeded. A refusal leaves them for a later deployment and does not fail this one.
      */
     private function removeReleases(Instance $instance, DeploymentRequest $output): void
     {
         try {
-            $consumers = $this->sources->synchronized($instance->node_id, fn (): array => $this->releaseSeeds($instance));
-            $this->deployment->removeReleases($instance, $consumers);
+            $seeded = $this->sources->synchronized($instance->node_id, fn (): Collection => $this->releaseSeeds($instance));
+            // A baseline's setup steps read the seed path from when the check started, possibly a release.
+            if ($this->baselineRuns($seeded)) {
+                $output->emit(new DeploymentEvent('cleanup', DeploymentOutputStream::Stderr, "The old releases remain while a task baseline runs; a later deployment removes them.\n"));
+
+                return;
+            }
+            $kept = $this->deployment->removeReleases($instance, $seeded->pluck('checkout_path')->filter(static fn (mixed $path): bool => is_string($path) && $path !== '')->values()->all());
         } catch (Throwable $exception) {
             Log::warning('The old development releases remain; a later deployment retries their removal.', [
                 'instance_id' => $instance->id,
                 'error' => $exception instanceof ResourceOperationException || $exception instanceof RuntimeConvergenceException ? $exception->errorCode : $exception::class,
             ]);
             $output->emit(new DeploymentEvent('cleanup', DeploymentOutputStream::Stderr, "The old releases remain; a later deployment retries their removal.\n"));
+
+            return;
+        }
+        if ($kept !== []) {
+            Log::warning('Orbit kept release folders it does not own; remove them by hand.', ['instance_id' => $instance->id, 'releases' => $kept]);
+            $output->emit(new DeploymentEvent('cleanup', DeploymentOutputStream::Stderr, 'Orbit kept release folders it does not own; remove them by hand: '.implode(', ', $kept)."\n", important: true));
         }
     }
 
     /**
-     * Points every seed in this default's releases at its checkout, and returns the checkouts seeded
+     * Points every seed in this default's releases at its checkout, and returns the Instances seeded
      * from this default. Call it with the Node's source lock held.
      *
-     * @return list<string>
+     * @return Collection<int, Instance>
      */
-    private function releaseSeeds(Instance $instance): array
+    private function releaseSeeds(Instance $instance): Collection
     {
         $releases = $instance->checkout_path.'/releases/';
-        $checkouts = [];
-        foreach (Instance::query()->where('node_id', $instance->node_id)->where('seed_repository', $instance->checkout_path)->whereKeyNot($instance->id)->get() as $seeded) {
-            if (is_string($seeded->seed_path) && str_starts_with($seeded->seed_path, $releases)) {
-                $seeded->update(['seed_path' => $instance->checkout_path]);
-            }
-            if ($seeded->checkout_path !== '') {
-                $checkouts[] = $seeded->checkout_path;
+        $seeded = Instance::query()->where('node_id', $instance->node_id)->where('seed_repository', $instance->checkout_path)->whereKeyNot($instance->id)->get();
+        foreach ($seeded as $consumer) {
+            if (is_string($consumer->seed_path) && str_starts_with($consumer->seed_path, $releases)) {
+                $consumer->update(['seed_path' => $instance->checkout_path]);
             }
         }
 
-        return $checkouts;
+        return $seeded;
+    }
+
+    /** @param Collection<int, Instance> $seeded */
+    private function baselineRuns(Collection $seeded): bool
+    {
+        return TaskCheck::query()
+            ->where('kind', TaskCheckKind::Baseline->value)
+            ->where('status', TaskCheckStatus::Running->value)
+            ->whereHas('task.parent', static fn (Builder $group): Builder => $group
+                ->where('taskable_type', new Instance()->getMorphClass())
+                ->whereIn('taskable_id', $seeded->modelKeys()))
+            ->exists();
     }
 
     private function projectRoute(Instance $instance): void

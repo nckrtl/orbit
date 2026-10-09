@@ -22,9 +22,11 @@ interface DevelopmentDeployment
     public function executeStep(Instance $instance, DevelopmentDeployStep $step, DeploymentRequest $request): CommandResult;
 
     /**
-     * Removes what is left of the old release layout after `convert`.
+     * Removes what is left of the old release layout after `convert`, and returns the names of the
+     * release folders it kept because Orbit does not own them.
      *
      * @param  list<string>  $consumers  The checkouts seeded from this default.
+     * @return list<string>
      */
-    public function removeReleases(Instance $instance, array $consumers): void;
+    public function removeReleases(Instance $instance, array $consumers): array;
 }

@@ -90,14 +90,14 @@ The ACL is not applied to the apps root or to either home. New files in the chec
 
 A create that fails before activation cleans up its owned resources without running setup or teardown, and keeps the original failure code. If cleanup cannot finish or the process is interrupted, removal accepts the pre-activation states `reserved`, `checkout_prepared`, and `source_resolved` and skips teardown. See [pre-activation removal](/reference/instance-removal#pre-activation-removal).
 
-`instance:create` runs the setup list after the Instance and its Route are active, and after the [database clone](/domains/applications#database-clone) or the [database on a server](/domains/applications#database-on-a-server) when it applies.
+`instance:create` runs the setup list after the Instance and its Route are active, and after the [database clone](/domains/applications#database-clone) or the [database on a server](/domains/applications#database-on-a-server) when it applies. Setup steps receive two variables:
 
 | Variable | Value |
 | --- | --- |
 | `ORBIT_SEED_PATH` | The checkout of `default` on the same Node. |
 | `ORBIT_SEED_COMMIT` | The last commit that [deployed](/reference/deployments#development-defaults) in that checkout. |
 
-Setup steps receive these variables, and Orbit reads them again before each step. Project steps own the [dependency copy](/domains/applications#dependency-copy), including nested monorepo folders.
+Orbit reads them again before each step. Project steps own the [dependency copy](/domains/applications#dependency-copy), including nested monorepo folders.
 
 When the default has not deployed at source preparation, Orbit records an empty seed decision and setup installs from lock files. Retries keep that decision. When Orbit registers an Instance, it records a seed only if the adopted source commit matches the default's deployed commit. It never pairs an older source with newer seed dependencies.
 
@@ -110,6 +110,58 @@ Activation records `failed_step: setup` in the same transaction, so a Gateway in
 Each command runs with `bash -eu` at the repository root of the code the Instance serves, even when the Laravel [application directory](/reference/projects#application-directory) is nested. For example, a setup command for root `apps/site/public` must use `cd apps/site && composer install` to install that application's dependencies. Teardown and task-check commands also keep their repository-root scope. Each setup command runs on the Instance's Node, as the Node's managed user. This is the `instance:create` and `instance:setup` path. A task workspace does not use it. The task baseline runs the same commands, also as the managed user, inside the task check. [Project check](/reference/tasks#project-check) describes that run.
 
 That root is the checkout. A `default` Instance deploys in its checkout too, so setup sees the code that runs. Its seed is its own checkout, so its setup gets empty seed variables. Setup, teardown, and a [development deployment](/reference/deployments#development-defaults) of the default share the lifecycle lock on the checkout, so they never run at the same time.
+
+Setup and teardown export `VP_HOME` to the Node's [resolved Vite+ store](/reference/tools#tool-managers). Project-local `vp` processes inherit that value even in these non-login shells, rather than using the default `~/.vite-plus`.
+
+Commands read no input. Orbit discards their stdout and retains only a bounded 1 KiB stderr tail internally; public errors do not include command output. When a step ends, for any reason, Orbit kills its process group, so background processes do not survive the step. Each run holds a lifecycle lock on the Instance. If another operation holds that lock during `instance:create`, Orbit keeps the active Instance and records `error_code: instance.lifecycle_busy`.
+
+An identical create retry then reports that setup must run; use `instance:setup` to retry the list. A busy lock never removes the Instance.
+
+The first command that exits non-zero or times out stops the list. Then Orbit rolls back the new Instance:
+
+1. It runs every teardown step.
+2. It removes the Instance with forced removal, which also deletes a dirty checkout.
+3. It returns `instance.setup_step_failed` with the failed setup step, or `instance.setup_step_unavailable` with `outcome: missing` for a missing or non-executable command (exit 127 or 126).
+
+An unavailable setup error keeps its step, Node, and not-found diagnostic and says the Instance was removed. A failed teardown step is named too.
+
+A teardown failure during this rollback does not keep the Instance. Rollback never removes another Instance.
+
+Orbit keeps the Instance, with its setup marked failed, in three cases:
+
+| Case | Result |
+| --- | --- |
+| Orbit cannot confirm the setup step's outcome, for example after a lost SSH connection. | No rollback runs. The error is the step's own `instance.setup_step_failed` with `outcome: unconfirmed`. |
+| Orbit cannot confirm a teardown step's outcome. | The error adds `cleanup: unconfirmed`. |
+| The removal starts but does not finish. | The error adds `cleanup: incomplete` and names `orbit instance:destroy <id> --force`. |
+
+Incomplete or unconfirmed cleanup keeps the setup error's classification and details. When setup was unavailable, the error also keeps its step, Node, and not-found diagnostic alongside the cleanup annotation. Inspect the Instance before you retry.
+
+With `ORBIT_TASKS_WORKER_USER` configured, registration inspection, in-place adoption, and relocation verification run Git content-status checks as that worker. Clean and process filters receive no Gateway credential environment. The managed account checks ownership and moves the source only when its path differs from the managed destination.
+
+[Registration](/domains/applications#register-an-existing-checkout) verifies the source's own state, not unrelated refs in its shared repository. In-place adoption records the verified destination before it closes the environment file's permissions. For a nested Laravel root such as `apps/site/public`, that file is `apps/site/.env`; checks for cached Laravel configuration also use `apps/site/bootstrap/cache/config.php`. Git identity and recursive checkout ACLs keep their repository-wide scope. A retry after that checkpoint checks the destination's Git identity rather than the pre-adoption digest, so Orbit's own permission change does not prevent recovery. Setup still runs only after adoption completes.
+
+It pins the source and Git directory before discovering the common directory, then checks those identities before every read grant. It never resolves a replacement link as a new grant target. Read grants preserve the worker's existing effective permissions, including workspace edits and Git locks. They do not follow links or grant access to either user's home. Parent directories must already be traversable by the worker. Git trusts only the exact checked path for that command. Registration stops if the worker is missing, sudo fails, or Git cannot read the content. It never falls back to the managed account.
+
+`instance:register` runs no setup. `instance:register --setup` runs the setup list after adoption. `instance:setup` runs the list again on an active development Instance. Both keep the Instance when a command fails and return `instance.setup_step_failed`, or `instance.setup_step_unavailable` when the command is missing or not executable. Every run starts at the first step.
+
+```bash
+orbit instance:setup <instance>
+```
+
+`instance:clone` runs neither list.
+
+## Deadlines
+
+One API request runs a whole list. The request's remote work ends after 570 seconds, and its forward work stops 20 seconds earlier to leave time for cleanup. Each step's timeout is cut to the time that remains.
+
+`instance:create` keeps 150 seconds back from its setup list for rollback: up to 60 seconds for the teardown list and 90 seconds for the removal. Nested operations, including TIA artifact retrieval, keep their own local timeout while preserving that hold and the request cleanup reserve. They cannot extend the parent request deadline. `instance:setup` and `instance:register --setup` roll nothing back, so their setup list can use the whole request.
+
+A step that the request deadline stops, or that has no time left to start, is not a failed command. The request returns `command.deadline_exceeded` (HTTP 504) with `outcome: deadline` and the step name. `instance:create` still rolls back and keeps that code. Lower the step timeouts until the list fits.
+
+## Run teardown
+
+`instance:destroy` of an active development Instance runs the teardown list after the [removal checks](/reference/instance-removal) accept the source. Then Orbit checks the source again and deletes the Route, the source, and the record. In a forced removal of a checkout with worktrees, each member runs its own teardown list.
 
 Teardown may delete ignored files. It must keep the checkout, its Git identity, and its worktrees. When teardown changes tracked files, normal removal refuses. Retry with `--force` to discard them.
 
@@ -137,19 +189,38 @@ Add a first setup step that copies the website's `vendor` and `node_modules` fro
 
 ### Project 46
 
-Record ordered development deploy steps for every locked dependency tree: the repository root, `apps/cli`, `apps/gateway`, `apps/docs`, `apps/web`, `packages/php-sdk`, and `apps/e2e`. Run the Gateway migrations and the builds required by the deployed applications after their installs. Keep these steps required, and put cache warm-up last. Preserve Instance-only setup in the setup list. Retry `orbit instance:create 46 9 default --json` to finish the existing SourceResolved Instance 303 without a Route; confirm its identity and active status, then run `orbit instance:deploy 303 --json` and check the final result.
+Record ordered development deploy steps for every locked dependency tree: the repository root, `apps/cli`, `apps/gateway`, `apps/docs`, `apps/web`, `packages/php-sdk`, and `apps/e2e`. Run the Gateway migrations and the builds required by the deployed applications after their installs. Keep these steps required. Preserve Instance-only setup in the setup list. Retry `orbit instance:create 46 9 default --json` to finish the existing SourceResolved Instance 303 without a Route; confirm its identity and active status, then run `orbit instance:deploy 303 --json` and check the final result.
 
 Add a first setup step that copies present `vendor` and `node_modules` folders at the repository root and under `apps/cli`, `apps/gateway`, `apps/docs`, `apps/web`, `packages/php-sdk`, and `apps/e2e`. Include each Composer project's `.orbit-tia`. Pint's `vendor/pint.cache` and PHPStan's `vendor/phpstan/cache` travel with `vendor`. Keep locked installs for every dependency tree as the empty-seed fallback. Never copy `.env`, databases, logs, build runtime files or symlinks that point outside the seed.
 
 ### Cache ownership
 
-Register Orbit's stable default store with `bin/tia-cache register --repository=/fast/apps/orbit/default --development-instance=303`. Add `bin/tia-cache warm` as the final Project 46 development deploy step, with an explicit timeout and required or best-effort policy. Provision Gateway access for the managed user's `orbit instance:deploy 303 --json`, which the cache worker uses for background refresh.
+Register Orbit's stable default store with `bin/tia-cache register --repository=/fast/apps/orbit/default --development-instance=303`. Provision Gateway access for the managed user's `orbit instance:deploy 303 --json`, which the cache worker uses for background refresh.
 
 Deploy 303 again. Inspect all five cache publications and create a disposable new Instance to check nested dependency copies. Test the empty-seed fallback separately. Point any `ORBIT_MAIN_CACHE_STORE` override at `/fast/apps/orbit/default/.git/orbit-tia/v1`.
 
 Stop the old ext4 cache worker before retiring `/home/nckrtl/orbit/.git/orbit-tia/v1/checkout` and its separate `repository`. Preserve unresolved failure logs. Do not remove the old main repository or any unrelated linked worktree.
 
 A setup copy step must be retryable: keep an existing destination, stage a missing directory, then rename it into place only when `cp` succeeds. A copy failure fails that step rather than leaving a partial dependency tree. On ZFS, `--reflink=always` can enforce shared blocks; `--reflink=auto` provides the ordinary-copy fallback. Verify shared blocks on beast and write isolation by changing a copied dependency or cache in a disposable Instance and checking that the selected seed stays unchanged. Remove only that disposable Instance after the check.
+
+### Convert the development defaults
+
+The first deployment tick after the Gateway serves plain-checkout defaults [converts](/reference/deployments#converting-the-old-release-layout) the three release layouts on beast: Instance 386 (`php-data-bridge-demo`, Project 50), Instance 4 (`orbit-website`, Project 33), and Instance 315 (`orbit`, Project 46).
+
+Before the change merges, check each home under `/fast/apps/<project>/default`:
+
+- `git status --porcelain --untracked-files=no` prints nothing. A tracked change refuses the conversion.
+- `git rev-list main --not origin/main` prints nothing. A local commit refuses it too.
+- No setup step runs in an Instance seeded from it, such as a T3 Code worktree. Release removal waits for one.
+- No task group on Projects 33, 46, or 50 is `running` or `reviewing`. Release removal waits for a running baseline, so a long group only delays it.
+
+After the first tick:
+
+1. `orbit instance:show` for 4, 315, and 386: `seed_path` is the checkout, and `seed_commit` is a commit on `main`.
+2. Each home has no `releases` and no `current`, and `git status --untracked-files=no` is clean. When the deployment output names a release folder that Orbit kept, delete that folder by hand.
+3. `/fast/apps/orbit/default/packages/agent-annotation` is gone. Its `node_modules` would break Project 46's `seed-dependencies` setup step. Then create a disposable Project 46 Instance on beast. Its setup must pass. Remove it afterward.
+4. `https://php-data-bridge-demo.test` and `https://orbit-website.test` answer, and their Caddy root is the checkout's `public`, not `current/public`.
+5. Instance 315 has no Route. `orbit instance:show 315` still lists none, and no Route of Project 46 points at `/fast/apps/orbit/default/current`.
 
 ## Configure Orbit's task policy
 

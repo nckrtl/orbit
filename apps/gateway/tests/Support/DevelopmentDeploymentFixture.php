@@ -56,6 +56,9 @@ final class DevelopmentDeploymentFixture
         mkdir($this->source.'/public');
         file_put_contents($this->source.'/public/index.php', '<?php echo "initial";');
         file_put_contents($this->source.'/old.txt', 'obsolete');
+        // A package that the next commit removes. Its ignored dependencies stay behind on a plain checkout.
+        new Filesystem()->makeDirectory($this->source.'/packages/gone', 0o755, true);
+        file_put_contents($this->source.'/packages/gone/package.json', '{}');
         self::command(['git', '-C', $this->source, 'add', '.']);
         self::command(['git', '-C', $this->source, 'commit', '-m', 'initial']);
         $this->initialCommit = trim(self::command(['git', '-C', $this->source, 'rev-parse', 'HEAD']));
@@ -71,6 +74,8 @@ final class DevelopmentDeploymentFixture
         file_put_contents($this->home.'/apps/gateway/vendor/dependency.bin', random_bytes(1024 * 1024));
         file_put_contents($this->home.'/.cache/warm', 'previous-cache');
         file_put_contents($this->home.'/.env', "APP_ENV=development\n");
+        new Filesystem()->makeDirectory($this->home.'/packages/gone/node_modules/dep', 0o755, true);
+        file_put_contents($this->home.'/packages/gone/node_modules/dep/index.js', 'dependency');
         self::command(['git', '-C', $this->home, 'worktree', 'add', '-b', 't3code-ab12', $this->sandbox.'/apps/dev935/t3code-ab12', 'HEAD']);
         self::command(['git', '-C', $this->home, 'worktree', 'add', '-b', 'task-935-e2e', $this->sandbox.'/apps/dev935/task-935-e2e', 'HEAD']);
 
@@ -114,6 +119,7 @@ final class DevelopmentDeploymentFixture
     {
         file_put_contents($this->source.'/public/index.php', '<?php echo '.var_export($message, true).';');
         @unlink($this->source.'/old.txt');
+        new Filesystem()->deleteDirectory($this->source.'/packages');
         self::command(['git', '-C', $this->source, 'add', '-A']);
         self::command(['git', '-C', $this->source, 'commit', '-m', $message]);
         self::command(['git', '-C', $this->source, 'push', 'origin', 'main']);

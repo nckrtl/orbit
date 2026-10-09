@@ -94,12 +94,21 @@ final readonly class RemoteDevelopmentDeployment implements DevelopmentDeploymen
         );
     }
 
-    public function removeReleases(Instance $instance, array $consumers): void
+    public function removeReleases(Instance $instance, array $consumers): array
     {
-        $this->run($instance, DevelopmentCheckoutProgram::removeReleases(), 'release_removal', array_map(
+        $result = $this->run($instance, DevelopmentCheckoutProgram::removeReleases(), 'release_removal', array_map(
             static fn (string $checkout): string => StoragePath::parse($checkout)->value,
             $consumers,
         ));
+        $kept = [];
+        foreach (array_filter(explode("\n", $result->stdout), static fn (string $line): bool => $line !== '') as $line) {
+            if (preg_match('/\AKEPT\t(.+)\z/', $line, $match) !== 1) {
+                throw $this->invalidOutput();
+            }
+            $kept[] = $match[1];
+        }
+
+        return $kept;
     }
 
     /** @return Closure(ProcessOutput): void */
@@ -153,6 +162,7 @@ final readonly class RemoteDevelopmentDeployment implements DevelopmentDeploymen
         } catch (RuntimeConvergenceException $exception) {
             throw match ($exception->result?->exitCode) {
                 DevelopmentCheckoutProgram::Dirty => new ResourceOperationException('deployment.checkout_dirty', 'The checkout has uncommitted changes to tracked files.', 409, $exception),
+                DevelopmentCheckoutProgram::Diverged => new ResourceOperationException('deployment.branch_diverged', 'The local default branch has commits that the target commit does not contain.', 409, $exception),
                 DevelopmentCheckoutProgram::Busy => new ResourceOperationException('instance.lifecycle_busy', 'A setup or teardown step is running in the checkout.', 409, $exception),
                 default => $exception,
             };

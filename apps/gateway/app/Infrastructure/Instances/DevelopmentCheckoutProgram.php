@@ -16,6 +16,9 @@ final class DevelopmentCheckoutProgram
     /** Exit status when the checkout has uncommitted changes to tracked files. */
     public const int Dirty = 3;
 
+    /** Exit status when the local branch has commits that the target commit does not contain. */
+    public const int Diverged = 4;
+
     /** Exit status when a setup or teardown step holds a lifecycle lock that the program needs. */
     public const int Busy = 75;
 
@@ -31,7 +34,7 @@ final class DevelopmentCheckoutProgram
             test -d "$home/.git" && test ! -L "$home/.git" || exit 1
             test "$(stat -c %u -- "$home")" = "$(id -u)"
             test "$(stat -c %u -- "$home/.git")" = "$(id -u)"
-            git() { command git -c core.hooksPath=/dev/null -c core.fsmonitor=false "$@"; }
+            git() { command git -c core.hooksPath=/dev/null -c core.fsmonitor=false --literal-pathspecs "$@"; }
             test "$(git -C "$home" config --get remote.origin.url)" = "$repository"
             test "$(git -C "$home" rev-parse --git-common-dir)" = .git
             claim="$home/.git/orbit-development-releases-owner"
@@ -53,15 +56,16 @@ final class DevelopmentCheckoutProgram
                 guard_file "$state/identity"
                 test "$(cat -- "$state/identity")" = "$identity"
             }
-            # Setup and teardown steps hold this lock on their checkout while they run.
+            # Setup and teardown steps hold this lock on their checkout while they run. `lock_fd` names the
+            # last lock taken, so a process that outlives the program can be started without it.
             lifecycle_lock() {
-                local checkout=$1 lock fd
+                local checkout=$1 lock
                 lock="/tmp/orbit-lifecycle-$(id -u)-$(printf '%s' "$checkout" | sha256sum | cut -d ' ' -f 1).lock"
                 test ! -L "$lock" || exit 1
-                exec {fd}<>"$lock"
+                exec {lock_fd}<>"$lock"
                 test ! -L "$lock" || exit 1
-                test "$(stat -c '%d:%i:%u' -- "$lock")" = "$(stat -L -c '%d:%i' -- "/proc/self/fd/$fd"):$(id -u)"
-                flock -n -x "$fd" || exit 75
+                test "$(stat -c '%d:%i:%u' -- "$lock")" = "$(stat -L -c '%d:%i' -- "/proc/self/fd/$lock_fd"):$(id -u)"
+                flock -n -x "$lock_fd" || exit 75
             }
             refuse_dirty() {
                 local changes
@@ -70,6 +74,33 @@ final class DevelopmentCheckoutProgram
                     printf 'The checkout has uncommitted changes to tracked files:\n%s\n' "$changes" | head -n 21 >&2
                     exit 3
                 fi
+            }
+            # `checkout -B` would drop local commits on the branch that the target commit does not contain.
+            refuse_diverged() {
+                local branch=$1 commit=$2
+                if git -C "$home" rev-parse --verify --quiet "refs/heads/$branch^{commit}" >/dev/null \
+                    && ! git -C "$home" merge-base --is-ancestor "refs/heads/$branch" "$commit"; then
+                    printf 'The local branch %s has commits that %s does not contain.\n' "$branch" "$commit" >&2
+                    exit 4
+                fi
+            }
+            # Checkout leaves untracked and ignored files in a directory that the commit removes, such as the
+            # dependencies of a removed package. Remove them first, so a later copy of the checkout as a seed
+            # finds only directories the commit has. Every read goes to a file first, so a failed read stops.
+            drop_removed_directories() {
+                local commit=$1 entries entry parent tree
+                entries=$(mktemp "$home/.git/orbit-untracked.XXXXXXXX")
+                git -C "$home" ls-files -z --others --directory > "$entries"
+                while IFS= read -r -d '' entry; do
+                    entry=${entry%/}
+                    parent=$(dirname -- "$entry")
+                    if [ "$parent" = . ]; then continue; fi
+                    tree=$(git -C "$home" ls-tree -d "$commit" -- "$parent")
+                    if [ -n "$tree" ]; then continue; fi
+                    if [ -d "$home/$entry" ] && [ ! -L "$home/$entry" ]; then chmod -R u+w -- "$home/$entry"; fi
+                    rm -rf -- "${home:?}/$entry"
+                done < "$entries"
+                rm -f -- "$entries"
             }
             BASH;
     }
@@ -96,6 +127,8 @@ final class DevelopmentCheckoutProgram
             printf '%s' "$commit" | grep -Eq '^([0-9a-f]{40}|[0-9a-f]{64})$'
             lifecycle_lock "$home"
             refuse_dirty
+            refuse_diverged "$branch" "$commit"
+            drop_removed_directories "$commit"
             git -C "$home" checkout --quiet --no-track -B "$branch" "$commit"
             test "$(git -C "$home" symbolic-ref --short HEAD)" = "$branch"
             git -C "$home" rev-parse --verify HEAD
@@ -131,7 +164,8 @@ final class DevelopmentCheckoutProgram
             }
             trap cleanup EXIT
             trap 'exit 143' HUP INT TERM
-            setsid bash -eu -c 'cd -- "$1"; exec bash -eu "$2"' bash "$home" "$command_file" &
+            # Neither the step nor the watchdog keeps the lock, so a daemon or a stray `sleep` cannot refuse the next step.
+            setsid bash -eu -c 'cd -- "$1"; exec bash -eu "$2"' bash "$home" "$command_file" {lock_fd}>&- &
             supervisor=$!
             # Wait for setsid before using a negative process-group ID.
             for attempt in $(seq 1 100); do
@@ -149,7 +183,7 @@ final class DevelopmentCheckoutProgram
                 kill -TERM -- "-$group" 2>/dev/null || true
                 sleep 0.1
                 kill -KILL -- "-$group" 2>/dev/null || true
-            ' bash "$$" "$supervisor" "$timeout_seconds" &
+            ' bash "$$" "$supervisor" "$timeout_seconds" {lock_fd}>&- &
             watchdog=$!
             if wait "$supervisor"; then status=0; else status=$?; fi
             exit "$status"
@@ -160,8 +194,10 @@ final class DevelopmentCheckoutProgram
      * Turns an old release layout into a plain checkout at the selected release's commit, and prints
      * that commit. The selected release's untracked and ignored files replace the checkout's: they hold
      * the dependencies and runtime data that the Instance served. The checkout keeps its own environment
-     * files, which synchronization wrote, and its files that the release does not have. `releases/` and
-     * `current` stay for `removeReleases`. A repeated run after success changes nothing.
+     * files, which synchronization wrote, and its other files that the release does not have, except in
+     * directories that the commit does not have. `releases/` and `current` stay for `removeReleases`.
+     * Every listing is read in full before it is used, so a failed read stops the program before it
+     * records the conversion. A repeated run after success changes nothing.
      */
     public static function convert(): string
     {
@@ -197,10 +233,15 @@ final class DevelopmentCheckoutProgram
             commit=$(git -C "$release" rev-parse --verify HEAD)
             lifecycle_lock "$home"
             refuse_dirty
+            refuse_diverged "$branch" "$commit"
+            entries=$(mktemp "$state/release-entries.XXXXXXXX")
+            git -C "$release" ls-files -z --others --directory > "$entries"
+            drop_removed_directories "$commit"
             # The checkout's tracked files are unchanged, so force replaces only untracked files in the way.
             git -C "$home" checkout --quiet --force --no-track -B "$branch" "$commit"
             test "$(git -C "$home" rev-parse --verify HEAD)" = "$commit"
             # Both trees now track the same files, so `--directory` lists the same top-most untracked paths.
+            links=$(mktemp "$state/release-links.XXXXXXXX")
             while IFS= read -r -d '' entry; do
                 entry=${entry%/}
                 target="$home/$entry"
@@ -218,6 +259,7 @@ final class DevelopmentCheckoutProgram
                 fi
                 cp --reflink=auto -a -- "$release/$entry" "$target"
                 # A step in the release may have linked to it by absolute path.
+                find -P "$target" -type l -print0 > "$links"
                 while IFS= read -r -d '' copied; do
                     raw=$(readlink -- "$copied")
                     case "$raw" in
@@ -225,8 +267,9 @@ final class DevelopmentCheckoutProgram
                         "$release"/*) ln -sfn -- "$home/${raw#"$release/"}" "$copied" ;;
                         "$current"/*) ln -sfn -- "$home/${raw#"$current/"}" "$copied" ;;
                     esac
-                done < <(find -P "$target" -type l -print0)
-            done < <(git -C "$release" ls-files -z --others --directory)
+                done < "$links"
+            done < "$entries"
+            rm -f -- "$entries" "$links"
             staging=$(mktemp "$state/converted.XXXXXXXX")
             printf '%s\n' "$commit" > "$staging"
             mv -T -- "$staging" "$converted"
@@ -238,7 +281,8 @@ final class DevelopmentCheckoutProgram
      * Removes `current`, every release that carries an ownership receipt, and the layout's state after
      * `convert`. The arguments are the checkouts seeded from this home: while a setup or teardown step
      * runs in one of them, nothing is removed, and the program holds their locks while it removes.
-     * A release without a receipt stays and keeps the layout's state, so a later run retries.
+     * A release folder without a receipt stays where it is, and the program prints `KEPT` and its name.
+     * The layout's state goes either way, so nothing retries the removal of a folder Orbit does not own.
      */
     public static function removeReleases(): string
     {
@@ -263,34 +307,37 @@ final class DevelopmentCheckoutProgram
                 case "$(cat -- "$intent")" in "$identity:$name:"*) return 0 ;; esac
                 return 1
             }
+            # Every listing is read in full before it is used, so a failed read stops the program.
+            entries=$(mktemp "$state/entries.XXXXXXXX")
             kept=0
             if [ -e "$releases" ] || [ -L "$releases" ]; then
                 test -d "$releases" && test ! -L "$releases" || exit 1
                 test "$(realpath -e -- "$releases")" = "$releases"
+                find -P "$releases" -mindepth 1 -maxdepth 1 -print0 > "$entries"
                 while IFS= read -r -d '' entry; do
                     name=${entry##*/}
                     if ! printf '%s' "$name" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$' || [ -L "$entry" ] || [ ! -d "$entry" ] || ! owned "$name"; then
-                        printf 'KEPT_UNOWNED_RELEASE\t%s\n' "$name" >&2
+                        printf 'KEPT\t%s\n' "$name"
                         kept=1
                         continue
                     fi
                     # A read-only cache folder must not stop the removal halfway.
                     chmod -R u+w -- "$entry"
                     rm -rf -- "$entry"
-                done < <(find -P "$releases" -mindepth 1 -maxdepth 1 -print0)
+                done < "$entries"
             fi
             # Unregister the removed releases. Other linked worktrees keep their registration.
             if [ -d "$home/.git/worktrees" ] && [ ! -L "$home/.git/worktrees" ]; then
+                find -P "$home/.git/worktrees" -mindepth 1 -maxdepth 1 -type d -print0 > "$entries"
                 while IFS= read -r -d '' admin; do
                     if [ -L "$admin" ] || [ ! -f "$admin/gitdir" ] || [ -L "$admin/gitdir" ]; then continue; fi
                     registered=$(cat -- "$admin/gitdir")
                     case "$registered" in "$releases"/*/.git) ;; *) continue ;; esac
                     if [ -e "${registered%/.git}" ] || [ -L "${registered%/.git}" ]; then continue; fi
                     rm -rf -- "$admin"
-                done < <(find -P "$home/.git/worktrees" -mindepth 1 -maxdepth 1 -type d -print0)
+                done < "$entries"
             fi
-            if [ "$kept" = 1 ]; then exit 5; fi
-            if [ -e "$releases" ]; then rmdir -- "$releases"; fi
+            if [ "$kept" = 0 ] && [ -e "$releases" ]; then rmdir -- "$releases"; fi
             rm -rf -- "$state"
             rm -f -- "$claim"
             BASH;
