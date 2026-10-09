@@ -7,7 +7,9 @@ use App\Actions\Instances\InstanceDeploymentConfigResolver;
 use App\Actions\Instances\InstantiateProjectRuntimeDefinitionsAction;
 use App\Actions\Instances\RollbackInstanceAction;
 use App\Domain\Instances\Deployment\DeploymentCancellation;
+use App\Domain\Instances\Deployment\DeploymentEvent;
 use App\Domain\Instances\Deployment\DeploymentFailureBoundary;
+use App\Domain\Instances\Deployment\DeploymentOutputStream;
 use App\Domain\Instances\Deployment\DeploymentRelease;
 use App\Domain\Instances\Deployment\DeploymentReleaseState;
 use App\Domain\Instances\Deployment\DeploymentRequest;
@@ -68,6 +70,7 @@ it('captures one configuration and preserves the complete deployment order', fun
             'activate:fresh',
             'cache:fresh',
             'step:finish:old-three',
+            'prune:fresh:initial',
         ])
         ->and($result->release?->name)
         ->toBe('fresh')
@@ -167,10 +170,32 @@ it('runs no application command or cache refresh for an empty non-PHP deployment
             'prepare:main',
             'environment',
             'activate:fresh',
+            'prune:fresh:initial',
         ])
         ->and($result->commands)
         ->toBe([]);
 });
+
+it('reports removed and in-use releases and a failed cleanup without failing a deployment', function (bool $fails): void {
+    $instance = orb219_deployment_instance([]);
+    $trace = new Orb219DeploymentTrace(failAt: $fails ? 'prune:fresh:initial' : null);
+    [$deploy] = orb219_actions($trace);
+    $events = [];
+
+    $result = $deploy->execute($instance, new DeploymentRequest(static function (DeploymentEvent $event) use (&$events): void {
+        $events[] = $event;
+    }));
+
+    expect($result->succeeded)->toBeTrue()
+        ->and($result->selectedRelease?->name)->toBe('fresh')
+        ->and(array_map(static fn (DeploymentEvent $event): array => [$event->step, $event->stream, $event->value], $events))
+        ->toBe($fails
+            ? [['cleanup', DeploymentOutputStream::Stderr, "Release cleanup failed; a later deployment will retry cleanup.\n"]]
+            : [
+                ['cleanup', DeploymentOutputStream::Stdout, "Removed old release old.\n"],
+                ['cleanup', DeploymentOutputStream::Stderr, "Kept old release busy: a running process still uses it. Restart that Process to free it.\n"],
+            ]);
+})->with(['removed' => false, 'failed' => true]);
 
 it('keeps the observed old selection when deployment fails before activation', function (): void {
     $instance = orb219_deployment_instance([
@@ -635,6 +660,13 @@ final readonly class Orb219ProductionDeployment implements ProductionDeployment
     public function releases(Instance $instance): DeploymentReleaseState
     {
         return new DeploymentReleaseState(['initial', 'retained'], 'initial');
+    }
+
+    public function prune(Instance $instance, DeploymentRelease $selected, ?DeploymentRelease $previous): array
+    {
+        $this->record('prune:'.$selected->name.':'.($previous->name ?? 'none'));
+
+        return ['removed' => ['old'], 'in_use' => ['busy']];
     }
 
     private function record(string $entry, ?string $failureKey = null): void

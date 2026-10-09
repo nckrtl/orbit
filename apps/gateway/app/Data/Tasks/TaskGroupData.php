@@ -10,9 +10,11 @@ use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskExecutionMode;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\TaskVms\TaskVmState;
 use App\Models\Instance;
 use App\Models\Task;
 use App\Models\TaskSandbox;
+use App\Models\TaskVm;
 use Spatie\LaravelData\Attributes\MapOutputName;
 use Spatie\LaravelData\Data;
 use Spatie\LaravelData\Mappers\SnakeCaseMapper;
@@ -125,6 +127,15 @@ final class TaskGroupData extends Data
     {
         if ($group->task_compute !== TaskCompute::Vm || $group->parent_id !== null) {
             return null;
+        }
+        // A task VM reports running while ready and destroyed once gone. The capacity wait reason names other states.
+        $vm = TaskVm::query()->where('group_id', $group->id)->orderByDesc('id')->first();
+        if ($vm instanceof TaskVm) {
+            return match ($vm->state) {
+                TaskVmState::Ready => SandboxPower::Running,
+                TaskVmState::Destroyed => SandboxPower::Destroyed,
+                default => null,
+            };
         }
         $workspace = $group->taskable;
         if (! $workspace instanceof Instance) {

@@ -169,6 +169,7 @@ A deployment reads the branch and the steps once, when it starts. Then it runs t
 4. **Activation.** The Gateway replaces `current` atomically with a link to the new release.
 5. **PHP refresh.** The Gateway reconciles and confirms the dedicated FPM runtime, then resets that service's OPcache and waits for completion.
 6. **After activation.** The Gateway runs each `after_activation` step in order.
+7. **Cleanup.** The Gateway removes old releases, as [Retained releases](#retained-releases) describes. A failed cleanup is a warning in the output, not a failed deployment.
 
 Orbit skips this phase for an Instance that does not serve PHP. A changed resolved release restarts the dedicated service so its workers enter the new application directory.
 
@@ -211,9 +212,15 @@ Deployment, rollback, deploy-step changes, and branch changes share the Instance
 
 [Doctor](/cli/doctor) checks each production Instance against its home. It reports a missing or wrongly owned home, a broken `current` link, a selected release outside `releases/`, and a web root that leaves the release. It checks the `.env` link of the default application directory only. A home without `current` is healthy before the first deployment. Doctor accepts an older release after a rollback, and a release whose branch has moved on.
 
-## Retained content
+## Retained releases
 
-For production, Orbit never deletes an old release by itself. [Instance removal](/reference/instance-removal) removes `current` and the serving setup, and keeps `releases/`, `.env`, `env/`, `database.sqlite`, and the local PHP-FPM tuning for recovery.
+A successful production deployment keeps at most 3 releases in the home: the new selection, the selection before it, and the newest other release. `initial` counts as the oldest, and later releases sort by the creation time in their names. It removes the rest, and the output names each one. So [`instance:rollback`](/cli/instance#orbit-instancerollback) can return to the previous selection and one other release. A rollback removes nothing. A failed deployment removes nothing either; the next successful one does.
+
+A deployment does not [restart Processes](/cli/process#orbit-processrestart), so a running Process, such as a queue worker, can still work in an older release. Cleanup keeps every release that is the working directory, root, or executable of a running process of the production user, also beyond the limit. The output names each such release; restart its Process to free it. When cleanup cannot read where a live process works, it removes nothing and reports a failed cleanup.
+
+Cleanup removes only folders that pass the release checks of the listing. It first renames a release to `releases/.pruned-<name>`, so the release leaves the list at once, and then deletes that folder. The release's own files go with it, such as old logs in its `storage/`. A folder that a stopped cleanup left is deleted by the next one. A partial folder that fails the release checks stays.
+
+[Instance removal](/reference/instance-removal) removes `current` and the serving setup, and keeps `releases/`, `.env`, `env/`, `database.sqlite`, and the local PHP-FPM tuning for recovery.
 
 ## Why it works this way
 
@@ -234,6 +241,12 @@ Release preparation, the switch, and the PHP-FPM refresh are the same for every 
 ### Deploy a branch, not a commit
 
 The operation is "deploy what the branch holds now". So a deployment takes no commit. Two deployments of one branch can produce different code.
+
+### Three releases per home
+
+Each release holds a full checkout with its dependencies, so the count decides the disk use. Three keep the current code, the way back, and one more step back. The previous selection outranks newer releases that never went live, because it is the release a rollback needs first.
+
+A release that a running process uses outranks the limit: deleting it would pull the code, the dependencies, and the configuration cache out from under that process.
 
 ### Rollback selects code only
 

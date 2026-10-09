@@ -1122,7 +1122,8 @@
                 "Process",
                 "Project",
                 "Role",
-                "Route"
+                "Route",
+                "Task"
             ],
             "governing_adrs": []
         },
@@ -1926,6 +1927,7 @@
                 "apps/gateway"
             ],
             "concepts": [
+                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
@@ -2136,6 +2138,22 @@
                 "Process",
                 "Role",
                 "Route"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/t3-code.md",
+            "title": "T3 Code layer",
+            "kind": "reference",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Activity",
+                "Gateway",
+                "Node",
+                "Process",
+                "Project"
             ],
             "governing_adrs": []
         },

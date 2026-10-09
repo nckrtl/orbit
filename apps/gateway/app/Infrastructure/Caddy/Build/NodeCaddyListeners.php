@@ -18,6 +18,9 @@ final readonly class NodeCaddyListeners
     /** The client ranges beside the VPN subnet that a private site on an Ingress Node admits: private and shared address space. */
     public const string PrivateClients = 'private_ranges 100.64.0.0/10';
 
+    /** The site sources a task VM needs: the Gateway API on `gateway.orbit` and Reverb on `reverb.orbit`. */
+    private const array TaskVmSources = ['gateway', 'websocket'];
+
     /**
      * @param  list<string>  $explicit  The WireGuard address, then the LAN address when the Node has one.
      */
@@ -26,10 +29,14 @@ final readonly class NodeCaddyListeners
         public ?string $wireGuard,
         public array $explicit,
         private string $vpnSubnet,
+        private ?string $taskVmRange,
     ) {}
 
-    /** @param list<CaddySite> $sites Every site on the Node. The listeners do not depend on them. */
-    public static function forSites(Node $node, array $sites = [], string $vpnSubnet = '10.44.0.0/24'): self
+    /**
+     * @param  list<CaddySite>  $sites  Every site on the Node. The listeners do not depend on them.
+     * @param  ?string  $taskVmRange  The reserved task VM range once task VMs are configured, otherwise null.
+     */
+    public static function forSites(Node $node, array $sites = [], string $vpnSubnet = '10.44.0.0/24', ?string $taskVmRange = null): self
     {
         $wireGuard = self::address($node->wireguard_ip);
 
@@ -38,6 +45,7 @@ final readonly class NodeCaddyListeners
             wireGuard: $wireGuard,
             explicit: array_values(array_unique(array_filter([$wireGuard, self::address($node->lan_ip)]))),
             vpnSubnet: $vpnSubnet,
+            taskVmRange: $taskVmRange,
         );
     }
 
@@ -72,6 +80,16 @@ final readonly class NodeCaddyListeners
             CaddyListenerRule::Wildcard => $this->ingress ? self::PrivateClients.' '.$this->vpnSubnet : null,
             CaddyListenerRule::WireGuard, CaddyListenerRule::Shared => $this->vpnSubnet,
         };
+    }
+
+    /**
+     * The task VM range a site refuses, or null. A task VM runs agent code as root, and the hub lets it reach
+     * the shared WireGuard listener of the Gateway and `websocket` Nodes. So once task VMs are configured, every
+     * site except the Gateway API and Reverb refuses the range, inside the VPN subnet it otherwise admits.
+     */
+    public function refused(CaddySite $site): ?string
+    {
+        return in_array($site->source, self::TaskVmSources, true) ? null : $this->taskVmRange;
     }
 
     private static function address(?string $address): ?string

@@ -759,7 +759,7 @@ When the acting thread stops, the tick reads `$(git rev-parse --git-path orbit)/
 
 ### Task VM workspace
 
-Not built yet. This section describes the [task VM](/reference/compute-drivers#task-vms) lane that the Phase 1 slices of ADR 0200 build.
+Partly built. The agents, the checks, fetch, and push work on a task VM Node as `orbit`. The claim, the VM itself, and its workspace are not built yet. The Phase 1 slices of ADR 0200 build them.
 
 A group of a Project other than `orbit`, with `task_compute: vm`, runs in its own [task VM](/reference/compute-drivers#task-vms). The claim creates the VM and waits until it is `ready`. Until then, the task returns to `todo` with the reason `Task VM: <state or error>`, and the next tick tries again. Then Orbit creates the workspace on the VM's Node, as for a shared group: the Instance `task-{id}`, and its private Route when the workspace is routed.
 

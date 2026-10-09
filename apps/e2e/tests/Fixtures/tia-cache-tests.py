@@ -1,11 +1,11 @@
-"""Exercise cache publication with real repositories and an isolated test runner."""
+"""Exercise main cache import, publication, and seeding with real repositories and a fake GitHub CLI."""
 import copy
+from contextlib import contextmanager
 import fcntl
 import importlib.machinery
 import importlib.util
 import json
 import os
-import re
 import signal
 import shutil
 import time
@@ -14,7 +14,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 loader = importlib.machinery.SourceFileLoader('tia_cache', sys.argv.pop(1))
 spec = importlib.util.spec_from_loader(loader.name, loader)
@@ -23,52 +23,176 @@ loader.exec_module(cache)
 # Publication registers stores under XDG_STATE_HOME; keep that out of the developer's own state.
 STATE_HOME = tempfile.TemporaryDirectory(prefix='orbit-tia-state-')
 os.environ['XDG_STATE_HOME'] = STATE_HOME.name
+REPOSITORY = 'nckrtl/orbit'
+# Answers the gh calls of the worker from files in $GH_FIXTURE and records every call.
+FAKE_GH = r'''#!/usr/bin/env python3
+import json, os, shutil, sys
+from pathlib import Path
+fixture = Path(os.environ['GH_FIXTURE'])
+with (fixture / 'calls').open('a') as calls:
+    calls.write(json.dumps(sys.argv[1:]) + '\n')
+if (fixture / 'fail').exists():
+    sys.exit('HTTP 503: GitHub is unavailable')
+arguments = sys.argv[1:]
+if arguments[0] == 'api':
+    path = arguments[1].split('?')[0]
+    if path == 'repos/nckrtl/orbit/actions/workflows/ci.yml/runs':
+        print((fixture / 'runs.json').read_text())
+    elif path.startswith('repos/nckrtl/orbit/actions/runs/') and path.endswith('/jobs'):
+        jobs = fixture / ('jobs-' + path.split('/')[5] + '.json')
+        if not jobs.exists():
+            sys.exit('HTTP 404: Not Found')
+        print(jobs.read_text())
+    else:
+        sys.exit('HTTP 404: Not Found')
+elif arguments[:2] == ['run', 'download']:
+    run_id, destination = arguments[2], arguments[arguments.index('-D') + 1]
+    assert arguments[arguments.index('-R') + 1] == 'nckrtl/orbit'
+    assert arguments[arguments.index('-p') + 1] == 'sandbox-tia-*'
+    source = fixture / ('artifacts-' + run_id)
+    if not source.is_dir():
+        sys.exit('no valid artifacts found to download')
+    for artifact in source.iterdir():
+        shutil.copytree(artifact, Path(destination) / artifact.name)
+else:
+    sys.exit('unexpected gh call')
+'''
 
 
-class MainCacheTest(unittest.TestCase):
-    def setUp(self):
-        self.temporary = tempfile.TemporaryDirectory(prefix='orbit tia ')
-        self.addCleanup(self.temporary.cleanup)
-        self.root = Path(self.temporary.name) / 'main'
-        self.root.mkdir()
-        cache.git(self.root, 'init', '-b', 'main')
-        cache.git(self.root, 'config', 'user.name', 'Orbit')
-        cache.git(self.root, 'config', 'user.email', 'orbit@example.test')
-        cache.git(self.root, 'remote', 'add', 'origin', str(self.root))
-        (self.root / 'source.php').write_text('base')
-        self.commit = self.commit_change('initial')
-        cache.git(self.root, 'update-ref', 'refs/remotes/origin/main', self.commit)
-        self.common = cache.common_directory(self.root)
-        self.store = cache.cache_store(self.common)
-        self.project = 'apps/docs'
-        self.info = {
-            'cache': str(Path(self.temporary.name) / 'main-cache'),
-            'runner': 'pinned-runner', 'coverage': True,
-            'fingerprint': {'structural': {'schema': 18}, 'environmental': {'php_minor': '8.5'}},
-        }
-        self.graph = {
-            'schema': 1, 'fingerprint': self.info['fingerprint'],
-            'files': ['src/Example.php'], 'edges': {'tests/ExampleTest.php': [0]},
-            'baselines': {'main': {'sha': self.commit, 'tree': [], 'results': {
-                'example': {'status': 0, 'file': 'tests/ExampleTest.php'},
-            }}},
-        }
+def php_minor():
+    return subprocess.run(['php', '-r', 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;'],
+                          check=True, capture_output=True, text=True).stdout
 
-    def ci_artifact(self):
-        project = self.root / self.project
+
+@contextmanager
+def launched_workers(failure=None):
+    """Record background worker launches and let every other command run."""
+    real = subprocess.Popen
+    launches = []
+
+    def popen(command, *arguments, **options):
+        if len(command) > 2 and command[2] == 'work':
+            if failure is not None:
+                raise failure
+            launches.append((command, options))
+            return Mock(pid=4242)
+        return real(command, *arguments, **options)
+
+    with patch.object(cache.subprocess, 'Popen', side_effect=popen):
+        yield launches
+
+
+def repository(test, project_files=True):
+    test.temporary = tempfile.TemporaryDirectory(prefix='orbit tia ')
+    test.addCleanup(test.temporary.cleanup)
+    test.root = Path(test.temporary.name) / 'main'
+    test.root.mkdir()
+    cache.git(test.root, 'init', '-b', 'main')
+    cache.git(test.root, 'config', 'user.name', 'Orbit')
+    cache.git(test.root, 'config', 'user.email', 'orbit@example.test')
+    cache.git(test.root, 'remote', 'add', 'origin', str(test.root))
+    (test.root / 'source.php').write_text('base')
+    test.project = 'apps/docs'
+    if project_files:
+        project = test.root / test.project
         (project / 'tests').mkdir(parents=True)
-        (project / 'composer.lock').write_text('locked')
-        (project / 'tests/Pest.php').write_text('<?php')
-        artifact = Path(self.temporary.name) / 'ci-artifact'
-        artifact.mkdir()
-        graph = json.dumps(self.graph).encode()
-        (artifact / 'graph.json').write_bytes(graph)
-        manifest = {'schema': 1, 'project': self.project, 'commit': self.commit, 'run_id': '123',
-                    'graph_sha256': cache.digest(graph),
-                    'inputs': {name: cache.digest((project / name).read_bytes())
-                               for name in ('composer.lock', 'tests/Pest.php')}}
-        (artifact / 'manifest.json').write_text(json.dumps(manifest))
-        return artifact, manifest
+        (test.root / '.gitignore').write_text('**/vendor/\n**/.orbit-tia/\n')
+        (project / 'composer.lock').write_text('{"packages":[]}')
+        (project / 'tests/Pest.php').write_text('<?php\n')
+        (project / 'pint.json').write_text('{"cache-file":"vendor/pint.cache"}')
+        (project / 'phpstan.neon').write_text('parameters:\n    level: 6\n')
+        # The background worker runs the tool as main holds it.
+        (test.root / 'bin').mkdir()
+        shutil.copyfile(cache.__file__, test.root / 'bin/tia-cache')
+    test.commit = test.commit_change('initial')
+    cache.git(test.root, 'update-ref', 'refs/remotes/origin/main', test.commit)
+    test.common = cache.common_directory(test.root)
+    test.store = cache.cache_store(test.common)
+    test.info = {
+        'cache': str(Path(test.temporary.name) / 'main-cache'),
+        'runner': cache.runner_identity(b'{"packages":[]}', b'<?php\n'),
+        'fingerprint': {'structural': {'schema': 18}, 'environmental': {'php_minor': '8.5'}},
+    }
+    test.graph = {
+        'schema': 1, 'fingerprint': test.info['fingerprint'],
+        'files': ['src/Example.php'], 'edges': {'tests/ExampleTest.php': [0]},
+        'baselines': {'main': {'sha': test.commit, 'tree': [], 'results': {
+            'example': {'status': 0, 'file': 'tests/ExampleTest.php'},
+        }}},
+    }
+
+
+class CacheFixture(unittest.TestCase):
+    def setUp(self):
+        repository(self)
+
+    def commit_change(self, message):
+        cache.git(self.root, 'add', '.')
+        cache.git(self.root, 'commit', '-m', message)
+        return cache.git(self.root, 'rev-parse', 'HEAD')
+
+    def advance(self, message):
+        (self.root / 'source.php').write_text(message)
+        return self.commit_change(message)
+
+    def graph_at(self, commit):
+        graph = copy.deepcopy(self.graph)
+        graph['baselines']['main']['sha'] = commit
+        return graph
+
+    def artifact(self, commit, run_id=123, graph=None, quality=None, php=None, manifest=None):
+        """Write one extracted CI artifact, as the Export main caches step of ci.yml does."""
+        directory = Path(tempfile.mkdtemp(dir=self.temporary.name, prefix='artifact-')) / f'sandbox-tia-1-{commit}'
+        directory.mkdir()
+        encoded = json.dumps(self.graph_at(commit) if graph is None else graph).encode()
+        (directory / 'graph.json').write_bytes(encoded)
+        inputs = {}
+        for name in cache.TEST_INPUTS:
+            data = cache.blob(self.root, commit, f'{self.project}/{name}')
+            if data is not None:
+                inputs[name] = cache.digest(data)
+        content = {'schema': 1, 'project': self.project, 'commit': commit, 'run_id': str(run_id),
+                   'graph_sha256': cache.digest(encoded), 'inputs': inputs}
+        if quality is not None:
+            (directory / 'quality').mkdir()
+            content['quality'] = {}
+            for tool, data in quality.items():
+                (directory / 'quality' / tool).write_bytes(data)
+                content['quality'][tool] = cache.digest(data)
+            content['php'] = php or php_minor()
+        (directory / 'manifest.json').write_text(json.dumps({**content, **(manifest or {})}))
+        return directory
+
+    def publish(self, commit=None, run_id=123, **options):
+        commit = commit or self.commit
+        artifact = self.artifact(commit, run_id, **options)
+        return cache.publish_artifact(self.common, self.store, self.project, artifact, commit, run_id)
+
+    def drain(self, projects=None):
+        """Queue and run the worker in this process, as bin/tia-cache refresh does in main's frozen copy."""
+        projects = projects or [self.project]
+        with cache.queue_lock(self.store):
+            cache.enqueue(self.common, self.store, projects)
+        cache.drain(self.common, self.store, cache.acquire_worker(self.store, blocking=True))
+        results = cache.load_requests(self.store)['results']
+        return int(any(not results.get(project, {}).get('success') for project in projects))
+
+    def feature(self, name='feature'):
+        root = Path(self.temporary.name) / name
+        cache.git(self.root, 'worktree', 'add', '-b', name, str(root), 'main')
+        return root
+
+    def seed(self, root, info=None):
+        info = info or {**self.info, 'cache': str(root / '.private-cache')}
+        with patch.object(cache, 'metadata', return_value=info):
+            cache.seed(root, self.store, [self.project])
+        return Path(info['cache'])
+
+
+class MainCacheTest(CacheFixture):
+    def ci_artifact(self):
+        artifact = self.artifact(self.commit)
+        return artifact, json.loads((artifact / 'manifest.json').read_text())
 
     def test_ci_baseline_import_keeps_private_results_and_never_publishes(self):
         artifact, _ = self.ci_artifact()
@@ -113,130 +237,14 @@ class MainCacheTest(unittest.TestCase):
             cache.import_ci(self.root, self.project, artifact, self.commit)
         self.assertEqual(list(outside.iterdir()), [])
 
-    def test_development_cache_warms_only_an_unselected_release(self):
-        self.store.mkdir(parents=True)
-        (self.store / 'development-instance.json').write_text(json.dumps({'instance': 303}))
-        releases = self.root / 'releases'
-        release = releases / 'candidate'
-        cache.git(self.root, 'worktree', 'add', '--detach', str(release), self.commit)
-        previous = releases / 'previous'
-        cache.git(self.root, 'worktree', 'add', '--detach', str(previous), self.commit)
-        (self.root / 'current').symlink_to(previous)
-        self.own_development_release(release)
-        with patch.object(cache, 'project_checks', return_value={'commit': self.commit, 'success': True, 'checks': []}) as checks:
-            self.assertEqual(cache.warm_release(release, self.common, self.store, [self.project]), 0)
-            self.assertEqual(checks.call_args.args[0], release)
-            self.assertFalse((self.store / 'checkout').exists())
-            with self.assertRaises(ValueError):
-                cache.warm_release(previous, self.common, self.store, [self.project])
-            self.assertEqual(checks.call_count, 1)
-
-    def test_candidate_cache_branch_records_and_publishes_as_main(self):
-        self.store.mkdir(parents=True)
-        (self.store / 'development-instance.json').write_text(json.dumps({'instance': 303}))
-        release = self.root / 'releases' / 'candidate'
-        cache.git(self.root, 'worktree', 'add', '--detach', str(release), self.commit)
-        self.own_development_release(release)
-        original_run = cache.run
-        def record(root, *command, **kwargs):
-            if command[0] != 'composer':
-                return original_run(root, *command, **kwargs)
-            branch = cache.git(release, 'branch', '--show-current')
-            self.assertTrue(branch.startswith('orbit-cache-'))
-            baseline = {**self.graph['baselines']['main'], 'complete': True}
-            self.graph['baselines'] = {branch: baseline}
-            self.write_graph()
-        def check(root, store, project, commit, directory):
-            cache.refresh_project(root, store, project, commit, installed=True)
-            return {'commit': commit, 'success': True, 'checks': []}
-        with patch.object(cache, 'run', side_effect=record), patch.object(cache, 'metadata', return_value=self.info), patch.object(cache, 'project_checks', side_effect=check):
-            self.assertEqual(cache.warm_release(release, self.common, self.store, [self.project]), 0)
-        published = json.loads(cache.read_publication(self.store, self.project)['graph'])
-        self.assertEqual(set(published['baselines']), {'main'})
-        self.assertEqual(cache.git(release, 'branch', '--show-current'), '')
-        self.assertEqual(cache.git(self.root, 'branch', '--list', 'orbit-cache-*'), '')
-
-    def own_development_release(self, release):
-        state = self.common / 'orbit-development-releases'
-        state.mkdir(exist_ok=True)
-        identity = cache.base64.b64encode(f'303\0{self.root}\0{self.root}\0'.encode()).decode()
-        (state / 'identity').write_text(identity + '\n')
-        (state / ('release-' + release.name)).write_text(identity + ':' + release.name + '\n')
-        return state
-
-    def test_development_refresh_delegates_to_default_deployment(self):
-        self.store.mkdir(parents=True)
-        (self.store / 'development-instance.json').write_text(json.dumps({'instance': 303}))
-        with cache.queue_lock(self.store):
-            cache.enqueue(self.common, self.store, [self.project])
-        original_run = cache.run
-        deployments = []
-        def deploy(root, *command, **kwargs):
-            if command[0] != 'orbit':
-                return original_run(root, *command, **kwargs)
-            deployments.append(command)
-            with cache.queue_lock(self.store):
-                state = cache.load_requests(self.store)
-                cache.record_outcome(state, self.project, {'commit': self.commit, 'success': True, 'checks': []})
-                cache.save_requests(self.store, state)
-        with patch.object(cache, 'run', side_effect=deploy), patch.object(cache, 'publications_current', return_value=True), patch.object(cache, 'prepare_checkout') as legacy:
-            lock = cache.acquire_worker(self.store)
-            self.assertEqual(cache.drain(self.common, self.store, lock), 0)
-            legacy.assert_not_called()
-        self.assertEqual(deployments, [('orbit', 'instance:deploy', '303', '--json')])
-        self.assertEqual(cache.load_requests(self.store)['pending'], {})
-        self.assertFalse((self.store / 'checkout').exists())
-
-    def test_development_store_refuses_bootstrap_publication(self):
-        self.store.mkdir(parents=True)
-        (self.store / 'development-instance.json').write_text(json.dumps({'instance': 303}))
-        with patch.object(cache, 'publish_graph') as publication:
-            cache.publish_bootstrap(self.root, self.store, [self.project], self.commit)
-            publication.assert_not_called()
-
-    def commit_change(self, message):
-        cache.git(self.root, 'add', '.')
-        cache.git(self.root, 'commit', '-m', message)
-        return cache.git(self.root, 'rev-parse', 'HEAD')
-
-    def write_graph(self):
-        destination = Path(self.info['cache']) / 'graph.json'
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.write_text(json.dumps(self.graph))
-
-    def publish(self, effect=None, commit=None):
-        original_run = cache.run
-
-        def run(root, *command, **kwargs):
-            if command[0] == 'composer':
-                return (effect or self.write_graph)()
-            return original_run(root, *command, **kwargs)
-
-        with patch.object(cache, 'install_project'), patch.object(cache, 'metadata', return_value=self.info), \
-                patch.object(cache, 'run', side_effect=run):
-            cache.refresh_project(self.root, self.store, self.project, commit or self.commit)
-
-    def feature(self, name='feature'):
-        root = Path(self.temporary.name) / name
-        cache.git(self.root, 'worktree', 'add', '-b', name, str(root), 'main')
-        return root
-
-    def seed(self, root, info=None):
-        info = info or {**self.info, 'cache': str(root / '.private-cache')}
-        with patch.object(cache, 'metadata', return_value=info):
-            cache.seed(root, self.store, [self.project])
-        return Path(info['cache'])
-
     def test_runner_identity_tracks_locked_releases_and_project_bootstrap(self):
         project = self.root / self.project
-        (project / 'tests').mkdir(parents=True)
         lock = project / 'composer.lock'
         bootstrap = project / 'tests/Pest.php'
         lock.write_text(json.dumps({'packages-dev': [{
             'name': 'nckrtl/pestphp-monorepo', 'version': 'v1.0.0',
             'source': {'reference': 'first-release'},
         }]}))
-        bootstrap.write_text('<?php\n')
         with patch.object(cache, 'run', return_value=json.dumps(self.info)):
             initial = cache.metadata(self.root, self.project)['runner']
             self.assertEqual(initial, cache.metadata(self.root, self.project)['runner'])
@@ -246,9 +254,16 @@ class MainCacheTest(unittest.TestCase):
             bootstrap.write_text('<?php pest()->tia()->directory("custom");\n')
             self.assertNotEqual(upgraded, cache.metadata(self.root, self.project)['runner'])
 
-    def test_main_graph_is_copied_without_transient_state_and_writes_stay_private(self):
+    def test_published_ci_graph_matches_the_runner_identity_of_its_commit(self):
         self.publish()
-        (Path(self.info['cache']) / 'affected.json').write_text('do not copy')
+        snapshot = cache.read_publication(self.store, self.project)
+        self.assertEqual(self.info['runner'], snapshot['runner'])
+        self.assertEqual(self.graph['fingerprint'], snapshot['fingerprint'])
+        self.assertEqual({'run_id': 123}, snapshot['source'])
+        self.assertEqual((self.commit, self.commit), (snapshot['tested_commit'], snapshot['graph_commit']))
+
+    def test_main_graph_seeds_each_worktree_and_writes_stay_private(self):
+        self.publish()
         first = self.seed(self.feature())
         second = self.seed(self.feature('other'))
         self.assertEqual(['graph.json'], [path.name for path in first.iterdir()])
@@ -272,8 +287,10 @@ class MainCacheTest(unittest.TestCase):
         directory = clone / self.project / '.orbit-tia'
         with patch.dict(os.environ, {'ORBIT_MAIN_CACHE_STORE': str(self.store)}), \
                 patch.object(sys, 'argv', ['tia-cache', 'seed', '--repository', str(clone), '--project', self.project]), \
-                patch.object(cache, 'metadata', return_value={**self.info, 'cache': str(directory)}):
+                patch.object(cache, 'metadata', return_value={**self.info, 'cache': str(directory)}), \
+                patch.object(cache, 'start_background') as background:
             self.assertEqual(0, cache.main())
+        background.assert_not_called()
         self.assertEqual(self.graph, json.loads((directory / 'graph.json').read_text()))
         (directory / 'graph.json').write_text('private clone progress')
         self.assertEqual(self.graph, json.loads(cache.read_publication(self.store, self.project)['graph']))
@@ -294,6 +311,17 @@ class MainCacheTest(unittest.TestCase):
         self.assertFalse(cache.has_publications(cache.cache_store(cache.common_directory(clone))))
         self.assertEqual(sorted(set(cache.PROJECTS) - {self.project}), sorted(background.call_args.args[2]))
 
+    def test_linked_worktree_seeding_queues_an_import_for_its_own_lagging_store(self):
+        self.publish()
+        worktree = self.feature()
+        self.advance('merged elsewhere')
+        cache.git(self.root, 'update-ref', 'refs/remotes/origin/main', cache.git(self.root, 'rev-parse', 'HEAD'))
+        with patch.object(sys, 'argv', ['tia-cache', 'seed', '--repository', str(worktree), '--project', self.project]), \
+                patch.object(cache, 'metadata', return_value={**self.info, 'cache': str(worktree / '.private')}), \
+                patch.object(cache, 'start_background') as background:
+            self.assertEqual(0, cache.main())
+        self.assertIn(self.project, background.call_args.args[2])
+
     def test_registration_keeps_the_first_live_store_until_forced(self):
         self.publish()
         other = Path(self.temporary.name) / 'other-store'
@@ -313,16 +341,19 @@ class MainCacheTest(unittest.TestCase):
                     'ssh://git@GitHub.com/nckrtl/orbit', 'https://github.com/nckrtl/orbit/']:
             cache.git(self.root, 'remote', 'set-url', 'origin', url)
             keys.add(cache.origin_key(self.root))
+            self.assertEqual(REPOSITORY, cache.github_repository(self.root))
         self.assertEqual(1, len(keys))
         cache.git(self.root, 'remote', 'set-url', 'origin', 'https://github.com/nckrtl/other.git')
         self.assertNotIn(cache.origin_key(self.root), keys)
+        cache.git(self.root, 'remote', 'set-url', 'origin', 'https://gitlab.com/nckrtl/orbit.git')
+        with self.assertRaisesRegex(ValueError, 'not a GitHub repository'):
+            cache.github_repository(self.root)
 
     def test_lagging_registered_store_is_refreshed_once_per_failed_target(self):
         self.publish()
         clone = Path(self.temporary.name) / 'task workspace'
         cache.git(self.root, 'clone', str(self.root), str(clone))
-        (self.root / 'source.php').write_text('merged feature')
-        newer = self.commit_change('merged feature')
+        newer = self.advance('merged feature')
         cache.git(clone, 'fetch', 'origin')
         with patch.object(cache, 'start_background') as background:
             cache.request_refresh(clone, self.store)
@@ -375,74 +406,50 @@ class MainCacheTest(unittest.TestCase):
             )
         self.assertEqual(str(private), observed)
 
-    def test_failed_run_keeps_last_successful_publication(self):
-        self.publish()
-        original = cache.publication_path(self.store, self.project).read_bytes()
-        (self.root / 'source.php').write_text('next main')
-        commit = self.commit_change('next')
-
-        def failed():
-            self.graph['baselines']['main']['results']['example']['status'] = 7
-            self.write_graph()
-            raise RuntimeError('tests failed')
-
-        with self.assertRaisesRegex(RuntimeError, 'tests failed'):
-            self.publish(failed, commit)
-        self.assertEqual(original, cache.publication_path(self.store, self.project).read_bytes())
-
-    def test_empty_failed_dirty_feature_and_nonportable_graphs_are_not_published(self):
+    def test_invalid_main_graphs_are_not_published(self):
+        older = self.commit
+        commit = self.advance('next main')
         invalid = [
-            {'baselines': {'feature': self.graph['baselines']['main']}},
-            {'edges': {}}, {'fingerprint': {}}, {'files': ['/another/checkout/source.php']},
+            {'baselines': {'feature': self.graph_at(commit)['baselines']['main']}},
+            {'edges': {}}, {'files': ['/another/checkout/source.php']},
         ]
         for changes in invalid:
-            with self.subTest(changes=changes):
-                original = copy.deepcopy(self.graph)
-                self.graph.update(changes)
-                with self.assertRaises(ValueError):
-                    self.publish()
-                self.assertFalse(cache.publication_path(self.store, self.project).exists())
-                self.graph = original
+            with self.subTest(changes=changes), self.assertRaises(ValueError):
+                self.publish(commit, graph={**self.graph_at(commit), **changes})
         for field, value in [('tree', {'source.php': 'dirty'}), ('results', {}),
-                             ('results', {'failed': {'status': 8}})]:
-            with self.subTest(field=field, value=value):
-                original = copy.deepcopy(self.graph)
-                self.graph['baselines']['main'][field] = value
-                with self.assertRaises(ValueError):
-                    self.publish()
-                self.graph = original
-
-    def test_changed_checkout_or_missing_driver_prevents_publication(self):
-        (self.root / 'source.php').write_text('unexpected edit')
-        with self.assertRaisesRegex(RuntimeError, 'changed during testing'):
-            self.publish()
-        self.info['coverage'] = False
-        with self.assertRaisesRegex(RuntimeError, 'coverage must be enabled'):
-            self.publish()
+                             ('results', {'failed': {'status': 8}}), ('sha', older)]:
+            with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+                graph = self.graph_at(commit)
+                graph['baselines']['main'][field] = value
+                self.publish(commit, graph=graph)
         self.assertFalse(cache.publication_path(self.store, self.project).exists())
 
-    def test_runner_change_discards_runtime_graph_before_recording_again(self):
-        self.publish()
-        self.info['runner'] = 'upgraded-release'
+    def test_artifact_must_match_the_commit_run_and_test_configuration(self):
+        commit = self.advance('next main')
+        for manifest in [{'run_id': '999'}, {'commit': self.commit}, {'graph_sha256': 'b' * 64},
+                         {'inputs': {'composer.lock': 'other'}}, {'project': 'apps/cli'}]:
+            with self.subTest(manifest=manifest), self.assertRaises(ValueError):
+                self.publish(commit, manifest=manifest)
+        (self.root / self.project / 'composer.lock').write_text('{"packages":["changed"]}')
+        changed = self.commit_change('dependencies change')
+        # The artifact names the new commit, but CI tested it with the old lock file.
+        artifact = self.artifact(commit, manifest={'commit': changed})
+        with self.assertRaisesRegex(ValueError, 'test configuration differs'):
+            cache.publish_artifact(self.common, self.store, self.project, artifact, changed, 123)
+        self.assertFalse(cache.publication_path(self.store, self.project).exists())
 
-        def record():
-            self.assertFalse((Path(self.info['cache']) / 'graph.json').exists())
-            self.write_graph()
-
-        self.publish(record)
-        self.assertEqual('upgraded-release', cache.read_publication(self.store, self.project)['runner'])
-
-    def test_refresh_restores_successful_graph_before_retrying_failed_runtime_state(self):
-        self.publish()
-        (Path(self.info['cache']) / 'graph.json').write_text('failed runtime state')
-        (self.root / 'source.php').write_text('new main')
-        current = self.commit_change('new main')
-
-        def retry():
-            self.assertEqual(self.graph, json.loads((Path(self.info['cache']) / 'graph.json').read_text()))
-            self.write_graph()
-
-        self.publish(retry, current)
+    def test_publications_only_advance_along_main(self):
+        newer = self.advance('next main')
+        self.publish(newer)
+        published = cache.publication_path(self.store, self.project).read_bytes()
+        # A delayed older artifact leaves the newer publication in place.
+        self.publish(self.commit, run_id=122)
+        self.assertEqual(published, cache.publication_path(self.store, self.project).read_bytes())
+        cache.git(self.root, 'checkout', '-q', '-b', 'side', self.commit)
+        side = self.advance('side history')
+        with self.assertRaises(cache.CommandFailure):
+            self.publish(side, run_id=124)
+        self.assertEqual(published, cache.publication_path(self.store, self.project).read_bytes())
 
     def test_missing_incompatible_corrupt_or_future_publication_is_a_cache_miss(self):
         root = self.feature()
@@ -450,8 +457,7 @@ class MainCacheTest(unittest.TestCase):
         self.publish()
         path = cache.publication_path(self.store, self.project)
         snapshot = json.loads(path.read_text())
-        (self.root / 'source.php').write_text('future main')
-        future = self.commit_change('future')
+        future = self.advance('future')
         for changes in [{'runner': 'other'}, {'fingerprint': {}}, {'sha256': 'broken'},
                         {'tested_commit': future}, {'project': 'apps/cli'}, {'schema': 2}]:
             with self.subTest(changes=changes):
@@ -462,316 +468,77 @@ class MainCacheTest(unittest.TestCase):
         path.write_text('[]')
         self.assertFalse(self.seed(root).exists())
 
-    def test_no_affected_run_can_publish_an_ancestor_graph_at_new_main(self):
-        self.publish()
-        (self.root / 'source.php').write_text('unaffected documentation')
-        current = self.commit_change('main advances')
-        self.publish(commit=current)
-        snapshot = cache.read_publication(self.store, self.project)
-        self.assertEqual(current, snapshot['tested_commit'])
-        self.assertEqual(self.commit, snapshot['graph_commit'])
-        self.assertTrue((self.seed(self.feature()) / 'graph.json').exists())
-
-    def test_owned_main_checkout_advances_without_touching_dirty_primary(self):
-        (self.root / 'source.php').write_text('user edits')
-        checkout = cache.prepare_checkout(self.common, self.store)
-        self.assertEqual(self.commit, cache.git(checkout, 'rev-parse', 'HEAD'))
-        self.assertEqual('main', cache.git(checkout, 'branch', '--show-current'))
-        self.assertEqual('user edits', (self.root / 'source.php').read_text())
-        (checkout / 'source.php').write_text('keep worker edits too')
-        with self.assertRaisesRegex(RuntimeError, 'contains edits'):
-            cache.prepare_checkout(self.common, self.store)
-
     def test_background_runner_survives_caller_removal_and_does_not_hold_closeout(self):
-        with patch.object(cache, 'known_main', return_value=self.commit), \
-                patch.object(cache, 'worker_key', return_value='runner'), \
-                patch.object(cache.subprocess, 'Popen') as process:
+        with launched_workers() as launches:
             cache.start_background(self.common, self.store, [self.project])
-        arguments, options = process.call_args
-        command = arguments[0]
+        [(command, options)] = launches
         self.assertTrue(Path(command[1]).is_relative_to(self.store))
         self.assertEqual(Path(cache.__file__).read_bytes(), Path(command[1]).read_bytes())
         self.assertIn(str(self.common), command)
         self.assertTrue(options['start_new_session'])
         self.assertEqual(subprocess.DEVNULL, options['stdin'])
 
-    @unittest.skipUnless(sys.platform.startswith("linux"), "Requires Linux /proc process environments")
-    def test_native_background_checks_isolate_setup_settings_and_keep_dependency_access(self):
-        project = self.root / self.project
-        (project / 'tests').mkdir(parents=True)
-        (self.root / '.gitignore').write_text('**/vendor/\n')
-        (project / 'tests/Pest.php').write_text('<?php\n')
-        (project / 'composer.lock').write_text('{"packages":[]}\n')
-        (project / 'pint.json').write_text('{"cache-file":"vendor/pint.cache"}\n')
-        (project / 'phpstan.neon').write_text('parameters:\n    level: 6\n')
-        self.commit = self.commit_change('background environment fixture')
+    def test_the_worker_always_runs_mains_copy_of_the_tool(self):
+        main_source = Path(cache.__file__).read_bytes() + b'\n# main version\n'
+        (self.root / 'bin/tia-cache').write_bytes(main_source)
+        main = self.commit_change('main version of the tool')
+        cache.git(self.root, 'update-ref', 'refs/remotes/origin/main', main)
+        with launched_workers() as launches:
+            cache.start_background(self.common, self.store, [self.project])
+        self.assertEqual(main_source, Path(launches[0][0][1]).read_bytes())
+        self.assertEqual(cache.digest(main_source), cache.load_requests(self.store)['pending'][self.project]['worker_key'])
+        # Without the tool on main, no worker starts and no request is recorded.
+        cache.git(self.root, 'rm', '-q', 'bin/tia-cache')
+        cache.git(self.root, 'update-ref', 'refs/remotes/origin/main', self.commit_change('no tool'))
+        with launched_workers() as launches, self.assertRaisesRegex(RuntimeError, 'no bin/tia-cache'):
+            cache.start_background(self.common, self.store, ['apps/cli'])
+        self.assertEqual([], launches)
+        self.assertNotIn('apps/cli', cache.load_requests(self.store)['pending'])
 
-        fake_bin = Path(self.temporary.name) / 'fake-bin'
-        fake_bin.mkdir()
-        observations = Path(self.temporary.name) / 'child-environment.jsonl'
-        runtime_cache = Path(self.temporary.name) / 'worker-test-cache'
-        composer = fake_bin / 'composer'
-        composer.write_text(r'''#!/usr/bin/env python3
-import json
-import os
-from pathlib import Path
-import sys
-import time
-from urllib.parse import urlparse
+    def test_a_foreground_refresh_also_runs_mains_copy(self):
+        marker = Path(self.temporary.name) / 'worker-ran'
+        (self.root / 'bin/tia-cache').write_text(
+            f'#!/usr/bin/env python3\nimport sys\nopen({str(marker)!r}, "w").write(" ".join(sys.argv[1:]))\n')
+        cache.git(self.root, 'update-ref', 'refs/remotes/origin/main', self.commit_change('main worker'))
+        # main's stand-in worker records no result, so the requested project counts as failed.
+        self.assertEqual(1, cache.refresh(self.common, self.store, [self.project]))
+        self.assertTrue(marker.read_text().startswith('work --repository ' + str(self.common)))
+        self.assertFalse(cache.active_worker(self.store))
 
-blocked = (
-    'ORBIT_HOME', 'APP_CONFIG_CACHE', 'APP_BASE_PATH', 'DB_URL', 'DB_DATABASE',
-    'DATABASE_URL', 'CACHE_STORE', 'SESSION_DRIVER', 'QUEUE_CONNECTION',
-)
-observation = {
-    'command': sys.argv[1:],
-    'tia_directory': os.environ.get('ORBIT_TIA_DIRECTORY'),
-    'blocked_present': [name for name in blocked if name in os.environ],
-    'temporary_directories': {name: os.environ.get(name) for name in ('TMPDIR', 'TMP', 'TEMP')},
-    'path_finds_fixture': os.environ.get('PATH', '').split(os.pathsep)[0] == os.environ['TIA_CACHE_FIXTURE_BIN'],
-    'composer_auth_available': os.environ.get('COMPOSER_AUTH') == 'disposable-composer-auth',
-    'github_token_available': os.environ.get('GITHUB_TOKEN') == 'disposable-github-token',
-    'composer_home_available': os.environ.get('COMPOSER_HOME') == os.environ['TIA_CACHE_FIXTURE_COMPOSER_HOME'],
-}
-with open(os.environ['TIA_CACHE_FIXTURE_OBSERVATIONS'], 'a') as stream:
-    stream.write(json.dumps(observation) + '\n')
-
-for name in ('ORBIT_HOME', 'APP_BASE_PATH'):
-    if name in os.environ:
-        destination = Path(os.environ[name]) / 'worker-touched'
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.write_text(name)
-for name in ('APP_CONFIG_CACHE', 'DB_DATABASE'):
-    if name in os.environ:
-        Path(os.environ[name]).write_text(name)
-for name in ('DB_URL', 'DATABASE_URL'):
-    if name in os.environ:
-        database = Path(urlparse(os.environ[name]).path)
-        database.write_text(name)
-
-command = sys.argv[1]
-if command == 'install':
-    Path(os.environ['TIA_CACHE_FIXTURE_READY']).touch()
-    deadline = time.monotonic() + 10
-    while not Path(os.environ['TIA_CACHE_FIXTURE_RELEASE']).exists() and time.monotonic() < deadline:
-        time.sleep(0.01)
-elif command == 'test:affected':
-    graph = {
-        'schema': 1,
-        'fingerprint': {'structural': {'schema': 18}, 'environmental': {'php_minor': '8.5'}},
-        'files': ['src/Example.php'],
-        'edges': {'tests/ExampleTest.php': [0]},
-        'baselines': {'main': {
-            'sha': os.environ['TIA_CACHE_FIXTURE_COMMIT'],
-            'tree': [],
-            'results': {'example': {'status': 0, 'file': 'tests/ExampleTest.php'}},
-        }},
-    }
-    destination = Path(os.environ['ORBIT_TIA_DIRECTORY']) / 'graph.json'
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.write_text(json.dumps(graph))
-    sys.exit(int(os.environ['TIA_CACHE_FIXTURE_TEST_EXIT']))
-elif command == 'format:check':
-    destination = Path('vendor/pint.cache')
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.write_text('portable pint result')
-elif command == 'analyse':
-    destination = Path('vendor/phpstan/cache/resultCache.php')
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.write_text('portable phpstan result')
-''')
-        composer.chmod(0o755)
-        php = fake_bin / 'php'
-        php.write_text(r'''#!/usr/bin/env python3
-import json
-import os
-import sys
-
-if 'PHP_MAJOR_VERSION' in sys.argv[2]:
-    print('8.5')
-else:
-    print(json.dumps({
-        'cache': os.environ['TIA_CACHE_FIXTURE_CACHE'],
-        'fingerprint': {'structural': {'schema': 18}, 'environmental': {'php_minor': '8.5'}},
-        'coverage': True,
-    }))
-''')
-        php.chmod(0o755)
-
-        sentinels = Path(self.temporary.name) / 'setup-sentinels'
-        orbit_home = sentinels / 'orbit-home'
-        app_base = sentinels / 'app-base'
-        temporary = sentinels / ('setup-temporary-' + ('long-' * 30))
-        short_temporary = sentinels / 'short-temporary'
-        legacy_temporary = sentinels / 'legacy-temporary'
-        for directory in (orbit_home, app_base, temporary, short_temporary, legacy_temporary):
-            directory.mkdir(parents=True)
-            (directory / 'state').write_text('unchanged')
-        app_config = sentinels / 'config.php'
-        database = sentinels / 'database.sqlite'
-        url_database = sentinels / 'url-database.sqlite'
-        database_url = sentinels / 'database-url.sqlite'
-        for path in (app_config, database, url_database, database_url):
-            path.write_text('unchanged')
-        original_sentinels = {
-            str(path.relative_to(sentinels)): path.read_bytes()
-            for path in sentinels.rglob('*') if path.is_file()
-        }
-        composer_home = Path(self.temporary.name) / 'composer-home'
-        composer_home.mkdir()
-        worker_ready = Path(self.temporary.name) / 'worker-ready'
-        worker_release = Path(self.temporary.name) / 'worker-release'
-        environment = {
-            **os.environ,
-            'PATH': str(fake_bin) + os.pathsep + os.environ['PATH'],
-            'ORBIT_HOME': str(orbit_home),
-            'ORBIT_TIA_DIRECTORY': str(sentinels / 'caller-cache'),
-            'APP_CONFIG_CACHE': str(app_config),
-            'APP_BASE_PATH': str(app_base),
-            'DB_DATABASE': str(database),
-            'DB_URL': 'sqlite:///' + str(url_database),
-            'DATABASE_URL': 'sqlite:///' + str(database_url),
-            'CACHE_STORE': 'array',
-            'SESSION_DRIVER': 'array',
-            'QUEUE_CONNECTION': 'sync',
-            'TMPDIR': str(temporary),
-            'TMP': str(short_temporary),
-            'TEMP': str(legacy_temporary),
-            'COMPOSER_AUTH': 'disposable-composer-auth',
-            'GITHUB_TOKEN': 'disposable-github-token',
-            'COMPOSER_HOME': str(composer_home),
-            'TIA_CACHE_FIXTURE_BIN': str(fake_bin),
-            'TIA_CACHE_FIXTURE_CACHE': str(runtime_cache),
-            'TIA_CACHE_FIXTURE_COMMIT': self.commit,
-            'TIA_CACHE_FIXTURE_COMPOSER_HOME': str(composer_home),
-            'TIA_CACHE_FIXTURE_OBSERVATIONS': str(observations),
-            'TIA_CACHE_FIXTURE_READY': str(worker_ready),
-            'TIA_CACHE_FIXTURE_RELEASE': str(worker_release),
-            'TIA_CACHE_FIXTURE_TEST_EXIT': '7',
-        }
-        result = subprocess.run(
-            [sys.executable, str(cache.__file__), 'refresh', '--background',
-             '--repository', str(self.root), '--project', self.project],
-            cwd=self.root, env=environment, capture_output=True, text=True,
-        )
-        worker = re.search(r'pid (\d+)', result.stdout)
-        self.assertEqual(0, result.returncode, result.stderr + result.stdout)
-        self.assertIsNotNone(worker, result.stdout)
-
+    def test_a_branch_clone_seeding_from_the_registered_store_starts_only_mains_worker(self):
+        self.publish()
+        marker = Path(self.temporary.name) / 'worker-ran'
+        main_worker = f'#!/usr/bin/env python3\nimport sys\nopen({str(marker)!r}, "w").write(" ".join(sys.argv[1:]))\n'
+        (self.root / 'bin/tia-cache').write_text(main_worker)
+        main = self.commit_change('main worker')
+        cache.git(self.root, 'update-ref', 'refs/remotes/origin/main', main)
+        clone = Path(self.temporary.name) / 'branch clone'
+        cache.git(self.root, 'clone', '-q', str(self.root), str(clone))
+        cache.git(clone, 'checkout', '-q', '-b', 'unmerged-change')
+        # The clone's branch carries another copy of the tool, as an unmerged pull request does.
+        shutil.copyfile(cache.__file__, clone / 'bin/tia-cache')
+        result = subprocess.run([sys.executable, str(clone / 'bin/tia-cache'), 'seed', '--repository', str(clone),
+                                 '--project', self.project], capture_output=True, text=True,
+                                env={**os.environ, 'ORBIT_MAIN_CACHE_STORE': ''})
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertIn('Seeding from the main cache store registered for this origin', result.stdout)
         deadline = time.monotonic() + 10
-        while not worker_ready.exists() and cache.active_worker(self.store) and time.monotonic() < deadline:
-            time.sleep(0.01)
-        process_environment = {}
-        if worker_ready.exists():
-            entries = Path(f'/proc/{worker.group(1)}/environ').read_bytes().split(b'\0')
-            process_environment = {
-                entry.split(b'=', 1)[0].decode(): entry.split(b'=', 1)[1].decode()
-                for entry in entries if b'=' in entry
-            }
-        worker_release.touch()
-        deadline = time.monotonic() + 15
-        while (cache.active_worker(self.store) or cache.load_requests(self.store)['pending']) \
-                and time.monotonic() < deadline:
-            time.sleep(0.01)
-        if cache.active_worker(self.store):
-            os.killpg(int(worker.group(1)), signal.SIGKILL)
-        self.assertFalse(cache.active_worker(self.store), (self.store / 'refresh.log').read_text())
-        state = cache.load_requests(self.store)
-        self.assertTrue(worker_ready.exists(), (self.store / 'refresh.log').read_text())
-        self.assertEqual([], [name for name in (
-            'ORBIT_HOME', 'APP_CONFIG_CACHE', 'APP_BASE_PATH', 'DB_URL', 'DB_DATABASE',
-            'DATABASE_URL', 'CACHE_STORE', 'SESSION_DRIVER', 'QUEUE_CONNECTION',
-        ) if name in process_environment])
-        self.assertEqual(str(temporary), process_environment['TMPDIR'])
-        self.assertEqual(str(short_temporary), process_environment['TMP'])
-        self.assertEqual(str(legacy_temporary), process_environment['TEMP'])
-        self.assertEqual(str(fake_bin) + os.pathsep + os.environ['PATH'], process_environment['PATH'])
-        self.assertTrue(process_environment.get('COMPOSER_AUTH') == environment['COMPOSER_AUTH'])
-        self.assertTrue(process_environment.get('GITHUB_TOKEN') == environment['GITHUB_TOKEN'])
-        self.assertTrue(process_environment.get('COMPOSER_HOME') == environment['COMPOSER_HOME'])
-        self.assertEqual({}, state['pending'])
-        self.assertFalse(state['results'][self.project]['success'])
-        self.assertEqual(7, state['correctness_failures'][self.project]['tia']['exit_code'])
-        self.assertEqual('check_failure', state['correctness_failures'][self.project]['tia']['kind'])
-        self.assertEqual(
-            [('install', 0), ('tia', 7), ('pint', 0), ('phpstan', 0)],
-            [(check['tool'], check['exit_code']) for check in state['results'][self.project]['checks']],
-        )
+        while not marker.exists() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        self.assertTrue(marker.exists(), result.stdout + result.stderr)
+        self.assertTrue(marker.read_text().startswith('work --repository ' + str(self.common)))
+        self.assertEqual([main_worker], [runner.read_text() for runner in (self.store / 'runners').iterdir()])
 
-        child_environments = [json.loads(line) for line in observations.read_text().splitlines()]
-        self.assertEqual(
-            [['install', '--no-interaction', '--prefer-dist'], ['test:affected'],
-             ['format:check'], ['analyse']],
-            [observation['command'] for observation in child_environments],
-        )
-        for observation in child_environments:
-            expected_cache = str(runtime_cache) if observation['command'][0] == 'test:affected' else None
-            self.assertEqual(expected_cache, observation['tia_directory'])
-            self.assertEqual([], observation['blocked_present'])
-            self.assertEqual({
-                'TMPDIR': str(temporary), 'TMP': str(short_temporary), 'TEMP': str(legacy_temporary),
-            }, observation['temporary_directories'])
-            self.assertTrue(observation['path_finds_fixture'])
-            self.assertTrue(observation['composer_auth_available'])
-            self.assertTrue(observation['github_token_available'])
-            self.assertTrue(observation['composer_home_available'])
-        final_sentinels = {
-            str(path.relative_to(sentinels)): path.read_bytes()
-            for path in sentinels.rglob('*') if path.is_file()
-        }
-        self.assertEqual(original_sentinels, final_sentinels)
+    def test_removed_local_check_actions_are_rejected(self):
+        for action in ('warm', 'publish'):
+            with self.subTest(action=action), patch.object(sys, 'argv', ['tia-cache', action]), \
+                    self.assertRaises(SystemExit):
+                cache.main()
+        with patch.object(sys, 'argv', ['tia-cache', 'register', '--development-instance=303']), \
+                self.assertRaises(SystemExit):
+            cache.main()
 
-        evidence = os.environ.get('TIA_CACHE_EVIDENCE_DIR')
-        if evidence:
-            evidence_directory = Path(evidence)
-            evidence_directory.mkdir(parents=True, exist_ok=True)
-            retained_logs = {}
-            logs = {'refresh': self.store / 'refresh.log'}
-            logs.update({check['tool']: Path(check['log'])
-                         for check in state['results'][self.project]['checks']})
-            for name, source in logs.items():
-                destination = evidence_directory / f'background-environment-{name}.log'
-                destination.write_bytes(source.read_bytes())
-                retained_logs[name] = str(destination)
-            report = {
-                'scenario': 'native-background-environment-boundary',
-                'worker_blocked_present': [name for name in (
-                    'ORBIT_HOME', 'APP_CONFIG_CACHE', 'APP_BASE_PATH',
-                    'DB_URL', 'DB_DATABASE', 'DATABASE_URL', 'CACHE_STORE',
-                    'SESSION_DRIVER', 'QUEUE_CONNECTION',
-                ) if name in process_environment],
-                'worker_temporary_directories': {
-                    name: process_environment.get(name) for name in ('TMPDIR', 'TMP', 'TEMP')
-                },
-                'worker_dependency_access': {
-                    'path': process_environment.get('PATH') == environment['PATH'],
-                    'composer_auth': process_environment.get('COMPOSER_AUTH') == environment['COMPOSER_AUTH'],
-                    'github_token': process_environment.get('GITHUB_TOKEN') == environment['GITHUB_TOKEN'],
-                    'composer_home': process_environment.get('COMPOSER_HOME') == environment['COMPOSER_HOME'],
-                },
-                'project_commands': child_environments,
-                'sentinels_unchanged': final_sentinels == original_sentinels,
-                'pending': state['pending'],
-                'result': state['results'][self.project],
-                'correctness_failures': state['correctness_failures'],
-                'retained_logs': retained_logs,
-            }
-            (evidence_directory / 'background-environment-boundary.json').write_text(
-                json.dumps(report, indent=2) + '\n'
-            )
-
-    def test_refresh_releases_lock_and_preserves_other_project_progress_on_failure(self):
-        failed = {'commit': self.commit, 'success': False, 'checks': [{'tool': 'tia', 'exit_code': 1}]}
-        passed = {'commit': self.commit, 'success': True, 'checks': [{'tool': 'tia', 'exit_code': 0}]}
-        with patch.object(cache, 'project_checks', side_effect=[failed, passed]) as refresh:
-            self.assertEqual(1, cache.refresh(self.common, self.store, ['apps/cli', 'apps/docs']))
-            self.assertEqual(2, refresh.call_count)
-        self.assertFalse(cache.load_requests(self.store)['results']['apps/cli']['success'])
-        self.assertTrue(cache.load_requests(self.store)['results']['apps/docs']['success'])
-        with patch.object(cache, 'project_checks', return_value=passed):
-            self.assertEqual(0, cache.refresh(self.common, self.store, ['apps/docs']))
-
-    def test_bootstrap_seeds_before_affected_tests_and_quality_checks_and_propagates_failures(self):
+    def test_bootstrap_seeds_before_affected_tests_and_quality_checks_and_never_publishes(self):
         root = Path(self.temporary.name) / 'bootstrap'
         (root / 'bin').mkdir(parents=True)
         (root / 'bin/bootstrap').write_bytes(Path(cache.__file__).with_name('bootstrap').read_bytes())
@@ -813,133 +580,205 @@ else:
                 if failure in ('install', 'guidance:check'):
                     self.assertNotIn('composer test:affected', calls.read_text())
 
+        # A clean bootstrap at fetched main checks everything and still leaves the main caches to CI.
         (root / '.gitignore').write_text('/calls\n/orbit-home/\n')
         cache.git(root, 'init', '-b', 'main')
         cache.git(root, 'config', 'user.name', 'Orbit')
         cache.git(root, 'config', 'user.email', 'orbit@example.test')
         cache.git(root, 'add', '.')
         cache.git(root, 'commit', '-m', 'bootstrap fixture')
-        commit = cache.git(root, 'rev-parse', 'HEAD')
-        cache.git(root, 'update-ref', 'refs/remotes/origin/main', commit)
+        cache.git(root, 'update-ref', 'refs/remotes/origin/main', cache.git(root, 'rev-parse', 'HEAD'))
         local = {key: value for key, value in environment.items() if key != 'ORBIT_MAIN_CACHE_STORE'}
         local['TIA_TEST_STORE'] = ''
-        for failure in ('', 'test:affected', 'check'):
-            calls.unlink(missing_ok=True)
-            result = subprocess.run(['bash', str(root / 'bin/bootstrap')], capture_output=True, text=True,
-                                    env={**local, 'TIA_TEST_FAIL': failure})
-            self.assertEqual(not failure, result.returncode == 0, result.stderr)
-            published = 'cache publish --repository=' + str(root) + ' --commit=' + commit
-            self.assertEqual(not failure, published in calls.read_text())
-        calls.unlink()
-        subprocess.run(['bash', str(root / 'bin/bootstrap'), '--skip-checks'],
-                       capture_output=True, text=True, env=local, check=True)
-        self.assertNotIn('cache publish', calls.read_text())
+        calls.unlink(missing_ok=True)
+        result = subprocess.run(['bash', str(root / 'bin/bootstrap')], capture_output=True, text=True, env=local)
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(['cache seed --repository=' + str(root)],
+                         [line for line in calls.read_text().splitlines() if line.startswith('cache ')])
 
 
+class CiImportTest(CacheFixture):
+    """The worker reads main CI through gh and publishes CI artifacts. It never runs a project command."""
 
-class BootstrapCacheTest(unittest.TestCase):
-    setUp = MainCacheTest.setUp
-    commit_change = MainCacheTest.commit_change
-    feature = MainCacheTest.feature
-    seed = MainCacheTest.seed
-    publish = MainCacheTest.publish
-    write_graph = MainCacheTest.write_graph
+    def setUp(self):
+        super().setUp()
+        self.fixture = Path(self.temporary.name) / 'gh-fixture'
+        self.fixture.mkdir()
+        tools = Path(self.temporary.name) / 'tools'
+        tools.mkdir()
+        (tools / 'gh').write_text(FAKE_GH)
+        for name in ('composer', 'php', 'pest'):
+            (tools / name).write_text(f'#!/bin/sh\necho "{name} $*" >> "$GH_FIXTURE/forbidden"\nexit 1\n')
+        for tool in tools.iterdir():
+            tool.chmod(0o755)
+        self.runs = []
+        self.clock = 0
+        environment = patch.dict(os.environ, {'GH_FIXTURE': str(self.fixture),
+                                              'PATH': str(tools) + os.pathsep + os.environ['PATH']})
+        environment.start()
+        self.addCleanup(environment.stop)
+        repository_name = patch.object(cache, 'github_repository', return_value=REPOSITORY)
+        repository_name.start()
+        self.addCleanup(repository_name.stop)
 
-    def share(self, root, commit=None):
-        with patch.object(cache, 'metadata', return_value=self.info), \
-                patch.object(cache, 'quality_fingerprint', return_value='quality-fixture'):
-            cache.publish_bootstrap(root, self.store, [self.project], commit or self.commit)
+    def ci_run(self, commit, docs='success', event='push', repository=REPOSITORY, jobs=None, artifact=True):
+        """Record one finished main CI run. Each new run finishes after the previous ones."""
+        self.clock += 1
+        run_id = 1000 + len(self.runs)
+        jobs = {'Web': 'success', 'Docs': docs, **(jobs or {})}
+        (self.fixture / f'jobs-{run_id}.json').write_text(json.dumps({'jobs': [
+            {'name': name, 'conclusion': conclusion, 'html_url': f'https://github.test/job/{name}'}
+            for name, conclusion in jobs.items()]}))
+        if artifact and jobs['Docs'] == 'success':
+            artifact = self.artifact(commit, run_id) if artifact is True else artifact(commit, run_id)
+            shutil.copytree(artifact, self.fixture / f'artifacts-{run_id}' / artifact.name)
+        self.runs.append({
+            'id': run_id, 'head_sha': commit, 'event': event, 'head_branch': 'main',
+            'head_repository': {'full_name': repository}, 'conclusion': 'failure' if 'failure' in jobs.values() else 'success',
+            'updated_at': f'2026-10-09T10:{self.clock:02d}:00Z', 'html_url': f'https://github.test/run/{run_id}',
+        })
+        (self.fixture / 'runs.json').write_text(json.dumps({'workflow_runs': list(reversed(self.runs))}))
+        return run_id
 
-    def test_bootstrap_results_seed_next_worktree_without_updating_primary(self):
-        (self.root / '.gitignore').write_text('**/vendor/\n')
-        self.commit = self.commit_change('ignore caches')
-        self.graph['baselines']['main']['sha'] = self.commit
-        self.graph['baselines']['main']['results']['unaffected'] = {
-            'status': 0, 'file': 'tests/OtherTest.php',
-        }
-        self.publish()
-        primary_commit = self.commit
-        (self.root / 'source.php').write_text('new main')
-        self.commit = self.commit_change('new main')
-        cache.git(self.root, 'update-ref', 'refs/remotes/origin/main', self.commit)
-        first = self.feature()
-        cache.git(self.root, 'reset', '--hard', primary_commit)
-        self.graph['baselines']['feature'] = {
-            'sha': self.commit, 'tree': {}, 'complete': True,
-            'results': {'replacement': {'status': 0, 'file': 'tests/ExampleTest.php'}},
-        }
-        self.write_graph()
-        for tool, (_, relative, _) in cache.QUALITY.items():
-            path = first / self.project / relative
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(tool + ' cache')
+    def refresh(self):
+        return self.drain()
 
-        self.share(first)
+    def calls(self):
+        path = self.fixture / 'calls'
+        return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
 
+    def state(self):
+        return cache.load_requests(self.store)
+
+    def test_worker_publishes_the_newest_successful_main_artifact_without_running_tests(self):
+        self.ci_run(self.commit)
+        newer = self.advance('next main')
+        run_id = self.ci_run(newer)
+        self.assertEqual(0, self.refresh())
         snapshot = cache.read_publication(self.store, self.project)
-        self.assertEqual(self.commit, snapshot['tested_commit'])
-        self.assertEqual(self.commit, snapshot['graph_commit'])
-        self.assertEqual({'unaffected', 'replacement'}, set(json.loads(snapshot['graph'])['baselines']['main']['results']))
-        second = self.feature('second')
-        cache.git(second, 'reset', '--hard', self.commit)
-        seeded = self.seed(second)
-        self.assertEqual(snapshot['graph'], (seeded / 'graph.json').read_text())
-        self.assertEqual(primary_commit, cache.git(self.root, 'rev-parse', 'HEAD'))
-        for tool in cache.QUALITY:
-            quality = json.loads(cache.quality_path(self.store, self.project, tool).read_text())
-            self.assertEqual((tool + ' cache').encode(), cache.quality_data(quality, self.project, tool))
-        # A delayed older writer must leave these results intact.
-        with self.assertRaises(cache.CommandFailure):
-            cache.publish_snapshot(self.root, cache.publication_path(self.store, self.project),
-                                   {**snapshot, 'tested_commit': primary_commit})
-        self.assertEqual(snapshot, cache.read_publication(self.store, self.project))
+        self.assertEqual((newer, {'run_id': run_id}), (snapshot['tested_commit'], snapshot['source']))
+        self.assertFalse((self.fixture / 'forbidden').exists())
+        result = self.state()['results'][self.project]
+        self.assertTrue(result['success'])
+        self.assertEqual((newer, newer, run_id), (result['commit'], result['published'], result['run_id']))
+        report = cache.status(self.common, self.store)
+        self.assertTrue(report['current'][self.project])
+        self.assertEqual({}, report['correctness_failures'])
+        self.assertEqual(self.graph_at(newer), json.loads((self.seed(self.feature()) / 'graph.json').read_text()))
+        # Downloads are inputs only; a current store asks GitHub for the run list and nothing more.
+        self.assertEqual([], list(self.store.glob('run-*/artifacts-*')))
+        downloads = sum(call[:2] == ['run', 'download'] for call in self.calls())
+        self.assertEqual(0, self.refresh())
+        self.assertEqual(downloads, sum(call[:2] == ['run', 'download'] for call in self.calls()))
 
-    def test_no_affected_tests_preserve_the_actual_graph_anchor(self):
-        self.publish()
-        previous = self.commit
-        (self.root / 'source.php').write_text('unrelated main change')
-        self.commit = self.commit_change('next main')
-        cache.git(self.root, 'update-ref', 'refs/remotes/origin/main', self.commit)
-        self.share(self.feature())
-        snapshot = cache.read_publication(self.store, self.project)
-        self.assertEqual(self.commit, snapshot['tested_commit'])
-        self.assertEqual(previous, snapshot['graph_commit'])
+    def test_status_keeps_the_keys_that_merge_gates_read(self):
+        failed = self.advance('broken main')
+        self.ci_run(failed, docs='failure')
+        self.assertEqual(1, self.refresh())
+        report = cache.status(self.common, self.store)
+        self.assertEqual({'schema', 'main', 'worker_active', 'pending', 'current', 'results', 'failures',
+                          'correctness_failures', 'needed', 'refresh_log'}, set(report))
+        failure = report['correctness_failures'][self.project]['ci']
+        self.assertEqual(('ci', 'check_failure', failed), (failure['tool'], failure['kind'], failure['commit']))
+        self.assertEqual(['Docs'], failure['jobs'])
+        self.assertIn(self.project, report['failures'])
 
-    def test_dirty_changed_feature_and_custom_runs_leave_publications_unchanged(self):
-        self.publish()
-        original = cache.read_publication(self.store, self.project)
-        first = self.feature()
-        (first / 'source.php').write_text('private change')
-        with self.assertRaisesRegex(ValueError, 'unchanged clean bootstrap'):
-            self.share(first)
-        cache.git(first, 'add', '.')
-        cache.git(first, 'commit', '-m', 'feature')
-        for commit in (self.commit, cache.git(first, 'rev-parse', 'HEAD')):
-            with self.assertRaisesRegex(ValueError, 'unchanged clean bootstrap'):
-                self.share(first, commit)
-        for variable in ('ORBIT_MAIN_CACHE_STORE', 'ORBIT_TIA_DIRECTORY'):
-            with patch.dict(os.environ, {variable: '/custom'}), self.assertRaisesRegex(ValueError, 'stay private'):
-                self.share(self.root)
-        self.assertEqual(original, cache.read_publication(self.store, self.project))
+    def test_failed_main_run_holds_until_a_later_run_passes_on_that_commit_or_a_descendant(self):
+        self.ci_run(self.commit)
+        broken = self.advance('broken main')
+        failed_run = self.ci_run(broken, docs='failure')
+        self.assertEqual(1, self.refresh())
+        failure = self.state()['correctness_failures'][self.project]['ci']
+        self.assertEqual((broken, failed_run, 'https://github.test/run/%d' % failed_run),
+                         (failure['commit'], failure['run_id'], failure['run_url']))
+        # The newest successful commit stays published while main is broken.
+        self.assertEqual(self.commit, cache.read_publication(self.store, self.project)['tested_commit'])
+        fixed = self.advance('fix main')
+        self.ci_run(fixed)
+        self.assertEqual(0, self.refresh())
+        self.assertEqual({}, self.state()['correctness_failures'])
+        self.assertEqual(fixed, cache.read_publication(self.store, self.project)['tested_commit'])
 
-    def test_busy_maintenance_and_untrusted_graphs_keep_last_publication(self):
+    def test_a_full_run_failure_that_finishes_after_a_newer_success_stays_open(self):
+        nightly = self.commit
+        newer = self.advance('merged during the nightly run')
+        self.ci_run(newer)
+        self.ci_run(nightly, docs='failure', event='schedule')
+        self.assertEqual(1, self.refresh())
+        self.assertEqual(nightly, self.state()['correctness_failures'][self.project]['ci']['commit'])
+        self.assertEqual(newer, cache.read_publication(self.store, self.project)['tested_commit'])
+        self.ci_run(nightly, event='workflow_dispatch')
+        self.assertEqual(0, self.refresh())
+        self.assertEqual({}, self.state()['correctness_failures'])
+        self.assertEqual(newer, cache.read_publication(self.store, self.project)['tested_commit'])
+
+    def test_pull_requests_forks_unfinished_and_other_jobs_are_not_main_results(self):
         self.publish()
-        original = cache.read_publication(self.store, self.project)
-        first = self.feature()
-        with cache.acquire_worker(self.store):
-            self.share(first)
-        for baseline in (
-            {'sha': self.commit, 'tree': {}, 'results': {}},
-            {'sha': self.commit, 'tree': {'source.php': 'dirty'}, 'complete': True, 'results': {}},
-        ):
-            self.graph['baselines']['feature'] = baseline
-            self.write_graph()
-            self.share(first)
-            self.assertEqual(original, cache.read_publication(self.store, self.project))
+        self.ci_run(self.commit)
+        newer = self.advance('next main')
+        self.ci_run(newer, docs='failure', event='pull_request')
+        self.ci_run(newer, docs='failure', repository='someone/orbit')
+        self.ci_run(newer, docs='cancelled')
+        self.ci_run(newer, jobs={'Web': 'failure'}, artifact=False)
+        self.assertEqual(1, self.refresh())
+        self.assertEqual({}, self.state()['correctness_failures'])
+        # The run passed for Docs but published no artifact, so the import fails without a correctness hold.
+        self.assertEqual('maintenance_failure', self.state()['results'][self.project]['checks'][-1]['kind'])
+        self.assertEqual(self.commit, cache.read_publication(self.store, self.project)['tested_commit'])
+        self.assertEqual(('failure', ['Gateway privileged']), cache.job_result(
+            [{'name': 'Gateway', 'conclusion': 'success'}, {'name': 'Gateway privileged', 'conclusion': 'failure'}],
+            'apps/gateway'))
+        self.assertEqual((None, []), cache.job_result([{'name': 'Gateway privileged', 'conclusion': 'success'}],
+                                                      'apps/gateway'))
+        self.assertEqual(('failure', ['Gateway']), cache.job_result(
+            [{'name': 'Gateway', 'conclusion': 'timed_out'}], 'apps/gateway'))
+
+    def test_unreadable_ci_keeps_earlier_failures_and_publications(self):
+        self.publish()
+        legacy = {'tool': 'tia', 'kind': 'check_failure', 'exit_code': 2, 'commit': self.commit, 'error': 'beast only'}
+        with cache.queue_lock(self.store):
+            state = self.state()
+            state['correctness_failures'] = {self.project: {'tia': legacy}}
+            cache.save_requests(self.store, state)
+        published = cache.publication_path(self.store, self.project).read_bytes()
+        newer = self.advance('next main')
+        self.ci_run(newer)
+        (self.fixture / 'fail').write_text('')
+        self.assertEqual(1, self.refresh())
+        state = self.state()
+        self.assertEqual({self.project: {'tia': legacy}}, state['correctness_failures'])
+        self.assertEqual('setup', state['results'][self.project]['checks'][0]['tool'])
+        self.assertIn('HTTP 503', state['results'][self.project]['checks'][0]['error'])
+        self.assertEqual(published, cache.publication_path(self.store, self.project).read_bytes())
+        # Once CI is readable, a passing run on a descendant replaces the failure that local checks recorded.
+        (self.fixture / 'fail').unlink()
+        self.assertEqual(0, self.refresh())
+        self.assertEqual({}, self.state()['correctness_failures'])
+        self.assertEqual(newer, cache.read_publication(self.store, self.project)['tested_commit'])
+
+    def test_no_finished_project_job_keeps_the_correctness_state(self):
+        self.ci_run(self.commit, docs='cancelled')
+        self.assertEqual(1, self.refresh())
+        result = self.state()['results'][self.project]
+        self.assertEqual('maintenance_failure', result['checks'][0]['kind'])
+        self.assertNotIn('ci', result)
+        self.assertEqual({}, self.state()['correctness_failures'])
+
+    def test_a_refused_artifact_is_a_maintenance_failure_and_keeps_the_publication(self):
+        self.publish()
+        published = cache.publication_path(self.store, self.project).read_bytes()
+        newer = self.advance('next main')
+        self.ci_run(newer, artifact=lambda commit, run_id: self.artifact(commit, run_id, manifest={'run_id': '1'}))
+        self.assertEqual(1, self.refresh())
+        check = self.state()['results'][self.project]['checks'][-1]
+        self.assertEqual(('import', 'maintenance_failure'), (check['tool'], check['kind']))
+        self.assertIn('another run', Path(check['log']).read_text())
+        self.assertEqual({}, self.state()['correctness_failures'])
+        self.assertEqual(published, cache.publication_path(self.store, self.project).read_bytes())
 
 
 class RealPestCacheTest(unittest.TestCase):
-    def test_real_pest_refreshes_binary_results_for_the_next_worktree(self):
+    def test_real_pest_main_graph_from_ci_selects_tests_in_the_next_worktrees(self):
         repository = Path(cache.__file__).resolve().parent.parent
         sdk = repository / 'packages/php-sdk'
         self.assertTrue((sdk / 'vendor/autoload.php').is_file(), 'Run bin/bootstrap --skip-checks first.')
@@ -961,17 +800,9 @@ class RealPestCacheTest(unittest.TestCase):
             (directory / 'tests').mkdir()
             (root / '.gitignore').write_text('**/vendor/\n**/.orbit-tia/\n**/.executed*\n')
             manifest = json.loads((sdk / 'composer.json').read_text())
-            manifest['scripts'] = {
-                'test:affected': 'vendor/bin/pest --parallel --processes=2 --tia --compact',
-                'format:check': 'vendor/bin/pint --test',
-                'analyse': 'vendor/bin/phpstan analyse --no-progress',
-                'check': ['@format:check', '@analyse'],
-            }
+            manifest['scripts'] = {'test:affected': 'vendor/bin/pest --parallel --processes=2 --tia --compact'}
             (directory / 'composer.json').write_text(json.dumps(manifest))
             shutil.copyfile(sdk / 'composer.lock', directory / 'composer.lock')
-            (directory / 'pint.json').write_text('{"preset":"laravel","cache-file":"vendor/pint.cache"}')
-            (directory / 'phpstan.neon').write_text(
-                'parameters:\n    level: 6\n    paths:\n        - src\n    tmpDir: vendor/phpstan/cache\n')
             (directory / 'phpunit.xml').write_text(
                 '<phpunit bootstrap="vendor/autoload.php"><testsuites><testsuite name="unit">'
                 '<directory>tests</directory></testsuite></testsuites><source><include>'
@@ -993,6 +824,8 @@ class RealPestCacheTest(unittest.TestCase):
             for args in (('init', '-b', 'main'), ('config', 'user.name', 'Orbit'),
                          ('config', 'user.email', 'orbit@example.test'), ('remote', 'add', 'origin', str(root))):
                 cache.git(root, *args)
+            common = cache.common_directory(root)
+            store = cache.cache_store(common)
 
             def commit(message):
                 cache.git(root, 'add', '.')
@@ -1002,57 +835,76 @@ class RealPestCacheTest(unittest.TestCase):
                 cache.git(root, 'symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main')
                 return sha
 
-            def check(checkout):
-                target = checkout / project
-                shutil.copytree(sdk / 'vendor', target / 'vendor',
+            def install(checkout):
+                shutil.copytree(sdk / 'vendor', checkout / project / 'vendor',
                                 ignore=shutil.ignore_patterns('cache', 'pint.cache'))
-                cache.run(target, 'composer', 'test:affected')
-                cache.run(target, 'composer', 'check')
+
+            def ci(sha, run_id):
+                """Run the project on main as CI does, then publish its graph as the worker does."""
+                cache.run(directory, 'composer', 'test:affected')
+                artifact = Path(temporary) / f'artifact-{run_id}'
+                artifact.mkdir()
+                graph = (directory / '.orbit-tia/graph.json').read_bytes()
+                (artifact / 'graph.json').write_bytes(graph)
+                (artifact / 'manifest.json').write_text(json.dumps({
+                    'schema': 1, 'project': project, 'commit': sha, 'run_id': str(run_id),
+                    'graph_sha256': cache.digest(graph),
+                    'inputs': {name: cache.digest((directory / name).read_bytes())
+                               for name in cache.TEST_INPUTS if (directory / name).is_file()},
+                }))
+                cache.publish_artifact(common, store, project, artifact, sha, run_id)
+                (directory / '.executed').unlink(missing_ok=True)
+                (directory / '.executed-other').unlink(missing_ok=True)
+                return cache.read_publication(store, project)
 
             old = commit('older main')
-            check(root)
-            store = cache.cache_store(cache.common_directory(root))
-            cache.publish_bootstrap(root, store, [project], old)
-            snapshot = cache.read_publication(store, project)
+            install(root)
+            snapshot = ci(old, 1)
             self.assertEqual(3, len(json.loads(snapshot['graph'])['baselines']['main']['results']))
             value.write_text(value.read_text().replace('return $value;', 'return substr($value, 0);'))
             current = commit('newer main')
+
+            # A worktree seeded from the older main graph runs only the tests that the change affects.
             first = Path(temporary).resolve() / 'first'
             cache.git(root, 'worktree', 'add', '-b', 'first-task', str(first), current)
-            cache.git(root, 'reset', '--hard', old)
-            (root / 'unrelated').write_text('preserve')
+            install(first)
+            cache.seed(first, store, [project])
+            self.assertEqual(snapshot['graph'], (first / project / '.orbit-tia/graph.json').read_text())
+            output = cache.run(first / project, 'composer', 'test:affected')
+            self.assertEqual('run\\nrun\\n', (first / project / '.executed').read_text())
+            self.assertFalse((first / project / '.executed-other').exists(), output)
 
-            # Seed only after installing the runner, just as bootstrap does.
-            for checkout, branch in ((first, 'first-task'), (Path(temporary).resolve() / 'second', 'second-task')):
-                if branch == 'second-task':
-                    cache.git(root, 'worktree', 'add', '-b', branch, str(checkout), current)
-                target = checkout / project
-                shutil.copytree(sdk / 'vendor', target / 'vendor',
-                                ignore=shutil.ignore_patterns('cache', 'pint.cache'))
-                cache.seed(checkout, store, [project])
-                self.assertEqual(snapshot['graph'], (target / '.orbit-tia/graph.json').read_text())
-                output = cache.run(target, 'composer', 'test:affected')
-                cache.run(target, 'composer', 'check')
-                cache.publish_bootstrap(checkout, store, [project], current)
-                if branch == 'first-task':
-                    self.assertEqual('run\\nrun\\n', (target / '.executed').read_text())
-                else:
-                    self.assertFalse((target / '.executed').exists(), output)
-                self.assertFalse((target / '.executed-other').exists(), output)
-                snapshot = cache.read_publication(store, project)
-                self.assertEqual(current, snapshot['tested_commit'])
-                self.assertEqual(3, len(json.loads(snapshot['graph'])['baselines']['main']['results']))
-            self.assertEqual(old, cache.git(root, 'rev-parse', 'HEAD'))
-            self.assertEqual('preserve', (root / 'unrelated').read_text())
+            # After CI records the newer main, the next worktree starts at that commit and runs nothing.
+            snapshot = ci(current, 2)
+            self.assertEqual(current, snapshot['tested_commit'])
+            self.assertEqual(3, len(json.loads(snapshot['graph'])['baselines']['main']['results']))
+            second = Path(temporary).resolve() / 'second'
+            cache.git(root, 'worktree', 'add', '-b', 'second-task', str(second), current)
+            install(second)
+            cache.seed(second, store, [project])
+            output = cache.run(second / project, 'composer', 'test:affected')
+            self.assertFalse((second / project / '.executed').exists(), output)
+            self.assertFalse((second / project / '.executed-other').exists(), output)
 
 
-class MaintenanceQueueTest(unittest.TestCase):
-    setUp = MainCacheTest.setUp
-    commit_change = MainCacheTest.commit_change
+class MaintenanceQueueTest(CacheFixture):
+    def setUp(self):
+        super().setUp()
+        for name, value in (('github_repository', REPOSITORY),
+                            ('ci_history', None)):
+            patcher = patch.object(cache, name, return_value=value) if value else patch.object(
+                cache, name, side_effect=lambda common, repository, projects: {
+                    project: {'success': None, 'failure': None} for project in projects})
+            patcher.start()
+            self.addCleanup(patcher.stop)
 
     def submit(self, projects=None):
         with cache.queue_lock(self.store):
             return cache.enqueue(self.common, self.store, projects or [self.project])
+
+    @staticmethod
+    def passed(common, store, project, commit, *arguments):
+        return {'commit': commit, 'success': True, 'checks': []}
 
     def test_duplicate_requests_share_one_worker_and_keep_all_projects(self):
         self.submit()
@@ -1068,28 +920,34 @@ class MaintenanceQueueTest(unittest.TestCase):
             lock.close()
         calls = []
 
-        def check(root, store, project, commit, directory):
+        def check(common, store, project, commit, *arguments):
             calls.append(project)
             return {'commit': commit, 'success': True, 'checks': []}
 
-        with patch.object(cache, 'project_checks', side_effect=check):
+        with patch.object(cache, 'refresh_project', side_effect=check):
             self.assertEqual(0, cache.drain(self.common, self.store, cache.acquire_worker(self.store)))
         self.assertEqual(['apps/docs', 'apps/cli'], calls)
         self.assertEqual({}, cache.load_requests(self.store)['pending'])
 
-    def test_refresh_fetches_an_external_merge_even_with_current_local_publications(self):
-        key = cache.worker_key(self.common)
-        with cache.queue_lock(self.store):
-            cache.save_requests(self.store, {'schema': 1, 'generation': 1, 'pending': {}, 'results': {
-                self.project: {'commit': self.commit, 'success': True, 'checks': [], 'worker_key': key}}})
-        (self.root / 'source.php').write_text('external merge')
-        remote = self.commit_change('merged outside closeout')
+    def test_refresh_fetches_an_external_merge_before_reading_ci(self):
+        remote = self.advance('merged outside closeout')
         self.assertEqual(self.commit, cache.known_main(self.common))
-        with patch.object(cache, 'publications_current', side_effect=lambda store, project, commit: commit == self.commit), \
-                patch.object(cache, 'project_checks', return_value={'commit': remote, 'success': True, 'checks': []}) as checks:
-            self.assertEqual(0, cache.refresh(self.common, self.store, [self.project]))
+        with patch.object(cache, 'refresh_project', side_effect=self.passed) as checks:
+            self.assertEqual(0, self.drain())
         self.assertEqual(remote, checks.call_args.args[3])
         self.assertEqual(remote, cache.known_main(self.common))
+
+    def test_refresh_releases_lock_and_preserves_other_project_progress_on_failure(self):
+        failed = {'commit': self.commit, 'success': False, 'checks': [{'tool': 'import', 'exit_code': 1}]}
+        passed = {'commit': self.commit, 'success': True, 'checks': [{'tool': 'import', 'exit_code': 0}]}
+        with patch.object(cache, 'refresh_project', side_effect=[failed, passed]) as refresh:
+            self.assertEqual(1, self.drain(['apps/cli', 'apps/docs']))
+            self.assertEqual(2, refresh.call_count)
+        self.assertFalse(cache.load_requests(self.store)['results']['apps/cli']['success'])
+        self.assertTrue(cache.load_requests(self.store)['results']['apps/docs']['success'])
+        self.assertFalse(cache.active_worker(self.store))
+        with patch.object(cache, 'refresh_project', return_value=passed):
+            self.assertEqual(0, self.drain(['apps/docs']))
 
     def test_partial_request_upgrades_all_retained_projects(self):
         with patch.object(cache, 'worker_key', return_value='old-runner'):
@@ -1097,7 +955,7 @@ class MaintenanceQueueTest(unittest.TestCase):
         with patch.object(cache, 'worker_key', return_value='new-runner'):
             state = self.submit(['apps/docs'])
             self.assertEqual({'new-runner'}, {request['worker_key'] for request in state['pending'].values()})
-            with patch.object(cache, 'project_checks', return_value={'commit': self.commit, 'success': True, 'checks': []}) as checks:
+            with patch.object(cache, 'refresh_project', side_effect=self.passed) as checks:
                 self.assertEqual(0, cache.drain(self.common, self.store, cache.acquire_worker(self.store)))
             self.assertEqual(2, checks.call_count)
         self.assertEqual({}, cache.load_requests(self.store)['pending'])
@@ -1106,26 +964,12 @@ class MaintenanceQueueTest(unittest.TestCase):
         with self.assertRaises(cache.CommandFailure) as raised:
             cache.run(
                 self.root, sys.executable, '-c',
-                'import sys; sys.stdout.write("pest failed on stdout\\n"); '
+                'import sys; sys.stdout.write("gh failed on stdout\\n"); '
                 'sys.stderr.write("hint on stderr\\n"); sys.exit(2)',
             )
-        self.assertIn('pest failed on stdout', str(raised.exception))
+        self.assertIn('gh failed on stdout', str(raised.exception))
         self.assertIn('hint on stderr', str(raised.exception))
         self.assertEqual(2, raised.exception.exit_code)
-
-    def test_failed_logged_command_includes_stdout_in_the_failure(self):
-        cache.COMMAND_LOG = self.root / 'check.log'
-        cache.COMMAND_LOG.write_text('apps/docs: tia at fixture\n')
-        try:
-            with self.assertRaises(cache.CommandFailure) as raised:
-                cache.run(
-                    self.root, sys.executable, '-c',
-                    'print("visible pest failure"); raise SystemExit(1)',
-                    capture=False,
-                )
-            self.assertIn('visible pest failure', str(raised.exception))
-        finally:
-            cache.COMMAND_LOG = None
 
     def test_failed_command_keeps_the_tail_of_huge_stdout(self):
         with self.assertRaises(cache.CommandFailure) as raised:
@@ -1141,9 +985,13 @@ class MaintenanceQueueTest(unittest.TestCase):
 
     def test_command_timeout_stops_descendants_before_returning(self):
         marker = self.root / 'descendant-ready'
-        script = '''import fcntl, os, signal, time
+        script = '''import fcntl, os, signal, sys, time
 signal.signal(signal.SIGTERM, signal.SIG_IGN)
 if os.fork() == 0:
+    # Leave the output pipes, so only the process group ties this descendant to the command.
+    devnull = os.open(os.devnull, os.O_WRONLY)
+    os.dup2(devnull, 1)
+    os.dup2(devnull, 2)
     with open('descendant.lock', 'w') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         with open('descendant-ready', 'w') as marker:
@@ -1157,7 +1005,7 @@ else:
         try:
             with patch.object(cache, 'COMMAND_TIMEOUT', 0.5):
                 with self.assertRaisesRegex(cache.CommandFailure, 'timed out'):
-                    cache.run(self.root, sys.executable, '-c', script, capture=False)
+                    cache.run(self.root, sys.executable, '-c', script)
 
             self.assertTrue(marker.exists(), 'The descendant must start before timeout.')
             with (self.root / 'descendant.lock').open() as lock:
@@ -1181,72 +1029,19 @@ else:
                 except ProcessLookupError:
                     pass
 
-    def test_interrupted_worker_command_retains_exclusive_checkout_ownership(self):
-        self.store.mkdir(parents=True)
-        marker = self.root / 'command-ready'
-        release = self.root / 'release-command'
-        os.mkfifo(release)
-        release_fd = os.open(release, os.O_RDWR)
-        script = '''import os
-with open('release-command') as release:
-    with open('command-ready', 'w') as marker:
-        marker.write(str(os.getpid()))
-    release.read(1)
-'''
-        worker = os.fork()
-        if worker == 0:
-            try:
-                os.close(release_fd)
-                lock = cache.acquire_worker(self.store)
-                cache.COMMAND_LOCK = lock.fileno()
-                cache.run(self.root, sys.executable, '-c', script, capture=False)
-            except BaseException:
-                os._exit(1)
-            os._exit(0)
-        try:
-            deadline = time.monotonic() + 5
-            while not marker.exists() and time.monotonic() < deadline:
-                time.sleep(0.01)
-            self.assertTrue(marker.exists(), 'The maintenance command must start.')
-
-            os.kill(worker, signal.SIGKILL)
-            os.waitpid(worker, 0)
-            worker = None
-            contender = cache.acquire_worker(self.store)
-            if contender is not None:
-                contender.close()
-            self.assertIsNone(contender, 'The surviving command must exclude another worker.')
-
-            os.write(release_fd, b'1')
-            deadline = time.monotonic() + 5
-            while cache.active_worker(self.store) and time.monotonic() < deadline:
-                time.sleep(0.01)
-            self.assertFalse(cache.active_worker(self.store))
-        finally:
-            os.close(release_fd)
-            if worker is not None:
-                os.kill(worker, signal.SIGKILL)
-                os.waitpid(worker, 0)
-            if marker.exists():
-                try:
-                    os.kill(int(marker.read_text()), signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
-
     def test_main_request_arriving_during_refresh_is_not_acknowledged_by_old_batch(self):
         self.submit()
         commits = []
 
-        def check(root, store, project, commit, directory):
+        def check(common, store, project, commit, *arguments):
             commits.append(commit)
             if len(commits) == 1:
-                (self.root / 'source.php').write_text('next merged feature')
-                self.next_commit = self.commit_change('next main')
+                self.next_commit = self.advance('next main')
                 cache.git(self.root, 'update-ref', 'refs/remotes/origin/main', self.next_commit)
                 self.submit()
             return {'commit': commit, 'success': True, 'checks': []}
 
-        with patch.object(cache, 'project_checks', side_effect=check):
+        with patch.object(cache, 'refresh_project', side_effect=check):
             self.assertEqual(0, cache.drain(self.common, self.store, cache.acquire_worker(self.store)))
         self.assertEqual([self.commit, self.next_commit], commits)
         state = cache.load_requests(self.store)
@@ -1255,19 +1050,17 @@ with open('release-command') as release:
 
     def test_interrupted_worker_leaves_request_for_a_later_worker(self):
         self.submit()
-        with patch.object(cache, 'project_checks', side_effect=SystemExit('interrupted')):
+        with patch.object(cache, 'refresh_project', side_effect=SystemExit('interrupted')):
             with self.assertRaises(SystemExit):
                 cache.drain(self.common, self.store, cache.acquire_worker(self.store))
         self.assertFalse(cache.active_worker(self.store))
         self.assertIn(self.project, cache.load_requests(self.store)['pending'])
-        with patch.object(cache, 'project_checks', return_value={'commit': self.commit, 'success': True, 'checks': []}):
+        with patch.object(cache, 'refresh_project', side_effect=self.passed):
             self.assertEqual(0, cache.drain(self.common, self.store, cache.acquire_worker(self.store)))
         self.assertEqual({}, cache.load_requests(self.store)['pending'])
 
     def test_launch_failure_keeps_a_durable_request_without_an_active_owner(self):
-        with patch.object(cache, 'known_main', return_value=self.commit), \
-                patch.object(cache, 'worker_key', return_value='runner'), \
-                patch.object(cache.subprocess, 'Popen', side_effect=OSError('spawn failed')):
+        with launched_workers(OSError('spawn failed')):
             with self.assertRaisesRegex(OSError, 'spawn failed'):
                 cache.start_background(self.common, self.store, [self.project])
         self.assertIn(self.project, cache.load_requests(self.store)['pending'])
@@ -1277,55 +1070,19 @@ with open('release-command') as release:
         with patch.object(cache, 'worker_key', return_value='new-runner'):
             self.submit()
         with patch.object(cache, 'worker_key', return_value='old-runner'), \
-                patch.object(cache, 'project_checks') as checks:
+                patch.object(cache, 'refresh_project') as checks:
             cache.drain(self.common, self.store, cache.acquire_worker(self.store))
             checks.assert_not_called()
         self.assertFalse(cache.active_worker(self.store))
         self.assertIn(self.project, cache.load_requests(self.store)['pending'])
         with patch.object(cache, 'worker_key', return_value='new-runner'), \
-                patch.object(cache, 'project_checks', return_value={'commit': self.commit, 'success': True, 'checks': []}):
+                patch.object(cache, 'refresh_project', side_effect=self.passed):
             self.assertEqual(0, cache.drain(self.common, self.store, cache.acquire_worker(self.store)))
         self.assertEqual({}, cache.load_requests(self.store)['pending'])
 
-    def test_correctness_hold_survives_environment_and_cached_results_until_executed_recovery(self):
-        outcomes = [
-            {'commit': self.commit, 'success': False, 'checks': [
-                {'tool': 'tia', 'kind': 'check_failure', 'exit_code': 2}]},
-            {'commit': self.commit, 'success': False, 'checks': [
-                {'tool': 'install', 'kind': 'maintenance_failure', 'exit_code': 1}]},
-            {'commit': self.commit, 'success': True, 'checks': [
-                {'tool': 'install', 'exit_code': 0}, {'tool': 'tia', 'exit_code': 0}]},
-            {'commit': self.commit, 'success': True, 'checks': [
-                {'tool': 'install', 'exit_code': 0},
-                {'tool': 'tia', 'exit_code': 0, 'recovery': 'executed'}]},
-        ]
-        for index, outcome in enumerate(outcomes):
-            self.submit()
-            with patch.object(cache, 'project_checks', return_value=outcome):
-                cache.drain(self.common, self.store, cache.acquire_worker(self.store))
-            unresolved = cache.status(self.common, self.store)['correctness_failures']
-            self.assertEqual(index < 3, bool(unresolved))
-            if unresolved:
-                self.assertEqual(2, unresolved[self.project]['tia']['exit_code'])
-
-    def test_check_failure_is_distinct_from_install_failure_and_does_not_skip_quality_checks(self):
-        self.store.mkdir(parents=True)
-        with patch.object(cache, 'install_project'), \
-                patch.object(cache, 'refresh_project', side_effect=cache.CommandFailure('test failed', 2)), \
-                patch.object(cache, 'refresh_quality') as quality:
-            result = cache.project_checks(self.root, self.store, self.project, self.commit, self.store)
-        self.assertFalse(result['success'])
-        self.assertEqual('check_failure', result['checks'][1]['kind'])
-        self.assertEqual(2, quality.call_count)
-        with patch.object(cache, 'install_project', side_effect=cache.CommandFailure('download failed', 1)):
-            result = cache.project_checks(self.root, self.store, self.project, self.commit, self.store)
-        self.assertEqual(1, len(result['checks']))
-        self.assertEqual('maintenance_failure', result['checks'][0]['kind'])
-
     def test_status_reads_remote_main_without_advancing_primary_or_queueing_work(self):
         old = self.commit
-        (self.root / 'source.php').write_text('new main')
-        current = self.commit_change('next')
+        current = self.advance('next')
         self.assertEqual(old, cache.known_main(self.common))
         result = cache.status(self.common, self.store, remote=True)
         self.assertEqual(current, result['main'])
@@ -1335,46 +1092,18 @@ with open('release-command') as release:
         self.assertEqual(old, cache.known_main(self.common))
 
 
-class QualityPublicationTest(unittest.TestCase):
-    commit_change = MainCacheTest.commit_change
-    feature = MainCacheTest.feature
+class QualityPublicationTest(CacheFixture):
+    def publish_quality(self, commit=None, run_id=123, data=b'portable tool result', **options):
+        return self.publish(commit, run_id, quality={tool: data for tool in cache.QUALITY}, **options)
 
-    def setUp(self):
-        MainCacheTest.setUp(self)
-        project = self.root / self.project
-        project.mkdir(parents=True)
-        (self.root / '.gitignore').write_text('**/vendor/\n')
-        (project / 'composer.lock').write_text('{"packages":[]}')
-        (project / 'pint.json').write_text('{"cache-file":"vendor/pint.cache"}')
-        (project / 'phpstan.neon').write_text('parameters:\n    level: 6\n')
-        self.commit = self.commit_change('quality configuration')
-
-    def publish(self, tool='pint', failure=None):
-        original = cache.run
-
-        def run(root, *args, **kwargs):
-            if args[0] == 'composer':
-                if failure:
-                    raise cache.CommandFailure(failure, 1)
-                path = self.root / self.project / cache.QUALITY[tool][1]
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_bytes(b'portable tool result')
-                return
-            return original(root, *args, **kwargs)
-
-        with patch.object(cache, 'run', side_effect=run):
-            cache.refresh_quality(self.root, self.store, self.project, self.commit, tool)
-
-    def seed(self, worktree):
+    def seed_quality(self, worktree):
         return subprocess.run([sys.executable, str(Path(cache.__file__).with_name('worktree-cache')),
                                '--worktree', str(worktree)], capture_output=True, text=True)
 
-    def test_published_quality_caches_seed_without_a_live_donor_and_writes_stay_private(self):
-        for tool in cache.QUALITY:
-            self.publish(tool)
-            (self.root / self.project / cache.QUALITY[tool][1]).unlink()
+    def test_ci_quality_caches_seed_without_a_live_donor_and_writes_stay_private(self):
+        self.publish_quality()
         feature = self.feature()
-        result = self.seed(feature)
+        result = self.seed_quality(feature)
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertIn('published main', result.stdout)
         for tool in cache.QUALITY:
@@ -1383,39 +1112,45 @@ class QualityPublicationTest(unittest.TestCase):
             path.write_bytes(b'private edit')
             publication = json.loads(cache.quality_path(self.store, self.project, tool).read_text())
             self.assertEqual(b'portable tool result', cache.quality_data(publication, self.project, tool))
-        self.seed(feature)
+            self.assertEqual({'run_id': 123}, publication['source'])
+        self.seed_quality(feature)
         self.assertEqual(b'private edit', (feature / self.project / cache.QUALITY['pint'][1]).read_bytes())
-        self.assertFalse((feature / self.project / 'vendor/phpstan/cache/cache').exists())
 
-    def test_failed_quality_check_retains_successful_publication(self):
-        self.publish()
+    def test_a_corrupt_ci_quality_cache_keeps_the_previous_publication(self):
+        self.publish_quality()
         path = cache.quality_path(self.store, self.project, 'pint')
         original = path.read_bytes()
-        (self.root / 'source.php').write_text('bad formatting')
-        self.commit = self.commit_change('new main')
-        with self.assertRaisesRegex(cache.CommandFailure, 'format failed'):
-            self.publish(failure='format failed')
+        newer = self.advance('new main')
+        artifact = self.artifact(newer, quality={'pint': b'new result'})
+        (artifact / 'quality/pint').write_bytes(b'tampered')
+        with self.assertRaisesRegex(ValueError, 'pint cache checksum differs'):
+            cache.publish_artifact(self.common, self.store, self.project, artifact, newer, 123)
         self.assertEqual(original, path.read_bytes())
 
     def test_corrupt_incompatible_and_future_quality_publications_are_not_seeded(self):
-        self.publish()
-        (self.root / self.project / cache.QUALITY['pint'][1]).unlink()
+        self.publish_quality()
         feature = self.feature()
         path = cache.quality_path(self.store, self.project, 'pint')
         original = json.loads(path.read_text())
-        (self.root / 'source.php').write_text('future main')
-        future = self.commit_change('future')
+        future = self.advance('future')
         for change in [{'sha256': 'corrupt'}, {'fingerprint': 'wrong'}, {'tested_commit': future},
                        {'project': 'apps/cli'}, {'tool': 'phpstan'}, {'data': 'invalid base64'}]:
             with self.subTest(change=change):
                 path.write_text(json.dumps({**original, **change}))
-                self.assertEqual(0, self.seed(feature).returncode)
+                self.assertEqual(0, self.seed_quality(feature).returncode)
                 self.assertFalse((feature / self.project / cache.QUALITY['pint'][1]).exists())
+
+    def test_a_ci_runtime_of_another_php_minor_is_not_seeded(self):
+        self.publish_quality(php='7.4')
+        feature = self.feature()
+        self.assertEqual(0, self.seed_quality(feature).returncode)
+        self.assertFalse((feature / self.project / cache.QUALITY['pint'][1]).exists())
 
 
 class ReviewGateTest(unittest.TestCase):
-    setUp = MainCacheTest.setUp
-    commit_change = MainCacheTest.commit_change
+    setUp = lambda self: repository(self, project_files=False)
+    commit_change = CacheFixture.commit_change
+
     # Reuse repository setup, without repeating the cache test cases.
     def gate_fixture(self):
         (self.root / 'bin').mkdir()
@@ -1563,219 +1298,6 @@ def effective_named_rights(path, user):
     """A named user entry's rights after the ACL mask, such as r-x."""
     named, mask = acl_entry(path, f'user:{user}:'), acl_entry(path, 'mask::')
     return ''.join(right if limit != '-' else '-' for right, limit in zip(named, mask))
-
-
-class TiaRecoveryTest(unittest.TestCase):
-    setUp = MainCacheTest.setUp
-    commit_change = MainCacheTest.commit_change
-    write_graph = MainCacheTest.write_graph
-    publish = MainCacheTest.publish
-
-    def observed_failure(self):
-        self.publish()
-        self.original_publication = cache.publication_path(self.store, self.project).read_bytes()
-        self.original_graph = json.loads(cache.read_publication(self.store, self.project)['graph'])
-        (self.root / 'source.php').write_text('main with an observed failing behavior')
-        self.failed_commit = self.commit_change('observed failure on main')
-        self.execution_count = 0
-        self.calls = []
-        self.run_number = 0
-        outcome = self.check('executed-failure', self.failed_commit)
-        self.assertFalse(outcome['success'])
-        self.assertEqual(1, self.execution_count)
-        self.assertEqual(['composer', 'test:affected'], self.calls[-1]['argv'])
-        state = cache.load_requests(self.store)
-        cache.record_outcome(state, self.project, outcome)
-        cache.save_requests(self.store, state)
-        self.original_failure = copy.deepcopy(state['correctness_failures'][self.project]['tia'])
-        self.original_failure_log = Path(self.original_failure['log']).read_bytes()
-        self.assertEqual(2, self.original_failure['exit_code'])
-        self.assertEqual(self.failed_commit, self.original_failure['commit'])
-        self.assertEqual(self.original_publication,
-                         cache.publication_path(self.store, self.project).read_bytes())
-        return state
-
-    def check(self, mode, commit, pint_environment_failure=False):
-        original_run = cache.run
-        self.run_number += 1
-        directory = self.store / 'fixture-runs' / str(self.run_number)
-        directory.mkdir(parents=True)
-
-        def runner(root, *command, **kwargs):
-            if command[0] != 'composer':
-                return original_run(root, *command, **kwargs)
-            self.assertEqual('test:affected', command[1])
-            restored = json.loads((Path(self.info['cache']) / 'graph.json').read_text())
-            self.assertEqual(self.original_graph, restored)
-            observation = {'argv': list(command), 'mode': mode,
-                           'restored_graph_commit': restored['baselines']['main']['sha']}
-            self.calls.append(observation)
-            with cache.COMMAND_LOG.open('a') as output:
-                output.write(json.dumps(observation) + '\n')
-            if mode == 'cached-success':
-                return None
-            self.execution_count += 1
-            self.graph = copy.deepcopy(self.original_graph)
-            self.graph['baselines']['main']['sha'] = commit
-            if mode == 'executed-failure':
-                self.graph['baselines']['main']['results']['example']['status'] = 8
-                self.write_graph()
-                raise cache.CommandFailure('fixture behavior is still broken', 2)
-            self.assertEqual('executed-success', mode)
-            self.write_graph()
-
-        def quality(root, store, project, checked_commit, tool, force=False):
-            if pint_environment_failure and tool == 'pint':
-                raise RuntimeError('fixture Pint environment is unavailable')
-
-        with patch.object(cache, 'install_project'), \
-                patch.object(cache, 'metadata', return_value=self.info), \
-                patch.object(cache, 'refresh_quality', side_effect=quality), \
-                patch.object(cache, 'run', side_effect=runner):
-            return cache.project_checks(self.root, self.store, self.project, commit, directory)
-
-    def installation_failure(self, commit):
-        self.run_number += 1
-        directory = self.store / 'fixture-runs' / str(self.run_number)
-        directory.mkdir(parents=True)
-        with patch.object(cache, 'install_project',
-                          side_effect=cache.CommandFailure('fixture download failed', 1)):
-            return cache.project_checks(self.root, self.store, self.project, commit, directory)
-
-    def persist(self, outcome):
-        state = cache.load_requests(self.store)
-        cache.record_outcome(state, self.project, outcome)
-        cache.save_requests(self.store, state)
-        return cache.load_requests(self.store)
-
-    def assert_original_failure_is_retained(self, state):
-        self.assertEqual(self.original_failure,
-                         state['correctness_failures'][self.project]['tia'])
-        self.assertEqual(self.original_failure_log, Path(self.original_failure['log']).read_bytes())
-        self.assertEqual(self.original_publication,
-                         cache.publication_path(self.store, self.project).read_bytes())
-
-    def retain_evidence(self, name, before, after, outcome):
-        snapshot = cache.read_publication(self.store, self.project)
-        report = {
-            'scenario': name,
-            'failed_commit': self.failed_commit,
-            'checked_commit': outcome['commit'],
-            'total_executed_fixture_checks': self.execution_count,
-            'invoked_commands': self.calls,
-            'pending': after['pending'],
-            'hold_before': before['correctness_failures'],
-            'hold_after': after['correctness_failures'],
-            'latest_result': after['results'][self.project],
-            'published_tested_commit': snapshot['tested_commit'],
-            'published_graph_commit': snapshot['graph_commit'],
-            'published_graph_unchanged': json.loads(snapshot['graph']) == self.original_graph,
-        }
-        destination = os.environ.get('TIA_CACHE_EVIDENCE_DIR')
-        if destination:
-            directory = Path(destination)
-            directory.mkdir(parents=True, exist_ok=True)
-            retained_logs = {}
-            logs = {'original-failure': self.original_failure['log']}
-            logs.update({check['tool']: check['log'] for check in outcome['checks']})
-            for label, source in logs.items():
-                retained = directory / f'{name}-{label}.log'
-                retained.write_bytes(Path(source).read_bytes())
-                retained_logs[label] = str(retained)
-            report['retained_logs'] = retained_logs
-            (directory / f'{name}.json').write_text(json.dumps(report, indent=2) + '\n')
-        print('TIA_RECOVERY_OBSERVATION ' + json.dumps(report), flush=True)
-
-    def test_zero_execution_retry_at_failed_main_retains_original_failure_and_diagnostic(self):
-        before = self.observed_failure()
-        outcome = self.check('cached-success', self.failed_commit)
-        after = self.persist(outcome)
-
-        self.assertFalse(outcome['success'])
-        self.assertEqual('not_executed', outcome['checks'][1]['recovery'])
-        self.assertEqual(['composer', 'test:affected', '--', '--fresh'], self.calls[-1]['argv'])
-        self.assertEqual(1, self.execution_count)
-        self.assert_original_failure_is_retained(after)
-        self.retain_evidence('zero-execution-same-main', before, after, outcome)
-
-    def test_zero_execution_retry_at_unrelated_successor_retains_original_failure_and_diagnostic(self):
-        before = self.observed_failure()
-        (self.root / 'notes.md').write_text('unrelated notes; no repair')
-        current = self.commit_change('unrelated main advancement')
-        outcome = self.check('cached-success', current)
-        after = self.persist(outcome)
-
-        self.assertFalse(outcome['success'])
-        self.assertEqual('not_executed', outcome['checks'][1]['recovery'])
-        self.assertEqual(['composer', 'test:affected', '--', '--fresh'], self.calls[-1]['argv'])
-        self.assertEqual(1, self.execution_count)
-        self.assert_original_failure_is_retained(after)
-        self.retain_evidence('zero-execution-later-main', before, after, outcome)
-
-    def test_failing_executed_recovery_retains_failure_and_successful_publication(self):
-        before = self.observed_failure()
-        outcome = self.check('executed-failure', self.failed_commit)
-        after = self.persist(outcome)
-
-        self.assertFalse(outcome['success'])
-        self.assertEqual('failed', outcome['checks'][1]['recovery'])
-        self.assertEqual('check_failure', outcome['checks'][1]['kind'])
-        self.assertEqual(['composer', 'test:affected', '--', '--fresh'], self.calls[-1]['argv'])
-        self.assertEqual(2, self.execution_count)
-        self.assertIn('tia', after['correctness_failures'][self.project])
-        self.assertEqual(self.original_publication,
-                         cache.publication_path(self.store, self.project).read_bytes())
-        self.retain_evidence('failing-executed-recovery', before, after, outcome)
-
-    def test_successful_executed_recovery_clears_only_recovered_project_tia_failure(self):
-        before = self.observed_failure()
-        other_project_failure = copy.deepcopy(self.original_failure)
-        pint_log = self.store / 'original-pint-failure.log'
-        pint_log.write_text('apps/docs: pint failed before TIA recovery\n')
-        pint_failure = {**self.original_failure, 'tool': 'pint', 'exit_code': 3,
-                        'log': str(pint_log)}
-        before['correctness_failures']['apps/cli'] = {'tia': other_project_failure}
-        before['correctness_failures'][self.project]['pint'] = pint_failure
-        cache.save_requests(self.store, before)
-        (self.root / 'source.php').write_text('reviewed repair fixture')
-        current = self.commit_change('repair fixture')
-        outcome = self.check('executed-success', current, pint_environment_failure=True)
-        after = self.persist(outcome)
-
-        self.assertEqual('executed', outcome['checks'][1]['recovery'])
-        self.assertEqual(['composer', 'test:affected', '--', '--fresh'], self.calls[-1]['argv'])
-        self.assertEqual(2, self.execution_count)
-        self.assertNotIn('tia', after['correctness_failures'][self.project])
-        self.assertEqual(pint_failure, after['correctness_failures'][self.project]['pint'])
-        self.assertEqual(other_project_failure, after['correctness_failures']['apps/cli']['tia'])
-        self.assertEqual(current, outcome['commit'])
-        self.assertEqual(current, cache.read_publication(self.store, self.project)['tested_commit'])
-        self.assertEqual(current, cache.read_publication(self.store, self.project)['graph_commit'])
-        self.retain_evidence('successful-executed-recovery', before, after, outcome)
-
-    def test_installation_failure_preserves_original_failure_and_successful_publication(self):
-        before = self.observed_failure()
-        outcome = self.installation_failure(self.failed_commit)
-        after = self.persist(outcome)
-
-        self.assertFalse(outcome['success'])
-        self.assertEqual('maintenance_failure', outcome['checks'][0]['kind'])
-        self.assert_original_failure_is_retained(after)
-        self.retain_evidence('installation-failure', before, after, outcome)
-
-    def test_interrupted_recovery_preserves_request_failure_and_successful_publication(self):
-        before = self.observed_failure()
-        with cache.queue_lock(self.store):
-            cache.enqueue(self.common, self.store, [self.project])
-        with patch.object(cache, 'project_checks', side_effect=SystemExit('fixture interruption')):
-            with self.assertRaises(SystemExit):
-                cache.drain(self.common, self.store, cache.acquire_worker(self.store))
-        after = cache.load_requests(self.store)
-
-        self.assertIn(self.project, after['pending'])
-        self.assert_original_failure_is_retained(after)
-        self.retain_evidence('interrupted-recovery', before, after,
-                             after['results'][self.project])
 
 
 if __name__ == '__main__':
