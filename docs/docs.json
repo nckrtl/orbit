@@ -1300,7 +1300,7 @@
     },
     {
       "source": "/decisions/0119-publish-main-caches-from-clean-bootstrap-runs",
-      "destination": "/reference/implementation-loop#publish-from-bootstrap"
+      "destination": "/reference/implementation-loop#only-main-ci-publishes"
     },
     {
       "source": "/decisions/0166-raise-phpstan-one-level-at-a-time",

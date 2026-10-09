@@ -251,7 +251,7 @@ describe('Composer configuration', function (): void {
                 'if' => "steps.orbit-tia-plan.outputs.mode == 'full'",
                 'run' => 'vendor/bin/pest --parallel '.CI_PEST_PROCESSES.' --tia --fresh --compact',
             ]);
-        // The cache and the sandbox baseline get the graph only when it describes the tested commit.
+        // The cache and the main cache artifact get the graph only when it describes the tested commit.
         expect($steps['Require the Pest TIA graph to describe this commit'])
             ->toMatchArray([
                 // A manual run on another branch records that branch's baseline, not main's.
@@ -268,7 +268,7 @@ describe('Composer configuration', function (): void {
             ->and($order['Choose whether to run subprocess tests'])->toBeLessThan($order['Run subprocess tests'])
             ->and($order['Run subprocess tests'])->toBeLessThan($order['Require the Pest TIA graph to describe this commit'])
             ->and($order['Require the Pest TIA graph to describe this commit'])->toBeLessThan($order['Save Pest TIA graph'])
-            ->and($order['Save Pest TIA graph'])->toBeLessThan($order['Export sandbox TIA baseline']);
+            ->and($order['Save Pest TIA graph'])->toBeLessThan($order['Export main caches']);
         expect($steps)->not->toHaveKey('Run full test suite')->not->toHaveKey('Refresh Pest TIA graph');
         // Only pushes and pull requests from this repository may reach the self-hosted Sabre runner.
         expect($project['runs-on'])
