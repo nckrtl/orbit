@@ -5,10 +5,8 @@ declare(strict_types=1);
 namespace App\Actions\Routes;
 
 use App\Domain\Instances\RouteApplicationUrlWriter;
-use App\Domain\Routes\RouteStatus;
 use App\Domain\Routes\RouteWebRoot;
 use App\Models\Instance;
-use App\Models\Route;
 
 /**
  * Points `APP_URL` of each application directory that a Route with a web root serves at the Route that
@@ -29,10 +27,7 @@ final readonly class SynchronizeRouteWebRootUrlsAction
             return;
         }
 
-        $routes = Route::query()
-            ->whereIn('status', [RouteStatus::Active->value, RouteStatus::Activating->value])
-            ->whereHas('targets', static fn ($query) => $query->where('instance_id', $instance->id))
-            ->get();
+        $routes = RouteWebRoot::applicationUrlCandidates($instance);
 
         foreach (RouteWebRoot::applicationUrlRoutes($instance, $routes) as $directory => $route) {
             $this->writer->configureDirectoryUrl($instance, (string) $directory, "https://{$route->domain}");

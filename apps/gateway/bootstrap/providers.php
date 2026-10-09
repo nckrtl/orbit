@@ -8,6 +8,7 @@ use App\Providers\FleetServiceProvider;
 use App\Providers\GatewayBoostServiceProvider;
 use App\Providers\GatewayReleasesServiceProvider;
 use App\Providers\TasksServiceProvider;
+use App\Providers\TaskVmServiceProvider;
 
 return [
     ApplicationServiceProvider::class,
@@ -16,4 +17,5 @@ return [
     GatewayBoostServiceProvider::class,
     GatewayReleasesServiceProvider::class,
     TasksServiceProvider::class,
+    TaskVmServiceProvider::class,
 ];

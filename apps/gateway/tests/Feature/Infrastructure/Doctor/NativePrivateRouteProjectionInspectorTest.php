@@ -72,6 +72,33 @@ it('reports a bounded private projection mismatch from remote observations', fun
     ));
 });
 
+it('leaves the APP_URL of a Route with a web root to the application directory check', function (): void {
+    [$instance, $own] = private_route_inspector_standalone();
+    $route = Route::query()->create([
+        'project_id' => $instance->project_id,
+        'node_id' => $instance->node_id,
+        'domain' => 'docs-'.uniqid().'.test',
+        'web_root' => 'apps/docs/public',
+        'provenance' => RouteProvenance::Explicit,
+        'publication' => RoutePublication::Private,
+        'status' => RouteStatus::Pending,
+    ]);
+    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
+    $route->update(['status' => RouteStatus::Active]);
+    $ssh = new AppDevFakeSshExecutor([
+        new CommandResult(0, "caddy=1\ntls=1\ndns=1\nfirewall=1\nlaravel=1\n", '', 1, false),
+    ]);
+
+    $observation = private_route_inspector($ssh)->inspect($instance, $route->fresh());
+
+    expect($observation->laravelUrlMatches)
+        ->toBeTrue()
+        ->and(array_slice($ssh->commands[0]->arguments, 4, 5))
+        ->toBe([$route->domain, $ssh->commands[0]->arguments[5], '0', '', ''])
+        ->and($own->hasWebRoot())
+        ->toBeFalse();
+});
+
 it('fails closed when private Route inspection cannot run', function (): void {
     [$instance, $route] = private_route_inspector_standalone();
 
