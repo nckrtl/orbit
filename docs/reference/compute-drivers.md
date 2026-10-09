@@ -143,6 +143,8 @@ The host translates the source of only that bootstrap flow to its bridge address
 
 The guest's temporary SSH recovery rule accepts its bridge address at guest port 22. The host proxy port is an external endpoint and is never opened inside the guest. Before an unfinished enrollment retries its SSH scan, the owned host restores this recovery rule. It replaces only the exact older Orbit rule for the recorded proxy port and refuses other rule drift. Native role convergence removes the recovery rule after fleet SSH is ready. A completed enrollment does not reopen it.
 
+Native base-host convergence installs the existing WireGuard member rule through the bootstrap connection before checking SSH through the tunnel. This check does not depend on the temporary recovery rule allowing traffic to the WireGuard address.
+
 The root policy permits UDP from this guest to the recorded public WireGuard hub endpoint and established replies. Project policy has one guest and grants no topology Pi ingress. Private-network and host exclusions remain in force. Fleet enrollment installs its own hub policy before publishing the peer. New live host and hub paths require separate approval.
 
 This read-only check does not create a bootstrap endpoint, enroll a Node, or change host or hub networking. Those steps remain required before local Project claims can start.
