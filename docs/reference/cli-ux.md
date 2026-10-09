@@ -174,7 +174,7 @@ These helpers do not migrate a command automatically. Keep its adoption verdict 
 
 ## Canonical renderings
 
-The agreed rendering of a command is its expected output under `apps/cli/tests/Expected`, which the CLI contract tests enforce against recorded Gateway responses. Copy the canonical example for a display instead of the nearest command, because some commands do not follow this standard yet. Every change to a rendering appears as a diff in these files, and the reviewer accepts that diff as the new agreed rendering.
+The agreed rendering of a command is its expected output under `apps/cli/tests/Expected`, which the CLI contract tests enforce against recorded Gateway responses. Copy the canonical example for a display instead of the nearest command, because some commands do not follow this standard yet. Every change to a rendering appears as a diff in these files, and the reviewer accepts that diff as the new agreed rendering. Instance and Project renderings show each app's Route domain, such as `web.dev.acme.test` for app `web` of Instance `dev`.
 
 | Display | Canonical command | Expected output |
 | --- | --- | --- |

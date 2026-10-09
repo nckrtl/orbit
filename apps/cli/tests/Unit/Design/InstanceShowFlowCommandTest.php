@@ -21,8 +21,8 @@ it('reads the recorded instance summary', function (): void {
         'effective_root' => 'web/public',
         'selected_branch' => 'dev',
         'branch_override' => null,
-        'domain' => 'dev.charlie-shop.test',
-        'url' => 'https://dev.charlie-shop.test',
+        'domain' => 'web.dev.charlie-shop.test',
+        'url' => 'https://web.dev.charlie-shop.test',
     ]);
 });
 
@@ -95,8 +95,8 @@ function show_flow_instance(mixed $id = 1, mixed $project = ['slug' => 'charlie-
         'effective_root' => 'web/public',
         'selected_branch' => 'dev',
         'branch_override' => null,
-        'domain' => 'dev.charlie-shop.test',
-        'url' => 'https://dev.charlie-shop.test',
+        'domain' => 'web.dev.charlie-shop.test',
+        'url' => 'https://web.dev.charlie-shop.test',
     ];
 }
 

@@ -121,7 +121,7 @@ orbit instance:rename <instance> --branch=t3code/login-redirect
 orbit instance:rename <instance> --branch=t3code/login-redirect --app=web --domain=login-redirect.orbit-website.test
 ```
 
-The API is `POST /api/v1/instances/{instance}/rename` with optional `branch`, `domain` and app selector `app`; branch or domain is required. MCP `instance-rename` takes `instance_id` and those same fields. App is prohibited without a domain; domain changes require an app selector unless the Project has one app. All forms return the same Instance representation as `instance:show`. Only an active development checkout is eligible, not a linked worktree or production Instance. The Instance ID, name, path, layout, starting commit, and placement stay the same.
+The API is `POST /api/v1/instances/{instance}/rename` with optional `branch`, `domain` and app selector `app`; branch or domain is required. The MCP tool is `instance-rename`. Send `instance` and at least one of `branch` or `domain`. It has no app selector yet. App is prohibited without a domain; domain changes require an app selector unless the Project has one app. All forms return the same Instance representation as `instance:show`. Only an active development checkout is eligible, not a linked worktree or production Instance. The Instance ID, name, path, layout, starting commit, and placement stay the same.
 
 For a supplied branch, Orbit reads the checkout locally on its Node. Symbolic `HEAD` must already name that exact branch, or the request returns `instance.branch_not_checked_out` without changing anything. Orbit checks source identity but never contacts origin, changes Git refs, switches the checkout, or renames the branch itself. Dirty or unpublished source is allowed for this recording operation.
 
