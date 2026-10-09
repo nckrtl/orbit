@@ -8,7 +8,7 @@ use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Jobs\TaskVms\DestroyTaskVm;
 use App\Models\TaskVm;
-use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Query\Builder;
 
 /**
  * Queues `DestroyTaskVm` for every task VM that is not destroyed and whose group no live claim holds:
