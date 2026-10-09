@@ -129,7 +129,7 @@ So a green commit gets no release when both of these are true:
 - A newer commit reached `main` before the release workflow published. A rerun of the commit's CI makes that likely.
 - The commits between them changed a file under `.github/workflows`.
 
-The publish step then fails with the error `Release refused for a non-tip commit`. A `workflow_dispatch` run for that commit cannot publish it either. The Gateway does not wait for such a release forever: its desired fleet state [falls back](/reference/self-update#fallback-to-an-ancestor-release) to the newest published release of an ancestor commit, and the next commit's release replaces it.
+The publish step then fails with the error `Release refused for a non-tip commit`. A `workflow_dispatch` run for that commit cannot publish it either. The Gateway does not wait for such a release forever: its desired fleet state [falls back](/reference/self-update#fallback-to-an-ancestor-release) to the newest published release of an ancestor commit until the Gateway deploys a newer commit with its own release.
 
 ## Pull-request builds
 

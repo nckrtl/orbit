@@ -114,7 +114,7 @@ A commit's CLI binary is built from `apps/cli`, `packages/php-sdk`, `bin/orbit-b
 
 #### Keeping a fallback
 
-The Gateway keeps a fallback for the commit. Every 5 minutes it asks GitHub for the commit's own release, which replaces the fallback once it is published. A GitHub error never drops the fallback.
+The Gateway keeps a fallback for the commit. Every 5 minutes it asks GitHub for the commit's own release, which replaces the fallback once it is published. A GitHub error never drops the fallback. When GitHub refused the commit's release, that release never appears, and the fallback lasts until the Gateway deploys a newer commit with its own release.
 
 When GitHub does not answer for an ancestor, the search stops and names nothing. When no ancestor qualifies, the state stays `pending` or `unavailable`, and the search runs again after 5 minutes.
 
