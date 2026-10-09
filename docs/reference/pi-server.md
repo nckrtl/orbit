@@ -1,6 +1,6 @@
 ---
 title: "Pi server"
-description: "How the Pi server runs Pi agent sessions on a Node for the Gateway's pi driver: configuration, sign-in, the orbit-worker install, agent tools, API, thread states, and restart behavior."
+description: "How the Pi server runs Pi agent sessions on a Node for the Gateway's pi driver: configuration, sign-in, the orbit-worker install, Pi on a task VM, agent tools, API, thread states, and restart behavior."
 covers:
   - apps/pi-server/**
   - apps/e2e/resources/proofs/orbit-worker{.sh,.php,-provider.ts}
@@ -99,6 +99,21 @@ orbit process:create pi-server \
 ```
 
 `--user` is the [Process user](/reference/processes-and-schedules#owners). The default working directory is the selected account's home. The command sets `--working-directory` explicitly to make the install path clear. Add `--command=--allow-provider=cliproxyapi` when the Node uses CLIProxyAPI. The `pi` driver accepts the Node once this Process is active with desired state `running`. `GET /capabilities` lists the signed-in models. Select Pi for implementers with `ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER=pi` on the Gateway, and for reviewers with `ORBIT_TASKS_REVIEWER_AGENT_DRIVER=pi`. Both default to `pi`.
+
+## Run Pi on a task VM
+
+Not built yet. The Phase 1 slices of [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm) build this install path.
+
+On a [task VM](/reference/compute-drivers#task-vms), the Gateway installs and starts Pi itself, in the `PrepareTaskVmRuntime` job. There is no `orbit-worker` and no manual install. Pi runs as the VM's managed user `orbit`, which has passwordless sudo.
+
+1. The Gateway creates a CLIProxyAPI key for the group.
+2. It sends the pinned Pi executable from `task_vms.pi.artifact_path` over the Node's normal SSH connection, on standard input.
+3. The VM checks the SHA-256 digest against `task_vms.pi.artifact_sha256` and installs the executable.
+4. It writes `~orbit/.pi/agent/models.json` with the origin in `task_vms.model_proxy_origin`, the models in `task_vms.pi.models`, and the group's key.
+5. It writes the task VM's own Pi token to a token file. Both files have mode `0600`.
+6. It creates the normal `pi-server` Process: a systemd service as `orbit`, listening on the VM's WireGuard address.
+
+The Gateway connects to this server with the task VM's token, not `ORBIT_PI_TOKEN`. CLIProxyAPI is the only model route, and no subscription sign-in enters the VM. Destroying the VM revokes the group's key.
 
 ## Limits
 
@@ -361,6 +376,8 @@ One Pi server Process on the Node serves every session, including sessions in de
 The Gateway still connects as the managed user. Workspace ACLs let both accounts edit and remove the same checkout without changing its owner. A user namespace was rejected because every checkout would need a second mount. Making `.git` unwritable would stop Git from creating `index.lock`; excluding only config and hooks would not create a trust boundary because the worker can rename `.git` from the writable checkout root. The boundary is which user runs the program, not whether the agent can change Git metadata.
 
 An ACL does not satisfy Git's ownership check. Prepare and inspect add the exact checkout path to the worker's global `safe.directory`, not `*`; removal deletes that entry. Primary checkouts and bridge worktrees need the same scoped trust and access for teardown. [Checkout access](/reference/instance-setup#checkout-access) and [Primary registration](/reference/instance-setup#primary-registration) own those procedures. Teardown runs as the worker; privileged removal deletes the tree without running checkout programs. [The checkout cannot inherit the token](/reference/github-app#the-checkout-cannot-inherit-the-token) explains the separate Git boundary.
+
+On a [task VM](#run-pi-on-a-task-vm), one user runs Pi, the agents, and the checks. The VM edge is the boundary, so a second user would protect nothing that the VM does not already protect. The VM holds no GitHub token and no subscription sign-in.
 
 ### The candidate gate runs as the managed user
 
