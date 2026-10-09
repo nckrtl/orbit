@@ -133,10 +133,6 @@ final readonly class RemoveInstanceAction implements InstanceRemover
 
     private function executeOwned(Instance $instance, bool $force, bool $runTeardown, bool $allowCascade, bool $requirePreActivation): InstanceRemoval
     {
-        if ($instance->refresh()->status === InstanceState::Active) {
-            $this->removeWebRootRoutes($allowCascade ? $this->removalEnvironmentOwnerIds($instance, $force) : [$instance->id]);
-        }
-
         $snapshot = $instance->refresh()->load($this->removalRelations());
         if ($requirePreActivation && $snapshot->status === InstanceState::Active) {
             throw new ResourceOperationException('instance.remove_refused', 'Failed-create cleanup cannot remove an activated Instance.', 409);
@@ -150,21 +146,26 @@ final readonly class RemoveInstanceAction implements InstanceRemover
     }
 
     /**
-     * Routes with a web root are additional sites. They leave first, with their pools, leaves, and
-     * Caddy sites, so the removal itself handles only each Instance's own Route.
+     * Routes with a web root are additional sites. Once every refusal check has passed, they leave
+     * with their pools, leaves, and Caddy sites, so the recorded removal handles only each Instance's
+     * own Route. A refused removal keeps them.
      *
-     * @param  list<int>  $instanceIds
+     * @param  Collection<int, Instance>  $members
      */
-    private function removeWebRootRoutes(array $instanceIds): void
+    private function removeWebRootRoutes(Collection $members): void
     {
         $routes = Route::query()
             ->whereNotNull('web_root')
-            ->whereHas('targets', static fn ($query) => $query->whereIn('instance_id', $instanceIds))
+            ->whereHas('targets', static fn ($query) => $query->whereIn('instance_id', $members->pluck('id')))
             ->orderBy('id')
             ->get();
 
         foreach ($routes as $route) {
             app(RemoveRouteAction::class)->execute($route);
+        }
+
+        if ($routes->isNotEmpty()) {
+            $members->each(static fn (Instance $member): Instance => $member->unsetRelation('routes')->load('routes.targets'));
         }
     }
 
@@ -298,6 +299,7 @@ final readonly class RemoveInstanceAction implements InstanceRemover
             }
         }
 
+        $this->removeWebRootRoutes($members);
         $digest = $this->inventoryDigest($snapshot->id, $force, $inventories);
 
         $operation = $this->processAdmissions->run(
@@ -340,6 +342,10 @@ final readonly class RemoveInstanceAction implements InstanceRemover
                         || $lockedMember->checkout_path !== $member->checkout_path
                         || $lockedMember->source_layout !== $member->source_layout
                     ) {
+                        $this->conflict($snapshot);
+                    }
+
+                    if (Route::query()->whereNotNull('web_root')->whereHas('targets', static fn ($query) => $query->where('instance_id', $member->id))->exists()) {
                         $this->conflict($snapshot);
                     }
 
@@ -697,7 +703,9 @@ final readonly class RemoveInstanceAction implements InstanceRemover
             return null;
         }
 
-        if ($instance->routes->count() !== 1) {
+        $routes = $this->ownRoutes($instance);
+
+        if ($routes->count() !== 1) {
             throw new ResourceOperationException(
                 errorCode: 'instance.remove_refused',
                 message: "Instance [{$instance->name}] does not have one removable Route.",
@@ -705,7 +713,7 @@ final readonly class RemoveInstanceAction implements InstanceRemover
             );
         }
 
-        $route = $instance->routes->sole();
+        $route = $routes->sole();
 
         if (
             ! $this->removableRouteState($route, $instance)
@@ -750,9 +758,20 @@ final readonly class RemoveInstanceAction implements InstanceRemover
         return $route;
     }
 
+    /**
+     * The Instance's own Routes. Routes with a web root are additional sites that an accepted removal
+     * removes first.
+     *
+     * @return \Illuminate\Database\Eloquent\Collection<int, Route>
+     */
+    private function ownRoutes(Instance $instance): \Illuminate\Database\Eloquent\Collection
+    {
+        return $instance->routes->reject(static fn (Route $route): bool => $route->hasWebRoot())->values();
+    }
+
     private function withoutRoute(Instance $instance): bool
     {
-        return $instance->routes->isEmpty()
+        return $this->ownRoutes($instance)->isEmpty()
             && (! $instance->requiresRoute() || $instance->status === InstanceState::SourceResolved || $this->failedCreation($instance));
     }
 

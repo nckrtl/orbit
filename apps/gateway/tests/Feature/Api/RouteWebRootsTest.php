@@ -6,7 +6,11 @@ use App\Actions\Instances\RemoveInstanceAction;
 use App\Actions\Routes\SynchronizeRouteWebRootUrlsAction;
 use App\Domain\Instances\DevelopmentRouteProjector;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Instances\Removal\DevelopmentInstanceSourceFinalizer;
 use App\Domain\Instances\Removal\DevelopmentInstanceSourceRemoval;
+use App\Domain\Instances\Removal\InstanceRemovalException;
+use App\Domain\Instances\Removal\InstanceSourceInventory;
+use App\Domain\Instances\Removal\InstanceSourceRevalidationState;
 use App\Domain\Instances\RouteApplicationUrlWriter;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Routes\RouteRemovalProjector;
@@ -17,12 +21,16 @@ use App\Infrastructure\AppDev\DevelopmentCaddyConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentPhpFpmConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentSite;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
+use App\Infrastructure\Projects\NativeProjectUpdateProjectionMutator;
 use App\Models\Instance;
+use App\Models\InstanceRemoval;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Tests\Support\FakeRouteRemovalProjector;
 
 beforeEach(function (): void {
@@ -204,20 +212,73 @@ describe('route web root', function (): void {
             ->and($own->refresh()->web_root)->toBeNull();
     });
 
-    it('removes the Routes with a web root before it removes their Instance', function (): void {
+    it('keeps the Routes with a web root when it refuses an Instance removal', function (): void {
         $removal = new FakeRouteRemovalProjector;
         app()->instance(RouteRemovalProjector::class, $removal);
         $own = web_root_route($this->instance, 'acme.web.test');
         $docs = web_root_route($this->instance, 'docs.acme.web.test', 'apps/docs/public');
         $source = Mockery::mock(DevelopmentInstanceSourceRemoval::class);
-        $source->shouldReceive('inspect')->once()->andThrow(new ResourceOperationException('instance.test_stop', 'Stopped after the Route step.', 409));
+        $source->shouldReceive('inspect')->once()->andThrow(new ResourceOperationException('instance.remove_refused', 'The checkout has uncommitted changes.', 409));
         app()->instance(DevelopmentInstanceSourceRemoval::class, $source);
 
         expect(fn () => app(RemoveInstanceAction::class)->execute($this->instance, force: false))
-            ->toThrow(ResourceOperationException::class, 'Stopped after the Route step.');
-        expect(Route::query()->pluck('id')->all())->toBe([$own->id])
-            ->and($removal->routeIds)->toContain($docs->id)
+            ->toThrow(ResourceOperationException::class, 'The checkout has uncommitted changes.');
+        expect(Route::query()->orderBy('id')->pluck('id')->all())->toBe([$own->id, $docs->id])
+            ->and($removal->routeIds)->toBe([])
+            ->and(InstanceRemoval::query()->count())->toBe(0)
             ->and($this->instance->refresh()->status)->toBe(InstanceState::Active);
+    });
+
+    it('removes the Routes with a web root once it accepts an Instance removal', function (): void {
+        $removal = new FakeRouteRemovalProjector;
+        app()->instance(RouteRemovalProjector::class, $removal);
+        $own = web_root_route($this->instance, 'acme.web.test');
+        $docs = web_root_route($this->instance, 'docs.acme.web.test', 'apps/docs/public');
+        $checkout = $this->instance->checkout_path;
+        $source = Mockery::mock(DevelopmentInstanceSourceRemoval::class);
+        $source->shouldReceive('inspect')->andReturn(new InstanceSourceInventory(
+            instanceId: $this->instance->id,
+            layout: 'checkout',
+            repositoryIdentity: $this->project->repository_identity,
+            checkoutPath: $checkout,
+            root: '/srv/orbit/apps',
+            branch: 'main',
+            startingCommit: str_repeat('a', 40),
+            commonRepositoryPath: $checkout,
+            sourceIdentity: 'web-root-source',
+            linkedWorktreePaths: [$checkout],
+            digest: hash('sha256', 'web-root-source'),
+        ));
+        app()->instance(DevelopmentInstanceSourceRemoval::class, $source);
+        $finalizer = Mockery::mock(DevelopmentInstanceSourceFinalizer::class);
+        $finalizer->shouldReceive('prepare', 'revalidate', 'inspectRecorded')->andReturnUsing(static function () use ($removal, $docs): InstanceSourceRevalidationState {
+            expect($removal->routeIds)->toContain($docs->id);
+
+            throw new ResourceOperationException('instance.test_stop', 'Stopped after acceptance.', 409);
+        });
+        app()->instance(DevelopmentInstanceSourceFinalizer::class, $finalizer);
+
+        expect(fn () => app(RemoveInstanceAction::class)->execute($this->instance, force: false, runTeardown: false))
+            ->toThrow(InstanceRemovalException::class, 'Instance removal was accepted but remains incomplete.');
+        expect(Route::query()->find($docs->id))->toBeNull()
+            ->and(Route::query()->find($own->id))->not->toBeNull()
+            ->and(InstanceRemoval::query()->count())->toBe(1);
+    });
+
+    it('moves APP_URL to the new winner when the Project root changes', function (): void {
+        web_root_route($this->instance, 'acme.web.test');
+        web_root_route($this->instance, 'docs.acme.web.test', 'apps/docs/public');
+        web_root_route($this->instance, 'alias.acme.web.test', 'public');
+        $projector = Mockery::mock(DevelopmentRouteProjector::class);
+        $projector->shouldReceive('converge')->once();
+        app()->instance(DevelopmentRouteProjector::class, $projector);
+        $this->project->update(['root' => 'apps/docs/public']);
+
+        app(NativeProjectUpdateProjectionMutator::class)->publishRoot($this->project, 'apps/docs/public', [
+            'instances' => [['instance_id' => $this->instance->id]],
+        ]);
+
+        expect($this->urls->writes)->toBe([['', 'https://alias.acme.web.test']]);
     });
 
     it('refuses a web root for a production Instance', function (): void {
@@ -252,6 +313,35 @@ describe('route web root', function (): void {
             ->and($before[1])->toContain("[orbit-app-instance-{$this->instance->id}]\n")
             ->and($this->instance->refresh()->authoritativeRoute()?->id)->toBe($route->id);
         expect(fn () => web_root_route($this->instance, 'second.acme.web.test'))->toThrow(QueryException::class);
+    });
+
+    it('leaves the schema unchanged when a trigger does not match, and can run again', function (): void {
+        $migration = require database_path('migrations/2026_10_22_000000_add_web_root_to_routes.php');
+        $migration->down();
+        $original = DB::table('sqlite_master')->where('name', 'instances_active_route_update')->value('sql');
+        $changed = str_replace("IN ('active', 'activating')", "IN ('activating', 'active')", $original);
+        DB::statement('DROP TRIGGER instances_active_route_update');
+        DB::statement($changed);
+
+        expect(fn () => $migration->up())->toThrow(RuntimeException::class, 'The instances_active_route_update trigger is incompatible.');
+        expect(Schema::hasColumn('routes', 'web_root'))->toBeFalse()
+            ->and(DB::table('sqlite_master')->where('name', 'route_targets_contract_insert')->value('sql'))->not->toContain('web_root');
+
+        DB::statement('DROP TRIGGER instances_active_route_update');
+        DB::statement($original);
+        $migration->up();
+
+        expect(Schema::hasColumn('routes', 'web_root'))->toBeTrue()
+            ->and(DB::table('sqlite_master')->where('name', 'instances_active_route_update')->value('sql'))->toContain('routes.web_root IS NULL');
+    });
+
+    it('refuses to roll back while a Route has a web root', function (): void {
+        web_root_route($this->instance, 'acme.web.test');
+        web_root_route($this->instance, 'docs.acme.web.test', 'apps/docs/public');
+        $migration = require database_path('migrations/2026_10_22_000000_add_web_root_to_routes.php');
+
+        expect(fn () => $migration->down())->toThrow(RuntimeException::class, 'Routes with a web root exist.');
+        expect(Schema::hasColumn('routes', 'web_root'))->toBeTrue();
     });
 });
 

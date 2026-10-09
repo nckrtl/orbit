@@ -19,29 +19,35 @@ return new class extends Migration
     private const string InstanceRoutes = 'SELECT 1 FROM route_targets JOIN routes AS counted ON counted.id = route_targets.route_id'
         .' WHERE route_targets.instance_id = NEW.instance_id AND counted.web_root IS NULL';
 
+    /** The column and the triggers change in one transaction, so a trigger mismatch leaves the schema as it was. */
     public function up(): void
     {
-        Schema::table('routes', static function (Blueprint $table): void {
-            $table->string('web_root')->nullable();
-        });
-
         DB::transaction(function (): void {
+            Schema::table('routes', static function (Blueprint $table): void {
+                $table->string('web_root')->nullable();
+            });
+
             foreach ($this->changes() as [$trigger, $before, $after]) {
                 $this->replace($trigger, $before, $after);
             }
         });
     }
 
+    /** A rollback would turn every Route with a web root into another Route for its Instance's effective root. */
     public function down(): void
     {
+        if (DB::table('routes')->whereNotNull('web_root')->exists()) {
+            throw new RuntimeException('Routes with a web root exist. Remove them, or clear their web root, before rolling back this migration.');
+        }
+
         DB::transaction(function (): void {
             foreach (array_reverse($this->changes()) as [$trigger, $before, $after]) {
                 $this->replace($trigger, $after, $before);
             }
-        });
 
-        Schema::table('routes', static function (Blueprint $table): void {
-            $table->dropColumn('web_root');
+            Schema::table('routes', static function (Blueprint $table): void {
+                $table->dropColumn('web_root');
+            });
         });
     }
 

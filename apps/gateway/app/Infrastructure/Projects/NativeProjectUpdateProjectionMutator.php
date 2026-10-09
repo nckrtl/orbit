@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Projects;
 
 use App\Actions\Routes\ConvergeRouteAction;
+use App\Actions\Routes\SynchronizeRouteWebRootUrlsAction;
 use App\Domain\Instances\DevelopmentRouteProjector;
 use App\Domain\Instances\Environment\InstanceEnvironmentRouteDomain;
 use App\Domain\Instances\Environment\InstanceRouteEnvironmentSynchronizer;
@@ -366,6 +367,8 @@ final readonly class NativeProjectUpdateProjectionMutator implements ProjectUpda
         }
 
         $this->developmentRuntime->converge($instance, $route);
+        // A root change can move which Route wins a directory's APP_URL.
+        app(SynchronizeRouteWebRootUrlsAction::class)->execute($instance);
     }
 
     private function effectiveRoot(Instance $instance, ?string $appRoot): ?string
