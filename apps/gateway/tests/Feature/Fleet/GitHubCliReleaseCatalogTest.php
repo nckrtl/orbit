@@ -27,6 +27,7 @@ describe(GitHubCliReleaseCatalog::class, function (): void {
             'reason' => null,
             'version' => '0.4681.0',
             'tag' => 'cli-v0.4681.0',
+            'commit' => CLI_RELEASE_FIXTURE_COMMIT,
             'checksums_url' => 'https://github.com/nckrtl/orbit/releases/download/cli-v0.4681.0/SHA256SUMS',
             'assets' => [
                 [
@@ -96,6 +97,7 @@ describe(GitHubCliReleaseCatalog::class, function (): void {
             'reason' => 'release_missing',
             'version' => '0.4681.0',
             'tag' => 'cli-v0.4681.0',
+            'commit' => CLI_RELEASE_FIXTURE_COMMIT,
             'checksums_url' => null,
             'assets' => [],
         ]);
@@ -112,6 +114,7 @@ describe(GitHubCliReleaseCatalog::class, function (): void {
             'reason' => $reason,
             'version' => null,
             'tag' => null,
+            'commit' => null,
             'checksums_url' => null,
             'assets' => [],
         ]);

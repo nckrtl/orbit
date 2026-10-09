@@ -29826,6 +29826,12 @@
               "null"
             ]
           },
+          "commit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "checksums_url": {
             "type": [
               "string",
