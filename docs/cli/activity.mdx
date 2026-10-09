@@ -19,6 +19,8 @@ Project development deploy step changes record `project:dev-deploy-step:create`,
 
 [Project Document](/reference/project-documents) commands record their operation, target path, caller, outcome, and request ID. Activity input is empty for this family, including refused writes, so document bytes are never parsed or recorded before authorization. Storage credentials remain redacted.
 
+[T3 Code](/reference/t3-code) server registration records `t3:environment:register` with only the environment ID, label, and URL, so the admin pairing link never enters Activity. A profile settings replace records `t3:profile:settings:update` with only the version it replaced, because the document can hold workspace pictures.
+
 ## Commands
 
 | Command | Result |
