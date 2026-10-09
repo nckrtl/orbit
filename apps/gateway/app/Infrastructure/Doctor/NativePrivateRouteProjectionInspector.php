@@ -199,8 +199,9 @@ final readonly class NativePrivateRouteProjectionInspector implements PrivateRou
 
     private function workloadCommand(Instance $instance, Route $route, DevelopmentSite $site): RemoteCommand
     {
-        // The Instance's environment belongs to its own Route; a Route with a web root is not checked here.
-        $laravel = $route->hasWebRoot() ? '2' : match ($instance->source_is_laravel) {
+        // The Instance's environment belongs to its own Route. The Instance probe checks the directory
+        // that a Route with a web root serves, so this check passes for such a Route.
+        $laravel = $route->hasWebRoot() ? '0' : match ($instance->source_is_laravel) {
             true => '1',
             false => '0',
             default => '2',
