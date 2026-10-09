@@ -13,13 +13,20 @@ use App\Models\Task;
 
 /**
  * The GitHub App operations of the review-and-merge flow (ADR 0203): read the merge check of one head,
- * submit a review decision on an incoming pull request, merge, and list a Project's open pull requests.
+ * read whether the base tip is green and ahead, submit a review decision on an incoming pull request, merge,
+ * and list a Project's open pull requests.
  * Every call mints its own token. No call holds a database lock.
  */
 interface TaskPullRequestMerger
 {
     /** The merge check on exactly this head. A failed read is `Unreadable`, never `Passed`. */
     public function requiredCheck(Task $group, string $sha, string $checkName): RequiredCheckState;
+
+    /**
+     * Whether the tip of `$base` is strictly ahead of its merge base with `$headSha`, and `$checkName` passed on
+     * that tip. A failed read is false. A failed-check fixup then merges the base first (ADR 0140).
+     */
+    public function baseTipGreenAhead(Task $group, string $base, string $headSha, string $checkName): bool;
 
     /**
      * Merges the group's pull request with a merge commit while its head is `$sha`.
