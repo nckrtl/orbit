@@ -3,7 +3,7 @@ title: "Assigned SSR ports"
 description: "How Orbit gives each development Instance its own Inertia SSR port, and the environment contract that applications follow so two task workspaces on one Node never share an SSR server."
 covers:
   - apps/gateway/app/Domain/AppDev/{SsrPortAllocator,SsrEndpoint}.php
-  - apps/gateway/database/migrations/2026_10_19_000000_add_ssr_port_assignments.php
+  - apps/gateway/database/migrations/2026_10_20_000000_add_ssr_port_assignments.php
 ---
 
 # Assigned SSR ports
