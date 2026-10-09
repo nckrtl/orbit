@@ -13,7 +13,8 @@ from unittest.mock import patch
 module = runpy.run_path(sys.argv.pop(1))
 Builder, Refusal = module['Builder'], module['Refusal']
 guest = runpy.run_path(str(Path(module['__file__']).with_name('guest-template-install.py')))
-secure_sources = runpy.run_path(str(Path(module['__file__']).with_name('guest-template-package-sources.py')))['secure_sources']
+network = runpy.run_path(str(Path(module['__file__']).with_name('guest-template-package-sources.py')))
+secure_sources, public_resolver = network['secure_sources'], network['public_resolver']
 locked = runpy.run_path(str(Path(module['__file__']).with_name('template-lock.py')))['locked']
 
 
@@ -39,6 +40,7 @@ class FakeBuilder(Builder):
         self.fail_install = False
         self.fail_health = False
         self.fail_sources = False
+        self.fail_public_dns = False
         self.fail_agent = False
         self.fail_dns = False
 
@@ -102,7 +104,7 @@ class FakeBuilder(Builder):
         self.calls.append(('guest', role, user))
         if 'sandbox_template_package_sources_failed' in script:
             self.calls.append(('package-sources', role))
-            return {'sources_https': not self.fail_sources}
+            return {'sources_https': not self.fail_sources, 'public_dns': not self.fail_public_dns}
         if 'sandbox_template_native_health_failed' in script:
             return {'ready': not self.fail_health, 'head': self.template['commit'], 'gateway_version': self.template['commit']}
         return {'head': self.template['commit'], 'source_template': self.template, 'ready': True, 'role': role}
@@ -226,6 +228,49 @@ class BuilderTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 secure_sources(root)
             self.assertEqual(original, legacy.read_text())
+
+    def test_public_dns_is_persistent_and_rejects_foreign_state(self):
+        with tempfile.TemporaryDirectory() as temporary, patch('subprocess.run') as commands:
+            directory = Path(temporary) / 'resolved.conf.d'
+            self.assertEqual({'public_dns': True}, public_resolver(directory))
+            target = directory / 'orbit-sandbox-upstream.conf'
+            self.assertEqual(network['DNS_CONTENT'], target.read_text())
+            self.assertIn('Domains=~.', target.read_text())
+            self.assertEqual({'public_dns': True}, public_resolver(directory))
+            self.assertEqual(1, sum(call.args[0] == ['systemctl', 'restart', 'systemd-resolved'] for call in commands.call_args_list))
+            target.write_text('foreign resolver')
+            with self.assertRaises(ValueError):
+                public_resolver(directory)
+            self.assertEqual('foreign resolver', target.read_text())
+
+    def test_public_dns_restart_failure_removes_only_its_new_file(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary) / 'resolved.conf.d'
+            def control(args, **kwargs):
+                if args[1] == 'restart':
+                    raise subprocess.CalledProcessError(1, args)
+            with patch('subprocess.run', control), self.assertRaises(subprocess.CalledProcessError):
+                public_resolver(directory)
+            self.assertFalse((directory / 'orbit-sandbox-upstream.conf').exists())
+
+    def test_public_dns_refuses_linked_configuration(self):
+        with tempfile.TemporaryDirectory() as temporary, patch('subprocess.run'):
+            directory = Path(temporary)
+            foreign = directory / 'foreign'
+            foreign.write_text(network['DNS_CONTENT'])
+            (directory / 'orbit-sandbox-upstream.conf').symlink_to(foreign)
+            with self.assertRaises(ValueError):
+                public_resolver(directory)
+            self.assertEqual(network['DNS_CONTENT'], foreign.read_text())
+
+    def test_unconfirmed_public_dns_does_not_bootstrap_or_mark_the_candidate_ready(self):
+        builder = FakeBuilder()
+        builder.apply()
+        builder.fail_public_dns = True
+        with self.assertRaises(Refusal):
+            builder.converge()
+        self.assertFalse(any(call[0] == 'exec' and 'bootstrap' in call for call in builder.calls))
+        self.assertTrue(all('user.orbit.template.ready' not in value['config'] for value in builder.instances))
 
     def test_gateway_agent_failure_does_not_mark_the_candidate_ready(self):
         builder = FakeBuilder()
