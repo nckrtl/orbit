@@ -512,8 +512,16 @@ def publications_current(store, project, commit):
         return False
 
 
+def worker_source(common):
+    """Return the tool as main holds it. A checkout on another branch must never run its copy against the store."""
+    source = blob(common, 'refs/remotes/origin/main', 'bin/tia-cache')
+    if not source:
+        raise RuntimeError('origin/main of the store repository has no bin/tia-cache to run as the worker.')
+    return source
+
+
 def worker_key(common):
-    return digest(Path(__file__).read_bytes())
+    return digest(worker_source(common))
 
 
 def enqueue(common, store, projects):
@@ -752,13 +760,29 @@ def prune_runs(store, state, current):
             shutil.rmtree(run, ignore_errors=True)
 
 
+def freeze_worker(common, store):
+    """Write main's copy of the tool into the store, so the worker survives the caller and its checkout."""
+    source = worker_source(common)
+    runner = store / 'runners' / (digest(source) + '.py')
+    atomic_write(runner, source)
+    return runner
+
+
+def worker_command(common, runner, lock):
+    return [sys.executable, str(runner), 'work', '--repository', str(common), '--worker-fd', str(lock.fileno())]
+
+
 def refresh(common, store, projects):
     with queue_lock(store):
         enqueue(common, store, projects)
     lock = acquire_worker(store, blocking=True)
-    result = drain(common, store, lock)
+    try:
+        subprocess.run(worker_command(common, freeze_worker(common, store), lock), cwd=common,
+                       stdin=subprocess.DEVNULL, pass_fds=(lock.fileno(),), env=maintenance_environment())
+    finally:
+        lock.close()
     state = load_requests(store)
-    return int(bool(result) or any(not state['results'].get(project, {}).get('success') for project in projects))
+    return int(any(not state['results'].get(project, {}).get('success') for project in projects))
 
 
 def start_background(common, store, projects):
@@ -772,17 +796,13 @@ def start_background(common, store, projects):
             print(f'Cache request retained by active worker; log: {store / "refresh.log"}')
             return
         try:
-            # Frozen, standalone runner and inherited lock survive caller/worktree removal.
-            source = Path(__file__).read_bytes()
-            runner = store / 'runners' / (digest(source) + '.py')
-            atomic_write(runner, source)
+            runner = freeze_worker(common, store)
             log = store / 'refresh.log'
             with log.open('ab') as output:
                 process = subprocess.Popen(
-                    [sys.executable, str(runner), 'work', '--repository', str(common),
-                     '--worker-fd', str(lock.fileno())],
-                    cwd=common, stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT,
-                    start_new_session=True, pass_fds=(lock.fileno(),), env=maintenance_environment(),
+                    worker_command(common, runner, lock), cwd=common, stdin=subprocess.DEVNULL, stdout=output,
+                    stderr=subprocess.STDOUT, start_new_session=True, pass_fds=(lock.fileno(),),
+                    env=maintenance_environment(),
                 )
             print(f'Main cache refresh queued (pid {process.pid}); log: {log}')
         finally:

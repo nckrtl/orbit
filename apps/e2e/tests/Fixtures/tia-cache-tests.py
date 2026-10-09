@@ -1,5 +1,6 @@
 """Exercise main cache import, publication, and seeding with real repositories and a fake GitHub CLI."""
 import copy
+from contextlib import contextmanager
 import fcntl
 import importlib.machinery
 import importlib.util
@@ -13,7 +14,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 loader = importlib.machinery.SourceFileLoader('tia_cache', sys.argv.pop(1))
 spec = importlib.util.spec_from_loader(loader.name, loader)
@@ -63,6 +64,24 @@ def php_minor():
                           check=True, capture_output=True, text=True).stdout
 
 
+@contextmanager
+def launched_workers(failure=None):
+    """Record background worker launches and let every other command run."""
+    real = subprocess.Popen
+    launches = []
+
+    def popen(command, *arguments, **options):
+        if len(command) > 2 and command[2] == 'work':
+            if failure is not None:
+                raise failure
+            launches.append((command, options))
+            return Mock(pid=4242)
+        return real(command, *arguments, **options)
+
+    with patch.object(cache.subprocess, 'Popen', side_effect=popen):
+        yield launches
+
+
 def repository(test, project_files=True):
     test.temporary = tempfile.TemporaryDirectory(prefix='orbit tia ')
     test.addCleanup(test.temporary.cleanup)
@@ -82,6 +101,9 @@ def repository(test, project_files=True):
         (project / 'tests/Pest.php').write_text('<?php\n')
         (project / 'pint.json').write_text('{"cache-file":"vendor/pint.cache"}')
         (project / 'phpstan.neon').write_text('parameters:\n    level: 6\n')
+        # The background worker runs the tool as main holds it.
+        (test.root / 'bin').mkdir()
+        shutil.copyfile(cache.__file__, test.root / 'bin/tia-cache')
     test.commit = test.commit_change('initial')
     cache.git(test.root, 'update-ref', 'refs/remotes/origin/main', test.commit)
     test.common = cache.common_directory(test.root)
@@ -145,6 +167,15 @@ class CacheFixture(unittest.TestCase):
         commit = commit or self.commit
         artifact = self.artifact(commit, run_id, **options)
         return cache.publish_artifact(self.common, self.store, self.project, artifact, commit, run_id)
+
+    def drain(self, projects=None):
+        """Queue and run the worker in this process, as bin/tia-cache refresh does in main's frozen copy."""
+        projects = projects or [self.project]
+        with cache.queue_lock(self.store):
+            cache.enqueue(self.common, self.store, projects)
+        cache.drain(self.common, self.store, cache.acquire_worker(self.store, blocking=True))
+        results = cache.load_requests(self.store)['results']
+        return int(any(not results.get(project, {}).get('success') for project in projects))
 
     def feature(self, name='feature'):
         root = Path(self.temporary.name) / name
@@ -438,17 +469,65 @@ class MainCacheTest(CacheFixture):
         self.assertFalse(self.seed(root).exists())
 
     def test_background_runner_survives_caller_removal_and_does_not_hold_closeout(self):
-        with patch.object(cache, 'known_main', return_value=self.commit), \
-                patch.object(cache, 'worker_key', return_value='runner'), \
-                patch.object(cache.subprocess, 'Popen') as process:
+        with launched_workers() as launches:
             cache.start_background(self.common, self.store, [self.project])
-        arguments, options = process.call_args
-        command = arguments[0]
+        [(command, options)] = launches
         self.assertTrue(Path(command[1]).is_relative_to(self.store))
         self.assertEqual(Path(cache.__file__).read_bytes(), Path(command[1]).read_bytes())
         self.assertIn(str(self.common), command)
         self.assertTrue(options['start_new_session'])
         self.assertEqual(subprocess.DEVNULL, options['stdin'])
+
+    def test_the_worker_always_runs_mains_copy_of_the_tool(self):
+        main_source = Path(cache.__file__).read_bytes() + b'\n# main version\n'
+        (self.root / 'bin/tia-cache').write_bytes(main_source)
+        main = self.commit_change('main version of the tool')
+        cache.git(self.root, 'update-ref', 'refs/remotes/origin/main', main)
+        with launched_workers() as launches:
+            cache.start_background(self.common, self.store, [self.project])
+        self.assertEqual(main_source, Path(launches[0][0][1]).read_bytes())
+        self.assertEqual(cache.digest(main_source), cache.load_requests(self.store)['pending'][self.project]['worker_key'])
+        # Without the tool on main, no worker starts and no request is recorded.
+        cache.git(self.root, 'rm', '-q', 'bin/tia-cache')
+        cache.git(self.root, 'update-ref', 'refs/remotes/origin/main', self.commit_change('no tool'))
+        with launched_workers() as launches, self.assertRaisesRegex(RuntimeError, 'no bin/tia-cache'):
+            cache.start_background(self.common, self.store, ['apps/cli'])
+        self.assertEqual([], launches)
+        self.assertNotIn('apps/cli', cache.load_requests(self.store)['pending'])
+
+    def test_a_foreground_refresh_also_runs_mains_copy(self):
+        marker = Path(self.temporary.name) / 'worker-ran'
+        (self.root / 'bin/tia-cache').write_text(
+            f'#!/usr/bin/env python3\nimport sys\nopen({str(marker)!r}, "w").write(" ".join(sys.argv[1:]))\n')
+        cache.git(self.root, 'update-ref', 'refs/remotes/origin/main', self.commit_change('main worker'))
+        # main's stand-in worker records no result, so the requested project counts as failed.
+        self.assertEqual(1, cache.refresh(self.common, self.store, [self.project]))
+        self.assertTrue(marker.read_text().startswith('work --repository ' + str(self.common)))
+        self.assertFalse(cache.active_worker(self.store))
+
+    def test_a_branch_clone_seeding_from_the_registered_store_starts_only_mains_worker(self):
+        self.publish()
+        marker = Path(self.temporary.name) / 'worker-ran'
+        main_worker = f'#!/usr/bin/env python3\nimport sys\nopen({str(marker)!r}, "w").write(" ".join(sys.argv[1:]))\n'
+        (self.root / 'bin/tia-cache').write_text(main_worker)
+        main = self.commit_change('main worker')
+        cache.git(self.root, 'update-ref', 'refs/remotes/origin/main', main)
+        clone = Path(self.temporary.name) / 'branch clone'
+        cache.git(self.root, 'clone', '-q', str(self.root), str(clone))
+        cache.git(clone, 'checkout', '-q', '-b', 'unmerged-change')
+        # The clone's branch carries another copy of the tool, as an unmerged pull request does.
+        shutil.copyfile(cache.__file__, clone / 'bin/tia-cache')
+        result = subprocess.run([sys.executable, str(clone / 'bin/tia-cache'), 'seed', '--repository', str(clone),
+                                 '--project', self.project], capture_output=True, text=True,
+                                env={**os.environ, 'ORBIT_MAIN_CACHE_STORE': ''})
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertIn('Seeding from the main cache store registered for this origin', result.stdout)
+        deadline = time.monotonic() + 10
+        while not marker.exists() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        self.assertTrue(marker.exists(), result.stdout + result.stderr)
+        self.assertTrue(marker.read_text().startswith('work --repository ' + str(self.common)))
+        self.assertEqual([main_worker], [runner.read_text() for runner in (self.store / 'runners').iterdir()])
 
     def test_removed_local_check_actions_are_rejected(self):
         for action in ('warm', 'publish'):
@@ -562,7 +641,7 @@ class CiImportTest(CacheFixture):
         return run_id
 
     def refresh(self):
-        return cache.refresh(self.common, self.store, [self.project])
+        return self.drain()
 
     def calls(self):
         path = self.fixture / 'calls'
@@ -854,7 +933,7 @@ class MaintenanceQueueTest(CacheFixture):
         remote = self.advance('merged outside closeout')
         self.assertEqual(self.commit, cache.known_main(self.common))
         with patch.object(cache, 'refresh_project', side_effect=self.passed) as checks:
-            self.assertEqual(0, cache.refresh(self.common, self.store, [self.project]))
+            self.assertEqual(0, self.drain())
         self.assertEqual(remote, checks.call_args.args[3])
         self.assertEqual(remote, cache.known_main(self.common))
 
@@ -862,13 +941,13 @@ class MaintenanceQueueTest(CacheFixture):
         failed = {'commit': self.commit, 'success': False, 'checks': [{'tool': 'import', 'exit_code': 1}]}
         passed = {'commit': self.commit, 'success': True, 'checks': [{'tool': 'import', 'exit_code': 0}]}
         with patch.object(cache, 'refresh_project', side_effect=[failed, passed]) as refresh:
-            self.assertEqual(1, cache.refresh(self.common, self.store, ['apps/cli', 'apps/docs']))
+            self.assertEqual(1, self.drain(['apps/cli', 'apps/docs']))
             self.assertEqual(2, refresh.call_count)
         self.assertFalse(cache.load_requests(self.store)['results']['apps/cli']['success'])
         self.assertTrue(cache.load_requests(self.store)['results']['apps/docs']['success'])
         self.assertFalse(cache.active_worker(self.store))
         with patch.object(cache, 'refresh_project', return_value=passed):
-            self.assertEqual(0, cache.refresh(self.common, self.store, ['apps/docs']))
+            self.assertEqual(0, self.drain(['apps/docs']))
 
     def test_partial_request_upgrades_all_retained_projects(self):
         with patch.object(cache, 'worker_key', return_value='old-runner'):
@@ -981,9 +1060,7 @@ else:
         self.assertEqual({}, cache.load_requests(self.store)['pending'])
 
     def test_launch_failure_keeps_a_durable_request_without_an_active_owner(self):
-        with patch.object(cache, 'known_main', return_value=self.commit), \
-                patch.object(cache, 'worker_key', return_value='runner'), \
-                patch.object(cache.subprocess, 'Popen', side_effect=OSError('spawn failed')):
+        with launched_workers(OSError('spawn failed')):
             with self.assertRaisesRegex(OSError, 'spawn failed'):
                 cache.start_background(self.common, self.store, [self.project])
         self.assertIn(self.project, cache.load_requests(self.store)['pending'])

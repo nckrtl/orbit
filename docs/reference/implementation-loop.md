@@ -332,7 +332,7 @@ Before it publishes, the worker checks that:
 
 The published graph keeps the fingerprint that CI recorded, and its runner identity comes from the lock file and `tests/Pest.php` at the tested commit. A quality publication records the lock file and tool configuration at the tested commit, and the PHP minor version of the CI job. The worker deletes the downloads after each batch.
 
-Requests stay in `requests.json` until the worker records their outcome, so an interrupted worker leaves them pending. Repeated requests for the same target combine. The worker runs a copy of its own script from the store in a new session, so removing the calling worktree does not stop it. It runs at reduced CPU priority, and each command stops after 10 minutes. After each batch, it deletes the run logs that no recorded result names. It removes variables that start with `ORBIT_`, `APP_`, or `DB_`, and `DATABASE_URL`, `CACHE_STORE`, `SESSION_DRIVER`, and `QUEUE_CONNECTION`, from the commands it runs. It keeps `TMPDIR`, `TMP`, and `TEMP`.
+Requests stay in `requests.json` until the worker records their outcome, so an interrupted worker leaves them pending. Repeated requests for the same target combine. The worker runs a frozen copy of `bin/tia-cache` as `origin/main` of the store's repository holds it, never the caller's copy. So a clone of an unmerged change only records requests, and it cannot change how the shared store is maintained. Without the tool on that `main`, no worker starts. The worker runs in a new session, so removing the calling worktree does not stop it. It runs at reduced CPU priority, and each command stops after 10 minutes. After each batch, it deletes the run logs that no recorded result names. It removes variables that start with `ORBIT_`, `APP_`, or `DB_`, and `DATABASE_URL`, `CACHE_STORE`, `SESSION_DRIVER`, and `QUEUE_CONNECTION`, from the commands it runs. It keeps `TMPDIR`, `TMP`, and `TEMP`.
 
 For Orbit, the store lives under the stable `default` repository's `.git/orbit-tia/v1` on `/fast`. Register it with `bin/tia-cache register --repository=/fast/apps/orbit/default`. The managed user that owns the store runs the worker, so its `gh` login must read `nckrtl/orbit`.
 
@@ -340,7 +340,7 @@ For Orbit, the store lives under the stable `default` repository's `.git/orbit-t
 | --- | --- |
 | `bin/tia-cache seed` | Copies compatible published graphs into absent caches, and queues a refresh when the store lags |
 | `bin/tia-cache refresh --background` | Queues a refresh and starts a worker when none runs |
-| `bin/tia-cache refresh` | Queues a refresh, waits for the worker, and exits nonzero when a requested project has a failure |
+| `bin/tia-cache refresh` | Queues a refresh, runs main's copy as the worker in the foreground, and exits nonzero when a requested project has a failure |
 | `bin/tia-cache status` | Prints the publications and the maintenance state |
 | `bin/tia-cache status --json --remote` | Reads `main` from the remote and prints the maintenance state as JSON, without changing anything |
 | `bin/tia-cache register` | Registers this repository's store for its origin |
