@@ -3220,6 +3220,27 @@
           "after": {
             "type": "string",
             "description": "Place after this step"
+          },
+          "rebalance": {
+            "type": "array",
+            "maxItems": 32,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "timeout_seconds": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "name",
+                "timeout_seconds"
+              ]
+            },
+            "description": "Set another step timeout in the same write, as NAME=SECONDS; repeat as needed"
           }
         },
         "additionalProperties": false,
@@ -3331,6 +3352,27 @@
           "after": {
             "type": "string",
             "description": "Place after this step"
+          },
+          "rebalance": {
+            "type": "array",
+            "maxItems": 32,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "timeout_seconds": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "name",
+                "timeout_seconds"
+              ]
+            },
+            "description": "Set another step timeout in the same write, as NAME=SECONDS; repeat as needed"
           }
         },
         "additionalProperties": false,
@@ -3405,6 +3447,27 @@
           "after": {
             "type": "string",
             "description": "Place after this step"
+          },
+          "rebalance": {
+            "type": "array",
+            "maxItems": 32,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "timeout_seconds": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "name",
+                "timeout_seconds"
+              ]
+            },
+            "description": "Set another step timeout in the same write, as NAME=SECONDS; repeat as needed"
           }
         },
         "additionalProperties": false,
@@ -3516,6 +3579,27 @@
           "after": {
             "type": "string",
             "description": "Place after this step"
+          },
+          "rebalance": {
+            "type": "array",
+            "maxItems": 32,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "timeout_seconds": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "name",
+                "timeout_seconds"
+              ]
+            },
+            "description": "Set another step timeout in the same write, as NAME=SECONDS; repeat as needed"
           }
         },
         "additionalProperties": false,
