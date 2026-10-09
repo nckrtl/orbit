@@ -20,7 +20,7 @@ Both lanes are off by default. [ADR 0200](/decisions/0200-run-each-task-group-in
 
 ## Task VMs
 
-Partly built. The [settings](#configure-task-vms), the `task_vms` table and its [states](#states), the cloud-init user-data, and the placement rule exist. Nothing uses them yet. The provider, the jobs, the commands, the hub filter, and the placement hook are not built yet. The Phase 1 slices of [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm) build them.
+Partly built. The [settings](#configure-task-vms), the `task_vms` table and its [states](#states), the cloud-init user-data, the placement rule, and the [Incus provider](#incus-provider) exist. Nothing uses them yet. The jobs, the commands, the hub filter, and the placement hook are not built yet. The Phase 1 slices of [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm) build them.
 
 A task VM is a stock Ubuntu 26.04 cloud VM on an Incus host. The Gateway creates it for one group, enrolls it as an `app-dev` Node, and destroys it when the group ends. After enrollment, the group uses the same code as a shared group, pinned to that Node.
 
@@ -73,6 +73,12 @@ queue:work task-vms --queue=task-vms --stop-when-empty --max-time=50 --timeout=1
 ```
 
 A job that stops halfway runs again after 1800 seconds. `EnrollTaskVm` checks cloud-init every 15 seconds and fails after 10 minutes.
+
+### Incus provider
+
+`IncusTaskVmProvider` runs `sudo -n incus --project <project> …` on the host Node over SSH, as the host's managed user. It launches the host's `image` as a VM with the row's `name`, the host's `cpus`, `memory`, and `disk`, and `eth0` pinned to the host's `network`. The NIC keeps port isolation from the project's `default` profile. The user-data goes on stdin. The provider never creates a network.
+
+Create and delete are idempotent by name. An existing VM counts as created, and an absent VM counts as deleted. A launch or delete that reports an error but leaves the wanted result also counts. Callers check `task_vms.enabled` first.
 
 ### Prepare an Incus host
 
@@ -150,6 +156,9 @@ The reserved range must always be a private network. As soon as task VMs are ena
 | `task_vm.invalid_gateway_key` | 500 | The Gateway's SSH public key is not one OpenSSH public key line |
 | `task_vm.workspace_mismatch` | 409 | A group's workspace is not on its ready task VM |
 | `task_vm.foreign_instance` | 409 | An Instance on a task VM Node is not its group's workspace |
+| `task_vm.invalid_host_output` | 502 | Incus returned output that fails these checks |
+| `task_vm.host_command_failed` | 502 | An `incus` command on the host failed |
+| `task_vm.bootstrap_failed` | 502 | Cloud-init in the VM reports `error` |
 
 ### Limits
 
