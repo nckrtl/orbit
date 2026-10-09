@@ -365,7 +365,7 @@ describe('project apps', function (): void {
         expect(Artisan::call('project:show', ['project' => '3']))->toBe(0);
         $output = preg_replace('/[\s│]+/u', ' ', Artisan::output());
         expect($output)
-            ->toContain('Apps web: apps/site · web root public · laravel-app, docs: docs · no web root · node-app')
+            ->toContain('App web apps/site · web root public · laravel-app', 'App docs docs · no web root · node-app')
             ->not->toContain('Web root');
     });
 
@@ -636,8 +636,8 @@ describe('project:show', function (): void {
             ->toContain('git@github.com:nckrtl/orbit.git')
             ->toContain('Default branch')
             ->toContain('main')
-            ->toContain('Apps')
-            ->toContain('web: . · web root public · laravel-app')
+            ->toContain('App web')
+            ->toContain('. · web root public · laravel-app')
             ->toContain('Task check')
             ->toContain('composer check')
             ->toContain('No Instances.')

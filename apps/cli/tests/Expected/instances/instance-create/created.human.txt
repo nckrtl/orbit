@@ -25,7 +25,7 @@ Creating Instance...
 │
 ├  SSR port          13714
 │
-├  Apps              web: . · web root public · laravel-app
+├  App web           . · web root public · laravel-app
 │
 ├  App overrides     —
 │

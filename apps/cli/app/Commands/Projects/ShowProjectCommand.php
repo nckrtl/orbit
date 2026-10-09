@@ -65,7 +65,7 @@ final class ShowProjectCommand extends GatewayCommand
             'Repository' => $project->repositoryUrl,
             'Source access' => $project->sourceAccess,
             'Default branch' => $project->defaultBranch,
-            'Apps' => NamedAppOptions::describeAll($project->apps),
+            ...NamedAppOptions::detailFields($project->apps),
             ...($project->taskCompute === null ? [] : ['Task compute' => $project->taskCompute]),
             'Task check' => $project->taskCheck,
             'Task workspace routed' => $project->taskWorkspaceRouted,

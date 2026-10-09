@@ -94,4 +94,24 @@ final class NamedAppOptions
 
         return $lines === [] ? null : $lines;
     }
+
+    /**
+     * Human detail fields with one line per app, so app descriptions are never joined with commas.
+     *
+     * @param  list<ProjectAppResponse>  $apps
+     * @return array<string, string|null>
+     */
+    public static function detailFields(array $apps): array
+    {
+        if ($apps === []) {
+            return ['Apps' => null];
+        }
+
+        $fields = [];
+        foreach ($apps as $app) {
+            $fields["App {$app->name}"] = substr(self::describe($app), strlen($app->name) + 2);
+        }
+
+        return $fields;
+    }
 }

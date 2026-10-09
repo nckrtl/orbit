@@ -3,12 +3,14 @@
 declare(strict_types=1);
 
 use App\Domain\Instances\InstanceState;
+use App\Domain\Logs\LogStreamTargetResolver;
 use App\Domain\Processes\ProcessTargetResolver;
 use App\Domain\Processes\ProcessTargetType;
 use App\Domain\Schedules\ScheduleTargetResolver;
 use App\Domain\Schedules\ScheduleTargetType;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Instances\RemoteInstanceLogReader;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
@@ -129,6 +131,15 @@ it('named app Schedules run in their app directory', function (): void {
 
     expect($targets->resolve(ScheduleTargetType::Instance, $instance->id, 'docs')->workingDirectory)
         ->toBe('/srv/orbit/drift/main/apps/docs');
+});
+
+it('named app logs need an app selector on a multi-app Instance', function (): void {
+    $instance = named_app_surface_instance();
+
+    expect(fn () => app(RemoteInstanceLogReader::class)->tail($instance, 10))
+        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('app.required'));
+    expect(fn () => app(LogStreamTargetResolver::class)->forInstance($instance))
+        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('app.required'));
 });
 
 it('named app overrides cannot change once the Instance exists', function (): void {

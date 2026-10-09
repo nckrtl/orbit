@@ -137,7 +137,7 @@ A Project owns an ordered [development deploy list](/reference/deployments#devel
 
 ## Project types
 
-Each named app has a type, and that type decides the app's runtime. Every Instance inherits the app types; path overrides do not change them. The Project also keeps its own `type`. When the type of a Project with one app changes, that app takes the new type. The Project's repository-wide `task_check` defaults to null regardless of its apps.
+Each named app has a type, and that type decides the app's runtime. Every Instance inherits the app types; path overrides do not change them. The Project also keeps its own `type`. When the type of a Project with one app changes, that app takes the new type. The Project's `task_check` covers the whole repository. It defaults to null, whatever apps the Project has.
 
 | App type | Web root | Route | PHP-FPM |
 | --- | --- | --- | --- |

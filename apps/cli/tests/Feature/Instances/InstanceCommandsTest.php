@@ -500,7 +500,7 @@ describe('instance:create', function (): void {
         expect(instance_source_text(Artisan::output()))->toContain(
             'Instance: dev',
             'Source layout checkout',
-            'Apps web: . · web root public · laravel-app',
+            'App web . · web root public · laravel-app',
             'App overrides —',
             'Selected branch dev',
             'Branch override —',
@@ -524,7 +524,7 @@ describe('instance:create', function (): void {
         expect(instance_source_text(Artisan::output()))->toContain(
             'Production user orbit-app-3',
             'Production home /home/orbit-app-3',
-            'Apps web: site · web root public · laravel-app',
+            'App web site · web root public · laravel-app',
             'App overrides web',
         );
     });
@@ -644,7 +644,7 @@ describe('instance:show', function (): void {
             'Node beast',
             'Source layout checkout',
             'Checkout /home/orbit/apps/orbit-docs/dev',
-            'Apps web: . · web root public · laravel-app',
+            'App web . · web root public · laravel-app',
             'App overrides —',
             'Selected branch dev',
             'Branch override —',

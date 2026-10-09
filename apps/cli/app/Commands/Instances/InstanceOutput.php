@@ -22,7 +22,7 @@ trait InstanceOutput
             'Checkout' => $instance->checkoutPath,
             'Vite port' => $instance->vitePort,
             'SSR port' => $instance->ssrPort,
-            'Apps' => NamedAppOptions::describeAll($instance->apps),
+            ...NamedAppOptions::detailFields($instance->apps),
             'App overrides' => $instance->appOverrides === [] ? null : array_keys($instance->appOverrides),
             'Selected branch' => $instance->selectedBranch,
             'Branch override' => $instance->branchOverride,

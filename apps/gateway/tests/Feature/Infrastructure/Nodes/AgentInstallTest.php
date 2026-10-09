@@ -978,6 +978,39 @@ it('closes the environment of every Instance checkout in the Instance root on co
     }
 })->with(['root public' => '', 'nested Laravel' => '/server/web']);
 
+it('closes the environment of every app of a multi-app Instance on converge', function (): void {
+    $home = sys_get_temp_dir().'/orbit-agent-env-'.bin2hex(random_bytes(4));
+    $checkout = $home.'/apps/drift/dev';
+    foreach (['apps/site', 'apps/docs'] as $path) {
+        mkdir("{$checkout}/{$path}", 0o755, true);
+        file_put_contents("{$checkout}/{$path}/.env", "APP_KEY=secret\n");
+        chmod("{$checkout}/{$path}/.env", 0o664);
+    }
+    $node = Node::query()->create([
+        'name' => 'agent-env', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'user' => 'orbit',
+        'architecture' => 'x86_64', 'public_ssh_host' => '192.0.2.45', 'wireguard_ip' => '10.44.0.45',
+    ]);
+    $project = Project::query()->create(['name' => 'Drift', 'slug' => 'drift', 'repository_url' => 'git@example.test:drift.git', 'default_branch' => 'main', 'apps' => [
+        ['name' => 'web', 'path' => 'apps/site', 'web_root' => 'public', 'type' => 'laravel-app'],
+        ['name' => 'docs', 'path' => 'apps/docs', 'web_root' => 'public', 'type' => 'laravel-app'],
+    ]]);
+    Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'dev', 'checkout_path' => $checkout, 'status' => 'source_resolved']);
+    $ssh = new AgentInstallSsh(null, runScriptsLocally: true);
+
+    try {
+        nodeAgentExecutor($ssh, new ManagedUserAccount('orbit', 'orbit', $home))->converge($node);
+        clearstatcache();
+
+        $script = array_values(array_filter($ssh->commands, static fn (RemoteCommand $command): bool => ($command->arguments[0] ?? null) === 'bash'));
+        expect($script)->toHaveCount(1)
+            ->and($script[0]->arguments)->toBe(['bash', '-seu', '--', $checkout.'/apps/docs', $checkout.'/apps/site'])
+            ->and(fileperms($checkout.'/apps/site/.env') & 0o777)->toBe(0o660)
+            ->and(fileperms($checkout.'/apps/docs/.env') & 0o777)->toBe(0o660);
+    } finally {
+        (new Filesystem)->deleteDirectory($home);
+    }
+});
+
 it('logs the checkouts whose environment it could not close and still converges', function (): void {
     [$home, $node] = agent_env_home();
     Log::spy();

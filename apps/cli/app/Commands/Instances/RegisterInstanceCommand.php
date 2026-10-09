@@ -113,7 +113,7 @@ final class RegisterInstanceCommand extends GatewayCommand
             'Project' => "{$response->project->slug} (#{$response->project->id})",
             'Source layout' => $instance->sourceLayout,
             'Managed path' => $instance->checkoutPath,
-            'Apps' => NamedAppOptions::describeAll($instance->apps),
+            ...NamedAppOptions::detailFields($instance->apps),
             'Git state' => $instance->detached ? 'detached' : $instance->selectedBranch,
             'Commit' => $instance->startingCommit,
             'Route domain' => $instance->domain,
