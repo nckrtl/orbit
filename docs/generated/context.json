@@ -1116,6 +1116,7 @@
                 "Instance",
                 "Node",
                 "Process",
+                "Project",
                 "Role",
                 "Route"
             ],
@@ -1845,6 +1846,7 @@
                 "Node",
                 "Node agent",
                 "Process",
+                "Project",
                 "Role",
                 "Route",
                 "Schedule",

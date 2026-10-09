@@ -9,11 +9,16 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Infrastructure\Fleet\Footprint\CaddyFootprintArtifact;
+use App\Infrastructure\Fleet\Footprint\CaddyPackageFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\PrivateDnsFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\SourceDigest;
+use App\Infrastructure\Nodes\CaddyPackageSourceProgram;
+use App\Infrastructure\Processes\CommandResult;
 use App\Models\Node;
 use Tests\Support\FakeNodeCaddyBuilds;
 use Tests\Support\Fleet\FleetFixtures;
+use Tests\Support\Fleet\FleetTestSsh;
+use Tests\Support\Fleet\ScriptedSshExecutor;
 
 describe('footprint digests', function (): void {
     it('pins the Caddy digest to the code the Caddy build renders from, never to a rendered Caddyfile', function (): void {
@@ -64,5 +69,50 @@ describe('footprint digests', function (): void {
 
         $builds->failures['dev'] = new NodeCaddyBuildException('dev', 'reload', 'Caddy did not reload.');
         expect(fn () => $artifact->apply($node))->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('node.footprint_caddy_failed'));
+    });
+
+    it('runs the Caddy package step on the Nodes that run Caddy, pinned to the program and the floor', function (): void {
+        $ssh = new ScriptedSshExecutor;
+        $caddy = new CaddyFootprintArtifact(app(NodeCaddyfileRenderer::class), new FakeNodeCaddyBuilds);
+        $artifact = new CaddyPackageFootprintArtifact($caddy, FleetTestSsh::shell($ssh));
+        $dev = FleetFixtures::node('dev', [RoleName::AppDev]);
+        $database = FleetFixtures::node('database', [RoleName::Database]);
+
+        expect($artifact->name())->toBe('caddy-package')
+            ->and($artifact->applies($dev))->toBeTrue()
+            ->and($artifact->applies($database))->toBe($caddy->applies($database))
+            ->and($artifact->digest($dev))->toBe(SourceDigest::of([
+                'app/Infrastructure/Nodes/CaddyPackageSourceProgram.php',
+                'app/Domain/Nodes/CaddyRelease.php',
+                'resources/compute/caddy-source-snapshot.py',
+            ]));
+
+        $ssh->on('/'.preg_quote(CaddyPackageSourceProgram::RELEASE_URL, '/').'/', new CommandResult(0, "orbit-caddy-package-result=unchanged\n", '', 1, false));
+        expect($artifact->apply($dev))->toBeFalse()
+            ->and($ssh->commands[0]->arguments)->toBe(['sudo', 'bash', '-seu', '--', ...CaddyPackageSourceProgram::arguments()])
+            ->and($ssh->commands[0]->input)->toBe(CaddyPackageSourceProgram::render());
+    });
+
+    it('reports a changed Caddy package and fails a refused one with its own code', function (): void {
+        $node = FleetFixtures::node('dev', [RoleName::AppDev]);
+        $ssh = new ScriptedSshExecutor;
+        $artifact = new CaddyPackageFootprintArtifact(
+            new CaddyFootprintArtifact(app(NodeCaddyfileRenderer::class), new FakeNodeCaddyBuilds),
+            FleetTestSsh::shell($ssh),
+        );
+
+        $ssh->on('/sudo bash/', new CommandResult(0, "orbit-caddy-package-result=changed\n", '', 1, false));
+        expect($artifact->apply($node))->toBeTrue();
+
+        $ssh = new ScriptedSshExecutor;
+        $artifact = new CaddyPackageFootprintArtifact(
+            new CaddyFootprintArtifact(app(NodeCaddyfileRenderer::class), new FakeNodeCaddyBuilds),
+            FleetTestSsh::shell($ssh),
+        );
+        $ssh->on('/sudo bash/', new CommandResult(1, '', "The Caddy 2.11.7 package does not match the Orbit pin.\n", 1, false));
+        expect(fn () => $artifact->apply($node))->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('node.footprint_caddy_package_failed')
+                ->and($exception->getMessage())->toContain('does not match the Orbit pin');
+        });
     });
 });

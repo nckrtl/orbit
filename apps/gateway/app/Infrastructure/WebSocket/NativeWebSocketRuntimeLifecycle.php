@@ -41,16 +41,16 @@ final readonly class NativeWebSocketRuntimeLifecycle implements WebSocketRuntime
         $address = $this->address($node);
         $account = $this->accounts->resolve($node);
 
-        $caddySource = $this->commands->caddySource($node, RoleName::WebSocket);
-        if ($caddySource instanceof RemoteCommand) {
-            $source = $this->ssh->execute($this->connection($node, $address), $caddySource);
+        $caddyPackage = $this->commands->caddyPackage($node, RoleName::WebSocket);
+        if ($caddyPackage instanceof RemoteCommand) {
+            $source = $this->ssh->execute($this->connection($node, $address), $caddyPackage);
 
             if (! $source->succeeded()) {
                 throw new NodeRoleOperationException(
                     'caddy-package-source',
                     'node_role.convergence_failed',
                     'websocket.prerequisite_failed',
-                    "The Caddy package source failed on node [{$node->name}].",
+                    "The Caddy package step failed on node [{$node->name}].",
                     $source,
                 );
             }

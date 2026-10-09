@@ -44,9 +44,9 @@ final readonly class DevelopmentRoleBaseline implements RoleBaseline
             $this->storagePaths->validateEffective($settings, $node, $account),
         );
         $this->dns->converge($node);
-        $caddySource = $this->commands->caddySource($node, RoleName::AppDev);
-        if ($caddySource instanceof RemoteCommand) {
-            $this->ssh->execute($node, $caddySource, 'caddy-package-source', 'app-dev.prerequisite_failed', failureLabel: CaddyRoleFailure::sshLabel(RoleName::AppDev));
+        $caddyPackage = $this->commands->caddyPackage($node, RoleName::AppDev);
+        if ($caddyPackage instanceof RemoteCommand) {
+            $this->ssh->execute($node, $caddyPackage, 'caddy-package-source', 'app-dev.prerequisite_failed', failureLabel: CaddyRoleFailure::sshLabel(RoleName::AppDev));
         }
         $this->ssh->execute(
             $node,

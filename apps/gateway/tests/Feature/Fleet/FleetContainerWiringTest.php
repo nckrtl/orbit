@@ -20,6 +20,7 @@ use App\Infrastructure\AgentView\AgentReportedVersions;
 use App\Infrastructure\Fleet\Footprint\AgentFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\AnnotatorFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\CaddyFootprintArtifact;
+use App\Infrastructure\Fleet\Footprint\CaddyPackageFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\PrivateDnsFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\ProxyCliFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\RouteResidueFootprintArtifact;
@@ -59,6 +60,7 @@ describe('fleet container wiring', function (): void {
             ->and(fleetWired($converger, 'updateLock'))->toBeInstanceOf(NodeUpdateLock::class)
             ->and(array_map(get_class(...), [...fleetWired(fleetWired($converger, 'footprint'), 'artifacts')]))->toBe([
                 AgentFootprintArtifact::class,
+                CaddyPackageFootprintArtifact::class,
                 CaddyFootprintArtifact::class,
                 PrivateDnsFootprintArtifact::class,
                 ProxyCliFootprintArtifact::class,
