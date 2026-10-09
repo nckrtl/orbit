@@ -178,7 +178,7 @@ The API takes `web_root` on `POST /api/v1/routes` and `PATCH /api/v1/routes/{rou
 | Instance's own Route | Each Instance has at most one Route without a web root. A `laravel-app` or `symfony-app` Instance keeps it: a web root on it returns `route.web_root_conflict`. |
 | Site | Workload Caddy serves the Route's domain from its web root. The Route has its own leaf, `route-<id>`, so the Instance's leaf keeps naming its own Route. |
 | PHP-FPM | One pool for each application directory. Routes that serve one directory share its pool. |
-| `APP_URL` | The Instance's own Route keeps its directory. Another directory takes the domain of the oldest Route that serves it. |
+| `APP_URL` | The Instance's own Route keeps its directory. Another directory takes the domain of the oldest Route that serves it. A development `default` with releases copies each directory's `.env` into its next [release](/reference/deployments#development-defaults). |
 | Change | Creating, updating, or removing such a Route converges its site, pool, and `APP_URL`. A Project root change moves `APP_URL` to the new winner. |
 | Instance removal | Once every refusal check passes, removes the Instance's Routes with a web root, then the Instance. A refused removal keeps them. |
 | Transfer | The Routes move with the Instance and keep their IDs and domains. A public one cannot change Cluster. See [Instance transfer](/reference/instance-transfer#routes-with-a-web-root). |
@@ -192,7 +192,7 @@ A Route with a web root keeps its domain, so a domain change returns `route.web_
 
 Once the Instance has a PHP runtime, Doctor checks `APP_URL` in each directory that a Route with a web root serves and that holds `artisan`. It compares the value with the domain of the Route that wins the directory, by the rule above. A difference gives `instance.laravel_url_mismatch`, and its summary names the directory. See [Check Routes with Doctor](#check-routes-with-doctor).
 
-Follow-ups: production Instances, the `.env` of other directories in the releases of a development `default`, and a transfer that moves a public Route with a web root to another Cluster.
+Follow-ups: production Instances, and a transfer that moves a public Route with a web root to another Cluster.
 
 ## Custom proxy Routes
 
