@@ -146,7 +146,7 @@ All paths in the tables below are relative to `apps/gateway/`. Brace notation en
 | --- | --- |
 | `app/Domain/Instances/AppProjection{Owner,Plan,Runtime,Recovery}.php` | Projects: typed reservation, immutable plan, runtime orchestration and publication-side recovery. |
 | `app/Models/{InstanceAppProjection,InstanceAppUpdate,ProjectUpdate}.php` | Projects: shared child journal, Instance parent and existing Project parent. |
-| `database/migrations/2026_10_12_000004_create_app_projection_journals.php` | Projects: durable owner/child/step evidence. |
+| `database/migrations/2026_10_19_000004_create_app_projection_journals.php` | Projects: durable owner/child/step evidence. |
 | `database/migrations/2026_10_12_000005_add_apps_to_project_update_journals.php` | Projects: requested/prior app-list identity in the existing parent. |
 | `app/Infrastructure/Instances/NativeAppProjectionRuntime.php` | Projects: orchestrates complete adapters, never publishes maps itself. |
 | `app/Domain/Instances/AppProjectionEnvironment.php`, `app/Infrastructure/Instances/{NativeAppProjectionEnvironment,AppProjectionEnvironmentProgram}.php` | Environment: typed protected remote file adapter/program. |

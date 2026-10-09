@@ -34,7 +34,7 @@ it('preserves persisted named app runtime directories document roots and product
     $program = 'link=__ENVIRONMENT_PATH__; target=__ENVIRONMENT_TARGET__';
     $beforeLink = ProductionApplicationPaths::render($program, $effective);
     $beforeDirectory = ApplicationDirectory::resolve('/home/site/current', $effective);
-    $migration = require database_path('migrations/2026_10_12_000000_add_named_apps_to_projects.php');
+    $migration = require database_path('migrations/2026_10_19_000000_add_named_apps_to_projects.php');
     $runtimeGuards = take_app_runtime_guards();
     Schema::table('projects', fn ($table) => $table->dropColumn('apps'));
     Schema::table('instances', fn ($table) => $table->dropColumn('app_overrides'));

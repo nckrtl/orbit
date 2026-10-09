@@ -29,7 +29,7 @@ function legacy_per_app_transfer(bool $cutover = false): InstanceTransfer
 it('per-app transfer migrates legacy precutover ownership and retries through rollback instead of checkout store staging', function (): void {
     $transfer = legacy_per_app_transfer();
     Schema::table('instance_transfers', static fn (Blueprint $table) => $table->dropColumn('app_journal'));
-    $migration = require base_path('database/migrations/2026_10_12_000003_add_app_journal_to_instance_transfers.php');
+    $migration = require base_path('database/migrations/2026_10_19_000003_add_app_journal_to_instance_transfers.php');
     $migration->up();
     expect($transfer->refresh()->app_journal['web'])->toBe([
         'source_route_id' => 11, 'destination_route_id' => 12, 'destination_domain' => 'web.project.test',
@@ -43,7 +43,7 @@ it('per-app transfer migration preserves closed history without reopening abando
     $transfer = legacy_per_app_transfer();
     $transfer->update(['status' => $status, 'current_step' => $status === 'completed' ? 'completed' : 'reserved', 'imported_environment_keys' => [], 'recovery_evidence' => null]);
     Schema::table('instance_transfers', static fn (Blueprint $table) => $table->dropColumn('app_journal'));
-    $migration = require base_path('database/migrations/2026_10_12_000003_add_app_journal_to_instance_transfers.php');
+    $migration = require base_path('database/migrations/2026_10_19_000003_add_app_journal_to_instance_transfers.php');
     $migration->up();
     expect($transfer->refresh()->recovery_evidence)->toBeNull()->and(InstanceTransfer::query()->open()->exists())->toBeFalse();
 })->with(['completed', 'failed']);
@@ -51,7 +51,7 @@ it('per-app transfer migration preserves closed history without reopening abando
 it('per-app transfer refuses to guess legacy cutover annotator ownership during upgrade', function (): void {
     legacy_per_app_transfer(cutover: true);
     Schema::table('instance_transfers', static fn (Blueprint $table) => $table->dropColumn('app_journal'));
-    $migration = require base_path('database/migrations/2026_10_12_000003_add_app_journal_to_instance_transfers.php');
+    $migration = require base_path('database/migrations/2026_10_19_000003_add_app_journal_to_instance_transfers.php');
     expect(fn () => $migration->up())->toThrow(RuntimeException::class, 'Complete cutover annotator transfers');
     expect(Schema::hasColumn('instance_transfers', 'app_journal'))->toBeFalse();
 });
