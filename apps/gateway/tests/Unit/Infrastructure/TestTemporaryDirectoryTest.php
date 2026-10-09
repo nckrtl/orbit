@@ -5,6 +5,8 @@ declare(strict_types=1);
 use Illuminate\Filesystem\Filesystem;
 use Symfony\Component\Process\Process;
 
+pest()->group('subprocess');
+
 it('preserves allocated probe databases but isolates parallel worker scopes', function (bool $worker): void {
     $parent = sys_get_temp_dir();
     $token = getenv('TEST_TOKEN') ?: '';

@@ -29,10 +29,10 @@ Fetching Instances...
 │
 └  Excluded nodes          —
 
- ┌────┬──────────────────┬─────────┬────────────────────────────────────┬────────┐
- │ ID │ NAME             │ NODE    │ DOMAIN                             │ STATUS │
- ├────┼──────────────────┼─────────┼────────────────────────────────────┼────────┤
- │ 1  │ dev              │ app-dev │ dev.charlie-shop.test              │ active │
- │ 3  │ feature-checkout │ app-dev │ feature-checkout.charlie-shop.test │ active │
- │ 2  │ staging          │ app-dev │ staging.charlie-shop.test          │ active │
- └────┴──────────────────┴─────────┴────────────────────────────────────┴────────┘
+ ┌────┬──────────────────┬─────────┬────────────────────────────────────────┬────────┐
+ │ ID │ NAME             │ NODE    │ DOMAIN                                 │ STATUS │
+ ├────┼──────────────────┼─────────┼────────────────────────────────────────┼────────┤
+ │ 1  │ dev              │ app-dev │ web.dev.charlie-shop.test              │ active │
+ │ 3  │ feature-checkout │ app-dev │ web.feature-checkout.charlie-shop.test │ active │
+ │ 2  │ staging          │ app-dev │ web.staging.charlie-shop.test          │ active │
+ └────┴──────────────────┴─────────┴────────────────────────────────────────┴────────┘

@@ -25,9 +25,9 @@ Fetching Processes...
 │
 ├  Branch override   —
 │
-├  Domain            dev.acme.test
+├  Domain            web.dev.acme.test
 │
-└  URL               https://dev.acme.test
+└  URL               https://web.dev.acme.test
 
  ┌────┬───────────┬─────────┬─────────┬────────────────┬────────┐
  │ ID │ NAME      │ RUNTIME │ DESIRED │ RUNTIME STATUS │ STATUS │

@@ -25,9 +25,9 @@ Fetching Processes...
 │
 ├  Branch override   —
 │
-├  Domain            dev.charlie-shop.test
+├  Domain            web.dev.charlie-shop.test
 │
-└  URL               https://dev.charlie-shop.test
+└  URL               https://web.dev.charlie-shop.test
 
  ┌────┬───────────┬─────────┬─────────┬────────────────┬────────┐
  │ ID │ NAME      │ RUNTIME │ DESIRED │ RUNTIME STATUS │ STATUS │
