@@ -14,6 +14,7 @@ use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Tools\VpToolManager;
 use App\Models\Instance;
+use Illuminate\Support\Facades\Log;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Throwable;
 
@@ -53,8 +54,15 @@ final readonly class ProjectLifecycleRunner
         }
 
         $directory = $this->servedDirectory($instance, $phase, $checkout);
-        // A default Instance's seed is its own active release. Setup that runs in that release has no other seed.
-        $seeded = $phase === LifecyclePhase::Setup && $instance->seed_path !== $directory;
+        $inRelease = $directory !== $checkout;
+        // A default Instance's seed is its own active release. Setup that runs in a release has no
+        // other seed, even when the stored seed still names an older release.
+        $seeded = $phase === LifecyclePhase::Setup && ! $inRelease;
+        // Synchronization writes `.env` and `.env.testing` in the checkout. Setup in a release copies
+        // them in first, as a deploy does, so a migration sees the database that was just attached.
+        $environmentDirectory = $phase === LifecyclePhase::Setup && $inRelease
+            ? $this->environmentDirectory($instance, $checkout)
+            : null;
         $program = file_get_contents(resource_path('instances/lifecycle.py'));
 
         if (! is_string($program) || $program === '') {
@@ -93,6 +101,7 @@ final readonly class ProjectLifecycleRunner
                 $input = ProtectedInput::fromString(json_encode([
                     'checkout' => $checkout,
                     'directory' => $directory,
+                    ...($environmentDirectory === null ? [] : ['environment_directory' => $environmentDirectory]),
                     'command' => $command,
                     'environment' => [
                         'VP_HOME' => $vpHome,
@@ -178,6 +187,10 @@ final readonly class ProjectLifecycleRunner
      * The directory the Instance serves. A default Instance with the development release layout
      * serves the release that `current` selects, and its checkout stays at the commit it was
      * cloned at. Steps such as migrations must see the code that runs, so they run in that release.
+     *
+     * Teardown runs only while the Instance is removed. When Orbit cannot read the active release
+     * there, for example because a release lost its worktree entry, teardown runs in the checkout,
+     * so the removal can still finish.
      */
     private function servedDirectory(Instance $instance, LifecyclePhase $phase, string $checkout): string
     {
@@ -188,15 +201,43 @@ final readonly class ProjectLifecycleRunner
         try {
             $release = $this->deployment->selected($instance);
         } catch (Throwable $exception) {
+            if ($phase === LifecyclePhase::Teardown) {
+                Log::warning('Teardown runs in the checkout because the active release is unavailable.', [
+                    'instance_id' => $instance->id,
+                    'error' => $exception instanceof ResourceOperationException ? $exception->errorCode : $exception::class,
+                ]);
+
+                return $checkout;
+            }
+
             throw new ResourceOperationException(
                 errorCode: 'instance.active_release_unavailable',
-                message: ($phase === LifecyclePhase::Setup ? 'Setup' : 'Teardown').' did not start: Orbit could not read the active release of the Instance.',
+                message: 'Setup did not start: Orbit could not read the active release of the Instance.',
                 status: 409,
                 previous: $exception,
             );
         }
 
         return $release->path;
+    }
+
+    /**
+     * Where synchronization keeps the environment files, relative to the checkout: the Laravel
+     * application directory, or the checkout root. The release has the same layout.
+     */
+    private function environmentDirectory(Instance $instance, string $checkout): string
+    {
+        $path = $instance->source_is_laravel === true ? $instance->applicationDirectory() : $checkout;
+
+        if ($path === $checkout) {
+            return '';
+        }
+
+        if (! str_starts_with($path, $checkout.'/')) {
+            throw new ResourceOperationException('instance.setup_step_failed', 'The application directory is outside the checkout.', 422);
+        }
+
+        return substr($path, strlen($checkout) + 1);
     }
 
     /**

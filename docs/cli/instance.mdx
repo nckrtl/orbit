@@ -3,7 +3,7 @@ title: "instance"
 description: "Create, register, reconcile a renamed branch or domain, set up, clone, deploy, roll back, and remove Instances."
 covers:
   - apps/cli/app/Commands/Instances/**
-  - apps/gateway/app/Actions/Instances/{CreateInstanceAction,RenameInstanceAction}.php
+  - apps/gateway/app/Actions/Instances/{CreateInstanceAction,CreateInstanceServerDatabaseAction,RenameInstanceAction}.php
   - apps/gateway/app/Data/Instances/{CreateInstanceData,RenameInstanceData}.php
   - apps/gateway/app/Http/Requests/Instances/{StoreInstanceRequest,RenameInstanceRequest}.php
   - packages/php-sdk/src/Requests/Instances/{Create,Register,Rename,Show,Update,Destroy,Clone,Transfer}InstanceRequest.php
@@ -93,7 +93,7 @@ orbit instance:create <project> <node> <name> [options]
 | `--root=PATH` | the Project root | Relative web-root override for this Instance. |
 | `--domain=HOST` | generated | Explicit Route domain for the development source. Without it, Orbit generates a domain from the active Cluster TLD, then the Node TLD. |
 | `--branch=BRANCH` | see [branch selection](/domains/applications#create-a-development-instance) | Explicit source branch. |
-| `--database-server=SLUG` | none | Create the Instance's database on this [Database server](/reference/database-servers) before the setup steps run. See [database on a server](/domains/applications#database-on-a-server). Needs access to the Gateway too. |
+| `--database-server=SLUG` | none | Create the Instance's database on this [Database server](/reference/database-servers) before the setup steps run. Only for an Instance that this create makes; an Instance that finished setup returns `instance.database_server_existing`. See [database on a server](/domains/applications#database-on-a-server). Needs access to the Gateway too. |
 
 Development placement and branch selection follow the requested name.
 

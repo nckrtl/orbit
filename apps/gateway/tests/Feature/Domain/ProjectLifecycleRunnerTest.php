@@ -20,6 +20,7 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\ProjectLifecycleStep;
 use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Tests\Support\LifecycleSshExecutor;
 
@@ -118,8 +119,75 @@ it('runs the lists in the active release of a default Instance with the release 
         ->and(file_get_contents($release.'/ran-here'))->toBe($release."\n")
         ->and(file_exists($this->sandbox.'/ran-here'))->toBeFalse()
         ->and($this->transport->inputs[0]['checkout'])->toBe($this->sandbox)
-        ->and($this->transport->inputs[0]['directory'])->toBe($release);
+        ->and($this->transport->inputs[0]['directory'])->toBe($release)
+        ->and($this->transport->inputs[0]['environment_directory'])->toBe($phase === LifecyclePhase::Setup ? '' : null);
 })->with([LifecyclePhase::Setup, LifecyclePhase::Teardown]);
+
+it('gives setup in an active release no seed even when the stored seed names an older release', function (): void {
+    $release = $this->sandbox.'/releases/20261009120000-new';
+    mkdir($release, 0700, true);
+    // A deploy moved `current` after the seed was recorded.
+    $this->instance->update(['name' => 'default', 'development_release_layout' => true, 'seed_path' => $this->sandbox.'/releases/initial', 'seed_commit' => str_repeat('a', 40)]);
+    $deployment = Mockery::mock(DevelopmentDeployment::class);
+    $deployment->shouldReceive('selected')->once()->andReturn(new DeploymentRelease('20261009120000-new', $release, str_repeat('b', 40)));
+    $this->steps->create($this->instance->project, LifecyclePhase::Setup, new LifecycleStep('cold', 'test -z "$ORBIT_SEED_PATH"; test -z "$ORBIT_SEED_COMMIT"; touch installed'), null, null);
+
+    expect($this->transport->runner(deployment: $deployment)->run($this->instance, LifecyclePhase::Setup))->toBeTrue()
+        ->and(file_exists($release.'/installed'))->toBeTrue();
+});
+
+it('copies the synchronized environment files into the active release before setup', function (?string $root, string $application): void {
+    $release = $this->sandbox.'/releases/20261009120000-active';
+    $source = rtrim($this->sandbox.'/'.$application, '/');
+    $target = rtrim($release.'/'.$application, '/');
+    is_dir($source) || mkdir($source, 0700, true);
+    mkdir($target, 0700, true);
+    file_put_contents($source.'/.env', "DB_DATABASE=fresh\n");
+    chmod($source.'/.env', 0600);
+    file_put_contents($source.'/.env.testing', "DB_DATABASE=fresh_test\n");
+    chmod($source.'/.env.testing', 0640);
+    // The release still has the files its deploy copied.
+    file_put_contents($target.'/.env', "DB_DATABASE=stale\n");
+    $this->instance->update(['name' => 'default', 'development_release_layout' => true, 'source_is_laravel' => true, 'root' => $root]);
+    $deployment = Mockery::mock(DevelopmentDeployment::class);
+    $deployment->shouldReceive('selected')->once()->andReturn(new DeploymentRelease('20261009120000-active', $release, str_repeat('a', 40)));
+    $directory = $application === '' ? '.' : $application;
+    $this->steps->create($this->instance->project, LifecyclePhase::Setup, new LifecycleStep('migrate', "cat {$directory}/.env > migrated-with"), null, null);
+
+    expect($this->transport->runner(deployment: $deployment)->run($this->instance, LifecyclePhase::Setup))->toBeTrue()
+        ->and(file_get_contents($release.'/migrated-with'))->toBe("DB_DATABASE=fresh\n")
+        ->and(file_get_contents($target.'/.env.testing'))->toBe("DB_DATABASE=fresh_test\n")
+        ->and(fileperms($target.'/.env') & 0777)->toBe(0600)
+        ->and(fileperms($target.'/.env.testing') & 0777)->toBe(0640)
+        ->and(fileowner($target.'/.env'))->toBe(fileowner($source.'/.env'))
+        ->and(glob($target.'/.orbit-environment-*', GLOB_NOSORT) ?: [])->toBe([])
+        ->and($this->transport->inputs[0]['environment_directory'])->toBe($application);
+})->with([
+    'an application at the repository root' => [null, ''],
+    'a nested application' => ['apps/site/public', 'apps/site'],
+]);
+
+it('copies no environment files for setup in the checkout', function (): void {
+    file_put_contents($this->sandbox.'/.env', "DB_DATABASE=fresh\n");
+    $this->steps->create($this->instance->project, LifecyclePhase::Setup, new LifecycleStep('install', 'true'), null, null);
+
+    expect($this->runner->run($this->instance, LifecyclePhase::Setup))->toBeTrue()
+        ->and($this->transport->inputs[0]['environment_directory'])->toBeNull();
+});
+
+it('runs teardown in the checkout when the active release cannot be read, so removal can finish', function (): void {
+    $this->instance->update(['name' => 'default', 'development_release_layout' => true]);
+    $deployment = Mockery::mock(DevelopmentDeployment::class);
+    $deployment->shouldReceive('selected')->once()->andThrow(new ResourceOperationException('deployment.invalid_release', 'Development deployment returned an invalid release.', 409));
+    $this->steps->create($this->instance->project, LifecyclePhase::Teardown, new LifecycleStep('where', 'pwd > ran-here'), null, null);
+    Log::spy();
+
+    expect($this->transport->runner(deployment: $deployment)->run($this->instance, LifecyclePhase::Teardown))->toBeTrue()
+        ->and(file_get_contents($this->sandbox.'/ran-here'))->toBe($this->sandbox."\n")
+        ->and($this->transport->inputs[0]['directory'])->toBe($this->sandbox)
+        ->and($this->transport->inputs[0]['environment_directory'])->toBeNull();
+    Log::shouldHaveReceived('warning')->once()->withArgs(fn (string $message, array $context): bool => $context === ['instance_id' => $this->instance->id, 'error' => 'deployment.invalid_release']);
+});
 
 it('runs the lists in the checkout of an Instance without the release layout', function (): void {
     $deployment = Mockery::mock(DevelopmentDeployment::class);

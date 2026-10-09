@@ -7,6 +7,7 @@ use App\Actions\Instances\SynchronizeInstanceEnvironmentAction;
 use App\Domain\DatabaseServers\DatabaseServerAdmin;
 use App\Domain\Instances\DatabaseClone\InstanceDatabaseClonePlanner;
 use App\Domain\Instances\DatabaseClone\InstanceSqliteCloner;
+use App\Domain\Instances\Deployment\DevelopmentDeployment;
 use App\Domain\Instances\DevelopmentInstanceConfigurator;
 use App\Domain\Instances\DevelopmentInstanceSourceLifecycle;
 use App\Domain\Instances\DevelopmentRouteProjector;
@@ -435,7 +436,7 @@ describe('interrupted clones', function (): void {
         $clone = DatabaseConnection::query()->where('owner_instance_id', $instance->id)->sole();
         DatabaseConnectionTarget::query()->where('database_connection_id', $clone->id)->delete();
         $clone->update(['clone_step' => $step]);
-        $instance->update(['failed_step' => 'setup']);
+        $instance->update(['failed_step' => 'setup', 'first_setup_pending' => true]);
 
         return $instance;
     }
@@ -487,13 +488,39 @@ describe('interrupted clones', function (): void {
 
     it('still points a retry with a finished copy and pending setup to instance:setup', function (): void {
         $this->postJson('/api/v1/instances', database_clone_request($this->project, $this->node))->assertCreated();
-        Instance::query()->where('name', 'feature-x')->sole()->update(['failed_step' => 'setup']);
+        Instance::query()->where('name', 'feature-x')->sole()->update(['failed_step' => 'setup', 'first_setup_pending' => true]);
 
         $this->postJson('/api/v1/instances', database_clone_request($this->project, $this->node))
             ->assertConflict()
             ->assertJsonPath('error.code', 'instance.setup_step_failed');
 
         expect($this->admin->copies)->toHaveCount(1);
+    });
+
+    it('never copies into or removes a live Instance whose later setup failed', function (): void {
+        // The Instance was created before the default Instance had a database, so it has none.
+        $instance = Instance::query()->create([
+            'project_id' => $this->project->id,
+            'node_id' => $this->node->id,
+            'name' => 'feature-x',
+            'checkout_path' => '/srv/orbit/apps/acme/feature-x',
+            'source_layout' => 'checkout',
+            'branch' => 'feature-x',
+            'starting_commit' => str_repeat('a', 40),
+            'source_is_laravel' => true,
+            'provisioning_step' => 'active',
+            'status' => InstanceState::Active,
+            'failed_step' => 'setup',
+            'error_code' => 'instance.setup_step_failed',
+        ]);
+
+        $this->postJson('/api/v1/instances', database_clone_request($this->project, $this->node))
+            ->assertConflict()
+            ->assertJsonPath('error.code', 'instance.setup_step_failed');
+
+        expect(Instance::query()->whereKey($instance->id)->exists())->toBeTrue()
+            ->and($this->admin->copies)->toBe([])
+            ->and($this->transport->inputs)->toBe([]);
     });
 });
 
@@ -532,11 +559,12 @@ describe('instance:create with database_server', function (): void {
         $this->server = database_clone_server($this->node);
         ProjectLifecycleStep::query()->create(['project_id' => $this->project->id, 'phase' => 'setup', 'name' => 'migrate', 'command' => 'php artisan migrate', 'timeout_seconds' => 30, 'position' => 0]);
         $this->databasesAtSetup = null;
+        $this->setupExit = 0;
         $this->transport = new LifecycleSshExecutor(result: function (): int {
             $this->databasesAtSetup = DatabaseConnectionTarget::query()->where('prefix', 'DB')->count();
             $this->envAtSetup = $this->environment->contents;
 
-            return 0;
+            return $this->setupExit;
         });
         app()->instance(ProjectLifecycleRunner::class, $this->transport->runner());
     });
@@ -629,7 +657,7 @@ describe('instance:create with database_server', function (): void {
         // The create stopped after activation and before the database.
         DatabaseConnectionTarget::query()->where('instance_id', $instance->id)->delete();
         DatabaseConnection::query()->where('owner_instance_id', $instance->id)->delete();
-        $instance->update(['failed_step' => 'setup']);
+        $instance->update(['failed_step' => 'setup', 'first_setup_pending' => true]);
         $this->admin->statements = [];
 
         $this->postJson('/api/v1/instances', [...database_clone_request($this->project, $this->node), 'database_server' => 'beast-mysql'])->assertOk();
@@ -638,6 +666,81 @@ describe('instance:create with database_server', function (): void {
             ->and(DatabaseConnection::query()->where('owner_instance_id', $instance->id)->count())->toBe(1)
             ->and($instance->refresh()->failed_step)->toBeNull()
             ->and($this->transport->inputs)->toHaveCount(2);
+    });
+
+    it('keeps an interrupted Instance when a retry cannot create its database or finish setup', function (string $failure): void {
+        $this->postJson('/api/v1/instances', [...database_clone_request($this->project, $this->node), 'database_server' => 'beast-mysql'])->assertCreated();
+        $instance = Instance::query()->where('name', 'feature-x')->sole();
+        DatabaseConnectionTarget::query()->where('instance_id', $instance->id)->delete();
+        DatabaseConnection::query()->where('owner_instance_id', $instance->id)->delete();
+        $instance->update(['failed_step' => 'setup', 'first_setup_pending' => true]);
+        $this->admin->failOn = $failure === 'database' ? 'CREATE DATABASE' : null;
+        $this->setupExit = $failure === 'setup' ? 1 : 0;
+
+        $response = $this->postJson('/api/v1/instances', [...database_clone_request($this->project, $this->node), 'database_server' => 'beast-mysql']);
+
+        expect($response->status())->toBe($failure === 'database' ? 502 : 422)
+            ->and($response->json('error.message'))->toContain('The Instance remains.')
+            ->and(Instance::query()->whereKey($instance->id)->exists())->toBeTrue()
+            ->and($instance->refresh()->failed_step)->toBe($failure === 'database' ? 'database_create' : 'setup')
+            ->and($instance->first_setup_pending)->toBeTrue();
+    })->with(['database', 'setup']);
+
+    it('repeats a finished create with the same server without changes', function (): void {
+        $request = [...database_clone_request($this->project, $this->node), 'database_server' => 'beast-mysql'];
+        $this->postJson('/api/v1/instances', $request)->assertCreated();
+        $instance = Instance::query()->where('name', 'feature-x')->sole();
+        $this->admin->statements = [];
+        $this->transport->inputs = [];
+
+        $this->postJson('/api/v1/instances', $request)->assertOk();
+
+        expect($instance->refresh()->first_setup_pending)->toBeFalse()
+            ->and($this->admin->statements)->toBe([])
+            ->and($this->transport->inputs)->toBe([]);
+    });
+
+    it('refuses database_server for a live default Instance whose later setup failed and keeps it', function (?string $failOn): void {
+        // Reproduction: create default without a database, fail `instance:setup`, then retry the create with a server.
+        $this->default->delete();
+        $request = [...database_clone_request($this->project, $this->node, 'default'), 'branch' => 'main'];
+        $this->postJson('/api/v1/instances', $request)->assertCreated();
+        $default = Instance::query()->where('name', 'default')->sole();
+        expect($default->first_setup_pending)->toBeFalse();
+
+        $this->setupExit = 1;
+        $this->postJson("/api/v1/instances/{$default->id}/setup")->assertUnprocessable();
+        expect($default->refresh()->failed_step)->toBe('setup');
+        $this->setupExit = 0;
+        $this->admin->failOn = $failOn;
+        $this->admin->statements = [];
+        $this->transport->inputs = [];
+
+        $this->postJson('/api/v1/instances', [...$request, 'database_server' => 'beast-mysql'])
+            ->assertConflict()
+            ->assertJsonPath('error.code', 'instance.database_server_existing')
+            ->assertJsonPath('error.message', "Instance [default] already exists, so instance:create does not create its database. Run `orbit database:create acme-default --server=beast-mysql --instance={$default->id}`, then `orbit instance:setup {$default->id}`.");
+
+        expect(Instance::query()->whereKey($default->id)->exists())->toBeTrue()
+            ->and($default->refresh()->status)->toBe(InstanceState::Active)
+            ->and($default->failed_step)->toBe('setup')
+            ->and(DatabaseConnection::query()->where('owner_instance_id', $default->id)->exists())->toBeFalse()
+            ->and($this->admin->statements)->toBe([])
+            ->and($this->transport->inputs)->toBe([]);
+    })->with(['database create would fail' => ['CREATE DATABASE'], 'setup would fail' => [null]]);
+
+    it('refuses database_server for a healthy existing Instance', function (): void {
+        $this->postJson('/api/v1/instances', database_clone_request($this->project, $this->node))->assertCreated();
+        $instance = Instance::query()->where('name', 'feature-x')->sole();
+        $this->transport->inputs = [];
+
+        $this->postJson('/api/v1/instances', [...database_clone_request($this->project, $this->node), 'database_server' => 'beast-mysql'])
+            ->assertConflict()
+            ->assertJsonPath('error.code', 'instance.database_server_existing');
+
+        expect($instance->refresh()->failed_step)->toBeNull()
+            ->and($this->admin->statements)->toBe([])
+            ->and($this->transport->inputs)->toBe([]);
     });
 
     it('requires access to the Gateway as well as the app-dev Node', function (): void {
@@ -778,6 +881,32 @@ describe('instance:destroy owned databases', function (): void {
                 'DROP DATABASE IF EXISTS `acme_feature_x_test`;',
                 "DROP USER IF EXISTS 'acme_feature_x'@'%';",
             ])."\n");
+    });
+
+    it('removes a release-layout default Instance whose active release is broken and tears down in the checkout', function (): void {
+        $this->default->update(['development_release_layout' => true]);
+        $route = Route::query()->create([
+            'project_id' => $this->project->id,
+            'node_id' => $this->node->id,
+            'domain' => 'default.acme.test',
+            'provenance' => 'explicit',
+            'publication' => 'private',
+            'status' => 'pending',
+        ]);
+        $route->targets()->create(['instance_id' => $this->default->id, 'position' => 0]);
+        $route->update(['status' => 'active']);
+        ProjectLifecycleStep::query()->create(['project_id' => $this->project->id, 'phase' => 'teardown', 'name' => 'cleanup', 'command' => 'php artisan cleanup', 'timeout_seconds' => 30, 'position' => 0]);
+        // `current` selects a release that lost its worktree entry.
+        $deployment = Mockery::mock(DevelopmentDeployment::class);
+        $deployment->shouldReceive('selected')->andThrow(new ResourceOperationException('deployment.prepare_failed', 'The development release program failed.', 502));
+        $transport = new LifecycleSshExecutor;
+        app()->instance(ProjectLifecycleRunner::class, $transport->runner(deployment: $deployment));
+
+        $this->call('DELETE', "/api/v1/instances/{$this->default->id}", server: ['CONTENT_TYPE' => 'application/json'], content: '{"force":true}')->assertOk();
+
+        expect(Instance::query()->whereKey($this->default->id)->exists())->toBeFalse()
+            ->and($transport->inputs)->toHaveCount(1)
+            ->and($transport->inputs[0]['directory'])->toBe('/srv/orbit/apps/acme/default');
     });
 
     it('keeps the member in runtime cleanup when a drop fails and finishes on retry', function (): void {
