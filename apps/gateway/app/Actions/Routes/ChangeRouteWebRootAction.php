@@ -7,6 +7,9 @@ namespace App\Actions\Routes;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\Instances\DevelopmentRouteProjector;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Instances\ProductionCloneRouteProjector;
+use App\Domain\Instances\ProductionRouteProjector;
+use App\Domain\Instances\ProductionWebRootManager;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Routes\RouteTargetWebRoot;
 use App\Domain\Routes\RouteWebRoot;
@@ -18,8 +21,9 @@ use Illuminate\Support\Facades\DB;
 use Throwable;
 
 /**
- * Sets or clears the web root of an active development Route and converges its site, pool, and
- * `APP_URL`. A failed convergence restores the previous web root and converges it again.
+ * Sets or clears the web root of an active Route and converges its site, pool, and `APP_URL`. On a
+ * production Instance it also prepares the web root in the selected release. A failed convergence
+ * restores the previous web root and converges it again.
  */
 final readonly class ChangeRouteWebRootAction
 {
@@ -28,6 +32,9 @@ final readonly class ChangeRouteWebRootAction
         private DevelopmentRouteProjector $routes,
         private SynchronizeRouteWebRootUrlsAction $urls,
         private RemoteAppDevCertificateManager $certificates,
+        private ProductionRouteProjector $productionRoutes,
+        private ProductionCloneRouteProjector $productionSites,
+        private ProductionWebRootManager $productionWebRoots,
     ) {}
 
     public function execute(Route $route, ?string $webRoot): Route
@@ -85,7 +92,6 @@ final readonly class ChangeRouteWebRootAction
             );
         }
 
-        RouteWebRoot::assertSupportedTarget($instance);
         $previous = $locked->web_root;
 
         if ($previous === $webRoot) {
@@ -122,6 +128,16 @@ final readonly class ChangeRouteWebRootAction
 
     private function converge(Instance $instance, Route $route): void
     {
+        if ($instance->placedOnAppProd()) {
+            $this->productionRoutes->prepareCertificate($instance, $route);
+            $this->productionWebRoots->prepare($instance);
+            $this->urls->execute($instance);
+            $this->productionRoutes->prepareRuntime($instance, $route);
+            $this->productionSites->prepareWorkloadCaddy($instance, $route);
+
+            return;
+        }
+
         $this->routes->converge($instance, $route);
         $this->urls->execute($instance);
     }

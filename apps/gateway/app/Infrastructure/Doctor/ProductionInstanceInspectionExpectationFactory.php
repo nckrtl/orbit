@@ -7,6 +7,7 @@ namespace App\Infrastructure\Doctor;
 use App\Domain\Instances\Environment\InstanceEnvironmentContextResolver;
 use App\Domain\Instances\Environment\InstanceEnvironmentRenderer;
 use App\Domain\Instances\ProductionPhpRuntimeIdentity;
+use App\Domain\Routes\RouteWebRoot;
 use App\Infrastructure\Caddy\Build\NodeCaddyfileRenderer;
 use App\Infrastructure\Instances\ProductionPhpRuntimeConfigRenderer;
 use App\Infrastructure\Metrics\ServiceMetricsProjection;
@@ -66,8 +67,9 @@ final readonly class ProductionInstanceInspectionExpectationFactory
                 && $instance->production_php_pool === $runtime->pool
                 && $instance->production_php_socket === $runtime->socket;
             $metrics = $this->serviceMetrics?->enabled($instance->node) ?? false;
-            $runtimeConfiguration = $this->runtimeRenderer->render($runtime, $metrics);
-            $initialRuntimeConfiguration = $this->runtimeRenderer->render($runtime, $metrics, initialRelease: true);
+            $applications = RouteWebRoot::servedApplications($instance);
+            $runtimeConfiguration = $this->runtimeRenderer->render($runtime, $metrics, applications: $applications);
+            $initialRuntimeConfiguration = $this->runtimeRenderer->render($runtime, $metrics, initialRelease: true, applications: $applications);
         }
 
         return new ProductionInstanceInspectionExpectation(

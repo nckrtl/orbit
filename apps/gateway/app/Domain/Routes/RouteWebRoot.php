@@ -35,13 +35,16 @@ final class RouteWebRoot
         return $webRoot;
     }
 
-    /** Production Instances serve only their effective root for now. */
-    public static function assertSupportedTarget(Instance $instance): void
+    /**
+     * A Route with a web root takes a production Instance only when it is created for it. Moving it to
+     * a production Instance later is not supported.
+     */
+    public static function assertRetargetable(Instance $instance): void
     {
         if ($instance->placedOnAppProd()) {
             throw new ResourceOperationException(
                 errorCode: 'route.web_root_unsupported',
-                message: 'A Route web root is supported only for development Instances.',
+                message: 'A Route with a web root cannot move to a production Instance. Create the Route for that Instance instead.',
                 status: 409,
             );
         }
@@ -70,6 +73,40 @@ final class RouteWebRoot
         return $directory === self::relativeDirectory($instance->root ?? $instance->project->root)
             ? null
             : substr(hash('sha256', $directory), 0, 8);
+    }
+
+    /**
+     * The web roots that the Instance's active Routes with a web root serve outside its default
+     * application directory, ordered by web root. Each names its relative application directory and the
+     * pool suffix of that directory. Production renders one PHP-FPM pool and one stable `.env` for each
+     * distinct directory, and grants Caddy access to each web root.
+     *
+     * @return list<array{web_root: string, directory: string, suffix: string}>
+     */
+    public static function servedApplications(Instance $instance): array
+    {
+        $instance->loadMissing('project');
+        $default = self::relativeDirectory($instance->root ?? $instance->project->root);
+        $webRoots = Route::query()
+            ->whereNotNull('web_root')
+            ->whereIn('status', [RouteStatus::Active->value, RouteStatus::Activating->value])
+            ->whereHas('targets', static fn ($query) => $query->where('instance_id', $instance->id))
+            ->pluck('web_root')
+            ->filter(static fn (mixed $webRoot): bool => is_string($webRoot))
+            ->unique()
+            ->sort()
+            ->values();
+        $served = [];
+
+        foreach ($webRoots as $webRoot) {
+            $directory = self::relativeDirectory($webRoot);
+
+            if ($directory !== $default) {
+                $served[] = ['web_root' => $webRoot, 'directory' => $directory, 'suffix' => substr(hash('sha256', $directory), 0, 8)];
+            }
+        }
+
+        return $served;
     }
 
     /**

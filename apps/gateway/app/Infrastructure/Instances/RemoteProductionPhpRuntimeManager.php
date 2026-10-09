@@ -8,6 +8,7 @@ use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Instances\InstanceSandboxGuard;
 use App\Domain\Instances\ProductionPhpRuntimeIdentity;
 use App\Domain\Instances\ProductionPhpRuntimeManager;
+use App\Domain\Routes\RouteWebRoot;
 use App\Infrastructure\AppProd\ProductionSshExecutor;
 use App\Infrastructure\Metrics\ServiceMetricsProjection;
 use App\Infrastructure\Nodes\RemotePhpPackageManager;
@@ -46,8 +47,9 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
     ): void {
         $identity = ProductionPhpRuntimeIdentity::from($instance);
         $metrics = $metricsEnabled ?? $this->serviceMetrics?->enabled($instance->node) ?? false;
-        $configuration = $this->renderer->render($identity, $metrics);
-        $initialConfiguration = $this->renderer->render($identity, $metrics, initialRelease: true);
+        $applications = RouteWebRoot::servedApplications($instance);
+        $configuration = $this->renderer->render($identity, $metrics, applications: $applications);
+        $initialConfiguration = $this->renderer->render($identity, $metrics, initialRelease: true, applications: $applications);
         $versions = collect([$identity->version]);
         if ($operation !== 'monitor') {
             $this->packages->installPackagesOnlyForAppProd(
@@ -774,6 +776,13 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
 
             monitoring=0
             select_application_pool
+            # A Route with a web root adds a pool for its application directory after the default pool.
+            # PHP-FPM cannot start while a pool names a missing directory, so each must be in a release.
+            while IFS= read -r served_directory; do
+                served_resolved=$(realpath -e -- "$served_directory")
+                case "$served_resolved" in "$home/releases/"*) ;; *) exit 1 ;; esac
+                test -d "$served_resolved"
+            done < <(printf '%s' "$pool_configuration" | base64 --decode | sed -n 's/^chdir = //p' | tail -n +2)
 
             if printf '%s' "$pool_configuration" | base64 --decode | grep -q '^pm.status_path = /orbit-fpm-status$'; then
                 monitoring=1
@@ -969,6 +978,10 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
             test "$(readlink -f -- "$proc_root/$main_pid/exe")" = "/usr/sbin/php-fpm$version"
             test -S "$socket"
             test "$(stat -c '%U:%G:%a' -- "$socket")" = "$user:caddy:660"
+            while IFS= read -r served_socket; do
+                test -S "$served_socket"
+                test "$(stat -c '%U:%G:%a' -- "$served_socket")" = "$user:caddy:660"
+            done < <(printf '%s' "$pool_configuration" | base64 --decode | sed -n 's/^listen = //p' | tail -n +2)
             local_after=$(sha256sum -- "$local_tuning" | awk '{print $1}')
             test "$local_before" = "$local_after"
             test "$(systemctl show --property MainPID --value "$service")" = "$main_pid"
@@ -1204,6 +1217,14 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
                 test "$(stat -c '%U:%G' -- "$socket")" = "$user:caddy"
                 rm -f -- "$socket"
             fi
+            # The pools of other application directories listen on /run/php/<user>.<suffix>.sock.
+            for served_socket in /run/php/"$user".*.sock; do
+                if [ -e "$served_socket" ] || [ -L "$served_socket" ]; then
+                    test -S "$served_socket"
+                    test "$(stat -c '%U:%G' -- "$served_socket")" = "$user:caddy"
+                    rm -f -- "$served_socket"
+                fi
+            done
             if [ -e "$local_tuning" ] || [ -L "$local_tuning" ]; then
                 test -f "$local_tuning"
                 test ! -L "$local_tuning"

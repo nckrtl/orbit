@@ -14,6 +14,7 @@ use App\Domain\Instances\Deployment\DeploymentStep;
 use App\Domain\Instances\Deployment\ProductionDeployment;
 use App\Domain\Instances\InstanceSandboxGuard;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Routes\RouteWebRoot;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppProd\ProductionSshExecutor;
 use App\Infrastructure\GitHub\GitReadScript;
@@ -46,7 +47,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
         $name = ($this->releaseName)();
         $this->assertReleaseName($name);
 
-        $script = GitReadScript::for($this->access->for($repository, $instance->loadMissing('project')->project->source_access), ProductionApplicationPaths::render(<<<'BASH'
+        $script = GitReadScript::for($this->access->for($repository, $instance->loadMissing('project')->project->source_access), ProductionApplicationPaths::render(ProductionWebRootProgram::functions()."\n".<<<'BASH'
                     repository=$1
                     user=$2
                     home=$3
@@ -54,6 +55,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
                     branch=$5
                     name=$6
                     relative_root=$7
+                    served_web_roots=${8:-}
                     state_directory="/var/lib/orbit/app-instance-sources/$instance"
                     marker="$state_directory/release-layout"
                     releases="$home/releases"
@@ -92,6 +94,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
                     test "$(sudo -u "$user" -H realpath -e -- "$release__APPLICATION_SUFFIX__")" = "$release__APPLICATION_SUFFIX__"
                     sudo -u "$user" -H ln -s __ENVIRONMENT_TARGET__ "$release_environment"
                     test "$(sudo -u "$user" -H realpath -e -- "$release_environment")" = "$environment"
+                    link_served_environments "$release"
                     selected_root=$(sudo -u "$user" -H realpath -m -- "$release/$relative_root")
                     case "$selected_root" in "$release"|"$release"/*) ;; *) exit 1 ;; esac
                     sudo -u "$user" -H test -d "$selected_root"
@@ -118,6 +121,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
                     $branch,
                     $name,
                     $root,
+                    ...$this->servedWebRoots($instance),
                 ],
                 input: $script->input,
                 protectedInput: $script->protectedInput,
@@ -265,8 +269,9 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
                     $release->name,
                     $release->commit,
                     $root,
+                    ...$this->servedWebRoots($instance),
                 ],
-                input: ProductionApplicationPaths::render(<<<'BASH'
+                input: ProductionApplicationPaths::render(ProductionWebRootProgram::functions()."\n".<<<'BASH'
                     repository=$1
                     user=$2
                     home=$3
@@ -274,6 +279,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
                     name=$5
                     expected_commit=$6
                     relative_root=$7
+                    served_web_roots=${8:-}
                     state_directory="/var/lib/orbit/app-instance-sources/$instance"
                     marker="$state_directory/release-layout"
                     releases="$home/releases"
@@ -318,6 +324,10 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
                     sudo setfacl -m u:caddy:--x "$release"
                     sudo setfacl -P -R -m u:caddy:r-X "$selected_root"
                     sudo find -P "$selected_root" -type d -exec setfacl -m d:u:caddy:r-x -- {} +
+                    # Each Route with a web root needs its directory, .env link, and Caddy access in the
+                    # selected release, also in an older release that a rollback selects.
+                    link_served_environments "$release"
+                    grant_served_web_roots "$release"
                     temporary="$home/.current.$$.tmp"
                     trap 'sudo -u "$user" -H rm -f -- "$temporary"' EXIT
                     sudo -u "$user" -H ln -s "releases/$name" "$temporary"
@@ -475,6 +485,19 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
         );
 
         return $this->releaseStateFromResult($result);
+    }
+
+    /**
+     * The web roots of the Instance's Routes with a web root, as one more script argument. An Instance
+     * without such a Route passes no argument, so its commands are unchanged.
+     *
+     * @return list<string>
+     */
+    private function servedWebRoots(Instance $instance): array
+    {
+        $entries = ProductionWebRootProgram::entries(RouteWebRoot::servedApplications($instance));
+
+        return $entries === '' ? [] : [$entries];
     }
 
     /** @return array{string, string, string, string} */

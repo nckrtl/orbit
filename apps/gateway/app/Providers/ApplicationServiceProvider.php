@@ -104,6 +104,7 @@ use App\Domain\Instances\ProductionInstanceSourceLifecycle;
 use App\Domain\Instances\ProductionPhpRuntimeManager;
 use App\Domain\Instances\ProductionReleaseLayout;
 use App\Domain\Instances\ProductionRouteProjector;
+use App\Domain\Instances\ProductionWebRootManager;
 use App\Domain\Instances\Queue\InstanceQueueReader;
 use App\Domain\Instances\Registration\RegistrationSourceManager;
 use App\Domain\Instances\Removal\DevelopmentInstanceSourceFinalizer;
@@ -277,6 +278,7 @@ use App\Infrastructure\Instances\NativeInstanceRemovalProjector;
 use App\Infrastructure\Instances\NativeInstanceTransferRuntime;
 use App\Infrastructure\Instances\NativeProductionInstanceProvisioner;
 use App\Infrastructure\Instances\NativeProductionRouteProjector;
+use App\Infrastructure\Instances\PlacementRouteApplicationUrlWriter;
 use App\Infrastructure\Instances\ProtectedSqliteSnapshotTransfer;
 use App\Infrastructure\Instances\RecordedProductionInstanceContentRetention;
 use App\Infrastructure\Instances\RemoteDevelopmentDeployment;
@@ -294,6 +296,7 @@ use App\Infrastructure\Instances\RemoteInstanceTransferSource;
 use App\Infrastructure\Instances\RemoteProductionDeployment;
 use App\Infrastructure\Instances\RemoteProductionInstanceSourceLifecycle;
 use App\Infrastructure\Instances\RemoteProductionPhpRuntimeManager;
+use App\Infrastructure\Instances\RemoteProductionWebRootManager;
 use App\Infrastructure\Instances\RemoteRegistrationSourceManager;
 use App\Infrastructure\Logs\CacheLogStreamStore;
 use App\Infrastructure\Metrics\MetricsCadvisorRuntime;
@@ -431,7 +434,8 @@ final class ApplicationServiceProvider extends ServiceProvider
         InstanceRemover::class => RemoveInstanceAction::class,
         InstanceRemovalProjector::class => NativeInstanceRemovalProjector::class,
         DevelopmentInstanceConfigurator::class => RemoteDevelopmentInstanceConfigurator::class,
-        RouteApplicationUrlWriter::class => RemoteDevelopmentInstanceConfigurator::class,
+        RouteApplicationUrlWriter::class => PlacementRouteApplicationUrlWriter::class,
+        ProductionWebRootManager::class => RemoteProductionWebRootManager::class,
         ProjectUpdateSourceMutator::class => RemoteProjectUpdateSourceMutator::class,
         ProjectUpdateProjectionMutator::class => NativeProjectUpdateProjectionMutator::class,
         DevelopmentInstanceProvisioner::class => NativeDevelopmentInstanceProvisioner::class,

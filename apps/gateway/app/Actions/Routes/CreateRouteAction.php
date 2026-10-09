@@ -13,6 +13,7 @@ use App\Domain\Instances\DevelopmentRouteProjector;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\ProductionCloneRouteProjector;
 use App\Domain\Instances\ProductionRouteProjector;
+use App\Domain\Instances\ProductionWebRootManager;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Routes\CustomProxyProcessListener;
 use App\Domain\Routes\CustomProxyRouteProjector;
@@ -55,6 +56,7 @@ final readonly class CreateRouteAction
         private ?DevelopmentProjectionOperationLock $projectionOwner = null,
         private ?PublishPublicRouteAction $publishPublic = null,
         private ?SynchronizeRouteWebRootUrlsAction $webRootUrls = null,
+        private ?ProductionWebRootManager $productionWebRoots = null,
     ) {}
 
     /** @return array{route: Route, created: bool} */
@@ -107,6 +109,14 @@ final readonly class CreateRouteAction
         if ($instance->placedOnAppProd()) {
             $projection = $this->productionRoutes ?? app(ProductionRouteProjector::class);
             $projection->prepareCertificate($instance, $route);
+
+            if ($route->hasWebRoot()) {
+                // The selected release gets the web root's .env link and Caddy access, and its stable .env
+                // its APP_URL, before the pool of its directory starts.
+                ($this->productionWebRoots ?? app(ProductionWebRootManager::class))->prepare($instance);
+                ($this->webRootUrls ?? app(SynchronizeRouteWebRootUrlsAction::class))->execute($instance);
+            }
+
             $projection->prepareRuntime($instance, $route);
             $projection->prepareFirewall($instance);
             $steps = $this->productionCloneRoutes ?? app(ProductionCloneRouteProjector::class);
@@ -389,8 +399,6 @@ final readonly class CreateRouteAction
 
         if ($webRoot === null) {
             RouteTargetWebRoot::assertSupported($target);
-        } else {
-            RouteWebRoot::assertSupportedTarget($target);
         }
 
         $placement = $this->state->forNode($target->node);

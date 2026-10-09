@@ -88,6 +88,8 @@ Each production Instance that serves PHP has a dedicated service for its Unix us
 | Generated files | `/etc/orbit/php-fpm/<production-user>/generated/`, including `master.ini` | Gateway |
 | Local tuning | `/etc/orbit/php-fpm/<production-user>/local.conf` | Operator |
 
+A [Route with a web root](/reference/routes#web-roots-on-production) adds a pool for its application directory to the same master: `orbit-<production-user>-<suffix>`, with socket `/run/php/<production-user>.<suffix>.sock` and its working directory under `current`. The suffix is the same hash of the relative directory as in development. The generated pool file holds that pool's process settings, because `local.conf` tunes only the default pool. Convergence refuses a pool whose directory is not inside a release, and checks each socket after a start. Without such a Route, the generated files are unchanged. All pools share the master's OPcache, so one cache refresh covers them.
+
 Orbit seeds `local.conf` with its defaults for a new service. After that, provisioning, retries, updates, and removal never change it. The generated files set the identity: the user, pool, socket, PHP version, home, and application path. Before it starts or reloads the service, the Gateway validates the effective configuration. It refuses a `local.conf` that changes the identity. It never adopts an existing user, service, socket, or file that belongs to something else.
 
 A failed start restores the generated files and service state from before the change. An interrupted change resumes from the recorded identity.

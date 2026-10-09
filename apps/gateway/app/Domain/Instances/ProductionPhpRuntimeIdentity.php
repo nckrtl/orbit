@@ -125,6 +125,34 @@ final readonly class ProductionPhpRuntimeIdentity
         return ApplicationDirectory::resolve($base, $root);
     }
 
+    /** The pool of another application directory that a Route with a web root serves. */
+    public function applicationPool(string $suffix): string
+    {
+        return "{$this->pool}-{$suffix}";
+    }
+
+    /**
+     * The socket of another application directory's pool. A dot cannot occur in a production user
+     * name, so the name never collides with another production user's socket.
+     */
+    public function applicationSocket(string $suffix): string
+    {
+        return self::applicationSocketFor($this->socket, $suffix);
+    }
+
+    public static function applicationSocketFor(string $socket, string $suffix): string
+    {
+        return substr($socket, 0, -strlen('.sock')).".{$suffix}.sock";
+    }
+
+    /** The working directory of another application directory's pool, relative to the release. */
+    public function servedApplicationDirectory(string $relativeDirectory, bool $initialRelease = false): string
+    {
+        $base = $this->home.($initialRelease ? '/releases/initial' : '/current');
+
+        return $relativeDirectory === '' ? $base : "{$base}/{$relativeDirectory}";
+    }
+
     public function marker(): string
     {
         return implode("\n", [
