@@ -58,8 +58,11 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
-          ref: ${{ github.head_ref || github.ref_name }}
-          repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+          # A pull request tests its merge ref, the tree that would land on main. Its commit descends from the main
+          # commit that the restored main graph records, so TIA selects only the tests that the pull request affects.
+          # Pest reads the graph on that detached HEAD and does not write it.
+          ref: ${{ github.event_name == 'pull_request' && github.ref || github.ref_name }}
+          repository: ${{ github.repository }}
 
       # The checkout above names the branch, and a later push can move it before this job starts. A running main run
       # is never cancelled, so it must test exactly its own commit: its Required checks result releases that commit.
@@ -120,6 +123,7 @@ jobs:
       - name: Validate Composer metadata
         run: composer validate --strict
 
+      # A pull request restores the quality caches only from main and saves none, as it does the Pest TIA graph below.
       - name: Compute PHPStan result cache prefix
         id: orbit-phpstan-key
         working-directory: .
@@ -132,9 +136,9 @@ jobs:
           path: ${{ matrix.directory }}/vendor/phpstan/cache/resultCache.php
           key: ${{ steps.orbit-phpstan-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-${{ github.sha }}
           restore-keys: |
-            ${{ steps.orbit-phpstan-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-
+            ${{ github.event_name != 'pull_request' && format('{0}-{1}-', steps.orbit-phpstan-key.outputs.prefix, github.ref_name) || '' }}
             ${{ steps.orbit-phpstan-key.outputs.prefix }}-main-
-            orbit-phpstan-php8.5-${{ matrix.directory }}-
+            ${{ github.event_name != 'pull_request' && format('orbit-phpstan-php8.5-{0}-', matrix.directory) || '' }}
 
       - name: Compute Pint and Rector cache prefix
         id: orbit-lint-key
@@ -150,9 +154,9 @@ jobs:
             ${{ matrix.directory }}/vendor/rector/cache
           key: ${{ steps.orbit-lint-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-${{ github.sha }}
           restore-keys: |
-            ${{ steps.orbit-lint-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-
+            ${{ github.event_name != 'pull_request' && format('{0}-{1}-', steps.orbit-lint-key.outputs.prefix, github.ref_name) || '' }}
             ${{ steps.orbit-lint-key.outputs.prefix }}-main-
-            orbit-lint-php8.5-${{ matrix.directory }}-
+            ${{ github.event_name != 'pull_request' && format('orbit-lint-php8.5-{0}-', matrix.directory) || '' }}
 
       - name: Run project quality checks
         run: composer check
@@ -161,14 +165,14 @@ jobs:
         run: php ../../bin/check-classification-fakes tests
 
       - name: Save PHPStan result cache
-        if: success()
+        if: success() && github.event_name != 'pull_request'
         uses: actions/cache/save@v6
         with:
           path: ${{ matrix.directory }}/vendor/phpstan/cache/resultCache.php
           key: ${{ steps.orbit-phpstan-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-${{ github.sha }}
 
       - name: Save Pint and Rector caches
-        if: success()
+        if: success() && github.event_name != 'pull_request'
         uses: actions/cache/save@v6
         with:
           path: |
@@ -182,8 +186,10 @@ jobs:
         run: |
           printf 'prefix=%s\n' "orbit-tia-php8.5-${{ matrix.directory }}-${{ hashFiles(format('{0}/composer.lock', matrix.directory), format('{0}/tests/Pest.php', matrix.directory), format('{0}/phpunit.xml', matrix.directory), format('{0}/phpunit.xml.dist', matrix.directory)) }}" >> "$GITHUB_OUTPUT"
 
-      # Each run saves its graph under its own key, so a full run on an already tested commit still refreshes the cache.
-      # A restore takes the newest graph for the branch, then for main.
+      # Each run on main saves its graph under its own key, so a full run on an already tested commit still refreshes
+      # the cache. A pull request restores only a main graph, first the one for its base commit, and saves none:
+      # actions/cache tries every restore key in the pull request's own scope before main's, and an older graph of the
+      # pull request would count every main change since it as changed.
       - name: Restore Pest TIA graph
         id: orbit-tia-restore
         uses: actions/cache/restore@v6
@@ -191,9 +197,10 @@ jobs:
           path: ${{ matrix.directory }}/.orbit-tia
           key: ${{ steps.orbit-tia-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            ${{ steps.orbit-tia-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-
+            ${{ github.event_name != 'pull_request' && format('{0}-{1}-', steps.orbit-tia-key.outputs.prefix, github.ref_name) || '' }}
+            ${{ github.event_name == 'pull_request' && format('{0}-main-{1}-', steps.orbit-tia-key.outputs.prefix, github.event.pull_request.base.sha) || '' }}
             ${{ steps.orbit-tia-key.outputs.prefix }}-main-
-            orbit-tia-php8.5-${{ matrix.directory }}-
+            ${{ github.event_name != 'pull_request' && format('orbit-tia-php8.5-{0}-', matrix.directory) || '' }}
 
       - name: Run affected tests
         if: github.event_name == 'pull_request'
@@ -260,7 +267,7 @@ jobs:
         run: ../../bin/ci-tia finish --mode "$MODE" --base "$BASE" --log "$RUNNER_TEMP/orbit-tia-pest.log"
 
       - name: Save Pest TIA graph
-        if: success()
+        if: success() && github.event_name != 'pull_request'
         uses: actions/cache/save@v6
         with:
           path: ${{ matrix.directory }}/.orbit-tia

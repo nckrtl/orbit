@@ -24,13 +24,13 @@ function t3_layer_registration(array $overrides = []): array
         'environment_id' => 'env-beast',
         'label' => 'beast',
         'url' => T3_LAYER_SERVER,
-        'pairing_url' => 'http://localhost:3773/pair#token=admin-pairing-token',
+        'admin_session' => 'admin-session-token',
         ...$overrides,
     ];
 }
 
 /** Fakes a T3 server that answers registration the way T3 Code's environment API does. */
-function t3_layer_fake_server(array $extra = [], string $scope = 'orchestration:read orchestration:operate terminal:operate review:write relay:read access:read access:write relay:write'): void
+function t3_layer_fake_server(array $extra = [], array $scopes = ['orchestration:read', 'orchestration:operate', 'terminal:operate', 'review:write', 'relay:read', 'access:read', 'access:write', 'relay:write']): void
 {
     Http::preventStrayRequests();
     Http::fake([
@@ -41,12 +41,12 @@ function t3_layer_fake_server(array $extra = [], string $scope = 'orchestration:
             'serverVersion' => '0.9.1',
             'capabilities' => [],
         ]),
-        T3_LAYER_SERVER.'/oauth/token' => Http::response([
-            'access_token' => 'admin-session-token',
-            'issued_token_type' => 'urn:ietf:params:oauth:token-type:access_token',
-            'token_type' => 'Bearer',
-            'expires_in' => 2_592_000,
-            'scope' => $scope,
+        T3_LAYER_SERVER.'/api/auth/session' => Http::response([
+            'authenticated' => true,
+            'auth' => ['policy' => 'remote-reachable', 'bootstrapMethods' => ['one-time-token'], 'sessionMethods' => ['bearer-access-token']],
+            'scopes' => $scopes,
+            'sessionMethod' => 'bearer-access-token',
+            'expiresAt' => Carbon::now()->addDays(30)->toIso8601ZuluString(),
         ]),
         T3_LAYER_SERVER.'/api/auth/clients' => Http::response([]),
         ...$extra,
@@ -225,7 +225,7 @@ describe('profile settings', function (): void {
 });
 
 describe('environment registration', function (): void {
-    it('exchanges the admin pairing link for an admin session and stores it encrypted', function (): void {
+    it('checks the admin session with the T3 server and stores it encrypted', function (): void {
         t3_layer_fake_server();
 
         $this->postJson('/api/v1/t3/environments', t3_layer_registration())
@@ -237,13 +237,9 @@ describe('environment registration', function (): void {
             ->assertJsonPath('data.status', 'registered')
             ->assertJsonMissingPath('data.admin_session');
 
-        Http::assertSent(static fn (HttpRequest $request): bool => $request->url() === T3_LAYER_SERVER.'/oauth/token'
-            && $request->isForm()
-            && $request['grant_type'] === 'urn:ietf:params:oauth:grant-type:token-exchange'
-            && $request['subject_token'] === 'admin-pairing-token'
-            && $request['subject_token_type'] === 'urn:t3:params:oauth:token-type:environment-bootstrap'
-            && $request['requested_token_type'] === 'urn:ietf:params:oauth:token-type:access_token'
-            && $request['client_label'] === 'Orbit Gateway');
+        Http::assertSent(static fn (HttpRequest $request): bool => $request->url() === T3_LAYER_SERVER.'/api/auth/session'
+            && $request->method() === 'GET'
+            && $request->hasHeader('Authorization', 'Bearer admin-session-token'));
 
         $environment = T3Environment::query()->sole();
         $stored = DB::table('t3_environments')->value('admin_session');
@@ -252,7 +248,7 @@ describe('environment registration', function (): void {
             ->and($environment->admin_session_expires_at->isAfter(Carbon::now()->addDays(29)))->toBeTrue()
             ->and(Activity::query()->where('command', 't3:environment:register')->sole()->properties?->toArray()['input'])
             ->toBe(['environment_id' => 'env-beast', 'label' => 'beast', 'url' => T3_LAYER_SERVER])
-            ->and(json_encode(Activity::query()->sole()->properties))->not->toContain('admin-pairing-token');
+            ->and(json_encode(Activity::query()->sole()->properties))->not->toContain('admin-session-token');
 
         $this->getJson('/api/v1/t3/environments')
             ->assertOk()
@@ -282,19 +278,19 @@ describe('environment registration', function (): void {
             && in_array($request['sessionId'], ['new', 'phone'], true));
     });
 
-    it('refuses a URL that serves another environment before it spends the pairing link', function (): void {
+    it('refuses a URL that serves another environment before it sends the session', function (): void {
         t3_layer_fake_server();
 
         $this->postJson('/api/v1/t3/environments', t3_layer_registration(['environment_id' => 'env-other']))
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 't3.environment_mismatch');
 
-        Http::assertNotSent(static fn (HttpRequest $request): bool => str_ends_with($request->url(), '/oauth/token'));
+        Http::assertNotSent(static fn (HttpRequest $request): bool => str_ends_with($request->url(), '/api/auth/session'));
         expect(T3Environment::query()->count())->toBe(0);
     });
 
-    it('refuses a pairing link that is not an admin link', function (): void {
-        t3_layer_fake_server(scope: 'orchestration:read orchestration:operate terminal:operate review:write relay:read');
+    it('refuses a session that is not an admin session', function (): void {
+        t3_layer_fake_server(scopes: ['orchestration:read', 'orchestration:operate', 'terminal:operate', 'review:write', 'relay:read']);
 
         $this->postJson('/api/v1/t3/environments', t3_layer_registration())
             ->assertUnprocessable()
@@ -302,21 +298,25 @@ describe('environment registration', function (): void {
         expect(T3Environment::query()->count())->toBe(0);
     });
 
-    it('reports a pairing link the T3 server rejects', function (): void {
+    it('reports a session the T3 server does not accept', function (): void {
         t3_layer_fake_server([
-            T3_LAYER_SERVER.'/oauth/token' => Http::response(['_tag' => 'EnvironmentAuthInvalidError', 'code' => 'auth_invalid', 'reason' => 'invalid_credential', 'traceId' => 't'], 401),
+            T3_LAYER_SERVER.'/api/auth/session' => Http::response([
+                'authenticated' => false,
+                'auth' => ['policy' => 'remote-reachable', 'bootstrapMethods' => ['one-time-token'], 'sessionMethods' => ['bearer-access-token']],
+            ]),
         ]);
 
         $this->postJson('/api/v1/t3/environments', t3_layer_registration())
             ->assertStatus(502)
             ->assertJsonPath('error.code', 't3.session_rejected')
-            ->assertJsonPath('error.details.reason', 'invalid_credential');
+            ->assertJsonPath('error.details.operation', 'session');
+        expect(T3Environment::query()->count())->toBe(0);
     });
 
-    it('refuses a pairing URL without a token', function (): void {
-        $this->postJson('/api/v1/t3/environments', t3_layer_registration(['pairing_url' => 'http://localhost:3773/pair']))
+    it('refuses a registration without an admin session', function (): void {
+        $this->postJson('/api/v1/t3/environments', t3_layer_registration(['admin_session' => 'two words']))
             ->assertUnprocessable()
-            ->assertJsonValidationErrors(['pairing_url'], 'error.details');
+            ->assertJsonValidationErrors(['admin_session'], 'error.details');
     });
 });
 
