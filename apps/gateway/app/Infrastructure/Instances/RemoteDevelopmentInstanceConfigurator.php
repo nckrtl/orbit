@@ -10,7 +10,6 @@ use App\Domain\Instances\DevelopmentInstanceConfigurator;
 use App\Domain\Instances\DevelopmentSourceProfile;
 use App\Domain\Instances\Environment\InstanceEnvironmentRenderer;
 use App\Domain\Instances\Environment\LaravelApplicationKey;
-use App\Domain\Instances\ProjectSandboxRuntimeGuard;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Projects\ProjectType;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
@@ -28,7 +27,6 @@ final readonly class RemoteDevelopmentInstanceConfigurator implements Developmen
 
     public function inspect(Instance $instance): DevelopmentSourceProfile
     {
-        ProjectSandboxRuntimeGuard::assertRuntime($instance);
         $instance->loadMissing(['project', 'node']);
 
         // An unrouted monorepo is a source checkout, not a single PHP application.
@@ -80,7 +78,6 @@ final readonly class RemoteDevelopmentInstanceConfigurator implements Developmen
 
     public function configureLaravelUrl(Instance $instance, string $url): void
     {
-        ProjectSandboxRuntimeGuard::assertRuntime($instance);
         $instance->loadMissing(['node', 'project']);
         $account = $this->accounts->resolve($instance->node);
         $storedKey = LaravelApplicationKey::stored($instance);

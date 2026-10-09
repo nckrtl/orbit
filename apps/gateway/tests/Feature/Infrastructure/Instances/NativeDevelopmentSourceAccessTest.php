@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Domain\Instances\InstanceState;
-use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Instances\NativeDevelopmentSourceAccess;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -37,15 +36,3 @@ it('grants preview source access only through the verified enrolled Project gues
 
     app(NativeDevelopmentSourceAccess::class)->grant($workspace);
 })->with(['incus', 'upcloud']);
-
-it('refuses stale Project preview source ownership before SSH', function (string $fault): void {
-    $workspace = IncusRuntimeWorkspace::create();
-    match ($fault) {
-        'parked' => $workspace->taskSandbox->update(['state' => 'stopped']),
-        'host path' => $workspace->update(['node_id' => $workspace->taskSandbox->spec['host_id']]),
-        'unconfirmed hub' => $workspace->taskSandbox->forceFill(['enrollment' => array_diff_key($workspace->taskSandbox->enrollment, ['hub_confirmed_at' => true])])->save(),
-    };
-    mock(SshExecutor::class)->shouldNotReceive('execute');
-
-    expect(fn () => app(NativeDevelopmentSourceAccess::class)->grant($workspace->fresh()))->toThrow(ResourceOperationException::class);
-})->with(['parked', 'host path', 'unconfirmed hub']);

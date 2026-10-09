@@ -22,7 +22,6 @@ use App\Domain\Instances\Environment\InstanceEnvironmentRenderer;
 use App\Domain\Instances\Environment\InstanceEnvironmentStore;
 use App\Domain\Instances\Environment\InstanceEnvironmentWriter;
 use App\Domain\Instances\InstanceDestinationGuard;
-use App\Domain\Instances\InstanceSandboxGuard;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\Sqlite\InstanceSqliteSeeder;
@@ -91,7 +90,6 @@ final readonly class TransferInstanceAction
     /** @return array{instance: Instance, transfer: InstanceTransfer, created: bool} */
     public function execute(Instance $instance, TransferInstanceData $data): array
     {
-        InstanceSandboxGuard::assertHostOperation($instance);
         $instance->loadMissing(['project', 'node', 'routes.targets', 'removalMember']);
         $existing = $this->existingTransfer($instance, $data);
 

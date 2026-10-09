@@ -12,7 +12,6 @@ use App\Domain\Instances\Deployment\DeploymentRelease;
 use App\Domain\Instances\Deployment\DeploymentReleaseState;
 use App\Domain\Instances\Deployment\DeploymentRequest;
 use App\Domain\Instances\Deployment\DevelopmentDeployment;
-use App\Domain\Instances\InstanceSandboxGuard;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\Storage\CheckoutRemovalBoundary;
 use App\Domain\Projects\DevelopmentDeployStep;
@@ -49,13 +48,11 @@ final readonly class RemoteDevelopmentDeployment implements DevelopmentDeploymen
 
     public function initialize(Instance $instance): void
     {
-        InstanceSandboxGuard::assertHostOperation($instance);
         $this->run($instance, DevelopmentReleaseProgram::initialize(), 'initialize');
     }
 
     public function target(Instance $instance): string
     {
-        InstanceSandboxGuard::assertHostOperation($instance);
         $instance->loadMissing('project');
         $branch = $instance->project->default_branch;
         if (! is_string($branch) || ! GitBranchName::isValid($branch)) {
@@ -82,14 +79,11 @@ final readonly class RemoteDevelopmentDeployment implements DevelopmentDeploymen
 
     public function selected(Instance $instance): DeploymentRelease
     {
-        InstanceSandboxGuard::assertHostOperation($instance);
-
         return $this->receipt($instance, $this->run($instance, DevelopmentReleaseProgram::selected(), 'selected'));
     }
 
     public function releases(Instance $instance): DeploymentReleaseState
     {
-        InstanceSandboxGuard::assertHostOperation($instance);
         $result = $this->run($instance, DevelopmentReleaseProgram::releases(), 'releases');
         $lines = explode("\n", trim($result->stdout));
         $selected = null;
@@ -117,7 +111,6 @@ final readonly class RemoteDevelopmentDeployment implements DevelopmentDeploymen
 
     public function prepare(Instance $instance, string $commit): DeploymentRelease
     {
-        InstanceSandboxGuard::assertHostOperation($instance);
         $name = ($this->releaseName)();
         if (! DeploymentRelease::isValidName($name)) {
             throw $this->invalidReceipt();
@@ -133,7 +126,6 @@ final readonly class RemoteDevelopmentDeployment implements DevelopmentDeploymen
 
     public function executeStep(Instance $instance, DeploymentRelease $release, DevelopmentDeployStep $step, DeploymentRequest $request): CommandResult
     {
-        InstanceSandboxGuard::assertHostOperation($instance);
         $this->assertRelease($instance, $release);
         try {
             return $this->ssh->execute(
@@ -174,7 +166,6 @@ final readonly class RemoteDevelopmentDeployment implements DevelopmentDeploymen
 
     public function activate(Instance $instance, DeploymentRelease $release): DeploymentRelease
     {
-        InstanceSandboxGuard::assertHostOperation($instance);
         $this->assertRelease($instance, $release);
         $route = $instance->authoritativeRoute();
         if ($route !== null) {
@@ -200,7 +191,6 @@ final readonly class RemoteDevelopmentDeployment implements DevelopmentDeploymen
 
     public function prune(Instance $instance, DeploymentRelease $selected): void
     {
-        InstanceSandboxGuard::assertHostOperation($instance);
         $this->assertRelease($instance, $selected);
         $retained = [];
         foreach (Instance::query()->where('node_id', $instance->node_id)->where('project_id', $instance->project_id)

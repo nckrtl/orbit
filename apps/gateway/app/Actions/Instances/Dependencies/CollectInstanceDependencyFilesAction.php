@@ -6,7 +6,6 @@ namespace App\Actions\Instances\Dependencies;
 
 use App\Domain\Instances\Dependencies\CollectedDependencyFiles;
 use App\Domain\Instances\Dependencies\DependencyCollectionException;
-use App\Domain\Instances\InstanceSandboxGuard;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Infrastructure\Instances\DependencyFilesProgram;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -29,7 +28,6 @@ final readonly class CollectInstanceDependencyFilesAction
 
     public function execute(Instance $instance): CollectedDependencyFiles
     {
-        InstanceSandboxGuard::assertHostOperation($instance);
         $node = $instance->node;
         $production = $instance->placedOnAppProd();
         $path = $production ? $instance->production_home : $instance->checkout_path;

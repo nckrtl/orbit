@@ -13,7 +13,6 @@ use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Instances\DevelopmentInstanceBranchInspector;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
-use App\Domain\Instances\InstanceSandboxGuard;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Routes\ReservedPrivateHostname;
@@ -35,7 +34,6 @@ final readonly class RenameInstanceAction
 
     public function execute(Instance $instance, RenameInstanceData $data): Instance
     {
-        InstanceSandboxGuard::assertHostOperation($instance);
         try {
             return $this->environmentOperations->run([$instance->id], fn (): Instance => $this->sourceLock->synchronized(
                 $instance->node_id,
