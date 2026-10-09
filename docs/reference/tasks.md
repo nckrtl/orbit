@@ -935,7 +935,11 @@ The check process runs as the Node's managed user, the account the Gateway conne
 
 When `ORBIT_TASKS_WORKER_USER` names an account on the Node, normally `orbit-worker`, the check shares what it created with that worker before it writes `$(git rev-parse --git-path orbit)/check.json`. It grants the worker and the managed user `rwX` on every checkout entry the managed user owns, with default ACLs on directories first, as [workspace inspection](/reference/instance-setup#checkout-access) does. `.git/config` and `.git/hooks` keep their read-only worker access. The grant skips directories that the managed user cannot enter, such as private directories that the worker created. Their owner already has access.
 
-Before setup and the command, the check does the reverse. It runs `find` and `setfacl` as the worker with `sudo -n -u orbit-worker -H`, because only an entry's owner can change its ACL. It grants the managed user `rwX` on every checkout entry the worker owns, with default ACLs on directories first, and skips `.git/config`, `.git/hooks`, and directories the worker cannot enter. A package manager that the agent ran can leave directories with mode `0755`, whose ACL mask hides the managed user's write. After this grant, the check can replace them.
+A linked worktree's Git common directory is outside the checkout. There, the check grants the same entries only in `<git-common-dir>/orbit-checks`, where `bin/review-check` writes its reports. Setting the named entries recalculates the ACL mask. This repairs a report directory that a private mode left with `mask::---`, which disables every named entry. `bin/review-check` creates each `review-*` directory with mode `0750`, so its mask keeps inherited named entries readable while other users stay closed out.
+
+Before setup and the command, the check does the reverse. It runs `find` and `setfacl` as the worker with `sudo -n -u orbit-worker -H`, because only an entry's owner can change its ACL. It grants the managed user `rwX` on every checkout entry the worker owns, and on the worker's entries in a linked worktree's `<git-common-dir>/orbit-checks`, with default ACLs on directories first. It skips `.git/config`, `.git/hooks`, and directories the worker cannot enter.
+
+Registration reads the whole common directory for its source digest, so a worker report directory with `mask::---` would otherwise block it. A package manager that the agent ran can leave directories with mode `0755`, whose ACL mask hides the managed user's write. After this grant, the check can replace them.
 
 When sudo cannot switch, the check fails with `check_error` and the reason `The managed user cannot run commands as orbit-worker.` When the grant fails, the check fails with `check_error` and the log shows the error.
 
@@ -1435,7 +1439,9 @@ Annotations, not task agents, use a Node's T3 connection. A Node whose settings 
 
 `tasks:cancel` ends a task in any status except `completed`, and except `settling` with a `pr_url`. Those return HTTP 409 `tasks.not_cancellable`. Complete a settling task instead. `watched_pr_url` does not make the task published, so a `running` or `reviewing` task stays cancellable.
 
-Cancel removes the task's workspace, then marks the task and its open subtasks `cancelled`. Subtasks, comments, and thread links stay as history. Cancel does not stop the agent conversations. Cancelling again is safe, and it retries a removal that failed.
+Cancel removes the task's workspace, then marks the task and its open subtasks `cancelled`. Subtasks, comments, and thread links stay as history. Cancel does not stop the agent conversations. Cancelling again is safe, and it retries a removal that failed. It also finds an unattached leftover by Project, `task-{id}` name, and matching branch; a name alone never permits removal.
+
+Cancel uses forced [Instance removal](/reference/instance-removal), including Project teardown and checkout deletion. A development workspace in `source_resolved` can have no Route or exactly one pending or failed Route targeting only that Instance. The eligible Route and its RouteTarget are removed with the workspace. An active or shared Route still prevents removal, keeps the Instance, and follows the removal-refused rule below.
 
 - **Settling without a pull request.** Cancel first pushes the latest approved commit to `task-{id}`, so you can open a pull request from it. A failed push returns HTTP 502 `tasks.push_failed` and keeps the task.
 - **Review and merge.** Cancel pushes only an approved commit that a final review approved. It removes approved work that no final review saw.
