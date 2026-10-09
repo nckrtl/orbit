@@ -593,9 +593,14 @@ function orb212_sync_concurrency_worker_script(): string
             ): void {}
         }
 
-        final readonly class Orb212Writer implements App\Domain\Instances\Environment\InstanceEnvironmentWriter
+        final readonly class Orb212Writer implements App\Domain\Instances\Environment\InstanceEnvironmentReader, App\Domain\Instances\Environment\InstanceEnvironmentWriter
         {
             public function __construct(private string $directory) {}
+
+            public function read(App\Domain\Instances\Environment\InstanceEnvironmentContext $context): string
+            {
+                return '';
+            }
 
             public function write(
                 App\Domain\Instances\Environment\InstanceEnvironmentContext $context,
@@ -670,7 +675,9 @@ function orb212_sync_concurrency_worker_script(): string
         try {
             if ($mode === 'sync') {
                 app()->instance(App\Domain\Instances\Environment\InstanceOperationPreflight::class, new Orb212Preflight);
-                app()->instance(App\Domain\Instances\Environment\InstanceEnvironmentWriter::class, new Orb212Writer($directory));
+                $writer = new Orb212Writer($directory);
+                app()->instance(App\Domain\Instances\Environment\InstanceEnvironmentReader::class, $writer);
+                app()->instance(App\Domain\Instances\Environment\InstanceEnvironmentWriter::class, $writer);
                 $result = app(App\Actions\Instances\SynchronizeInstanceEnvironmentAction::class)->execute($instance);
             } else {
                 touch("{$directory}/update.started");

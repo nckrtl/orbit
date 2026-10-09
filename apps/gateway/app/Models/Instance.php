@@ -80,6 +80,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $provisioning_step
  * @property string|null $failed_step
  * @property bool $first_setup_pending
+ * @property list<string>|null $environment_owned_keys
  * @property string|null $error_code
  * @property Carbon|null $runtime_definitions_captured_at
  * @property bool $development_release_layout
@@ -446,6 +447,7 @@ final class Instance extends Model
             'development_projection_pending' => 'boolean',
             'seed_selected' => 'boolean',
             'first_setup_pending' => 'boolean',
+            'environment_owned_keys' => 'array',
             'status' => InstanceState::class,
         ];
     }
