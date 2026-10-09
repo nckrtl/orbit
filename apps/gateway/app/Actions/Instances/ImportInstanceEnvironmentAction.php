@@ -11,6 +11,7 @@ use App\Domain\Instances\Environment\InstanceEnvironmentReader;
 use App\Domain\Instances\Environment\InstanceEnvironmentResult;
 use App\Domain\Instances\Environment\InstanceEnvironmentStore;
 use App\Domain\Instances\Environment\InstanceOperationPreflight;
+use App\Domain\Instances\Environment\LaravelApplicationKey;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
 
@@ -84,10 +85,7 @@ final readonly class ImportInstanceEnvironmentAction
             return $values;
         }
 
-        $stored = $instance->environmentValues()->where('env_key', 'APP_KEY')->first()?->env_value;
-        $values['APP_KEY'] = is_string($stored) && $stored !== ''
-            ? $stored
-            : 'base64:'.base64_encode(random_bytes(32));
+        $values['APP_KEY'] = LaravelApplicationKey::storedOrGenerated($instance);
 
         return $values;
     }

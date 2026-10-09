@@ -25,6 +25,7 @@ use App\Models\InstanceEnvironmentValue;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
+use Dotenv\Dotenv;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
@@ -258,9 +259,86 @@ it('creates missing Laravel environment configuration from its safe template', f
             ->and(file_get_contents($directory.'/.env.example'))
             ->toBe("APP_NAME=Acme\nTOKEN=installation-input\n")
             ->and(file_get_contents($directory.'/.env'))
-            ->toBe("APP_NAME=Acme\nTOKEN=installation-input\nAPP_URL=https://feature.acme.test\n")
+            ->toMatch('#^APP_NAME=Acme\nTOKEN=installation-input\nAPP_URL=https://feature\.acme\.test\nAPP_KEY="base64:[A-Za-z0-9+/]{43}="\n$#')
             ->and(fileperms($directory.'/.env') & 0o777)
             ->toBe(0o640);
+    } finally {
+        $files->deleteDirectory($directory);
+    }
+});
+
+it('writes a usable development .env APP_KEY and the Project name from an empty template', function (): void {
+    $directory = sys_get_temp_dir().'/orbit-laravel-key-'.Str::uuid();
+    $files = new Filesystem;
+    $files->ensureDirectoryExists($directory);
+    file_put_contents($directory.'/.env.example', "APP_NAME=Laravel\nAPP_ENV=local\nAPP_KEY=\nAPP_URL=http://localhost\n");
+
+    try {
+        [$configurator, $ssh, $instance] = orb127_laravel_configurator($directory);
+        $instance->project->update(['name' => 'Acme "Shop" $HOME']);
+
+        $configurator->configureLaravelUrl($instance->refresh(), 'https://feature.acme.test');
+        $result = orb127_run_laravel_command($ssh->commands[0]);
+        $environment = Dotenv::parse((string) file_get_contents($directory.'/.env'));
+
+        expect($result->isSuccessful())->toBeTrue($result->getErrorOutput())
+            ->and(array_keys($environment))->toBe(['APP_NAME', 'APP_ENV', 'APP_KEY', 'APP_URL'])
+            ->and($environment['APP_NAME'])->toBe('Acme "Shop" $HOME')
+            ->and($environment['APP_URL'])->toBe('https://feature.acme.test')
+            ->and($environment['APP_KEY'])->toStartWith('base64:')
+            ->and(strlen((string) base64_decode(substr((string) $environment['APP_KEY'], 7), true)))->toBe(32)
+            ->and(implode(' ', $ssh->commands[0]->arguments))->not->toContain((string) $environment['APP_KEY']);
+    } finally {
+        $files->deleteDirectory($directory);
+    }
+});
+
+it('projects stored values into a new development .env APP_KEY and APP_NAME', function (): void {
+    $directory = sys_get_temp_dir().'/orbit-laravel-stored-key-'.Str::uuid();
+    $files = new Filesystem;
+    $files->ensureDirectoryExists($directory);
+    file_put_contents($directory.'/.env.example', "APP_NAME=Template\nAPP_KEY=base64:template\n");
+    $key = 'base64:'.base64_encode(str_repeat('k', 32));
+
+    try {
+        [$configurator, $ssh, $instance] = orb127_laravel_configurator($directory);
+        $instance->environmentValues()->createMany([
+            ['env_key' => 'APP_KEY', 'env_value' => $key],
+            ['env_key' => 'APP_NAME', 'env_value' => 'Stored Name'],
+        ]);
+
+        $configurator->configureLaravelUrl($instance, 'https://feature.acme.test');
+        $result = orb127_run_laravel_command($ssh->commands[0]);
+
+        expect($result->isSuccessful())->toBeTrue($result->getErrorOutput())
+            ->and(Dotenv::parse((string) file_get_contents($directory.'/.env')))
+            ->toBe(['APP_NAME' => 'Stored Name', 'APP_KEY' => $key, 'APP_URL' => 'https://feature.acme.test']);
+    } finally {
+        $files->deleteDirectory($directory);
+    }
+});
+
+it('fills only an empty development .env APP_KEY in an existing file', function (): void {
+    $directory = sys_get_temp_dir().'/orbit-laravel-existing-key-'.Str::uuid();
+    $files = new Filesystem;
+    $files->ensureDirectoryExists($directory);
+    file_put_contents($directory.'/.env', "APP_NAME=Laravel\nAPP_KEY=\nAPP_URL=http://old.test\n");
+
+    try {
+        [$configurator, $ssh, $instance] = orb127_laravel_configurator($directory);
+
+        $configurator->configureLaravelUrl($instance, 'https://feature.acme.test');
+        $first = orb127_run_laravel_command($ssh->commands[0]);
+        $filled = (string) file_get_contents($directory.'/.env');
+
+        $configurator->configureLaravelUrl($instance, 'https://next.acme.test');
+        $second = orb127_run_laravel_command($ssh->commands[1]);
+
+        expect($first->isSuccessful())->toBeTrue($first->getErrorOutput())
+            ->and($filled)->toMatch('#^APP_NAME=Laravel\nAPP_KEY="base64:[A-Za-z0-9+/]{43}="\nAPP_URL=https://feature\.acme\.test\n$#')
+            ->and($second->isSuccessful())->toBeTrue($second->getErrorOutput())
+            ->and(file_get_contents($directory.'/.env'))
+            ->toBe(str_replace('https://feature.acme.test', 'https://next.acme.test', $filled));
     } finally {
         $files->deleteDirectory($directory);
     }
@@ -298,7 +376,10 @@ it('keeps the Laravel URL out of argv input state and debug output', function ()
     expect($command->arguments)
         ->not->toContain($url)->and($command->input)->toBeNull()->and($protectedInput)
         ->not->toBeNull()->and((array) $protectedInput)
-        ->not->toContain($url)->and(stream_get_contents($protectedInput?->stream()))->toBe($url);
+        ->not->toContain($url)
+        ->and(json_decode((string) stream_get_contents($protectedInput?->stream()), true, flags: JSON_THROW_ON_ERROR))
+        ->url->toBe($url)
+        ->app_key->toStartWith('APP_KEY="base64:');
 
     $metadata = stream_get_meta_data($protectedInput?->stream());
     expect(fileperms($metadata['uri']) & 0o777)->toBe(0o600);

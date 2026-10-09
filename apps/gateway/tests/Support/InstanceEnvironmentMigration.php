@@ -67,6 +67,7 @@ function drop_app_era_instance_leftovers_for_migration_test(): void
 
 function roll_back_app_instance_environment_for_migration_test(): void
 {
+    (require base_path('database/migrations/2026_10_19_000000_allow_source_resolved_workspace_route_removal.php'))->down();
     owned_interrupted_creation_removal_migration()->down();
     (require base_path('database/migrations/2026_10_10_000000_add_instance_source_prepare_id.php'))->down();
     (require base_path('database/migrations/2026_10_09_000000_allow_pre_activation_instance_removal.php'))->down();

@@ -208,9 +208,11 @@ A Symfony source is never Laravel. Orbit does not write `APP_URL` for it and doe
 
 For a Laravel source, Orbit writes `APP_URL=https://<route-domain>`:
 
-- When `.env` exists, Orbit replaces the one `APP_URL` line or adds it. Every other byte stays the same.
-- When `.env` is missing, Orbit creates it from `.env.example`, or empty, and adds `APP_URL`.
+- When `.env` exists, Orbit replaces the one `APP_URL` line or adds it. It also fills an `APP_KEY` line that has an empty value. Every other byte stays the same.
+- When `.env` is missing, Orbit creates it from `.env.example`, or empty, and adds `APP_URL`. The new file also gets a usable `APP_KEY` and the Project's `APP_NAME`.
 - When `bootstrap/cache/config.php` exists, Orbit replaces its one cached `url` value.
+
+Laravel cannot boot without `APP_KEY`, and a fresh `.env.example` often has an empty key and `APP_NAME=Laravel`. So a new `.env` takes the Instance's non-empty [stored](/reference/environment-variables) `APP_KEY`. Without one, it keeps a non-empty template key or gets a random 32-byte key with the `base64:` prefix. It takes the Instance's stored `APP_NAME` too. Without one, a missing, empty, or `Laravel` name becomes the Project name. An existing `.env` keeps its name and any non-empty key. The key reaches the Node as protected input, never as a command argument. Orbit leaves duplicate `APP_KEY` or `APP_NAME` lines as they are.
 
 A symlinked file, two `APP_URL` lines, or an unclear cached value stops provisioning with `app-dev.laravel_url_configuration_failed`. After activation, the [stored environment](/reference/environment-variables) owns `APP_URL`.
 
@@ -258,7 +260,7 @@ Infrastructure cannot share a database transaction with source records, so Orbit
 
 ### Active does not mean healthy
 
-An Instance is active once Orbit prepared its source, runtime, Route, and Laravel URL. A new application can lack dependencies, an application key, or a database, and it can return errors. You need the endpoint to finish that setup. So Orbit does not wait for a healthy response. A health gate, a separate activation command, and setup commands inferred from the framework were rejected.
+An Instance is active once Orbit prepared its source, runtime, Route, and Laravel URL. A new application can lack dependencies or a database, and it can return errors. You need the endpoint to finish that setup. So Orbit does not wait for a healthy response. A health gate, a separate activation command, and setup commands inferred from the framework were rejected.
 
 ### Orbit owns the Laravel URL
 
