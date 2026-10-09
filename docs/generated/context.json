@@ -1322,7 +1322,8 @@
                 "Project",
                 "Role",
                 "Route",
-                "Schedule"
+                "Schedule",
+                "Task"
             ],
             "governing_adrs": []
         },
@@ -1713,7 +1714,8 @@
                 "Route",
                 "Task",
                 "Task check",
-                "Task workspace"
+                "Task workspace",
+                "Tool"
             ],
             "governing_adrs": []
         },
