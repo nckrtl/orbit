@@ -110,11 +110,14 @@ final readonly class NativePrivateRouteProjectionInspector implements PrivateRou
         return $expected === $observed;
     }
 
+    /** Each Instance has exactly one Route without a web root. Routes with a web root are additional sites. */
     private function associationMatches(Instance $instance, Route $route): bool
     {
-        $count = $instance->routeTargets()->count();
+        $own = static fn () => $instance->routeTargets()->whereHas('route', static fn ($query) => $query->whereNull('web_root'));
 
-        return $count === 1 && $instance->routeTargets()->where('route_id', $route->id)->exists();
+        return $route->hasWebRoot()
+            ? $own()->count() <= 1
+            : $own()->count() === 1 && $own()->where('route_id', $route->id)->exists();
     }
 
     private function routingScopeMatches(Instance $instance, Route $route): bool
@@ -196,7 +199,8 @@ final readonly class NativePrivateRouteProjectionInspector implements PrivateRou
 
     private function workloadCommand(Instance $instance, Route $route, DevelopmentSite $site): RemoteCommand
     {
-        $laravel = match ($instance->source_is_laravel) {
+        // The Instance's environment belongs to its own Route; a Route with a web root is not checked here.
+        $laravel = $route->hasWebRoot() ? '2' : match ($instance->source_is_laravel) {
             true => '1',
             false => '0',
             default => '2',

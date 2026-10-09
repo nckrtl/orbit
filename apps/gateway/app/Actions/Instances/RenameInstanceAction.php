@@ -65,7 +65,7 @@ final readonly class RenameInstanceAction
 
         if ($data->domain !== null) {
             ReservedPrivateHostname::assertAvailable($data->domain);
-            $routes = $instance->routes()->with('targets')->get();
+            $routes = $instance->routes()->whereNull('web_root')->with('targets')->get();
             // During replacement both Routes own the same target. Resume through its original Route.
             $roots = $routes->filter(static fn (Route $route): bool => $route->replaces_route_id === null);
             $route = $roots->count() === 1 ? $roots->sole() : null;

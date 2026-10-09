@@ -22,6 +22,8 @@ final class UpdateRouteRequest extends GatewayRequest implements HasBody
         private readonly int $routeId,
         private readonly ?string $domain = null,
         private readonly ?string $publication = null,
+        private readonly ?string $webRoot = null,
+        private readonly bool $clearWebRoot = false,
     ) {}
 
     public function resolveEndpoint(): string
@@ -34,15 +36,18 @@ final class UpdateRouteRequest extends GatewayRequest implements HasBody
         return RouteResponse::fromGatewayData($this->unwrapData($response), $this->successRequestId($response));
     }
 
-    /** @return array<string, string> */
+    /** @return array<string, string|null> */
     protected function defaultBody(): array
     {
-        return array_filter(
+        $body = array_filter(
             [
                 'domain' => $this->domain,
                 'publication' => $this->publication,
+                'web_root' => $this->webRoot,
             ],
             static fn (?string $value): bool => $value !== null,
         );
+
+        return $this->clearWebRoot ? [...$body, 'web_root' => null] : $body;
     }
 }

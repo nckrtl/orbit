@@ -6,5 +6,6 @@ namespace App\Infrastructure\Ssh;
 
 interface HostKeyScanner
 {
-    public function scan(string $host, int $port): HostKey;
+    /** Scans from the Gateway, or on the `$via` jump host for a host that only it can reach. */
+    public function scan(string $host, int $port, ?SshConnection $via = null): HostKey;
 }

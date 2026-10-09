@@ -22,7 +22,7 @@ beforeEach(function (): void {
     ]);
     $this->vm = fn (array $attributes = []): TaskVm => TaskVm::query()->create([
         'group_id' => $this->group->id, 'host_node_id' => $this->host->id, 'provider' => 'incus', 'name' => 'tvm-'.$this->group->id,
-        'state' => TaskVmState::Provisioning, 'wireguard_ip' => '10.44.64.10', 'pi_token' => 'pi-secret', ...$attributes,
+        'state' => TaskVmState::Provisioning, 'wireguard_ip' => '10.44.0.130', 'pi_token' => 'pi-secret', ...$attributes,
     ]);
 });
 
@@ -55,7 +55,7 @@ it('encrypts the Pi token and model key at rest and hides them', function (): vo
 it('allows one live task VM per group and per WireGuard address', function (): void {
     ($this->vm)();
 
-    expect(fn () => ($this->vm)(['name' => 'tvm-second', 'wireguard_ip' => '10.44.64.11']))->toThrow(QueryException::class);
+    expect(fn () => ($this->vm)(['name' => 'tvm-second', 'wireguard_ip' => '10.44.0.131']))->toThrow(QueryException::class);
 
     TaskVm::query()->update(['state' => TaskVmState::Destroyed]);
     $next = ($this->vm)(['name' => 'tvm-second']);
@@ -66,7 +66,7 @@ it('allows one live task VM per group and per WireGuard address', function (): v
 it('keeps the destroyed row when its Node is removed', function (): void {
     $node = Node::query()->create([
         'name' => 'tvm-1', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'architecture' => 'x86_64',
-        'public_ssh_host' => '192.0.2.20', 'wireguard_ip' => '10.44.64.10', 'user' => 'orbit',
+        'public_ssh_host' => '192.0.2.20', 'wireguard_ip' => '10.44.0.130', 'user' => 'orbit',
     ]);
     $vm = ($this->vm)(['node_id' => $node->id, 'state' => TaskVmState::Destroying]);
 

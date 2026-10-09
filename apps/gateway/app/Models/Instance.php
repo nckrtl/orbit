@@ -238,13 +238,19 @@ final class Instance extends Model
         return $this->belongsToMany(Route::class, 'route_targets')->withPivot('position');
     }
 
+    /**
+     * The Instance's own authoritative Route: the one without a web root. An Instance whose only
+     * Routes have a web root answers with the first of them.
+     */
     public function authoritativeRoute(): ?Route
     {
         $this->loadMissing('routes');
+        $authoritative = $this->routes
+            ->filter(static fn (Route $route): bool => $route->isAuthoritative())
+            ->sortBy('id');
 
-        return $this->routes->first(
-            static fn (Route $route): bool => $route->isAuthoritative(),
-        );
+        return $authoritative->first(static fn (Route $route): bool => ! $route->hasWebRoot())
+            ?? $authoritative->first();
     }
 
     /** @return HasMany<InstanceDeployStep, $this> */

@@ -99,14 +99,12 @@ final readonly class SandboxPairRuntime
         $request = ['sandbox_id' => $sandbox->id, 'checkout' => $workspace->checkout_path,
             'repository' => $template['repository'], 'branch' => 'task-'.$sandbox->group_id,
             'base' => $template['base'], 'source_template' => $template];
-        foreach (['github_dns' => 'guest-github-dns.py', 'pair_dns' => 'guest-pair-dns.py'] as $operation => $name) {
-            $result = $this->guest->execute($workspace, new RemoteCommand(
-                ['sudo', '-n', 'python3', '-I', '-c', $this->program($name)],
-                input: json_encode(['operation' => $operation, ...$request], JSON_THROW_ON_ERROR), timeout: 90, maxOutputBytes: 8192,
-            ), 'sandbox-pair', 'tasks.pair_setup_failed', role: 'gateway');
-            if ($result->truncated || json_decode($result->stdout, true, flags: JSON_THROW_ON_ERROR) !== ['ready' => true]) {
-                throw new ComputeException('compute.pair_unavailable', 'The test Gateway public DNS is unavailable.');
-            }
+        $result = $this->guest->execute($workspace, new RemoteCommand(
+            ['sudo', '-n', 'python3', '-I', '-c', $this->program('guest-pair-dns.py')],
+            input: json_encode(['operation' => 'pair_dns', ...$request], JSON_THROW_ON_ERROR), timeout: 90, maxOutputBytes: 8192,
+        ), 'sandbox-pair', 'tasks.pair_setup_failed', role: 'gateway');
+        if ($result->truncated || json_decode($result->stdout, true, flags: JSON_THROW_ON_ERROR) !== ['ready' => true]) {
+            throw new ComputeException('compute.pair_unavailable', 'The test Gateway public DNS is unavailable.');
         }
     }
 

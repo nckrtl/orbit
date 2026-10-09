@@ -425,6 +425,7 @@ function instance_gateway_data(): array
         'detached' => false,
         'status' => 'active',
         'route' => instance_gateway_route_data(),
+        'routes' => [],
         'domain' => 'orbit-docs.test',
         'url' => 'https://orbit-docs.test',
         'removal' => null,
@@ -507,6 +508,7 @@ function instance_gateway_route_data(): array
         'targets' => [['id' => 10, 'instance_id' => 7, 'position' => 0]],
         'process_id' => null,
         'upstream' => null,
+        'web_root' => null,
     ];
 }
 

@@ -22,8 +22,6 @@ it('renders only the orbit user, the Gateway key and openssh-server', function (
                     ]
                 }
             ],
-            "ssh_pwauth": false,
-            "disable_root": true,
             "package_update": true,
             "packages": [
                 "openssh-server"
