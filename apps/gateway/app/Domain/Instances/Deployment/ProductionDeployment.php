@@ -25,4 +25,12 @@ interface ProductionDeployment
     public function retained(Instance $instance, string $name): DeploymentRelease;
 
     public function releases(Instance $instance): DeploymentReleaseState;
+
+    /**
+     * Removes the releases beyond DeploymentRelease::RETAINED_PER_HOME. It keeps the selected release, the previous
+     * selection, and then the newest others.
+     *
+     * @return list<string> the names of the removed releases
+     */
+    public function prune(Instance $instance, DeploymentRelease $selected, ?DeploymentRelease $previous): array;
 }

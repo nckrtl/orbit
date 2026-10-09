@@ -134,6 +134,8 @@ final class DevelopmentDeploymentFixture
 
     public function cleanup(): void
     {
+        // Tests leave read-only folders that a removal must not stop at.
+        new Process(['chmod', '-R', 'u+w', '--', $this->sandbox])->run();
         new Filesystem()->deleteDirectory($this->sandbox);
     }
 

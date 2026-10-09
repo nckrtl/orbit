@@ -214,7 +214,7 @@ final readonly class RemoteDevelopmentDeployment implements DevelopmentDeploymen
             }
             $retained[] = $name;
         }
-        $this->run($instance, DevelopmentReleaseProgram::prune(), 'prune', [$selected->name, ...array_unique($retained)]);
+        $this->run($instance, DevelopmentReleaseProgram::prune(), 'prune', [(string) DeploymentRelease::RETAINED_PER_HOME, $selected->name, ...array_unique($retained)]);
     }
 
     /** @return non-empty-list<string> */
@@ -241,13 +241,16 @@ final readonly class RemoteDevelopmentDeployment implements DevelopmentDeploymen
         if ($step === 'releases' || $step === 'prune') {
             foreach (explode("\n", $result->stderr) as $line) {
                 $parts = explode("\t", $line);
-                if (count($parts) === 3 && $parts[0] === 'SKIPPED_BROKEN_RELEASE'
-                    && DeploymentRelease::isValidName($parts[1]) && $parts[2] === 'missing-worktree-admin') {
-                    Log::warning('Skipping owned broken development release.', [
-                        'instance_id' => $instance->id,
-                        'release' => $parts[1],
-                        'reason' => 'missing-worktree-admin',
-                    ]);
+                if (count($parts) !== 3) {
+                    continue;
+                }
+                $broken = DeploymentRelease::isValidName($parts[1]) && in_array($parts[2], ['missing-worktree-admin', 'missing-git'], true);
+                if ($parts[0] === 'SKIPPED_BROKEN_RELEASE' && $broken) {
+                    Log::warning('Skipping owned broken development release.', ['instance_id' => $instance->id, 'release' => $parts[1], 'reason' => $parts[2]]);
+                } elseif ($parts[0] === 'REMOVED_BROKEN_RELEASE' && $broken) {
+                    Log::info('Removed owned broken development release.', ['instance_id' => $instance->id, 'release' => $parts[1], 'reason' => $parts[2]]);
+                } elseif ($parts[0] === 'RETAINED_OVER_LIMIT' && ctype_digit($parts[1]) && ctype_digit($parts[2])) {
+                    Log::warning('Leased seeds keep more development releases than the limit.', ['instance_id' => $instance->id, 'retained' => (int) $parts[1], 'limit' => (int) $parts[2]]);
                 }
             }
         }

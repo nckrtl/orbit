@@ -71,6 +71,27 @@ function dev1032_broken_release(DevelopmentDeploymentFixture $fixture, string $n
     return $path;
 }
 
+function dev_aborted_release(DevelopmentDeploymentFixture $fixture, string $name, bool $marker, bool $registered): string
+{
+    $path = $fixture->home.'/releases/'.$name;
+    if ($registered) {
+        DevelopmentDeploymentFixture::command(['git', '-C', $fixture->home, 'worktree', 'add', '--detach', $path, $fixture->initialCommit]);
+        unlink($path.'/.git');
+    }
+    $state = $fixture->home.'/.git/orbit-development-releases';
+    if ($marker) {
+        file_put_contents($state.'/release-'.$name, trim(file_get_contents($state.'/identity')).':'.$name."\n");
+    }
+    // What an interrupted removal leaves: a read-only folder that rm cannot empty without write permission.
+    mkdir($path.'/tools', 0o755, true);
+    file_put_contents($path.'/tools/tool', 'kept');
+    mkdir($path.'/vendor/locked', 0o755, true);
+    file_put_contents($path.'/vendor/locked/entry', 'cached');
+    chmod($path.'/vendor/locked', 0o555);
+
+    return $path;
+}
+
 describe('broken development releases', function (): void {
     it('returns healthy releases and logs the skipped owned broken release list finding', function (): void {
         dev935_require_reflinks($this->fixture);
@@ -93,7 +114,7 @@ describe('broken development releases', function (): void {
         ]);
     });
 
-    it('logs a broken release prune finding and deploys while retaining current previous and leased releases', function (): void {
+    it('removes an owned broken release and deploys while retaining current previous and leased releases', function (): void {
         dev935_require_reflinks($this->fixture);
         $instance = $this->fixture->instance;
         $deployment = $this->fixture->deployment;
@@ -122,9 +143,10 @@ describe('broken development releases', function (): void {
             ->and(is_dir($seed->path))->toBeTrue()
             ->and(is_dir($unused->path))->toBeFalse()
             ->and(is_dir($this->fixture->home.'/releases/release-2'))->toBeFalse()
-            ->and(file_get_contents($broken.'/protected'))->toBe('must-survive')
-            ->and(file_get_contents($marker))->toBe($receipt);
-        Log::shouldHaveReceived('warning')->with('Skipping owned broken development release.', [
+            ->and(file_exists($broken))->toBeFalse()
+            ->and(file_exists($marker))->toBeFalse()
+            ->and($receipt)->toContain(basename($broken));
+        Log::shouldHaveReceived('info')->once()->with('Removed owned broken development release.', [
             'instance_id' => $instance->id, 'release' => basename($broken), 'reason' => 'missing-worktree-admin',
         ]);
     });
@@ -154,7 +176,7 @@ describe('broken development releases', function (): void {
         };
 
         foreach ([DevelopmentReleaseProgram::releases(), DevelopmentReleaseProgram::prune()] as $program) {
-            $process = new Process(['bash', '-seu', '--', $this->fixture->home, $instance->project->repository_url, (string) $instance->id, 'initial']);
+            $process = new Process(['bash', '-seu', '--', $this->fixture->home, $instance->project->repository_url, (string) $instance->id, '3', 'initial']);
             $process->setInput($program);
             expect($process->run())->not->toBe(0)
                 ->and($process->getErrorOutput())->not->toContain('SKIPPED_BROKEN_RELEASE')
@@ -188,6 +210,71 @@ describe('broken development releases', function (): void {
             expect(fn () => $deployment->releases($instance))->toThrow(RuntimeConvergenceException::class);
         }
     })->with(['current', 'previous', 'pinned seed']);
+
+    it('removes an owned release folder without Git metadata and deploys', function (bool $registered): void {
+        dev935_require_reflinks($this->fixture);
+        $instance = $this->fixture->instance;
+        $this->fixture->deployment->initialize($instance);
+        $aborted = dev_aborted_release($this->fixture, '20261007052308-1b0d6f48ae4d81bd', marker: true, registered: $registered);
+        Log::spy();
+
+        expect($this->fixture->deployment->releases($instance)->releases)->toBe(['initial']);
+        $this->fixture->push('after aborted release');
+        $result = app(DeployDefaultInstanceAction::class)->execute($instance);
+
+        expect($result?->succeeded)->toBeTrue()
+            ->and(file_exists($aborted))->toBeFalse()
+            ->and(file_exists($this->fixture->home.'/.git/worktrees/'.basename($aborted)))->toBeFalse()
+            ->and(file_exists($this->fixture->home.'/.git/orbit-development-releases/release-'.basename($aborted)))->toBeFalse()
+            ->and(array_map(basename(...), glob($this->fixture->home.'/releases/*')))->toBe(['initial', 'release-1']);
+        Log::shouldHaveReceived('warning')->once()->with('Skipping owned broken development release.', [
+            'instance_id' => $instance->id, 'release' => basename($aborted), 'reason' => 'missing-git',
+        ]);
+        Log::shouldHaveReceived('info')->once()->with('Removed owned broken development release.', [
+            'instance_id' => $instance->id, 'release' => basename($aborted), 'reason' => 'missing-git',
+        ]);
+    })->with(['unregistered' => false, 'registration left behind' => true]);
+
+    it('skips a release folder without Git metadata or ownership receipt and deploys', function (): void {
+        dev935_require_reflinks($this->fixture);
+        $instance = $this->fixture->instance;
+        $this->fixture->deployment->initialize($instance);
+        $foreign = dev_aborted_release($this->fixture, 'foreign', marker: false, registered: false);
+        Log::spy();
+        $this->fixture->push('after foreign folder');
+
+        expect(app(DeployDefaultInstanceAction::class)->execute($instance)?->succeeded)->toBeTrue()
+            ->and(file_get_contents($foreign.'/tools/tool'))->toBe('kept');
+        Log::shouldHaveReceived('warning')->with('Skipping owned broken development release.', [
+            'instance_id' => $instance->id, 'release' => 'foreign', 'reason' => 'missing-git',
+        ]);
+    });
+
+    it('fails closed for a folder without Git metadata whose registration names another path', function (): void {
+        dev935_require_reflinks($this->fixture);
+        $instance = $this->fixture->instance;
+        $this->fixture->deployment->initialize($instance);
+        $aborted = dev_aborted_release($this->fixture, 'aborted', marker: true, registered: true);
+        file_put_contents($this->fixture->home.'/.git/worktrees/aborted/gitdir', $this->fixture->sandbox."/elsewhere/.git\n");
+
+        expect(fn () => $this->fixture->deployment->prune($instance, $this->fixture->deployment->selected($instance)))->toThrow(RuntimeConvergenceException::class)
+            ->and(file_get_contents($aborted.'/tools/tool'))->toBe('kept');
+    });
+
+    it('removes a release folder that an interrupted creation left without Git metadata', function (): void {
+        dev935_require_reflinks($this->fixture);
+        $instance = $this->fixture->instance;
+        $this->fixture->deployment->initialize($instance);
+        $state = $this->fixture->home.'/.git/orbit-development-releases';
+        $aborted = dev_aborted_release($this->fixture, 'interrupted', marker: false, registered: false);
+        file_put_contents($state.'/intent-interrupted', trim(file_get_contents($state.'/identity')).':interrupted:'.$this->fixture->initialCommit."\n");
+
+        $this->fixture->deployment->initialize($instance);
+
+        expect(file_exists($aborted))->toBeFalse()
+            ->and(file_exists($state.'/intent-interrupted'))->toBeFalse()
+            ->and(readlink($this->fixture->home.'/current'))->toBe('releases/initial');
+    });
 });
 
 it('grants Web access on activation only to the deployed release', function (): void {
@@ -517,6 +604,60 @@ describe('real development release programs', function (): void {
             ->and(is_dir($this->fixture->sandbox.'/apps/dev935/task-935-e2e'))->toBeTrue();
         $listing = DevelopmentDeploymentFixture::command(['git', '-C', $this->fixture->home, 'worktree', 'list', '--porcelain']);
         expect($listing)->toContain('t3code-ab12', 'task-935-e2e', 'releases/release-2', 'releases/release-3')->not->toContain('releases/initial', 'releases/release-1');
+    });
+
+    it('lets leased seeds take the place of the previous release and reports leases beyond the limit', function (): void {
+        dev935_require_reflinks($this->fixture);
+        $default = $this->fixture->instance;
+        $action = app(DeployDefaultInstanceAction::class);
+        $lease = function (string $release) use ($default): void {
+            $path = $this->fixture->home.'/releases/'.$release;
+            Instance::query()->create([
+                'project_id' => $default->project_id, 'node_id' => $default->node_id, 'name' => 'lease-'.$release,
+                'checkout_path' => $this->fixture->sandbox.'/apps/dev935/lease-'.$release, 'status' => 'reserved',
+                'seed_repository' => $this->fixture->home, 'seed_path' => $path, 'seed_commit' => $this->fixture->initialCommit,
+            ]);
+        };
+        $releases = fn (): array => array_map(basename(...), glob($this->fixture->home.'/releases/*'));
+        Log::spy();
+
+        $this->fixture->push('one');
+        expect($action->execute($default)?->succeeded)->toBeTrue();
+        $lease('initial');
+        $this->fixture->push('two');
+        expect($action->execute($default)?->succeeded)->toBeTrue()
+            ->and($releases())->toBe(['initial', 'release-1', 'release-2']);
+
+        // Two leases and the selection fill the limit, so the previous release goes.
+        $lease('release-1');
+        $this->fixture->push('three');
+        expect($action->execute($default)?->succeeded)->toBeTrue()
+            ->and($releases())->toBe(['initial', 'release-1', 'release-3']);
+        Log::shouldNotHaveReceived('warning', ['Leased seeds keep more development releases than the limit.', Mockery::any()]);
+
+        // A lease is never removed, also when the leases alone exceed the limit.
+        $lease('release-3');
+        $this->fixture->push('four');
+        expect($action->execute($default)?->succeeded)->toBeTrue()
+            ->and($releases())->toBe(['initial', 'release-1', 'release-3', 'release-4']);
+        Log::shouldHaveReceived('warning')->with('Leased seeds keep more development releases than the limit.', [
+            'instance_id' => $default->id, 'retained' => 4, 'limit' => DeploymentRelease::RETAINED_PER_HOME,
+        ]);
+    });
+
+    it('removes a release whose cache holds a read-only folder', function (): void {
+        dev935_require_reflinks($this->fixture);
+        $action = app(DeployDefaultInstanceAction::class);
+        $this->fixture->push('one');
+        expect($action->execute($this->fixture->instance)?->succeeded)->toBeTrue();
+        $locked = $this->fixture->home.'/releases/initial/.cache/locked';
+        mkdir($locked);
+        file_put_contents($locked.'/entry', 'cached');
+        chmod($locked, 0o555);
+        $this->fixture->push('two');
+
+        expect($action->execute($this->fixture->instance)?->succeeded)->toBeTrue()
+            ->and(array_map(basename(...), glob($this->fixture->home.'/releases/*')))->toBe(['release-1', 'release-2']);
     });
 
     it('refuses an invalid candidate Web root before switching a visitable default', function (): void {

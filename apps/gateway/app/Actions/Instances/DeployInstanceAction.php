@@ -8,7 +8,9 @@ use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Instances\Deployment\DeploymentCommandResult;
 use App\Domain\Instances\Deployment\DeploymentConfig;
 use App\Domain\Instances\Deployment\DeploymentDeadline;
+use App\Domain\Instances\Deployment\DeploymentEvent;
 use App\Domain\Instances\Deployment\DeploymentFailureBoundary;
+use App\Domain\Instances\Deployment\DeploymentOutputStream;
 use App\Domain\Instances\Deployment\DeploymentPhase;
 use App\Domain\Instances\Deployment\DeploymentProgressPhase;
 use App\Domain\Instances\Deployment\DeploymentRelease;
@@ -91,6 +93,7 @@ final readonly class DeployInstanceAction
             $request->emitPhase(DeploymentProgressPhase::SourcePreparation);
             $this->assertNotCancelled($request);
             $selected = $this->deployment->selected($instance);
+            $previous = $selected;
             $release = $this->deployment->prepare($instance, $config->branch);
             $boundary = DeploymentFailureBoundary::Environment;
             $request->emitPhase(DeploymentProgressPhase::EnvironmentSync);
@@ -116,6 +119,7 @@ final readonly class DeployInstanceAction
 
             $boundary = DeploymentFailureBoundary::AfterActivation;
             $this->executeSteps($instance, $release, $config, DeploymentPhase::AfterActivation, $request, $commands);
+            $this->prune($instance, $selected, $previous, $request);
 
             return DeploymentResult::succeeded($release, $commands);
         } catch (Throwable $exception) {
@@ -132,6 +136,18 @@ final readonly class DeployInstanceAction
                 $this->errorCode($exception),
                 $commands,
             );
+        }
+    }
+
+    /** Pruning is not the deployment. A release that stays is removed by a later deployment. */
+    private function prune(Instance $instance, DeploymentRelease $selected, ?DeploymentRelease $previous, DeploymentRequest $request): void
+    {
+        try {
+            foreach ($this->deployment->prune($instance, $selected, $previous) as $name) {
+                $request->emit(new DeploymentEvent('cleanup', DeploymentOutputStream::Stdout, "Removed old release {$name}.\n"));
+            }
+        } catch (Throwable) {
+            $request->emit(new DeploymentEvent('cleanup', DeploymentOutputStream::Stderr, "Release cleanup failed; a later deployment will retry cleanup.\n", important: true));
         }
     }
 

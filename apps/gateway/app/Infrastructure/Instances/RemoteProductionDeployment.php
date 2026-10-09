@@ -398,70 +398,9 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
             $instance,
             new RemoteCommand(
                 arguments: ['bash', '-seu', '--', $repository, $user, $home, (string) $instance->id, $root],
-                input: ProductionApplicationPaths::render(<<<'BASH'
-                    # find must restore its working directory after sudo changes users.
-                    cd /
-                    repository=$1
-                    user=$2
-                    home=$3
-                    instance=$4
-                    relative_root=$5
-                    state_directory="/var/lib/orbit/app-instance-sources/$instance"
-                    marker="$state_directory/release-layout"
-                    releases="$home/releases"
-                    environment="$home/.env"
-                    current="$home/current"
-                    test "$home" = "/home/$user"
-                    case "$relative_root" in ''|/*|..|../*|*/../*|*/..) exit 1 ;; esac
-                    sudo test -f "$marker"
-                    sudo test ! -L "$marker"
-                    test "$(sudo stat -c %U:%G:%a -- "$marker")" = root:root:600
-                    actual_marker=$(sudo base64 --wrap=0 -- "$marker")
-                    expected_marker=$(printf '%s\0%s\0%s\0%s\0' "$repository" "$user" "$home" initial | base64 --wrap=0)
-                    test "$actual_marker" = "$expected_marker"
-                    sudo -u "$user" -H test -d "$releases"
-                    sudo -u "$user" -H test ! -L "$releases"
+                input: ProductionApplicationPaths::render($this->inventoryScript().<<<'BASH'
 
-                    selected=
-                    if sudo -u "$user" -H test -e "$current" || sudo -u "$user" -H test -L "$current"; then
-                        sudo -u "$user" -H test -L "$current"
-                        selected_path=$(sudo -u "$user" -H realpath -e -- "$current")
-                        case "$selected_path" in "$releases"/*) ;; *) exit 1 ;; esac
-                        selected=${selected_path#"$releases"/}
-                        case "$selected" in */*) exit 1 ;; esac
-                        printf '%s' "$selected" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'
-                    fi
                     printf 'SELECTED\t%s\n' "$selected"
-
-                    inspect_release() {
-                        local name=$1
-                        local release="$releases/$name"
-                        local actual_repository expected_repository release_environment selected_root
-                        local unexpected_symlink unexpected_user unexpected_group commit
-
-                        printf '%s' "$name" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$' || return 1
-                        sudo -u "$user" -H test -d "$release/.git" || return 1
-                        sudo -u "$user" -H test ! -L "$release" || return 1
-                        test "$(sudo -u "$user" -H realpath -e -- "$release")" = "$release" || return 1
-                        actual_repository=$(sudo -u "$user" -H git -C "$release" config --null --get remote.origin.url | base64 --wrap=0) || return 1
-                        expected_repository=$(printf '%s\0' "$repository" | base64 --wrap=0)
-                        test "$actual_repository" = "$expected_repository" || return 1
-                        release_environment="$release__APPLICATION_SUFFIX__/.env"
-                        sudo -u "$user" -H test -L "$release_environment" || return 1
-                        test "$(sudo -u "$user" -H realpath -e -- "$release_environment")" = "$environment" || return 1
-                        selected_root=$(sudo -u "$user" -H realpath -m -- "$release/$relative_root") || return 1
-                        case "$selected_root" in "$release"|"$release"/*) ;; *) return 1 ;; esac
-                        sudo -u "$user" -H test -d "$selected_root" || return 1
-                        unexpected_symlink=$(sudo find -P "$selected_root" -type l -print -quit) || return 1
-                        test -z "$unexpected_symlink" || return 1
-                        unexpected_user=$(sudo find -P "$release" -xdev ! -user "$user" -print -quit) || return 1
-                        test -z "$unexpected_user" || return 1
-                        unexpected_group=$(sudo find -P "$release" -xdev ! -group "$user" -print -quit) || return 1
-                        test -z "$unexpected_group" || return 1
-                        commit=$(sudo -u "$user" -H git -C "$release" rev-parse --verify HEAD) || return 1
-                        printf 'RELEASE\t%s\t%s\n' "$name" "$commit"
-                    }
-
                     while IFS= read -r -d '' name; do
                         if receipt=$(inspect_release "$name"); then
                             printf '%s\n' "$receipt"
@@ -475,6 +414,176 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
         );
 
         return $this->releaseStateFromResult($result);
+    }
+
+    public function prune(Instance $instance, DeploymentRelease $selected, ?DeploymentRelease $previous): array
+    {
+        InstanceSandboxGuard::assertHostOperation($instance);
+        [$repository, $user, $home, $root] = $this->identity($instance);
+        $this->assertRelease($selected, $home);
+
+        if ($previous !== null) {
+            $this->assertRelease($previous, $home);
+        }
+
+        $result = $this->execute(
+            $instance,
+            new RemoteCommand(
+                arguments: [
+                    'bash',
+                    '-seu',
+                    '--',
+                    $repository,
+                    $user,
+                    $home,
+                    (string) $instance->id,
+                    $root,
+                    (string) DeploymentRelease::RETAINED_PER_HOME,
+                    $selected->name,
+                    $previous?->name ?? '',
+                ],
+                input: ProductionApplicationPaths::render($this->inventoryScript().<<<'BASH'
+
+                    limit=$6
+                    expected_selected=$7
+                    previous=$8
+                    test "$selected" = "$expected_selected"
+                    declare -A found=()
+                    names=()
+                    while IFS= read -r -d '' name; do
+                        if inspect_release "$name" >/dev/null; then
+                            found["$name"]=1
+                            names+=("$name")
+                        fi
+                    done < <(sudo -u "$user" -H find -P "$releases" -mindepth 1 -maxdepth 1 -type d -printf '%f\0' | sort -z)
+                    test -n "${found[$selected]:-}"
+                    # The first release is `initial`. Every later name starts with its UTC creation time, so it sorts by age.
+                    newest_first=()
+                    for (( index = ${#names[@]} - 1; index >= 0; index-- )); do
+                        if [ "${names[index]}" != initial ]; then newest_first+=("${names[index]}"); fi
+                    done
+                    if [ -n "${found[initial]:-}" ]; then newest_first+=(initial); fi
+                    declare -A keep=()
+                    kept=0
+                    for name in "$selected" "$previous" "${newest_first[@]}"; do
+                        if [ "$kept" -ge "$limit" ]; then break; fi
+                        if [ -z "$name" ] || [ -z "${found[$name]:-}" ] || [ -n "${keep[$name]:-}" ]; then continue; fi
+                        keep["$name"]=1
+                        kept=$((kept + 1))
+                    done
+                    # A rename takes a release out of the set at once. A removal that stops leaves only a `.pruned-` folder,
+                    # which no listing or rollback accepts and the next prune removes.
+                    for name in "${names[@]}"; do
+                        if [ -n "${keep[$name]:-}" ]; then continue; fi
+                        sudo -u "$user" -H mv -T -- "$releases/$name" "$releases/.pruned-$name"
+                        printf 'PRUNED\t%s\n' "$name"
+                    done
+                    while IFS= read -r -d '' pruned; do
+                        # A folder without write permission, such as a read-only cache, would stop the removal halfway.
+                        sudo -u "$user" -H find -P "$pruned" -type d ! -perm -u=w -exec chmod u+w -- {} + 2>/dev/null || true
+                        sudo -u "$user" -H rm -rf --one-file-system -- "$pruned"
+                    done < <(sudo -u "$user" -H find -P "$releases" -mindepth 1 -maxdepth 1 -type d -name '.pruned-*' -print0)
+                    BASH, $root),
+                maxOutputBytes: 65536,
+            ),
+            'deployment-prune',
+            'deployment.prune_failed',
+        );
+
+        if ($result->truncated || $result->stderr !== '') {
+            throw $this->invalidReceipt();
+        }
+
+        $pruned = [];
+
+        foreach (explode("\n", rtrim($result->stdout, "\n")) as $line) {
+            if ($line === '') {
+                continue;
+            }
+
+            $parts = explode("\t", $line);
+
+            if (count($parts) !== 2 || $parts[0] !== 'PRUNED') {
+                throw $this->invalidReceipt();
+            }
+
+            $this->assertReleaseName($parts[1]);
+            $pruned[] = $parts[1];
+        }
+
+        return $pruned;
+    }
+
+    /**
+     * Checks the release home and defines `inspect_release`, which prints the name and commit of a release that passes
+     * every check. It sets `selected` to the release `current` names, or to an empty string.
+     */
+    private function inventoryScript(): string
+    {
+        return <<<'BASH'
+            # find must restore its working directory after sudo changes users.
+            cd /
+            repository=$1
+            user=$2
+            home=$3
+            instance=$4
+            relative_root=$5
+            state_directory="/var/lib/orbit/app-instance-sources/$instance"
+            marker="$state_directory/release-layout"
+            releases="$home/releases"
+            environment="$home/.env"
+            current="$home/current"
+            test "$home" = "/home/$user"
+            case "$relative_root" in ''|/*|..|../*|*/../*|*/..) exit 1 ;; esac
+            sudo test -f "$marker"
+            sudo test ! -L "$marker"
+            test "$(sudo stat -c %U:%G:%a -- "$marker")" = root:root:600
+            actual_marker=$(sudo base64 --wrap=0 -- "$marker")
+            expected_marker=$(printf '%s\0%s\0%s\0%s\0' "$repository" "$user" "$home" initial | base64 --wrap=0)
+            test "$actual_marker" = "$expected_marker"
+            sudo -u "$user" -H test -d "$releases"
+            sudo -u "$user" -H test ! -L "$releases"
+
+            selected=
+            if sudo -u "$user" -H test -e "$current" || sudo -u "$user" -H test -L "$current"; then
+                sudo -u "$user" -H test -L "$current"
+                selected_path=$(sudo -u "$user" -H realpath -e -- "$current")
+                case "$selected_path" in "$releases"/*) ;; *) exit 1 ;; esac
+                selected=${selected_path#"$releases"/}
+                case "$selected" in */*) exit 1 ;; esac
+                printf '%s' "$selected" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'
+            fi
+
+            inspect_release() {
+                local name=$1
+                local release="$releases/$name"
+                local actual_repository expected_repository release_environment selected_root
+                local unexpected_symlink unexpected_user unexpected_group commit
+
+                printf '%s' "$name" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$' || return 1
+                sudo -u "$user" -H test -d "$release/.git" || return 1
+                sudo -u "$user" -H test ! -L "$release" || return 1
+                test "$(sudo -u "$user" -H realpath -e -- "$release")" = "$release" || return 1
+                actual_repository=$(sudo -u "$user" -H git -C "$release" config --null --get remote.origin.url | base64 --wrap=0) || return 1
+                expected_repository=$(printf '%s\0' "$repository" | base64 --wrap=0)
+                test "$actual_repository" = "$expected_repository" || return 1
+                release_environment="$release__APPLICATION_SUFFIX__/.env"
+                sudo -u "$user" -H test -L "$release_environment" || return 1
+                test "$(sudo -u "$user" -H realpath -e -- "$release_environment")" = "$environment" || return 1
+                selected_root=$(sudo -u "$user" -H realpath -m -- "$release/$relative_root") || return 1
+                case "$selected_root" in "$release"|"$release"/*) ;; *) return 1 ;; esac
+                sudo -u "$user" -H test -d "$selected_root" || return 1
+                unexpected_symlink=$(sudo find -P "$selected_root" -type l -print -quit) || return 1
+                test -z "$unexpected_symlink" || return 1
+                unexpected_user=$(sudo find -P "$release" -xdev ! -user "$user" -print -quit) || return 1
+                test -z "$unexpected_user" || return 1
+                unexpected_group=$(sudo find -P "$release" -xdev ! -group "$user" -print -quit) || return 1
+                test -z "$unexpected_group" || return 1
+                commit=$(sudo -u "$user" -H git -C "$release" rev-parse --verify HEAD) || return 1
+                printf 'RELEASE\t%s\t%s\n' "$name" "$commit"
+            }
+
+            BASH;
     }
 
     /** @return array{string, string, string, string} */

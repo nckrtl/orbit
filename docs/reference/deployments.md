@@ -59,9 +59,9 @@ Every required step must pass before Orbit atomically renames the new `current` 
 
 Orbit reports the failed step's exit status and names it in a warning. The output and stored events keep that warning even when the overall deployment succeeds or command output reached its storage limit.
 
-After a deployment Orbit prunes managed releases, retaining `current`, its previous selection, and releases recorded as seeds by other Instances on that Node. The seed fields on an Instance are a durable lease: asynchronous setup and interrupted retries can still read that immutable release after later deployments. The lease lasts until the consuming Instance is removed. Pruning reads these leases under the same Node source lock used for seed selection and validates every retained release marker.
+Before it builds a candidate and after a deployment, Orbit prunes managed releases to at most 3 per home. It keeps `current` and every release that another Instance on that Node records as its seed. It keeps the previous selection only while those leave room under the limit, and removes every other release. The seed fields on an Instance are a durable lease: asynchronous setup and interrupted retries can still read that immutable release after later deployments. The lease lasts until the consuming Instance is removed. Pruning never removes a leased release, so leases alone can keep more than 3; the Gateway then logs a warning with the count. Pruning reads these leases under the same Node source lock used for seed selection and validates every retained release marker. A read-only folder in a release, such as a cache, does not stop its removal.
 
-Release listing and pruning skip an owned release whose `.git` points to its missing administrative directory under the stable repository's `.git/worktrees/`. The Gateway logs a warning naming that release. Its directory, contents, and ownership receipt remain for operator inspection; healthy releases continue through listing and deployment. Listing still requires a valid `current`. Pruning also requires a valid previous selection and every leased seed before inspecting unused releases. Invalid ownership receipts, symlinks, and foreign or ambiguous Git metadata still fail validation.
+An interrupted `git worktree add` or `git worktree remove` can leave a broken release folder. It has one of two forms: its `.git` points to its missing administrative directory under the stable repository's `.git/worktrees/`, or it has no `.git` at all. A folder without `.git` counts as broken only when Git no longer registers it, or registers exactly that folder. Release listing skips a broken release, and the Gateway logs a warning naming it. Pruning removes a broken release that is not `current`, the previous selection, or a leased seed, when its ownership receipt proves that Orbit created it; it also removes a registration left behind. A broken folder without a receipt stays for operator inspection, with the same warning, and healthy releases continue through listing and deployment. Initialization also removes a folder without `.git` whose creation intent it recovers. Listing still requires a valid `current`. Pruning also requires a valid previous selection and every leased seed before inspecting unused releases. Invalid ownership receipts, symlinks, and foreign or ambiguous Git metadata still fail validation.
 
 A failed candidate is removed without changing `current`. Cleanup never prunes the stable repository or other linked worktrees. Environment files and caches in development releases are copies, not links back into another Instance. The application-directory `.env` and any `.env.testing` are copied from the same relative directory in the default's stable home when a candidate is built, so explicit environment synchronization is picked up by the next deployment without writing into the live seed. Production environment and rollback rules below remain separate.
 
@@ -137,6 +137,7 @@ A deployment reads the branch and the steps once, when it starts. Then it runs t
 4. **Activation.** The Gateway replaces `current` atomically with a link to the new release.
 5. **PHP refresh.** The Gateway reconciles and confirms the dedicated FPM runtime, then resets that service's OPcache and waits for completion.
 6. **After activation.** The Gateway runs each `after_activation` step in order.
+7. **Cleanup.** The Gateway removes old releases, as [Retained releases](#retained-releases) describes. A failed cleanup is a warning in the output, not a failed deployment.
 
 Orbit skips this phase for an Instance that does not serve PHP. A changed resolved release restarts the dedicated service so its workers enter the new application directory.
 
@@ -179,9 +180,13 @@ Deployment, rollback, deploy-step changes, and branch changes share the Instance
 
 [Doctor](/cli/doctor) checks each production Instance against its home. It reports a missing or wrongly owned home, a broken `current` link, a selected release outside `releases/`, and a web root that leaves the release. A home without `current` is healthy before the first deployment. Doctor accepts an older release after a rollback, and a release whose branch has moved on.
 
-## Retained content
+## Retained releases
 
-For production, Orbit never deletes an old release by itself. [Instance removal](/reference/instance-removal) removes `current` and the serving setup, and keeps `releases/`, `.env`, `database.sqlite`, and the local PHP-FPM tuning for recovery.
+A successful production deployment keeps at most 3 releases in the home: the new selection, the selection before it, and the newest other release. `initial` counts as the oldest, and later releases sort by the creation time in their names. It removes the rest, and the output names each one. So [`instance:rollback`](/cli/instance#orbit-instancerollback) can return to the previous selection and one other release. A rollback removes nothing. A failed deployment removes nothing either; the next successful one does.
+
+Cleanup removes only folders that pass the release checks of the listing. It first renames a release to `releases/.pruned-<name>`, so the release leaves the list at once, and then deletes that folder. A folder that a stopped cleanup left is deleted by the next one. A partial folder that fails the release checks stays.
+
+[Instance removal](/reference/instance-removal) removes `current` and the serving setup, and keeps `releases/`, `.env`, `database.sqlite`, and the local PHP-FPM tuning for recovery.
 
 ## Why it works this way
 
@@ -204,6 +209,12 @@ Release preparation, the switch, and the PHP-FPM refresh are the same for every 
 ### Deploy a branch, not a commit
 
 The operation is "deploy what the branch holds now". So a deployment takes no commit. Two deployments of one branch can produce different code.
+
+### Three releases per home
+
+Each release holds a full checkout with its dependencies, so the count decides the disk use. Three keep the current code, the way back, and one more step back. The previous selection outranks newer releases that never went live, because it is the release a rollback needs first. For development, a leased seed outranks everything else, because another Instance still reads it; the limit gives way and the Gateway warns.
+
+A broken development release blocked every later deployment while pruning failed on it. Orbit now removes it when its ownership receipt proves Orbit created it. Without that proof, a folder in `releases/` may be someone's work, so Orbit skips it and warns.
 
 ### Rollback selects code only
 

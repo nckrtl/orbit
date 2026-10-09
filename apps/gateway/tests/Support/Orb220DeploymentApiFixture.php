@@ -187,6 +187,11 @@ final class Orb220ProductionDeployment implements ProductionDeployment
         return new DeploymentReleaseState(['fresh', 'initial'], 'initial');
     }
 
+    public function prune(Instance $instance, DeploymentRelease $selected, ?DeploymentRelease $previous): array
+    {
+        return [];
+    }
+
     private function release(string $name): DeploymentRelease
     {
         return new DeploymentRelease(

@@ -119,18 +119,36 @@ final class DevelopmentReleaseProgram
                 guard_file "$release_marker"
                 test "$(cat -- "$release_marker")" = "$identity:$name"
             }
+            missing_git() {
+                # An interrupted `git worktree add` or `git worktree remove` can leave a release folder without its Git
+                # link. Its registration must be gone, or name exactly this folder. Callers test the result in a
+                # condition, which suspends `set -e`, so every check exits explicitly.
+                name=$1
+                printf '%s' "$name" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$' || exit 1
+                release="$releases/$name"
+                git_directory="$home/.git/worktrees/$name"
+                test -d "$release" && test ! -L "$release" || exit 1
+                test "$(stat -c %u -- "$release")" = "$(id -u)" || exit 1
+                test "$(realpath -e -- "$release")" = "$release" || exit 1
+                if [ -e "$release/.git" ] || [ -L "$release/.git" ]; then return 1; fi
+                if [ -e "$git_directory" ] || [ -L "$git_directory" ]; then
+                    test -d "$git_directory" && test ! -L "$git_directory" || exit 1
+                    test "$(realpath -e -- "$git_directory")" = "$git_directory" || exit 1
+                    test "$(stat -c %u -- "$git_directory")" = "$(id -u)" || exit 1
+                    test -f "$git_directory/gitdir" && test ! -L "$git_directory/gitdir" || exit 1
+                    test "$(cat -- "$git_directory/gitdir")" = "$release/.git" || exit 1
+                fi
+            }
             inspect_release() {
                 name=$1
-                printf '%s' "$name" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'
-                release="$releases/$name"
-                test -d "$release" && test ! -L "$release" || exit 1
-                test "$(stat -c %u -- "$release")" = "$(id -u)"
-                test "$(realpath -e -- "$release")" = "$release"
+                broken_release=0
+                if missing_git "$name"; then
+                    broken_release=missing-git
+                    return
+                fi
                 guard_file "$release/.git"
                 guard_file "$state/release-$name"
                 test "$(cat -- "$state/release-$name")" = "$identity:$name"
-                broken_release=0
-                git_directory="$home/.git/worktrees/$name"
                 # Only a missing, exactly named admin entry with intact ownership is skippable.
                 # Do not turn a general guard failure into permission to ignore an unknown path.
                 if [ "$(cat -- "$release/.git")" = "gitdir: $git_directory" ] && [ ! -e "$git_directory" ] && [ ! -L "$git_directory" ]; then
@@ -139,10 +157,21 @@ final class DevelopmentReleaseProgram
                     test "$(realpath -e -- "$home/.git/worktrees")" = "$home/.git/worktrees"
                     if git -C "$release" rev-parse --absolute-git-dir >/dev/null 2>&1; then exit 1; else git_status=$?; fi
                     test "$git_status" = 128
-                    broken_release=1
-                    printf 'SKIPPED_BROKEN_RELEASE\t%s\tmissing-worktree-admin\n' "$name" >&2
+                    broken_release=missing-worktree-admin
                 else
                     guard_release "$name"
+                fi
+            }
+            remove_tree() {
+                # A folder without write permission, such as a read-only cache, would stop the removal halfway.
+                find -P "$1" -type d ! -perm -u=w -exec chmod u+w -- {} + 2>/dev/null || true
+            }
+            forget_release() {
+                local snapshot="$state/snapshot-$1"
+                rm -f -- "$state/previous-$1" "$state/restored-$1" "$state/release-$1"
+                if [ -e "$snapshot" ]; then
+                    test -d "$snapshot" && test ! -L "$snapshot"
+                    rm -rf -- "$snapshot"
                 fi
             }
             recover_intents() {
@@ -157,7 +186,14 @@ final class DevelopmentReleaseProgram
                     printf '%s' "$intended_name" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'
                     printf '%s' "$intended_commit" | grep -Eq '^([0-9a-f]{40}|[0-9a-f]{64})$'
                     test "$intent" = "$state/intent-$intended_name"
-                    if [ -e "$releases/$intended_name" ] || [ -L "$releases/$intended_name" ]; then
+                    if [ ! -e "$releases/$intended_name" ] && [ ! -L "$releases/$intended_name" ]; then
+                        :
+                    elif missing_git "$intended_name"; then
+                        # The intent proves that Orbit created this folder, and Git never finished registering it.
+                        remove_tree "$release"
+                        rm -rf --one-file-system -- "$release"
+                        rm -rf -- "$git_directory"
+                    else
                         guard_worktree "$intended_name"
                         test "$(git -C "$release" rev-parse HEAD)" = "$intended_commit"
                         write_receipt "$state/release-$intended_name" "$identity:$intended_name"
@@ -328,7 +364,10 @@ final class DevelopmentReleaseProgram
             printf 'SELECTED\t%s\n' "$selected"
             while IFS= read -r -d '' entry; do
                 inspect_release "${entry##*/}"
-                if [ "$broken_release" = 1 ]; then continue; fi
+                if [ "$broken_release" != 0 ]; then
+                    printf 'SKIPPED_BROKEN_RELEASE\t%s\t%s\n' "$name" "$broken_release" >&2
+                    continue
+                fi
                 printf 'RELEASE\t%s\n' "$name"
             done < <(find -P "$releases" -mindepth 1 -maxdepth 1 -print0)
             BASH;
@@ -493,8 +532,10 @@ final class DevelopmentReleaseProgram
         return self::guard().<<<'BASH'
 
             guard_layout
-            expected_selected=$1
-            shift
+            limit=$1
+            expected_selected=$2
+            shift 2
+            printf '%s' "$limit" | grep -Eq '^[1-9][0-9]*$'
             declare -A retained=()
             for pinned in "$@"; do
                 guard_release "$pinned"
@@ -502,27 +543,46 @@ final class DevelopmentReleaseProgram
             done
             selected=$(selected_name)
             test "$selected" = "$expected_selected"
-            previous=
+            retained["$selected"]=1
             if [ -e "$state/previous-$selected" ]; then
                 test -f "$state/previous-$selected" && test ! -L "$state/previous-$selected"
                 previous=$(cat -- "$state/previous-$selected")
                 guard_release "$previous"
+                # Leased seeds are never removed. The previous selection keeps a place only while the limit has room;
+                # otherwise it is removed like any other release and stops being the previous selection.
+                if [ "${#retained[@]}" -lt "$limit" ]; then
+                    retained["$previous"]=1
+                elif [ -z "${retained[$previous]:-}" ]; then
+                    rm -f -- "$state/previous-$selected"
+                fi
             fi
             while IFS= read -r -d '' entry; do
                 candidate=${entry##*/}
-                if [ "$candidate" = "$selected" ] || [ "$candidate" = "$previous" ]; then continue; fi
+                if [ -n "${retained[$candidate]:-}" ]; then continue; fi
                 # Fail closed on an unregistered path; never delete by age or prefix alone.
                 inspect_release "$candidate"
-                if [ "$broken_release" = 1 ]; then continue; fi
-                if [ "${retained[$candidate]:-}" = 1 ]; then continue; fi
-                git -C "$home" worktree remove --force -- "$release"
-                rm -f -- "$state/previous-$candidate" "$state/restored-$candidate" "$state/release-$candidate"
-                snapshot="$state/snapshot-$candidate"
-                if [ -e "$snapshot" ]; then
-                    test -d "$snapshot" && test ! -L "$snapshot"
-                    rm -rf -- "$snapshot"
+                if [ "$broken_release" != 0 ]; then
+                    # Only the ownership receipt proves that Orbit created a folder that Git no longer tracks.
+                    if [ -e "$state/release-$name" ] || [ -L "$state/release-$name" ]; then
+                        guard_file "$state/release-$name"
+                        test "$(cat -- "$state/release-$name")" = "$identity:$name"
+                        remove_tree "$release"
+                        if rm -rf --one-file-system -- "$release" && rm -rf -- "$git_directory"; then
+                            forget_release "$name"
+                            printf 'REMOVED_BROKEN_RELEASE\t%s\t%s\n' "$name" "$broken_release" >&2
+                            continue
+                        fi
+                    fi
+                    printf 'SKIPPED_BROKEN_RELEASE\t%s\t%s\n' "$name" "$broken_release" >&2
+                    continue
                 fi
+                remove_tree "$release"
+                git -C "$home" worktree remove --force -- "$release"
+                forget_release "$candidate"
             done < <(find -P "$releases" -mindepth 1 -maxdepth 1 -print0)
+            if [ "${#retained[@]}" -gt "$limit" ]; then
+                printf 'RETAINED_OVER_LIMIT\t%s\t%s\n' "${#retained[@]}" "$limit" >&2
+            fi
             BASH;
     }
 }

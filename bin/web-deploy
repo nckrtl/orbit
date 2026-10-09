@@ -22,7 +22,7 @@ ssh_command="${ORBIT_WEB_DEPLOY_SSH:-ssh}"
 web_dir="${ORBIT_WEB_DIR:-/home/orbit/web}"
 group="${ORBIT_WEB_GROUP:-caddy}"
 gateway_releases="${ORBIT_GATEWAY_RELEASES:-/home/orbit/releases}"
-keep=5
+keep=3
 
 # ssh joins remote arguments into one shell command, so only plain values may cross it.
 if [[ ! "$web_dir" =~ ^/[A-Za-z0-9._/-]+$ || ! "$gateway_releases" =~ ^/[A-Za-z0-9._/-]+$ || ! "$group" =~ ^[A-Za-z0-9._-]+$ ]]; then
@@ -107,7 +107,7 @@ REMOTE
 
 remote "$web_dir" "$release" <<<"$switch_script"
 
-# Prune beyond the five newest, but never the build current serves or the build of a retained Gateway
+# Prune beyond the three newest, but never the build current serves or the build of a retained Gateway
 # release (one with a REVISION file): a Gateway rollback switches the web app back to that build.
 remote "$web_dir" "$keep" "$gateway_releases" <<'REMOTE'
 set -euo pipefail

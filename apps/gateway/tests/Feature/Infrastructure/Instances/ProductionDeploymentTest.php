@@ -452,6 +452,79 @@ it('skips partial directories while executing the retained release listing', fun
     }
 })->with(['root public' => ['public', '', '../../.env'], 'nested Laravel' => ['server/web/public', '/server/web', '../../../../.env']]);
 
+it('prunes a production home to the selected, the previous, and the newest other release', function (?string $previous, array $kept, array $pruned): void {
+    [$deployment, $ssh, $instance] = orb219_remote_deployment([new CommandResult(0, '', '', 1, false)]);
+    $selected = new DeploymentRelease('20260104000000-d', '/home/orbit-app-1/releases/20260104000000-d', str_repeat('a', 40));
+    $deployment->prune($instance, $selected, $previous === null ? null : new DeploymentRelease($previous, '/home/orbit-app-1/releases/'.$previous, str_repeat('b', 40)));
+
+    $filesystem = new Filesystem;
+    $sandbox = sys_get_temp_dir().'/orbit-release-prune-'.bin2hex(random_bytes(6));
+    $home = $sandbox.'/home';
+    $repository = 'https://example.test/deployment.git';
+
+    try {
+        foreach (['initial', '20260101000000-a', '20260102000000-b', '20260103000000-c', '20260104000000-d'] as $name) {
+            $release = $home.'/releases/'.$name;
+            $filesystem->ensureDirectoryExists($release.'/public');
+            file_put_contents($release.'/public/index.php', "<?php\n");
+            symlink('../../.env', $release.'/.env');
+            foreach ([
+                ['git', 'init', '--quiet', $release],
+                ['git', '-C', $release, 'config', 'user.email', 'orbit@example.test'],
+                ['git', '-C', $release, 'config', 'user.name', 'Orbit Test'],
+                ['git', '-C', $release, 'remote', 'add', 'origin', $repository],
+                ['git', '-C', $release, 'add', 'public/index.php'],
+                ['git', '-C', $release, 'commit', '--quiet', '-m', $name],
+            ] as $arguments) {
+                new Process($arguments)->mustRun();
+            }
+        }
+        // A read-only folder must not stop a removal.
+        mkdir($home.'/releases/20260101000000-a/cache/locked', 0o755, true);
+        file_put_contents($home.'/releases/20260101000000-a/cache/locked/entry', 'cached');
+        chmod($home.'/releases/20260101000000-a/cache/locked', 0o555);
+        $filesystem->ensureDirectoryExists($home.'/releases/partial/.git');
+        $filesystem->ensureDirectoryExists($home.'/releases/.pruned-interrupted/vendor');
+        $filesystem->ensureDirectoryExists($home.'/state');
+        $filesystem->ensureDirectoryExists($sandbox.'/bin');
+        file_put_contents($home.'/.env', "APP_ENV=production\n");
+        symlink('releases/20260104000000-d', $home.'/current');
+        file_put_contents($home.'/state/release-layout', $repository."\0orbit-fixture\0".$home."\0initial\0");
+        chmod($home.'/state/release-layout', 0600);
+        file_put_contents($sandbox.'/bin/sudo', <<<'BASH'
+            #!/usr/bin/env bash
+            if [ "${1:-}" = -u ]; then shift 2; fi
+            if [ "${1:-}" = -H ]; then shift; fi
+            exec "$@"
+            BASH);
+        chmod($sandbox.'/bin/sudo', 0755);
+        $script = str_replace(
+            ['state_directory="/var/lib/orbit/app-instance-sources/$instance"', 'test "$home" = "/home/$user"', 'root:root:600', '! -user "$user"', '! -group "$user"'],
+            ['state_directory="$home/state"', 'test -d "$home"', '"$(id -un):$(id -gn):600"', '! -uid "$(id -u)"', '! -gid "$(id -g)"'],
+            $ssh->commands[0]->input ?? '',
+        );
+        $arguments = $ssh->commands[0]->arguments;
+        expect(array_slice($arguments, 8))->toBe(['3', '20260104000000-d', $previous ?? '']);
+        array_splice($arguments, 3, 3, [$repository, 'orbit-fixture', $home]);
+
+        $process = new Process($arguments, env: ['PATH' => $sandbox.'/bin:'.getenv('PATH')]);
+        $process->setInput($script);
+        $process->mustRun();
+
+        expect($process->getOutput())->toBe(implode('', array_map(static fn (string $name): string => "PRUNED\t{$name}\n", $pruned)))
+            ->and($process->getErrorOutput())->toBe('')
+            ->and(array_map(basename(...), glob($home.'/releases/{,.}[!.]*', GLOB_BRACE) ?: []))->toEqualCanonicalizing([...$kept, 'partial'])
+            ->and(readlink($home.'/current'))->toBe('releases/20260104000000-d');
+    } finally {
+        new Process(['chmod', '-R', 'u+w', '--', $sandbox])->run();
+        $filesystem->deleteDirectory($sandbox);
+    }
+})->with([
+    'after a rollback' => ['20260102000000-b', ['20260104000000-d', '20260102000000-b', '20260103000000-c'], ['20260101000000-a', 'initial']],
+    'after a deployment' => ['20260103000000-c', ['20260104000000-d', '20260103000000-c', '20260102000000-b'], ['20260101000000-a', 'initial']],
+    'after the first deployment' => [null, ['20260104000000-d', '20260103000000-c', '20260102000000-b'], ['20260101000000-a', 'initial']],
+]);
+
 it('rejects traversal before asking the remote host to inspect a release', function (): void {
     [$deployment, $ssh, $instance] = orb219_remote_deployment([]);
 
