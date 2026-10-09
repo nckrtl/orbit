@@ -62,19 +62,6 @@ final class CaddyPackageHarness
         return $contents === false ? null : $contents;
     }
 
-    public function snapshotPath(): string
-    {
-        return $this->root.'/usr/local/share/orbit/caddy-source';
-    }
-
-    /** Places a sandbox snapshot with one package; the `python3` shim stands in for its verifier. */
-    public function snapshot(bool $verifies): void
-    {
-        $this->files->ensureDirectoryExists($this->snapshotPath().'/repository/pool', 0o777);
-        file_put_contents($this->snapshotPath().'/repository/pool/caddy_2.11.7_amd64.deb', "snapshot package\n");
-        file_put_contents($this->root.'/snapshot-verifies', $verifies ? '1' : '0');
-    }
-
     /** Sets the release the `caddy` shim reports, or removes Caddy for null. */
     public function caddy(?string $version): void
     {
@@ -110,7 +97,6 @@ final class CaddyPackageHarness
         $arguments[5] = $this->settingPath();
         $arguments[7] = $this->legacyKeyringPath();
         $arguments[8] = $this->legacySourcePath();
-        $arguments[11] = $this->snapshotPath();
 
         $process = new Process(['bash', '-seu', '--', ...$arguments], $this->root, [
             'PATH' => $this->root.'/bin:'.getenv('PATH'),
@@ -229,12 +215,6 @@ final class CaddyPackageHarness
             package=${!#}
             printf 'apt-get install %s\n' "${package##*/}" >> "${HARNESS_CALL_LOG}"
             printf '%s' "${HARNESS_INSTALLS}" > "${HARNESS_ROOT}/caddy-version"
-            BASH);
-        $this->writeShim('python3', <<<'BASH'
-            #!/usr/bin/env bash
-            cat > /dev/null
-            printf 'python3 verify %s\n' "${3##*/}" >> "${HARNESS_CALL_LOG}"
-            test "$(cat -- "${HARNESS_ROOT}/snapshot-verifies")" = 1
             BASH);
         $this->writeShim('caddy', <<<'BASH'
             #!/usr/bin/env bash

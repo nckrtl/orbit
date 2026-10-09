@@ -44,7 +44,6 @@ final readonly class CaddyPackageFootprintArtifact implements NodeFootprintArtif
         return [
             'app/Infrastructure/Nodes/CaddyPackageSourceProgram.php',
             'app/Domain/Nodes/CaddyRelease.php',
-            'resources/compute/caddy-source-snapshot.py',
         ];
     }
 

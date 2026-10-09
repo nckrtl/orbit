@@ -5,10 +5,10 @@ covers:
   - apps/gateway/app/Actions/Nodes/{ProvisionNodeAction,EnrollMacOsNodeAction,RemoveNodeAction,AddNodeRoleAction,RemoveNodeRoleAction,AssignRoleAction}.php
   - apps/gateway/app/Domain/Nodes/RoleRegistry.php
   - apps/gateway/app/Infrastructure/Nodes/{NativeNodeConverger,MacOsNodeConverger,NodeBootstrapCommandFactory,NodeBootstrapDnsProgram,NodeBootstrapPackageCatalog,CaddyPackageSourceProgram,RemotePhpPackageManager,NodeLocks,NodeLock}.php
-  - apps/gateway/app/Infrastructure/Firewall/NodeFirewallRuleCatalog.php
   - apps/gateway/app/Infrastructure/WireGuard/NativeGatewayPeerProjectionManager.php
   - apps/gateway/app/Console/Commands/ProvisionNodeCommand.php
-  - apps/gateway/app/Infrastructure/Ssh/{NativeSshExecutor,SshConnection}.php
+  - apps/gateway/app/Infrastructure/{Firewall/NodeFirewallRuleCatalog,Ssh/NativeSshExecutor,Ssh/SshConnection,Ssh/SshHostKeyScanner,Ssh/HostKeyScanner}.php
+  - apps/gateway/database/migrations/*_{create_nodes_table,add_ssh_jump_node_id_to_nodes}.php
   - apps/gateway/app/{Infrastructure/Nodes/*Cli*.php,Domain/Nodes/NodeCli*.php,Domain/Fleet/NodeFootprint*.php,Domain/Fleet/NodeCliConvergence.php,Infrastructure/Fleet/Footprint/**,Actions/Fleet/ConvergeNodeFootprintAction.php,Http/Controllers/Api/NodeFootprintsController.php}
 ---
 
@@ -172,6 +172,16 @@ On Ubuntu, `node:role:add` accepts the same roles as on any other Linux Node. Ad
 
 Doctor checks a Node without roles like any other Node when the Gateway has a pinned SSH host key for it. The `role` family reports nothing. The `schedule` family skips its orphan scan unless the Node hosts a Schedule. A Node without roles and without a pinned SSH host key gets only the lifecycle check.
 
+## Enroll through a jump host
+
+Not built yet. The Phase 1 slices of [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm) add `ssh_jump_node_id`.
+
+The Gateway can enroll a Node that it reaches only through another Node. [Task VMs](/reference/compute-drivers#task-vms) use this: a task VM has only a private address on its Incus host's bridge. The jump is internal. `node:add` and the API have no field for it.
+
+The Node records the jump Node in `ssh_jump_node_id`. While the Node has no active role, SSH goes through the jump Node with OpenSSH `ProxyJump`, as `<managed user>@<WireGuard address>:22` of the jump Node. The host key scan runs `ssh-keyscan` on the jump Node, and the scanned key must match the expected fingerprint. A task VM's fingerprint comes from its host, before any code in the VM runs.
+
+The enrollment steps are the same as for any Node. When the first active role closes public SSH, the Gateway reaches the Node over WireGuard and ignores the jump. A Node without a jump Node connects directly, as [SSH connections](#ssh-connections) describes.
+
 ## Converge an existing Node
 
 `node:add` for a recorded Node converges the machine again. It refuses a Node that owns Instances with `node.has_instances`. One exception: it changes only the TLD of a Node with an active `app-dev` role.
@@ -291,8 +301,6 @@ A role installs its packages from the Ubuntu archive, except PHP and Caddy.
 For PHP, the Gateway downloads the signing key and refuses it unless it matches a pinned SHA-256 digest and a pinned fingerprint. It writes the keyring and a deb822 source file as `root:root` mode `0644`, and restores the earlier pair when a later step fails. It refreshes only the Sury source, so another source that fails to fetch cannot fail the PHP step. It refuses a package candidate from any other origin. Orbit never uses `apt-key` or `add-apt-repository`.
 
 For Caddy, the Gateway pins a release and the SHA-512 digest of its `.deb` for `amd64` and `arm64`. It downloads the package only when Caddy is missing or below the floor, refuses a download whose digest does not match, and installs it with apt. A Node on another architecture fails the step. The step adds no apt source. It deletes `/etc/apt/sources.list.d/orbit-caddy.sources` and `/usr/share/keyrings/orbit-caddy.gpg`, which earlier Orbit releases wrote for the Caddy apt source on Cloudsmith.
-
-A sandbox image can include an authenticated snapshot of the Cloudsmith Caddy repository at `/usr/local/share/orbit/caddy-source`. The Caddy step verifies its pinned signing key, the signed repository metadata, its package index, and the package checksum. It also checks the architecture, release floor, validity dates, and protected file ownership. An invalid snapshot stops the step, even when Caddy already reaches the floor. When the step installs Caddy, it installs the snapshot's package instead of the GitHub download, and it adds no apt source. This keeps sandbox setup independent of any public feed without accepting unsigned packages.
 
 Caddy must be at least 2.9.0. A lower release fails the `caddy-package-source` step and names both releases. Doctor reports it as `role.caddy_version_unsupported`. Converging a role upgrades an archive Caddy in place. A Caddy at or above the floor stays as it is, so a newer pin does not restart it. `/etc/caddy/Caddyfile` is a symlink into Orbit's own versions directory, so the upgrade keeps the live configuration.
 
@@ -441,6 +449,10 @@ Converges and removals run long chains of commands, and a new connection costs a
 ### Public SSH before the peer goes
 
 Role convergence closes public SSH. Without the recovery rule, a removed machine is reachable only through its provider console. So the Gateway reopens public SSH while the tunnel still works, and then removes the peer.
+
+### A jump host for private Nodes
+
+A Node on a private bridge has no public SSH address. SSH through its host needs no proxy device or DNAT rule on the host, and the Node keeps SSH on port 22, as the firewall catalog expects. Reading the host key from the host, not from the new Node, keeps the trust anchor outside the machine being enrolled.
 
 ### The hub stays on the vpn Node
 
