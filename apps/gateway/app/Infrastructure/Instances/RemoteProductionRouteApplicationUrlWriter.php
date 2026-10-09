@@ -6,7 +6,6 @@ namespace App\Infrastructure\Instances;
 
 use App\Domain\Instances\Environment\InstanceEnvironmentRenderer;
 use App\Domain\Instances\Environment\LaravelApplicationKey;
-use App\Domain\Instances\InstanceSandboxGuard;
 use App\Domain\Instances\RouteApplicationUrlWriter;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\RelativeWebRoot;
@@ -30,7 +29,6 @@ final readonly class RemoteProductionRouteApplicationUrlWriter implements RouteA
 
     public function configureDirectoryUrl(Instance $instance, string $relativeDirectory, string $url): void
     {
-        InstanceSandboxGuard::assertHostOperation($instance);
         $instance->loadMissing(['node', 'project']);
         $user = $instance->production_user;
         $home = $instance->production_home;

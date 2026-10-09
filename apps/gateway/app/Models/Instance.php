@@ -9,6 +9,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\ApplicationDirectory;
+use App\Domain\TaskVms\TaskVmPlacement;
 use App\Models\Relations\DualSafeMorphMany;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
@@ -115,6 +116,16 @@ final class Instance extends Model
         'registration_include_worktrees' => false,
         'status' => 'reserved',
     ];
+
+    /** A task VM Node serves only its group's workspace, whichever path places the Instance there. */
+    protected static function booted(): void
+    {
+        self::saving(static function (self $instance): void {
+            if (! $instance->exists || $instance->isDirty(['node_id', 'project_id', 'name'])) {
+                TaskVmPlacement::assertInstance($instance);
+            }
+        });
+    }
 
     /** @var list<string> */
     #[\Override]
