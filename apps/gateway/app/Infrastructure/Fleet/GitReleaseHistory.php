@@ -59,7 +59,8 @@ final readonly class GitReleaseHistory implements ReleaseHistory
             return [];
         }
 
-        $result = $this->git(['rev-list', '--max-count='.($limit + 1), $commit]);
+        // Releases exist only for main's own commits, so the walk skips the commits of merged branches.
+        $result = $this->git(['rev-list', '--first-parent', '--max-count='.($limit + 1), $commit]);
 
         if (! $result instanceof CommandResult || ! $result->succeeded()) {
             return [];

@@ -14,7 +14,8 @@ interface ReleaseHistory
     public function count(string $commit): ?int;
 
     /**
-     * Up to `$limit` commits that the commit reaches, without the commit itself, newest first. Empty when the
+     * Up to `$limit` commits on the commit's first-parent line, without the commit itself, newest first. That is
+     * `main`'s own history, where releases are published, and not the commits of merged branches. Empty when the
      * history cannot be read.
      *
      * @return list<string>

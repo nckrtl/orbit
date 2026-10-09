@@ -56,6 +56,23 @@ describe(GitReleaseHistory::class, function (): void {
             ->and($this->history->ancestors('HEAD', 20))->toBe([]);
     });
 
+    it('walks only the first-parent line, so the commits of a merged branch take no place in the limit', function (): void {
+        release_history_git($this->repository, ['checkout', '--quiet', '-b', 'feature', 'HEAD~1']);
+        release_history_git($this->repository, ['commit', '--quiet', '--allow-empty', '-m', 'branch one']);
+        release_history_git($this->repository, ['commit', '--quiet', '--allow-empty', '-m', 'branch two']);
+        $branch = release_history_git($this->repository, ['rev-parse', 'HEAD']);
+        release_history_git($this->repository, ['checkout', '--quiet', 'main']);
+        release_history_git($this->repository, ['merge', '--quiet', '--no-ff', '--no-edit', 'feature']);
+        $merge = release_history_git($this->repository, ['rev-parse', 'HEAD']);
+        $parent = release_history_git($this->repository, ['rev-parse', 'HEAD~2']);
+        $root = release_history_git($this->repository, ['rev-parse', 'HEAD~3']);
+
+        // A walk of every parent would list the two branch commits too.
+        expect($this->history->ancestors($merge, 3))->toBe([$this->head, $parent, $root])
+            ->and($this->history->ancestors($merge, 20))->not->toContain($branch)
+            ->and($this->history->count($merge))->toBe(6);
+    });
+
     it('tells whether files under some paths match between two commits', function (): void {
         $parent = release_history_git($this->repository, ['rev-parse', 'HEAD~1']);
         mkdir($this->repository.'/apps/cli', 0755, true);
