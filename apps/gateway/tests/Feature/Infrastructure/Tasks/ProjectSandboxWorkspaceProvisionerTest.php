@@ -306,7 +306,10 @@ it('refreshes local runtime through the same owned guest after park and preview 
             if ($request['operation'] === 'guest_command') {
                 expect($request['guest']['role'])->toBe('operator');
                 expect($request['guest']['argv'])->toBe(['sudo', '-n', 'python3', '-I', '-c', file_get_contents(resource_path('compute/guest-project-ssh.py'))]);
-                expect(json_decode(base64_decode($request['guest']['stdin']), true))->toBe(['public_key' => IncusRuntimeWorkspace::key()->type.' '.IncusRuntimeWorkspace::key()->value]);
+                expect(json_decode(base64_decode($request['guest']['stdin']), true))->toBe([
+                    'public_key' => IncusRuntimeWorkspace::key()->type.' '.IncusRuntimeWorkspace::key()->value,
+                    'recovery_port' => null,
+                ]);
                 $phases[] = 'bootstrap';
                 $result = ['name' => $workspace->taskSandbox->name, 'role' => 'operator', 'exit_code' => 0,
                     'stdout' => base64_encode(json_encode(['ready' => true])), 'stderr' => base64_encode(''), 'duration_ms' => 1, 'truncated' => false, 'timed_out' => false];

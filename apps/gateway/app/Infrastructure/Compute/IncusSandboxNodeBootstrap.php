@@ -59,7 +59,10 @@ final readonly class IncusSandboxNodeBootstrap
         }
         try {
             $result = $this->transport->executeGuest($host, $settings['project'], $sandbox->id, $settings['max_vms'],
-                new RemoteCommand(['sudo', '-n', 'python3', '-I', '-c', $program], input: json_encode(['public_key' => $this->keys->publicKey()], JSON_THROW_ON_ERROR), timeout: 30, maxOutputBytes: 1024));
+                new RemoteCommand(['sudo', '-n', 'python3', '-I', '-c', $program], input: json_encode([
+                    'public_key' => $this->keys->publicKey(),
+                    'recovery_port' => $sandbox->enrolled_at === null ? $node->public_ssh_port : null,
+                ], JSON_THROW_ON_ERROR), timeout: 30, maxOutputBytes: 1024));
             if (! $result->succeeded() || $result->truncated || json_decode($result->stdout, true) !== ['ready' => true]) {
                 throw new ComputeException('compute.bootstrap_not_ready', 'The Project SSH bootstrap was not confirmed.');
             }

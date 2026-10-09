@@ -14,11 +14,13 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\PublicRouteEligibility;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Compute\SandboxFleetIdentity;
 use App\Infrastructure\Metrics\MetricsFootprint;
 use App\Infrastructure\Metrics\ServiceMetricsConfigRenderer;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Process;
+use App\Models\TaskSandbox;
 
 final readonly class NodeFirewallRuleCatalog
 {
@@ -30,7 +32,7 @@ final readonly class NodeFirewallRuleCatalog
     public function forNode(Node $node): array
     {
         return [
-            $this->rule('orbit:public-ssh-recovery', (string) $node->public_ssh_port),
+            $this->publicSshRecovery($node),
             $this->wireguardMemberTrust($node),
         ];
     }
@@ -52,7 +54,7 @@ final readonly class NodeFirewallRuleCatalog
         }
 
         return [
-            $this->rule('orbit:public-ssh-recovery', (string) $node->public_ssh_port),
+            $this->publicSshRecovery($node),
             $wireguard,
         ];
     }
@@ -66,6 +68,21 @@ final readonly class NodeFirewallRuleCatalog
         }
 
         return $node->roles()->where('status', LifecycleStatus::Active)->exists();
+    }
+
+    public function publicSshRecovery(Node $node): UfwManagedRule
+    {
+        $sandbox = $node->compute_sandbox_id === null ? null : TaskSandbox::query()->findOrFail($node->compute_sandbox_id);
+        if ($sandbox?->provider !== 'incus') {
+            return $this->rule('orbit:public-ssh-recovery', (string) $node->public_ssh_port);
+        }
+        app(SandboxFleetIdentity::class)->assertOwned($sandbox, $node);
+        $prefix = '10.233.'.($node->public_ssh_port - 24000).'.';
+
+        return new UfwManagedRule(
+            new UfwRuleShape('orbit:public-ssh-recovery', 'allow', 'in', $prefix.'1', $prefix.'10', '22', 'tcp', null, null, 'v4'),
+            ['sudo', 'ufw', 'allow', 'in', 'proto', 'tcp', 'from', $prefix.'1', 'to', $prefix.'10', 'port', '22', 'comment', 'orbit:public-ssh-recovery'],
+        );
     }
 
     /** @return list<UfwManagedRule> */
