@@ -176,7 +176,7 @@ it('runs no application command or cache refresh for an empty non-PHP deployment
         ->toBe([]);
 });
 
-it('reports removed releases and a failed cleanup without failing a deployment', function (bool $fails): void {
+it('reports removed and in-use releases and a failed cleanup without failing a deployment', function (bool $fails): void {
     $instance = orb219_deployment_instance([]);
     $trace = new Orb219DeploymentTrace(failAt: $fails ? 'prune:fresh:initial' : null);
     [$deploy] = orb219_actions($trace);
@@ -189,9 +189,12 @@ it('reports removed releases and a failed cleanup without failing a deployment',
     expect($result->succeeded)->toBeTrue()
         ->and($result->selectedRelease?->name)->toBe('fresh')
         ->and(array_map(static fn (DeploymentEvent $event): array => [$event->step, $event->stream, $event->value], $events))
-        ->toBe([$fails
-            ? ['cleanup', DeploymentOutputStream::Stderr, "Release cleanup failed; a later deployment will retry cleanup.\n"]
-            : ['cleanup', DeploymentOutputStream::Stdout, "Removed old release old.\n"]]);
+        ->toBe($fails
+            ? [['cleanup', DeploymentOutputStream::Stderr, "Release cleanup failed; a later deployment will retry cleanup.\n"]]
+            : [
+                ['cleanup', DeploymentOutputStream::Stdout, "Removed old release old.\n"],
+                ['cleanup', DeploymentOutputStream::Stderr, "Kept old release busy: a running process still uses it. Restart that Process to free it.\n"],
+            ]);
 })->with(['removed' => false, 'failed' => true]);
 
 it('keeps the observed old selection when deployment fails before activation', function (): void {
@@ -663,7 +666,7 @@ final readonly class Orb219ProductionDeployment implements ProductionDeployment
     {
         $this->record('prune:'.$selected->name.':'.($previous->name ?? 'none'));
 
-        return ['old'];
+        return ['removed' => ['old'], 'in_use' => ['busy']];
     }
 
     private function record(string $entry, ?string $failureKey = null): void

@@ -143,8 +143,14 @@ final readonly class DeployInstanceAction
     private function prune(Instance $instance, DeploymentRelease $selected, ?DeploymentRelease $previous, DeploymentRequest $request): void
     {
         try {
-            foreach ($this->deployment->prune($instance, $selected, $previous) as $name) {
+            $outcome = $this->deployment->prune($instance, $selected, $previous);
+
+            foreach ($outcome['removed'] as $name) {
                 $request->emit(new DeploymentEvent('cleanup', DeploymentOutputStream::Stdout, "Removed old release {$name}.\n"));
+            }
+
+            foreach ($outcome['in_use'] as $name) {
+                $request->emit(new DeploymentEvent('cleanup', DeploymentOutputStream::Stderr, "Kept old release {$name}: a running process still uses it. Restart that Process to free it.\n", important: true));
             }
         } catch (Throwable) {
             $request->emit(new DeploymentEvent('cleanup', DeploymentOutputStream::Stderr, "Release cleanup failed; a later deployment will retry cleanup.\n", important: true));

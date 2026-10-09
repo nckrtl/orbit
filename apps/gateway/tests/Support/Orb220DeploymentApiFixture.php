@@ -190,7 +190,7 @@ final class Orb220ProductionDeployment implements ProductionDeployment
 
     public function prune(Instance $instance, DeploymentRelease $selected, ?DeploymentRelease $previous): array
     {
-        return [];
+        return ['removed' => [], 'in_use' => []];
     }
 
     private function release(string $name): DeploymentRelease

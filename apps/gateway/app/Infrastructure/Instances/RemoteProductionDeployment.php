@@ -459,13 +459,29 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
                     test "$selected" = "$expected_selected"
                     declare -A found=()
                     names=()
+                    # A release that fails inspection is never removed, so its messages do not matter here.
                     while IFS= read -r -d '' name; do
-                        if inspect_release "$name" >/dev/null; then
+                        if inspect_release "$name" >/dev/null 2>&1; then
                             found["$name"]=1
                             names+=("$name")
                         fi
                     done < <(sudo -u "$user" -H find -P "$releases" -mindepth 1 -maxdepth 1 -type d -printf '%f\0' | sort -z)
                     test -n "${found[$selected]:-}"
+                    # A deployment does not restart Processes, so a running process can still work in an older release.
+                    # Keep every release that is the working directory, root, or executable of a process of the user.
+                    # When a live process cannot be read, nothing is removed.
+                    declare -A busy=()
+                    if pids=$(pgrep -u "$user"); then :; else test "$?" = 1; pids=; fi
+                    for pid in $pids; do
+                        for link in cwd root exe; do
+                            if target=$(sudo readlink -- "/proc/$pid/$link" 2>/dev/null); then
+                                case "$target" in "$releases"/*) used=${target#"$releases"/}; busy["${used%%/*}"]=1 ;; esac
+                            elif sudo test -e "/proc/$pid" && ! sudo grep -q '^State:[[:space:]]*Z' "/proc/$pid/status" 2>/dev/null; then
+                                # A process that ended in the meantime, or a zombie, has no paths to keep.
+                                exit 1
+                            fi
+                        done
+                    done
                     # The first release is `initial`. Every later name starts with its UTC creation time, so it sorts by age.
                     newest_first=()
                     for (( index = ${#names[@]} - 1; index >= 0; index-- )); do
@@ -484,13 +500,20 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
                     # which no listing or rollback accepts and the next prune removes.
                     for name in "${names[@]}"; do
                         if [ -n "${keep[$name]:-}" ]; then continue; fi
+                        if [ -n "${busy[$name]:-}" ]; then
+                            printf 'IN_USE\t%s\n' "$name"
+                            continue
+                        fi
                         sudo -u "$user" -H mv -T -- "$releases/$name" "$releases/.pruned-$name"
                         printf 'PRUNED\t%s\n' "$name"
                     done
+                    # The renames above already took the releases out of the set. A folder that cannot be deleted now is
+                    # deleted by a later prune, so its failure does not hide which releases were removed.
                     while IFS= read -r -d '' pruned; do
+                        if [ -n "${busy[${pruned##*/}]:-}" ]; then continue; fi
                         # A folder without write permission, such as a read-only cache, would stop the removal halfway.
                         sudo -u "$user" -H find -P "$pruned" -type d ! -perm -u=w -exec chmod u+w -- {} + 2>/dev/null || true
-                        sudo -u "$user" -H rm -rf --one-file-system -- "$pruned"
+                        sudo -u "$user" -H rm -rf --one-file-system -- "$pruned" || true
                     done < <(sudo -u "$user" -H find -P "$releases" -mindepth 1 -maxdepth 1 -type d -name '.pruned-*' -print0)
                     BASH, $root),
                 maxOutputBytes: 65536,
@@ -499,11 +522,13 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
             'deployment.prune_failed',
         );
 
-        if ($result->truncated || $result->stderr !== '') {
+        // The script exits zero once it has decided, so its output names every release it took out, even when a
+        // command wrote a message on the way.
+        if ($result->truncated) {
             throw $this->invalidReceipt();
         }
 
-        $pruned = [];
+        $outcome = ['removed' => [], 'in_use' => []];
 
         foreach (explode("\n", rtrim($result->stdout, "\n")) as $line) {
             if ($line === '') {
@@ -512,15 +537,15 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
 
             $parts = explode("\t", $line);
 
-            if (count($parts) !== 2 || $parts[0] !== 'PRUNED') {
+            if (count($parts) !== 2 || ! in_array($parts[0], ['PRUNED', 'IN_USE'], true)) {
                 throw $this->invalidReceipt();
             }
 
             $this->assertReleaseName($parts[1]);
-            $pruned[] = $parts[1];
+            $outcome[$parts[0] === 'PRUNED' ? 'removed' : 'in_use'][] = $parts[1];
         }
 
-        return $pruned;
+        return $outcome;
     }
 
     /**

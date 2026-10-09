@@ -28,9 +28,10 @@ interface ProductionDeployment
 
     /**
      * Removes the releases beyond DeploymentRelease::RETAINED_PER_HOME. It keeps the selected release, the previous
-     * selection, and then the newest others.
+     * selection, and then the newest others, and also every release a running process of the Instance still uses.
      *
-     * @return list<string> the names of the removed releases
+     * @return array{removed: list<string>, in_use: list<string>} the removed releases, and the releases kept only
+     *                                                           because a running process uses them
      */
     public function prune(Instance $instance, DeploymentRelease $selected, ?DeploymentRelease $previous): array;
 }

@@ -197,7 +197,9 @@ Deployment, rollback, deploy-step changes, and branch changes share the Instance
 
 A successful production deployment keeps at most 3 releases in the home: the new selection, the selection before it, and the newest other release. `initial` counts as the oldest, and later releases sort by the creation time in their names. It removes the rest, and the output names each one. So [`instance:rollback`](/cli/instance#orbit-instancerollback) can return to the previous selection and one other release. A rollback removes nothing. A failed deployment removes nothing either; the next successful one does.
 
-Cleanup removes only folders that pass the release checks of the listing. It first renames a release to `releases/.pruned-<name>`, so the release leaves the list at once, and then deletes that folder. A folder that a stopped cleanup left is deleted by the next one. A partial folder that fails the release checks stays.
+A deployment does not [restart Processes](/cli/process#orbit-processrestart), so a running Process, such as a queue worker, can still work in an older release. Cleanup keeps every release that is the working directory, root, or executable of a running process of the production user, also beyond the limit. The output names each such release; restart its Process to free it. When cleanup cannot read where a live process works, it removes nothing and reports a failed cleanup.
+
+Cleanup removes only folders that pass the release checks of the listing. It first renames a release to `releases/.pruned-<name>`, so the release leaves the list at once, and then deletes that folder. The release's own files go with it, such as old logs in its `storage/`. A folder that a stopped cleanup left is deleted by the next one. A partial folder that fails the release checks stays.
 
 [Instance removal](/reference/instance-removal) removes `current` and the serving setup, and keeps `releases/`, `.env`, `env/`, `database.sqlite`, and the local PHP-FPM tuning for recovery.
 
@@ -225,7 +227,7 @@ The operation is "deploy what the branch holds now". So a deployment takes no co
 
 ### Three releases per home
 
-Each release holds a full checkout with its dependencies, so the count decides the disk use. Three keep the current code, the way back, and one more step back. The previous selection outranks newer releases that never went live, because it is the release a rollback needs first. For development, a leased seed outranks everything else, because another Instance still reads it; the limit gives way and the Gateway warns.
+Each release holds a full checkout with its dependencies, so the count decides the disk use. Three keep the current code, the way back, and one more step back. The previous selection outranks newer releases that never went live, because it is the release a rollback needs first. For development, a leased seed outranks everything else, because another Instance still reads it; the limit gives way and the Gateway warns. For production, a release that a running process uses outranks the limit for the same reason: deleting it would pull the code, the dependencies, and the configuration cache out from under that process.
 
 When pruning fails closed on a broken development release, every later deployment of that home fails too. So Orbit removes a broken release when its ownership receipt proves that Orbit created it. Without that proof, a folder in `releases/` may be someone's work, so Orbit skips it and warns.
 

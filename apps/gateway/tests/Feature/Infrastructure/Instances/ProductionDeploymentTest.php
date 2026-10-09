@@ -452,7 +452,11 @@ it('skips partial directories while executing the retained release listing', fun
     }
 })->with(['root public' => ['public', '', '../../.env'], 'nested Laravel' => ['server/web/public', '/server/web', '../../../../.env']]);
 
-it('prunes a production home to the selected, the previous, and the newest other release', function (?string $previous, array $kept, array $pruned): void {
+it('prunes a production home to the selected, the previous, and the newest other release', function (?string $previous, ?string $busy, array $kept, array $output): void {
+    if (LinuxHost::delegate($this)) {
+        return;
+    }
+
     [$deployment, $ssh, $instance] = orb219_remote_deployment([new CommandResult(0, '', '', 1, false)]);
     $selected = new DeploymentRelease('20260104000000-d', '/home/orbit-app-1/releases/20260104000000-d', str_repeat('a', 40));
     $deployment->prune($instance, $selected, $previous === null ? null : new DeploymentRelease($previous, '/home/orbit-app-1/releases/'.$previous, str_repeat('b', 40)));
@@ -503,15 +507,27 @@ it('prunes a production home to the selected, the previous, and the newest other
             ['state_directory="$home/state"', 'test -d "$home"', '"$(id -un):$(id -gn):600"', '! -uid "$(id -u)"', '! -gid "$(id -g)"'],
             $ssh->commands[0]->input ?? '',
         );
+        // The fixture's processes stand in for the production user's. Nothing outside the sandbox runs from a release.
+        expect($script)->toContain('pgrep -u "$user"');
+        $script = str_replace('pgrep -u "$user"', 'pgrep -u "$(id -u)"', $script);
         $arguments = $ssh->commands[0]->arguments;
         expect(array_slice($arguments, 8))->toBe(['3', '20260104000000-d', $previous ?? '']);
         array_splice($arguments, 3, 3, [$repository, 'orbit-fixture', $home]);
+        // A running Process, such as a queue worker that a deployment did not restart, works in an old release.
+        $worker = new Process(['sleep', '60'], $home.'/releases/'.($busy ?? 'initial').'/public');
+        if ($busy !== null) {
+            $worker->start();
+            for ($attempt = 0; $attempt < 100 && @readlink('/proc/'.$worker->getPid().'/cwd') !== $home.'/releases/'.$busy.'/public'; $attempt++) {
+                usleep(10_000);
+            }
+        }
 
         $process = new Process($arguments, env: ['PATH' => $sandbox.'/bin:'.getenv('PATH')]);
         $process->setInput($script);
         $process->mustRun();
+        $worker->stop(0);
 
-        expect($process->getOutput())->toBe(implode('', array_map(static fn (string $name): string => "PRUNED\t{$name}\n", $pruned)))
+        expect($process->getOutput())->toBe(implode('', array_map(static fn (string $line): string => $line."\n", $output)))
             ->and($process->getErrorOutput())->toBe('')
             ->and(array_map(basename(...), glob($home.'/releases/{,.}[!.]*', GLOB_BRACE) ?: []))->toEqualCanonicalizing([...$kept, 'partial'])
             ->and(readlink($home.'/current'))->toBe('releases/20260104000000-d');
@@ -520,10 +536,69 @@ it('prunes a production home to the selected, the previous, and the newest other
         $filesystem->deleteDirectory($sandbox);
     }
 })->with([
-    'after a rollback' => ['20260102000000-b', ['20260104000000-d', '20260102000000-b', '20260103000000-c'], ['20260101000000-a', 'initial']],
-    'after a deployment' => ['20260103000000-c', ['20260104000000-d', '20260103000000-c', '20260102000000-b'], ['20260101000000-a', 'initial']],
-    'after the first deployment' => [null, ['20260104000000-d', '20260103000000-c', '20260102000000-b'], ['20260101000000-a', 'initial']],
+    'after a rollback' => ['20260102000000-b', null, ['20260104000000-d', '20260102000000-b', '20260103000000-c'], ["PRUNED\t20260101000000-a", "PRUNED\tinitial"]],
+    'after a deployment' => ['20260103000000-c', null, ['20260104000000-d', '20260103000000-c', '20260102000000-b'], ["PRUNED\t20260101000000-a", "PRUNED\tinitial"]],
+    'after the first deployment' => [null, null, ['20260104000000-d', '20260103000000-c', '20260102000000-b'], ["PRUNED\t20260101000000-a", "PRUNED\tinitial"]],
+    'with a process in an old release' => ['20260103000000-c', 'initial', ['20260104000000-d', '20260103000000-c', '20260102000000-b', 'initial'], ["PRUNED\t20260101000000-a", "IN_USE\tinitial"]],
 ]);
+
+it('removes nothing when it cannot read where a running process works', function (): void {
+    if (LinuxHost::delegate($this)) {
+        return;
+    }
+
+    [$deployment, $ssh, $instance] = orb219_remote_deployment([new CommandResult(0, '', '', 1, false)]);
+    $deployment->prune($instance, new DeploymentRelease('initial', '/home/orbit-app-1/releases/initial', str_repeat('a', 40)), null);
+    $filesystem = new Filesystem;
+    $sandbox = sys_get_temp_dir().'/orbit-release-prune-'.bin2hex(random_bytes(6));
+    $home = $sandbox.'/home';
+    $repository = 'https://example.test/deployment.git';
+
+    try {
+        foreach (['initial', '20260101000000-a', '20260102000000-b', '20260103000000-c'] as $name) {
+            $release = $home.'/releases/'.$name;
+            $filesystem->ensureDirectoryExists($release.'/public');
+            file_put_contents($release.'/public/index.php', "<?php\n");
+            symlink('../../.env', $release.'/.env');
+            foreach ([['git', 'init', '--quiet', $release], ['git', '-C', $release, 'remote', 'add', 'origin', $repository], ['git', '-C', $release, 'add', 'public/index.php'], ['git', '-C', $release, '-c', 'user.email=orbit@example.test', '-c', 'user.name=Orbit Test', 'commit', '--quiet', '-m', $name]] as $arguments) {
+                new Process($arguments)->mustRun();
+            }
+        }
+        $filesystem->ensureDirectoryExists($home.'/state');
+        $filesystem->ensureDirectoryExists($sandbox.'/bin');
+        file_put_contents($home.'/.env', "APP_ENV=production\n");
+        symlink('releases/initial', $home.'/current');
+        file_put_contents($home.'/state/release-layout', $repository."\0orbit-fixture\0".$home."\0initial\0");
+        chmod($home.'/state/release-layout', 0600);
+        file_put_contents($sandbox.'/bin/sudo', "#!/usr/bin/env bash\nif [ \"\${1:-}\" = -u ]; then shift 2; fi\nif [ \"\${1:-}\" = -H ]; then shift; fi\nexec \"\$@\"\n");
+        chmod($sandbox.'/bin/sudo', 0755);
+        $script = str_replace(
+            ['state_directory="/var/lib/orbit/app-instance-sources/$instance"', 'test "$home" = "/home/$user"', 'root:root:600', '! -user "$user"', '! -group "$user"', 'pgrep -u "$user"', 'sudo readlink --'],
+            ['state_directory="$home/state"', 'test -d "$home"', '"$(id -un):$(id -gn):600"', '! -uid "$(id -u)"', '! -gid "$(id -g)"', 'pgrep -u "$(id -u)"', 'false --'],
+            $ssh->commands[0]->input ?? '',
+        );
+        $arguments = $ssh->commands[0]->arguments;
+        array_splice($arguments, 3, 3, [$repository, 'orbit-fixture', $home]);
+
+        $process = new Process($arguments, env: ['PATH' => $sandbox.'/bin:'.getenv('PATH')]);
+        $process->setInput($script);
+
+        expect($process->run())->not->toBe(0)
+            ->and($process->getOutput())->toBe('')
+            ->and(array_map(basename(...), glob($home.'/releases/*') ?: []))->toEqualCanonicalizing(['initial', '20260101000000-a', '20260102000000-b', '20260103000000-c']);
+    } finally {
+        $filesystem->deleteDirectory($sandbox);
+    }
+});
+
+it('names the removed and in-use releases also when the prune wrote a message', function (): void {
+    [$deployment, , $instance] = orb219_remote_deployment([
+        new CommandResult(0, "PRUNED\t20260101000000-a\nIN_USE\tinitial\n", "find: 'storage/framework/sessions/x': No such file or directory\n", 1, false),
+    ]);
+
+    expect($deployment->prune($instance, new DeploymentRelease('20260104000000-d', '/home/orbit-app-1/releases/20260104000000-d', str_repeat('a', 40)), null))
+        ->toBe(['removed' => ['20260101000000-a'], 'in_use' => ['initial']]);
+});
 
 it('rejects traversal before asking the remote host to inspect a release', function (): void {
     [$deployment, $ssh, $instance] = orb219_remote_deployment([]);
