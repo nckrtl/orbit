@@ -3312,7 +3312,7 @@ export interface paths {
         put?: never;
         /**
          * Register a T3 server
-         * @description Called by a T3 server on startup. The Gateway checks that `url` serves `environment_id`, exchanges `pairing_url` for an admin session as a T3 client pairs, stores the session encrypted, and revokes its earlier sessions on that server. Returns `t3.environment_mismatch` or `t3.admin_scope_missing` (422), and `t3.server_unreachable`, `t3.session_rejected`, `t3.request_refused`, or `t3.response_invalid` (502).
+         * @description Called from a T3 server's host on startup with an admin session from `t3 auth session issue --label "Orbit Gateway"`. The Gateway checks that `url` serves `environment_id` and that T3 accepts `admin_session` with admin scopes, stores the session encrypted, and revokes its earlier sessions on that server. Returns `t3.environment_mismatch` or `t3.admin_scope_missing` (422), and `t3.server_unreachable`, `t3.session_rejected`, `t3.request_refused`, or `t3.response_invalid` (502).
          */
         post: operations["t3-environment-register"];
         delete?: never;
@@ -4061,6 +4061,7 @@ export interface components {
             reason?: "gateway_commit_unknown" | "history_unavailable" | "release_missing" | "release_mismatch" | "release_incomplete" | "github_unavailable" | null;
             version?: string | null;
             tag?: string | null;
+            commit?: string | null;
             checksums_url?: string | null;
             assets?: components["schemas"]["FleetReleaseAsset"][];
         };
@@ -18220,8 +18221,7 @@ export interface operations {
                     label: string;
                     /** Format: uri */
                     url: string;
-                    /** Format: uri */
-                    pairing_url: string;
+                    admin_session: string;
                 };
             };
         };

@@ -608,7 +608,7 @@ final readonly class RecordCommandActivity
         }
 
         if ($command === 't3:environment:register') {
-            // The admin pairing link never enters Activity.
+            // The admin session never enters Activity.
             return $this->inputSanitizer->sanitizeProperties($request->only(['environment_id', 'label', 'url']));
         }
 

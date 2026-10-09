@@ -13,9 +13,9 @@ use App\Models\T3Environment;
 use Illuminate\Support\Carbon;
 
 /**
- * Registers a T3 server. The Gateway checks that the URL serves the named environment, exchanges the
- * server's admin pairing link for an admin session the way a T3 client pairs, and stores that session
- * encrypted. Registering again replaces the session and revokes the Gateway's earlier sessions there.
+ * Registers a T3 server. The Gateway checks that the URL serves the named environment and that T3 accepts
+ * the admin session the server's host issued, then stores that session encrypted. Registering again
+ * replaces the session and revokes the Gateway's earlier sessions there.
  */
 final readonly class RegisterT3EnvironmentAction
 {
@@ -39,13 +39,13 @@ final readonly class RegisterT3EnvironmentAction
             );
         }
 
-        $session = $this->server->exchangePairingToken($data->url, $data->pairingToken, self::GATEWAY_CLIENT_LABEL);
+        $session = $this->server->session($data->url, $data->adminSession);
         $missing = array_values(array_diff(self::REQUIRED_SCOPES, $session->scopes));
 
         if ($missing !== []) {
             throw new ResourceOperationException(
                 't3.admin_scope_missing',
-                'The pairing link is not an admin link. It lacks '.implode(', ', $missing).'.',
+                'The session is not an admin session. It lacks '.implode(', ', $missing).'.',
                 details: ['missing_scopes' => implode(' ', $missing)],
             );
         }

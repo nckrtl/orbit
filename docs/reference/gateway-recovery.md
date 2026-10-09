@@ -645,8 +645,9 @@ A release command raises an alert when a release fails, when it pauses automatic
 | `release_cleanup_paused` | A release went live, but [document cleanup](/reference/project-documents#restore-time-cleanup-gate) stayed paused after the handoff |
 | `release_scheduler_silent` | A release went live, but its own scheduler ran no `tasks:tick` by the [confirmation deadline](#post-release-tick-confirmation). At most once per release; nothing switches back or pauses |
 | `release_gateway_agent_failed` | A release went live, but the handoff could not bring the [Gateway Node's agent](#gateway-node-agent) to the pin. At most once per release; nothing switches back or pauses |
-| `rollout_stalled` | `orbit self-update` on one Node stayed `incomplete` for 6 visits in a row, or a rollout waited more than 2 hours for its CLI release. The rollout does not halt |
+| `rollout_stalled` | `orbit self-update` on one Node stayed `incomplete` for 6 visits in a row, or a rollout waited more than 2 hours for a CLI release with no [fallback](/reference/self-update#fallback-to-an-ancestor-release). The rollout does not halt |
 | `rollout_caddy_skipped` | A fleet rollout kept a Node's live Caddyfile because the new one was refused. Once per rollout; the rollout does not halt |
+| `rollout_cli_fallback` | A fleet rollout used an ancestor's CLI release. The summary names why the commit's own release was not used. Once per rollout; the rollout does not halt |
 
 Every alert names its subject, a summary, and an optional evidence link. The summary passes through the Gateway log redactor and is cut at 1,000 characters. A field outside these limits is a bug in the calling command, which refuses it before it records anything.
 
@@ -783,7 +784,13 @@ One run resolves the desired state of the commit the Gateway serves: the CLI rel
 
 A Gateway in the release layout rolls out only a commit whose release record is `verified`. A run during a release, before the record exists, does nothing (`release_unverified`). When the configured layout cannot be read, or its link names no complete release, the run rolls out nothing (`release_layout_unreadable`). An in-place Gateway, whose current path is a checkout, has no release records, and its running commit is the desired state. A Gateway version that is not a commit, such as `dev`, rolls out nothing.
 
-CI publishes the CLI release a few minutes after the commit's checks pass, and the Gateway usually deploys the commit first. Until the release exists, the rollout is `waiting` and changes nothing on any Node. Once the release appears, the catch-up starts the sequential visit, which brings the footprint and the CLI to each Node together, with its verify and halt. A rollout that waits longer than 2 hours raises `rollout_stalled` once: CI most likely never published the release. A Node whose `orbit self-update` reports the release as pending is `waiting` too.
+CI publishes the CLI release a few minutes after the commit's checks pass, and the Gateway usually deploys the commit first. Until the release exists, the rollout is `waiting` and changes nothing on any Node. Once the release appears, the catch-up starts the sequential visit, which brings the footprint and the CLI to each Node together, with its verify and halt. A Node whose `orbit self-update` reports the release as pending is `waiting` too.
+
+When the commit's release is still missing after 30 minutes, the desired state [falls back](/reference/self-update#fallback-to-an-ancestor-release) to the newest published release of an ancestor commit with the same CLI code. The rollout then starts with that release and raises `rollout_cli_fallback` once, so a missing release is never silent. When the commit's own release appears later, the catch-up visits each Node again and brings it to that release.
+
+A started rollout visits no Node while its CLI release cannot be confirmed, for example while GitHub fails after the confirmed release left the cache. Each Node would otherwise get a release it cannot install. The catch-up continues once the release is confirmed again.
+
+A rollout that waits longer than 2 hours raises `rollout_stalled` once. It means the fleet is stuck: CI never published the release, and no ancestor's release could stand in. Publish the release, or merge a newer commit.
 
 ### One Node
 
