@@ -22,6 +22,9 @@ use LogicException;
 /**
  * A real Node Caddy builder whose push goes through a test's fake SSH executor, so a test sees the whole
  * rendered Caddyfile each publisher's build pushes. A build that would run through local `sudo` fails.
+ *
+ * The build lock lives in this process's scratch directory, so it never meets a lock directory that another run
+ * or another user left in the shared temporary directory.
  */
 final class SshNodeCaddyBuilds
 {
@@ -29,7 +32,7 @@ final class SshNodeCaddyBuilds
     {
         return new NodeCaddyBuilder(
             app(NodeCaddyfileRenderer::class),
-            new NodeCaddyBuildLock(sys_get_temp_dir().'/orbit-test-caddy-build-'.getmypid()),
+            new NodeCaddyBuildLock(TestOrbitHome::scratch('caddy-build')),
             new NodeCaddyTransport(
                 new class implements ProcessRunner
                 {

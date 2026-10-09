@@ -15,6 +15,7 @@ use App\Domain\Doctor\InstanceDoctorIssueCode;
 use App\Domain\Doctor\InstanceStateInspector;
 use App\Domain\Doctor\PrivateRouteProjectionInspector;
 use App\Domain\Doctor\PublicRouteEdgeInspector;
+use App\Domain\Doctor\RouteApplicationUrlInspector;
 use App\Domain\Instances\InstanceProvisionProgress;
 use App\Domain\Instances\InstanceSandboxGuard;
 use App\Domain\Instances\InstanceSourceLayout;
@@ -22,6 +23,7 @@ use App\Domain\Instances\InstanceState;
 use App\Domain\Routes\PublicRouteEligibility;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
+use App\Domain\Routes\RouteWebRoot;
 use App\Domain\Tasks\TaskWorkspaceLifecycle;
 use App\Models\Instance;
 use App\Models\Node;
@@ -39,6 +41,7 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
         private ?PublicRouteEdgeInspector $publicEdge = null,
         private ?PrivateRouteProjectionInspector $privateProjection = null,
         private PublicRouteEligibility $eligibility = new PublicRouteEligibility,
+        private ?RouteApplicationUrlInspector $applicationUrls = null,
     ) {}
 
     public function family(): DoctorFamily
@@ -180,7 +183,12 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
                 $issues[] = $this->inspectionFailedIssue($instance);
             }
 
-            $issues = [...$issues, ...$this->privateRouteIssues($instance, $context), ...$this->publicRouteIssues($instance, $context)];
+            $issues = [
+                ...$issues,
+                ...$this->privateRouteIssues($instance, $context),
+                ...$this->applicationUrlIssues($instance),
+                ...$this->publicRouteIssues($instance, $context),
+            ];
 
             if (count($issues) > $instanceIssueOffset) {
                 $current = Instance::query()->find($instance->id);
@@ -336,6 +344,72 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
             if ($inspectionFailed) {
                 $issues[] = $this->inspectionFailedIssue($instance);
             }
+        }
+
+        return $issues;
+    }
+
+    /**
+     * Checks `APP_URL` in each application directory that a Route with a web root serves, against the
+     * Route that wins the directory. It covers the directories the writer covers, so an Instance whose
+     * Routes have no web root gets no check here.
+     *
+     * @return list<DoctorIssueData>
+     */
+    private function applicationUrlIssues(Instance $instance): array
+    {
+        if (
+            ! $this->applicationUrls instanceof RouteApplicationUrlInspector
+            || $instance->placedOnAppProd()
+            || $instance->selected_php_version === null
+        ) {
+            return [];
+        }
+
+        $winners = RouteWebRoot::applicationUrlRoutes($instance, RouteWebRoot::applicationUrlCandidates($instance));
+        if ($winners === []) {
+            return [];
+        }
+
+        $expected = [];
+        foreach ($winners as $directory => $route) {
+            $expected[(string) $directory] = "https://{$route->domain}";
+        }
+
+        try {
+            $observed = $this->applicationUrls->inspect($instance, $expected);
+        } catch (DoctorInspectionException) {
+            return [$this->inspectionFailedIssue($instance)];
+        }
+
+        $issues = [];
+        $inspectionFailed = false;
+        foreach (array_keys($expected) as $directory) {
+            $matches = $observed[$directory] ?? null;
+
+            if ($matches === null) {
+                $inspectionFailed = true;
+
+                continue;
+            }
+
+            if (! $matches) {
+                $name = $directory === '' ? '.' : $directory;
+                $issues[] = new DoctorIssueData(
+                    InstanceDoctorIssueCode::LaravelUrlMismatch,
+                    DoctorIssueKind::Drift,
+                    'instance',
+                    $instance->id,
+                    $instance->name,
+                    "The Laravel URL in application directory [{$name}] does not match the Route that serves it.",
+                    'matching',
+                    'mismatch',
+                );
+            }
+        }
+
+        if ($inspectionFailed) {
+            $issues[] = $this->inspectionFailedIssue($instance);
         }
 
         return $issues;
