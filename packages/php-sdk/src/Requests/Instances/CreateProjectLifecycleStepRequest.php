@@ -19,6 +19,9 @@ final class CreateProjectLifecycleStepRequest extends GatewayRequest implements 
     #[\Override]
     protected Method $method = Method::POST;
 
+    /**
+     * @param  list<array{name: string, timeout_seconds: int}>|null  $rebalance  New timeouts for other steps, set in the same write.
+     */
     public function __construct(
         private readonly int $projectId,
         private readonly string $collection,
@@ -28,6 +31,7 @@ final class CreateProjectLifecycleStepRequest extends GatewayRequest implements 
         private readonly ?int $timeoutSeconds = null,
         private readonly ?string $before = null,
         private readonly ?string $after = null,
+        private readonly ?array $rebalance = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -40,7 +44,7 @@ final class CreateProjectLifecycleStepRequest extends GatewayRequest implements 
         return LifecycleStepResponse::fromData($this->unwrapData($response), $this->successRequestId($response));
     }
 
-    /** @return array<string, int|string> */
+    /** @return array<string, int|string|list<array{name: string, timeout_seconds: int}>> */
     protected function defaultBody(): array
     {
         $body = [
@@ -58,6 +62,10 @@ final class CreateProjectLifecycleStepRequest extends GatewayRequest implements 
 
         if ($this->after !== null) {
             $body['after'] = $this->after;
+        }
+
+        if ($this->rebalance !== null) {
+            $body['rebalance'] = $this->rebalance;
         }
 
         return $body;
