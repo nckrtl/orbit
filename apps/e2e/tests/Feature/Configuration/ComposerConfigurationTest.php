@@ -322,14 +322,15 @@ describe('Composer configuration', function (): void {
             ]);
     });
 
-    it('persists per-project Pest TIA graphs on a named checkout', function (): void {
+    it('persists per-project Pest TIA graphs from main and tests pull requests on the merge ref', function (): void {
         $workflow = file_get_contents(base_path('../../.github/workflows/ci.yml'));
 
         expect($workflow)
             ->toBeString()
             ->toContain('fetch-depth: 0')
-            ->toContain('ref: ${{ github.head_ref || github.ref_name }}')
-            ->toContain('repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}')
+            // The merge commit descends from the main graph's commit, so TIA can diff against it.
+            ->toContain("ref: \${{ github.event_name == 'pull_request' && github.ref || github.ref_name }}")
+            ->toContain('repository: ${{ github.repository }}')
             ->toContain('ORBIT_TIA_DIRECTORY: .orbit-tia')
             ->toContain('actions/cache/restore@v6')
             ->toContain('actions/cache/save@v6')
@@ -339,11 +340,13 @@ describe('Composer configuration', function (): void {
             ->toContain("format('{0}/phpunit.xml', matrix.directory)")
             ->toContain("format('{0}/phpunit.xml.dist', matrix.directory)")
             ->toContain('orbit-tia-php8.5-${{ matrix.directory }}-')
-            // Each run saves its own graph, so a full run on an already tested commit still refreshes the cache.
+            // Each run on main saves its own graph, so a full run on an already tested commit still refreshes the cache.
             ->toContain('${{ github.head_ref || github.ref_name }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}')
-            ->toContain('${{ steps.orbit-tia-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-')
+            ->toContain("\${{ github.event_name != 'pull_request' && format('{0}-{1}-', steps.orbit-tia-key.outputs.prefix, github.ref_name) || '' }}")
+            // A pull request restores the graph of its base commit first, then the newest main graph, and nothing else.
+            ->toContain("\${{ github.event_name == 'pull_request' && format('{0}-main-{1}-', steps.orbit-tia-key.outputs.prefix, github.event.pull_request.base.sha) || '' }}")
             ->toContain('${{ steps.orbit-tia-key.outputs.prefix }}-main-')
-            ->toContain('if: success()')
+            ->toContain("\${{ github.event_name != 'pull_request' && format('orbit-tia-php8.5-{0}-', matrix.directory) || '' }}")
             ->toContain('coverage: pcov')
             ->toContain('vendor/bin/pest --parallel '.CI_PEST_PROCESSES.' --tia --compact')
             ->toContain('vendor/bin/pest --parallel '.CI_PEST_PROCESSES.' --tia --fresh --compact')
@@ -378,8 +381,9 @@ describe('Composer configuration', function (): void {
             ->toContain("format('{0}/pint.json', matrix.directory)")
             ->toContain("format('{0}/rector.php', matrix.directory)")
             ->toContain('orbit-lint-php8.5-${{ matrix.directory }}-')
-            ->toContain('${{ steps.orbit-lint-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-')
-            ->toContain('${{ steps.orbit-lint-key.outputs.prefix }}-main-');
+            ->toContain("\${{ github.event_name != 'pull_request' && format('{0}-{1}-', steps.orbit-lint-key.outputs.prefix, github.ref_name) || '' }}")
+            ->toContain('${{ steps.orbit-lint-key.outputs.prefix }}-main-')
+            ->toContain("\${{ github.event_name != 'pull_request' && format('orbit-lint-php8.5-{0}-', matrix.directory) || '' }}");
 
         expect(strpos($workflow, 'Install dependencies'))
             ->toBeLessThan(strpos($workflow, 'Restore Pint and Rector caches'));
@@ -398,8 +402,9 @@ describe('Composer configuration', function (): void {
             ->toContain("format('{0}/composer.lock', matrix.directory)")
             ->toContain("format('{0}/phpstan.neon', matrix.directory)")
             ->toContain('orbit-phpstan-php8.5-${{ matrix.directory }}-')
-            ->toContain('${{ steps.orbit-phpstan-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-')
+            ->toContain("\${{ github.event_name != 'pull_request' && format('{0}-{1}-', steps.orbit-phpstan-key.outputs.prefix, github.ref_name) || '' }}")
             ->toContain('${{ steps.orbit-phpstan-key.outputs.prefix }}-main-')
+            ->toContain("\${{ github.event_name != 'pull_request' && format('orbit-phpstan-php8.5-{0}-', matrix.directory) || '' }}")
             ->not->toMatch('/path:\s*\$\{\{ matrix\.directory \}\}\/vendor\/phpstan\/cache\s*$/m')
             ->not->toMatch('/path:\s*\$\{\{ matrix\.directory \}\}\/vendor\s*$/m');
 
@@ -411,6 +416,17 @@ describe('Composer configuration', function (): void {
             ->toBeLessThan(strpos($workflow, 'Save PHPStan result cache'));
         expect(strpos($workflow, 'Save PHPStan result cache'))
             ->toBeLessThan(strpos($workflow, 'Restore Pest TIA graph'));
+    });
+
+    it('saves the project caches only from runs outside pull requests', function (): void {
+        $workflow = Yaml::parseFile(base_path('../../.github/workflows/ci.yml'));
+        $steps = array_column($workflow['jobs']['project']['steps'], null, 'name');
+
+        // actions/cache tries every restore key in a pull request's own scope before main's, so a saved pull request
+        // cache would shadow the main cache on the next run of that pull request.
+        foreach (['Save PHPStan result cache', 'Save Pint and Rector caches', 'Save Pest TIA graph'] as $name) {
+            expect($steps[$name]['if'])->toBe("success() && github.event_name != 'pull_request'");
+        }
     });
 
     it('executes a fresh TIA guidance contract when a guidance input is corrupt', function (): void {
@@ -486,7 +502,7 @@ it('tests exactly the run commit on main even when the branch moved before the j
     $checkout = array_search('Check out repository', $names, true);
 
     // The checkout names the branch, so a later push would otherwise be tested under this run's commit.
-    expect($steps[$checkout]['with']['ref'])->toBe('${{ github.head_ref || github.ref_name }}')
+    expect($steps[$checkout]['with']['ref'])->toBe("\${{ github.event_name == 'pull_request' && github.ref || github.ref_name }}")
         ->and($steps[$checkout + 1])->toBe([
             'name' => "Pin the run's commit",
             'if' => "github.event_name != 'pull_request'",
