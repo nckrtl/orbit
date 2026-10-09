@@ -47,6 +47,9 @@ final readonly class RemoteTaskTurnReceipts implements TaskTurnReceipts
             $turnFields['thread'] = $threadId;
         }
         if ($mode instanceof TaskTurnMode) {
+            if ($mode->deliveryKey !== null) {
+                $turnFields['delivery_key'] = $mode->deliveryKey;
+            }
             if ($mode->consult) {
                 $turnFields['consult'] = true;
             }

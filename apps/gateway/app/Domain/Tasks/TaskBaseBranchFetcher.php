@@ -36,7 +36,8 @@ interface TaskBaseBranchFetcher
 
     /**
      * Resets an untouched task workspace to the already-fetched default-branch tip and returns HEAD.
-     * The caller must ensure that no implementer has started in the group.
+     * The caller must ensure that no implementer has started in the group. The reset refuses a workspace
+     * on another branch, with a commit that is not on the default branch, or with a tracked change.
      *
      * @throws TaskPullRequestException
      */

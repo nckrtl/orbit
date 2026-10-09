@@ -32,9 +32,9 @@ final readonly class IngressRoleBaseline implements RoleBaseline
     public function converge(Node $node, NodeRole $assignment): void
     {
         $account = $this->accounts->resolve($node);
-        $caddySource = $this->commands->caddySource($node, RoleName::Ingress);
-        if ($caddySource instanceof RemoteCommand) {
-            $this->ssh->execute($node, $caddySource, 'caddy-package-source', 'ingress.prerequisite_failed', failureLabel: CaddyRoleFailure::sshLabel(RoleName::Ingress));
+        $caddyPackage = $this->commands->caddyPackage($node, RoleName::Ingress);
+        if ($caddyPackage instanceof RemoteCommand) {
+            $this->ssh->execute($node, $caddyPackage, 'caddy-package-source', 'ingress.prerequisite_failed', failureLabel: CaddyRoleFailure::sshLabel(RoleName::Ingress));
         }
         $this->ssh->execute(
             $node,

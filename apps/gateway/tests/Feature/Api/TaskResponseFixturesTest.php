@@ -5,8 +5,11 @@ declare(strict_types=1);
 use App\Actions\Tasks\WatchTaskBranchPullRequestAction;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentDriverRegistry;
+use App\Domain\Tasks\DeliverablePathRepository;
 use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
+use App\Domain\Tasks\QuestionAsker;
+use App\Domain\Tasks\QuestionStatus;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskFinalReview;
 use App\Domain\Tasks\TaskGroupStatus;
@@ -23,11 +26,13 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskComment;
+use App\Models\TaskQuestion;
 use App\Models\TaskReviewedCommit;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
 use Orbit\Sdk\Requests\Tasks\CancelSubtaskRequest;
 use Orbit\Sdk\Requests\Tasks\CancelTaskGroupRequest;
+use Orbit\Sdk\Requests\Tasks\CloseTaskQuestionRequest;
 use Orbit\Sdk\Requests\Tasks\CompleteTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\CreateSubtaskRequest;
 use Orbit\Sdk\Requests\Tasks\CreateTaskCommentRequest;
@@ -279,6 +284,18 @@ describe('task response fixtures', function (): void {
     });
 
     it('records subtask create, update, and destroy', function (): void {
+        app()->instance(DeliverablePathRepository::class, new class implements DeliverablePathRepository
+        {
+            public function defaultBranchCommit(Project $project): string
+            {
+                return str_repeat('a', 40);
+            }
+
+            public function files(Project $project, string $commit, ?Instance $workspace = null): array
+            {
+                return ['docs/cli/tasks.mdx'];
+            }
+        });
         $group = task_fixture_group($this->project);
         $first = $group->tasks()->orderBy('position')->firstOrFail();
 
@@ -323,6 +340,22 @@ describe('task response fixtures', function (): void {
         app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
 
         record_fixture($this->postJson("/api/v1/task-groups/{$stuck->id}/tasks/{$running->id}/cancel")->assertStatus(502), 'tasks/tasks-subtask-cancel/interrupt-failed', CancelSubtaskRequest::class, 'POST /api/v1/task-groups/{group}/tasks/{task}/cancel');
+    });
+
+    it('records a closed question and a refused close', function (): void {
+        $group = task_fixture_group($this->project);
+        $group->update(['status' => TaskGroupStatus::Running]);
+        $task = $group->tasks()->orderBy('position')->firstOrFail();
+        $task->update(['status' => TaskStatus::Running]);
+        $question = TaskQuestion::query()->create([
+            'task_id' => $group->id, 'subtask_id' => $task->id, 'attempt' => 1, 'asked_by' => QuestionAsker::Implementer,
+            'question' => 'Which mirror should the build use?', 'status' => QuestionStatus::Escalated,
+            'asked_at' => now()->subHour(), 'escalated_at' => now()->subMinutes(30),
+        ]);
+        $close = ['status' => 'superseded', 'reason' => 'A later subtask owns the continuation.'];
+
+        record_fixture($this->postJson("/api/v1/task-questions/{$question->id}/close", $close)->assertOk(), 'tasks/tasks-question-close/closed', CloseTaskQuestionRequest::class, 'POST /api/v1/task-questions/{question}/close');
+        record_fixture($this->postJson("/api/v1/task-questions/{$question->id}/close", [...$close, 'status' => 'answered'])->assertConflict(), 'tasks/tasks-question-close/already-closed', CloseTaskQuestionRequest::class, 'POST /api/v1/task-questions/{question}/close');
     });
 
     it('records comments and agent threads', function (): void {

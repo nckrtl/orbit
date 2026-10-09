@@ -27,9 +27,9 @@ final readonly class ProductionRoleBaseline implements RoleBaseline
     public function converge(Node $node, NodeRole $assignment): void
     {
         $account = $this->accounts->resolve($node);
-        $caddySource = $this->commands->caddySource($node, RoleName::AppProd);
-        if ($caddySource instanceof RemoteCommand) {
-            $this->ssh->execute($node, $caddySource, 'caddy-package-source', 'app-prod.prerequisite_failed');
+        $caddyPackage = $this->commands->caddyPackage($node, RoleName::AppProd);
+        if ($caddyPackage instanceof RemoteCommand) {
+            $this->ssh->execute($node, $caddyPackage, 'caddy-package-source', 'app-prod.prerequisite_failed');
         }
         $this->ssh->execute(
             $node,

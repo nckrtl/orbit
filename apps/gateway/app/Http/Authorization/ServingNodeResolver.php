@@ -30,6 +30,7 @@ final readonly class ServingNodeResolver
             ServingNode::Target => $this->target($request),
             ServingNode::ProjectOwning => $this->projectOwning($request),
             ServingNode::InstanceOwning => $this->instanceOwning($request),
+            ServingNode::InstanceCreation => $this->instanceCreation($request),
             ServingNode::DeploymentOwning => $this->deploymentOwning($request),
             ServingNode::CandidateClone => $this->candidateClone($request),
             ServingNode::InstanceTransfer => $this->instanceTransfer($request),
@@ -157,6 +158,31 @@ final readonly class ServingNodeResolver
         }
 
         return [Node::query()->findOrFail($nodeId)];
+    }
+
+    /**
+     * A create that names a Database server also creates a database on it, which `database:create`
+     * allows only with access to the Gateway. So the caller needs access to both.
+     *
+     * @return list<Node>
+     */
+    private function instanceCreation(Request $request): array
+    {
+        $nodes = $this->instanceOwning($request);
+
+        if (! $request->has('database_server')) {
+            return $nodes;
+        }
+
+        $gateway = $this->gateway()[0];
+
+        foreach ($nodes as $node) {
+            if ($node->is($gateway)) {
+                return $nodes;
+            }
+        }
+
+        return [...$nodes, $gateway];
     }
 
     /** @return list<Node> */

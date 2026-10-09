@@ -7,10 +7,12 @@ namespace App\Actions\Instances;
 use App\Domain\Instances\Environment\InstanceEnvironmentContext;
 use App\Domain\Instances\Environment\InstanceEnvironmentContextResolver;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
+use App\Domain\Instances\Environment\InstanceEnvironmentReader;
 use App\Domain\Instances\Environment\InstanceEnvironmentRenderer;
 use App\Domain\Instances\Environment\InstanceEnvironmentResult;
 use App\Domain\Instances\Environment\InstanceEnvironmentRouteDomain;
 use App\Domain\Instances\Environment\InstanceEnvironmentStore;
+use App\Domain\Instances\Environment\InstanceEnvironmentSynchronizationSnapshot;
 use App\Domain\Instances\Environment\InstanceEnvironmentSynchronizer;
 use App\Domain\Instances\Environment\InstanceEnvironmentWriter;
 use App\Domain\Instances\Environment\InstanceEnvironmentWriteResult;
@@ -33,6 +35,7 @@ final readonly class SynchronizeInstanceEnvironmentAction implements InstanceEnv
         private InstanceEnvironmentWriter $writer,
         private ?InstanceTestEnvironment $testing = null,
         private ?InstanceTestEnvironmentWriter $testingWriter = null,
+        private ?InstanceEnvironmentReader $reader = null,
     ) {}
 
     public function execute(Instance $instance): InstanceEnvironmentResult
@@ -57,18 +60,29 @@ final readonly class SynchronizeInstanceEnvironmentAction implements InstanceEnv
                     $domain,
                     requireActiveNode: true,
                 ),
+                // A Route transition rewrites a production file that deploys already own. Refusing
+                // here would stall the transition halfway.
+                keepWorkloadKeys: false,
             ),
         );
     }
 
-    private function synchronize(InstanceEnvironmentContext $context): InstanceEnvironmentResult
-    {
+    private function synchronize(
+        InstanceEnvironmentContext $context,
+        bool $keepWorkloadKeys = true,
+    ): InstanceEnvironmentResult {
         $requiredCapacity = $this->store->synchronizationCapacity($context);
         $this->preflight->assertEnvironmentWritable($context, $requiredCapacity);
         $snapshot = $this->store->synchronizationSnapshot($context);
         $contents = $this->renderer->render($context, $snapshot->values());
+
+        if ($keepWorkloadKeys) {
+            $this->assertKeepsWorkloadKeys($context, $snapshot);
+        }
+
         $changed = $this->confirmed($this->writer->write($context, $contents));
-        $plan = ($this->testing ?? app(InstanceTestEnvironment::class))->plan($context->instanceId);
+        $this->store->recordSynchronizedKeys($context, array_keys($snapshot->values()));
+        $plan = ($this->testing ?? app(InstanceTestEnvironment::class))->plan($context->instanceId, $snapshot->values());
         $outcome = null;
 
         if ($plan !== null) {
@@ -97,6 +111,50 @@ final readonly class SynchronizeInstanceEnvironmentAction implements InstanceEnv
             keyCount: $snapshot->keyCount(),
             testing: $outcome,
         );
+    }
+
+    /**
+     * Refuse to replace a workload file that holds keys stored configuration lacks, unless Orbit
+     * wrote or detached those keys itself. A file that `env:import` never read keeps its keys.
+     */
+    private function assertKeepsWorkloadKeys(
+        InstanceEnvironmentContext $context,
+        InstanceEnvironmentSynchronizationSnapshot $snapshot,
+    ): void {
+        try {
+            $contents = ($this->reader ?? app(InstanceEnvironmentReader::class))->read($context);
+        } catch (ResourceOperationException $exception) {
+            if ($exception->errorCode === 'env.import_source_missing') {
+                return;
+            }
+
+            throw $exception;
+        }
+
+        $unowned = $snapshot->unownedKeysIn(self::fileKeys($contents));
+
+        if ($unowned !== []) {
+            throw new ResourceOperationException(
+                errorCode: 'env.sync_would_drop_keys',
+                message: 'The workload environment file has keys that stored configuration lacks. '
+                    .'Store them with env:update or env:import (--replace when other keys are already stored), '
+                    .'or remove them from the file.',
+                status: 409,
+                details: ['keys' => implode(',', $unowned)],
+            );
+        }
+    }
+
+    /**
+     * Read key names leniently, so a file the strict importer rejects still keeps its keys.
+     *
+     * @return list<string>
+     */
+    private static function fileKeys(#[\SensitiveParameter] string $contents): array
+    {
+        preg_match_all('/^[ \t]*(?:export[ \t]+)?([A-Za-z_][A-Za-z0-9_.]*)[ \t]*=/m', $contents, $matches);
+
+        return array_values(array_unique($matches[1]));
     }
 
     private function confirmed(InstanceEnvironmentWriteResult $result): bool

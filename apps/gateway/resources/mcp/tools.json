@@ -2371,7 +2371,7 @@
       "name": "instance-create",
       "extension": null,
       "title": "Create an Instance",
-      "description": "Create a development Instance on an app-dev Node.\n\nCreates a development Instance. New production Instances require a candidate. Use instance:clone.",
+      "description": "Create a development Instance on an app-dev Node.\n\nCreates a development Instance. New production Instances require a candidate. Use instance:clone.\nWith a Database server, Orbit creates the Instance's database there before the setup steps run.",
       "method": "POST",
       "path": "/api/v1/instances",
       "path_inputs": [],
@@ -2406,6 +2406,12 @@
             "type": "string",
             "maxLength": 255,
             "description": "Optional explicit source branch"
+          },
+          "database_server": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$(?![\\s\\S])",
+            "maxLength": 63,
+            "description": "Database server that gets the new Instance database before setup"
           }
         },
         "additionalProperties": false,
@@ -3220,6 +3226,27 @@
           "after": {
             "type": "string",
             "description": "Place after this step"
+          },
+          "rebalance": {
+            "type": "array",
+            "maxItems": 32,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "timeout_seconds": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "name",
+                "timeout_seconds"
+              ]
+            },
+            "description": "Set another step timeout in the same write, as NAME=SECONDS; repeat as needed"
           }
         },
         "additionalProperties": false,
@@ -3331,6 +3358,27 @@
           "after": {
             "type": "string",
             "description": "Place after this step"
+          },
+          "rebalance": {
+            "type": "array",
+            "maxItems": 32,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "timeout_seconds": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "name",
+                "timeout_seconds"
+              ]
+            },
+            "description": "Set another step timeout in the same write, as NAME=SECONDS; repeat as needed"
           }
         },
         "additionalProperties": false,
@@ -3405,6 +3453,27 @@
           "after": {
             "type": "string",
             "description": "Place after this step"
+          },
+          "rebalance": {
+            "type": "array",
+            "maxItems": 32,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "timeout_seconds": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "name",
+                "timeout_seconds"
+              ]
+            },
+            "description": "Set another step timeout in the same write, as NAME=SECONDS; repeat as needed"
           }
         },
         "additionalProperties": false,
@@ -3516,6 +3585,27 @@
           "after": {
             "type": "string",
             "description": "Place after this step"
+          },
+          "rebalance": {
+            "type": "array",
+            "maxItems": 32,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "timeout_seconds": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "name",
+                "timeout_seconds"
+              ]
+            },
+            "description": "Set another step timeout in the same write, as NAME=SECONDS; repeat as needed"
           }
         },
         "additionalProperties": false,
@@ -7777,7 +7867,7 @@
       "name": "tasks-cancel",
       "extension": "tasks",
       "title": "Cancel a Task group",
-      "description": "Cancels a backlog, todo, reserved, running, reviewing, or failed Task group, or a settling group without a pull request, and clears its shared Instance. For a settling group with an approved subtask, the Gateway first pushes the workspace HEAD to `task-{group}` on origin; a failed push returns `tasks.push_failed` (502) and keeps the group and Instance. Idempotent for cancelled groups. Route-free source_resolved Instances use database-only cleanup and retain their checkout; other Instances use the forced Instance remover. Requires Gateway access. Returns extension.disabled while the extension is off and tasks.not_cancellable for completed groups and groups in settling or waiting_for_review with a pull request.",
+      "description": "Cancels a backlog, todo, reserved, running, reviewing, or failed Task group, or a settling group without a pull request, and clears its shared Instance. For a settling group with an approved subtask, the Gateway first pushes the workspace HEAD to `task-{group}` on origin; a failed push returns `tasks.push_failed` (502) and keeps the group and Instance. Idempotent for cancelled groups. Workspace cleanup uses forced Instance removal, including Project teardown and checkout deletion. A development source_resolved workspace with no Route or one pending or failed exclusive Route is removed with its Route and target; active or shared Routes still refuse removal. Re-cancelling also removes an unattached leftover matched by Project, task-{group} name, and branch, unless a live claim owns it. Requires Gateway access. Returns extension.disabled while the extension is off and tasks.not_cancellable for completed groups and groups in settling or waiting_for_review with a pull request.",
       "method": "POST",
       "path": "/api/v1/task-groups/{group}/cancel",
       "path_inputs": [
@@ -7902,7 +7992,10 @@
         "group",
         "task"
       ],
-      "query_inputs": [],
+      "query_inputs": [
+        "type",
+        "limit"
+      ],
       "streams": false,
       "input_schema": {
         "type": "object",
@@ -7914,6 +8007,25 @@
           },
           "task": {
             "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "ready_for_review",
+              "changes_requested",
+              "approved",
+              "blocked",
+              "answered",
+              "topology_requested",
+              "assistance_requested",
+              "resolution",
+              "question_closed"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "maximum": 100,
+            "minimum": 1
           }
         },
         "additionalProperties": false,
@@ -8738,6 +8850,7 @@
       "path": "/api/v1/task-groups",
       "path_inputs": [],
       "query_inputs": [
+        "compact",
         "project_id",
         "status"
       ],
@@ -8745,6 +8858,9 @@
       "input_schema": {
         "type": "object",
         "properties": {
+          "compact": {
+            "type": "boolean"
+          },
           "project_id": {
             "type": "integer",
             "minimum": 1
@@ -8766,6 +8882,48 @@
           }
         },
         "additionalProperties": false
+      }
+    },
+    {
+      "name": "tasks-question-close",
+      "extension": "tasks",
+      "title": "Close a task question",
+      "description": "Closes an `open` or `escalated` question as `answered` or `superseded`, with the operator's `reason` (1 to 2,000 characters) as its answer and `answered_by` `operator`. Orbit posts one `question_closed` comment on the subtask. Closing delivers no resolution, changes no assistance flag, and counts no consult. Repeating the same status and reason returns the question unchanged. Requires Gateway access. Returns `extension.disabled` while the extension is off, `tasks.question_closed` (409) when the question is already `answered` or `superseded`, and 422 for another status or an empty reason.",
+      "method": "POST",
+      "path": "/api/v1/task-questions/{question}/close",
+      "path_inputs": [
+        "question"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "question": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric task question ID."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "answered",
+              "superseded"
+            ],
+            "description": "answered or superseded"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 2000,
+            "description": "Why the question is closed"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "question",
+          "status",
+          "reason"
+        ]
       }
     },
     {
@@ -8805,7 +8963,8 @@
             "enum": [
               "open",
               "escalated",
-              "answered"
+              "answered",
+              "superseded"
             ]
           },
           "since": {
@@ -8825,7 +8984,9 @@
       "path_inputs": [
         "group"
       ],
-      "query_inputs": [],
+      "query_inputs": [
+        "compact"
+      ],
       "streams": false,
       "input_schema": {
         "type": "object",
@@ -8834,6 +8995,9 @@
             "type": "integer",
             "minimum": 1,
             "description": "Numeric Task group ID."
+          },
+          "compact": {
+            "type": "boolean"
           }
         },
         "additionalProperties": false,

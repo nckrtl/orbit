@@ -32,15 +32,15 @@ def validate(request):
     relay = request.get('model_relay_address')
     kind = request.get('model_relay_kind', 'incus')
     port = request.get('model_relay_port', 8317)
-    if kind not in ('incus', 'upcloud') or type(port) is not int or not 1 <= port <= 65535:
+    if kind not in ('incus', 'upcloud', 'fleet') or type(port) is not int or not 1 <= port <= 65535:
         raise ValueError('Invalid model relay contract')
-    if kind == 'upcloud' and relay is None:
+    if kind in ('upcloud', 'fleet') and relay is None:
         raise ValueError('Missing enrolled model relay')
     if kind == 'incus' and port != 8317:
         raise ValueError('Invalid bridge model port')
     if relay is not None:
         address = ipaddress.ip_address(relay)
-        network = '10.44.0.0/16' if kind == 'upcloud' else '10.233.0.0/16'
+        network = '10.44.0.0/16' if kind in ('upcloud', 'fleet') else '10.233.0.0/16'
         if address.version != 4 or address not in ipaddress.ip_network(network) or (kind == 'incus' and int(address) % 256 != 1):
             raise ValueError('Invalid group model relay')
     ingress = request.get('pi_ingress')

@@ -134,7 +134,7 @@ class Publisher:
         arguments = ['exec', self.name + '-' + role, '--']
         if user != 'root':
             arguments += ['sudo', '-n', '-u', user]
-        return json.loads(self.run(*arguments, 'python3', '-I', '-c', script, data=data))
+        return json.loads(self.run(*arguments, 'python3', '-I', '-c', script, data=data, timeout=3600))
 
     def owned_output(self, value, field='config'):
         if any(value.get(field, {}).get(key) != expected for key, expected in self.metadata.items()):

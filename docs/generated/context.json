@@ -635,6 +635,7 @@
                 "apps/docs",
                 "apps/e2e",
                 "apps/gateway",
+                "apps/web",
                 "packages/php-sdk"
             ],
             "concepts": [
@@ -786,6 +787,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Process",
                 "Project",
                 "Route",
                 "Subtask",
@@ -866,6 +868,7 @@
                 "apps/gateway"
             ],
             "concepts": [
+                "Access grant",
                 "Cluster",
                 "Deployment",
                 "Doctor",
@@ -1049,6 +1052,23 @@
             "governing_adrs": []
         },
         {
+            "path": "docs/reference/assigned-ssr-ports.md",
+            "title": "Assigned SSR ports",
+            "kind": "reference",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Project",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
             "path": "docs/reference/assigned-vite-ports.md",
             "title": "Assigned Vite ports",
             "kind": "reference",
@@ -1097,6 +1117,7 @@
                 "Instance",
                 "Node",
                 "Process",
+                "Project",
                 "Role",
                 "Route"
             ],
@@ -1174,8 +1195,8 @@
                 "apps/gateway"
             ],
             "concepts": [
+                "Access grant",
                 "Cluster",
-                "Deployment",
                 "Doctor",
                 "Extension",
                 "Gateway",
@@ -1826,13 +1847,16 @@
                 "Node",
                 "Node agent",
                 "Process",
+                "Project",
                 "Role",
                 "Route",
                 "Schedule",
                 "Task",
                 "Tool"
             ],
-            "governing_adrs": []
+            "governing_adrs": [
+                "0200"
+            ]
         },
         {
             "path": "docs/reference/node-retarget.md",
@@ -1913,7 +1937,9 @@
                 "Tool",
                 "Turn receipt"
             ],
-            "governing_adrs": []
+            "governing_adrs": [
+                "0200"
+            ]
         },
         {
             "path": "docs/reference/private-dns.md",
@@ -2162,7 +2188,8 @@
                 "Turn receipt"
             ],
             "governing_adrs": [
-                "0182"
+                "0182",
+                "0200"
             ]
         },
         {
@@ -2205,6 +2232,7 @@
                 "Project",
                 "Role",
                 "Route",
+                "Schedule",
                 "Task",
                 "Task workspace"
             ],

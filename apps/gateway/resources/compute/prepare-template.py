@@ -54,7 +54,7 @@ class Builder(Publisher):
             raise Refusal('Candidate project ownership does not match.')
         inputs = self.build['inputs']
         files = [*inputs['packages'], inputs['tools'], inputs['source'], inputs['composer']]
-        if any(item['file'] in {'template-inputs.py', 'guest-template-source.py', 'guest-template-install.py'} for item in files):
+        if any(item['file'] in {'template-inputs.py', 'guest-template-source.py', 'guest-template-install.py', 'caddy-source-snapshot.py'} for item in files):
             raise Refusal('Input file conflicts with a preparation helper.')
         if any(self.outputs()):
             raise Refusal('Template output already exists.')
@@ -106,7 +106,7 @@ class Builder(Publisher):
         self.preflight()
         inputs = self.build['inputs']
         files = [*inputs['packages'], inputs['tools'], inputs['source'], inputs['composer']]
-        reserved = {'template-inputs.py', 'guest-template-source.py', 'guest-template-install.py'}
+        reserved = {'template-inputs.py', 'guest-template-source.py', 'guest-template-install.py', 'caddy-source-snapshot.py'}
         if any(item['file'] in reserved for item in files):
             raise Refusal('Input file conflicts with a preparation helper.')
         for role in self.roles:
@@ -161,7 +161,7 @@ class Builder(Publisher):
         self.source_ready()
         for role in self.roles:
             sources = self.guest(role, (HERE / 'guest-template-package-sources.py').read_text())
-            if sources.get('sources_https') is not True:
+            if sources.get('sources_https') is not True or sources.get('public_dns') is not True:
                 raise Refusal('Candidate package sources are unsafe.')
         for role in ('operator', 'gateway'):
             self.shell(role, 'systemctl enable --now ssh php8.5-fpm\nsystemctl disable --now dnsmasq\ninstall -d -o orbit -g orbit -m 0700 /home/orbit/.orbit\n')

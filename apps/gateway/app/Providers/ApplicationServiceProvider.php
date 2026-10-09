@@ -86,6 +86,7 @@ use App\Domain\Instances\DevelopmentInstanceConfigurator;
 use App\Domain\Instances\DevelopmentInstanceProvisioner;
 use App\Domain\Instances\DevelopmentInstanceSourceLifecycle;
 use App\Domain\Instances\DevelopmentRouteProjector;
+use App\Domain\Instances\DevelopmentSourceAccess;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Instances\Environment\InstanceEnvironmentReader;
 use App\Domain\Instances\Environment\InstanceEnvironmentSynchronizer;
@@ -270,6 +271,7 @@ use App\Infrastructure\Hibernation\RemoteInstanceCheckoutInspector;
 use App\Infrastructure\Hibernation\RemoteInstanceRuntimeReadiness;
 use App\Infrastructure\Instances\NativeDevelopmentInstanceProvisioner;
 use App\Infrastructure\Instances\NativeDevelopmentRouteProjector;
+use App\Infrastructure\Instances\NativeDevelopmentSourceAccess;
 use App\Infrastructure\Instances\NativeInstanceEnvironmentOperationLock;
 use App\Infrastructure\Instances\NativeInstanceRemovalProjector;
 use App\Infrastructure\Instances\NativeInstanceTransferRuntime;
@@ -435,6 +437,7 @@ final class ApplicationServiceProvider extends ServiceProvider
         ProjectUpdateProjectionMutator::class => NativeProjectUpdateProjectionMutator::class,
         DevelopmentInstanceProvisioner::class => NativeDevelopmentInstanceProvisioner::class,
         DevelopmentRouteProjector::class => NativeDevelopmentRouteProjector::class,
+        DevelopmentSourceAccess::class => NativeDevelopmentSourceAccess::class,
         ProductionInstanceProvisioner::class => NativeProductionInstanceProvisioner::class,
         ProductionDeployment::class => RemoteProductionDeployment::class,
         DevelopmentDeployment::class => RemoteDevelopmentDeployment::class,

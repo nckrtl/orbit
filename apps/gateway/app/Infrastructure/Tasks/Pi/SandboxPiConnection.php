@@ -55,7 +55,7 @@ final readonly class SandboxPiConnection
         } elseif (! in_array($sandbox->provider, ['incus', 'upcloud'], true) || $sandbox->node_id !== $node->id) {
             throw $this->unavailable();
         }
-        if ($sandbox->provider === 'upcloud') {
+        if ($group->project->slug !== 'orbit') {
             try {
                 $this->identity->assertReady($sandbox, $node);
                 if ($sandbox->pi_ready_at === null || $sandbox->model_key === null || $sandbox->model_key_registered_at === null || $sandbox->model_key_revoked_at !== null) {

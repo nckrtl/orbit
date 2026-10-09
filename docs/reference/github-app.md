@@ -164,13 +164,13 @@ A commit qualifies when all of these hold. They are the same rules that [`bin/pr
 
 A `behind`, `identical`, or `diverged` comparison never qualifies. So the Gateway never downgrades, and it never releases history that left the branch.
 
-The Gateway walks the branch from its head along first parents, newest first. It stops at the deployed commit. A commit of a merged side branch is never a candidate, even when its pull request checks passed. The first qualifying commit wins, so a newer commit whose checks still run does not hold back an older green one.
+The Gateway walks the branch from its head along first parents, newest first. It stops at the deployed commit. A commit of a merged side branch is never a candidate, even when its pull request checks passed. The first qualifying commit within the 20 candidates wins, so a newer commit whose checks still run does not hold back an older green one.
 
 A deployed commit is required. Without one, descent cannot be proven, so there is no answer. The first release of a target is deployed by hand.
 
 The deployed commit does not need to be among the listed commits. When it is older than the commits page or the 20 candidates, the walk still examines the newest candidates, and the compare proves descent for the first green one. When no candidate descends from the deployed commit, for example after a force push removed it from the branch, there is no answer. That lasts until an operator releases a commit of the branch, or the branch merges the deployed commit.
 
-GitHub runs CI only for the head of a push. A commit that was pushed together with a newer one has no `Required checks` run, so it never qualifies; the newer commit covers it. A `Required checks` run can also succeed while GitHub reports its workflow run as cancelled, when the cancellation came after the job finished. The check run decides.
+GitHub runs CI only for the head of a push. A commit that was pushed together with a newer one has no `Required checks` run, so it never qualifies; the newer commit covers it. The same holds for a commit whose waiting CI run a newer push replaced. A `Required checks` run can also succeed while GitHub reports its workflow run as cancelled, when the cancellation came after the job finished. The check run decides.
 
 One answer costs these reads:
 
@@ -187,9 +187,11 @@ The Gateway reads the branch through its full ref, so a tag with the same name i
 
 ## What the App does not cover
 
-Git commands that you run by hand in a development checkout use your own credentials. Orbit installs no credential helper on a Node and does not sign the GitHub CLI in on a Node.
+Git commands that you run by hand in a development checkout use your own credentials. Shared Nodes have no Orbit credential helper or GitHub CLI login.
 
-A task agent does not receive a GitHub token and never fetches or pushes. The agent runs as `orbit-worker`. The token exists only in the environment of one `git` command, and that command uses the private git directory above, running as the Node's managed user. A program that the agent starts cannot see the token.
+A shared task agent does not receive a GitHub token and never fetches or pushes. The agent runs as `orbit-worker`. The token exists only in the environment of one `git` command, and that command uses the private git directory above, running as the Node's managed user. A program that the agent starts cannot see the token.
+
+A [task VM](/reference/compute-drivers#task-vms) holds no GitHub token. The Gateway fetches and pushes over SSH, as for a shared group. Orbit-lane sandbox agents run as the managed guest user and fetch and push with temporary repository-scoped App tokens. The Gateway holds the App private key. See [Sandbox repository access](/reference/compute-drivers#vms-use-temporary-github-app-access).
 
 The candidate gate is the exception: it runs workspace programs as the managed user, and such a program could observe a token-bearing `git` process of that user that runs at the same time. [The candidate gate runs as the managed user](/reference/pi-server#the-candidate-gate-runs-as-the-managed-user) records that cost. The agent shares the Pi server's user, so it can read that server's token and provider sign-in. [Limits](/reference/pi-server#limits) records both bounds. [One user for every task agent](/reference/pi-server#one-user-for-every-task-agent) explains the account boundary.
 

@@ -200,12 +200,19 @@ def perform(checkout, operation, payload):
                     else:
                         metadata.publish(orbit, 'deliverables.json', payload['deliverables'].encode())
             else:
+                incoming = json.loads(payload['turn'])
+                delivery_key = incoming.get('delivery_key')
+                if delivery_key is not None:
+                    existing = metadata.read(orbit, 'turn.json')
+                    if existing is not None and json.loads(existing).get('delivery_key') == delivery_key:
+                        return ''
                 metadata.publish(orbit, 'turn', base64.b64decode(payload['script'], validate=True), 0o755)
-                metadata.publish(orbit, 'turn.json', payload['turn'].encode() + b'\n')
                 if payload['context'] is not None:
                     metadata.publish(orbit, 'context.md', payload['context'].encode())
                 for name in ('receipt.json', 'run', 'run.json'):
                     metadata.unlink(orbit, name)
+                # Commit the delivery identity last, before any caller may send the turn.
+                metadata.publish(orbit, 'turn.json', payload['turn'].encode() + b'\n')
             return ''
         try:
             orbit = metadata.orbit()

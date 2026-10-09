@@ -7,10 +7,12 @@ namespace App\Domain\Instances\Environment;
 use App\Domain\DatabaseConnections\DatabaseConnectionEnvProjection;
 use App\Domain\Instances\DatabaseClone\InstanceDatabaseClonePlanner;
 use App\Models\DatabaseConnectionTarget;
+use SensitiveParameter;
 
 /**
- * The `.env.testing` keys for an Instance that owns its `DB` database: the `DB_*` keys of that connection with
- * DB_DATABASE pointing to the test database. Null when the Instance does not own its `DB` database.
+ * The `.env.testing` plan for an Instance that owns its `DB` database. Its values seed a missing file: the stored
+ * values with APP_ENV=testing and the `DB_*` keys of that connection, with DB_DATABASE pointing to the test database.
+ * An existing file takes only the managed `DB_*` keys. Null when the Instance does not own its `DB` database.
  */
 final readonly class InstanceTestEnvironment
 {
@@ -18,7 +20,8 @@ final readonly class InstanceTestEnvironment
         private DatabaseConnectionEnvProjection $projection,
     ) {}
 
-    public function plan(int $instanceId): ?InstanceTestEnvironmentPlan
+    /** @param  array<string, string>  $values  the stored values that `.env` renders */
+    public function plan(int $instanceId, #[SensitiveParameter] array $values): ?InstanceTestEnvironmentPlan
     {
         $target = DatabaseConnectionTarget::query()
             ->with('databaseConnection')
@@ -37,12 +40,17 @@ final readonly class InstanceTestEnvironment
         }
 
         $prefix = InstanceDatabaseClonePlanner::PREFIX;
-        $values = $this->projection->project($connection, $prefix)['values'];
-        $values[$this->projection->key($prefix, 'DATABASE')] = $connection->test_database;
+        $managedKeys = $this->projection->managedKeys($prefix);
+        $database = $this->projection->project($connection, $prefix)['values'];
+        $database[$this->projection->key($prefix, 'DATABASE')] = $connection->test_database;
 
         return new InstanceTestEnvironmentPlan(
-            values: $values,
-            managedKeys: $this->projection->managedKeys($prefix),
+            values: [
+                ...array_diff_key($values, array_flip($managedKeys)),
+                ...$database,
+                'APP_ENV' => 'testing',
+            ],
+            managedKeys: $managedKeys,
             testDatabase: $connection->test_database,
         );
     }

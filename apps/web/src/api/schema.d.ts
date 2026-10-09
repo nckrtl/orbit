@@ -1012,6 +1012,7 @@ export interface paths {
          * @description Create a development Instance on an app-dev Node.
          *
          *     Creates a development Instance. New production Instances require a candidate. Use instance:clone.
+         *     With a Database server, Orbit creates the Instance's database there before the setup steps run.
          */
         post: operations["instance-create"];
         delete?: never;
@@ -3568,7 +3569,7 @@ export interface paths {
         put?: never;
         /**
          * Cancel a Task group
-         * @description Cancels a backlog, todo, reserved, running, reviewing, or failed Task group, or a settling group without a pull request, and clears its shared Instance. For a settling group with an approved subtask, the Gateway first pushes the workspace HEAD to `task-{group}` on origin; a failed push returns `tasks.push_failed` (502) and keeps the group and Instance. Idempotent for cancelled groups. Route-free source_resolved Instances use database-only cleanup and retain their checkout; other Instances use the forced Instance remover. Requires Gateway access. Returns extension.disabled while the extension is off and tasks.not_cancellable for completed groups and groups in settling or waiting_for_review with a pull request.
+         * @description Cancels a backlog, todo, reserved, running, reviewing, or failed Task group, or a settling group without a pull request, and clears its shared Instance. For a settling group with an approved subtask, the Gateway first pushes the workspace HEAD to `task-{group}` on origin; a failed push returns `tasks.push_failed` (502) and keeps the group and Instance. Idempotent for cancelled groups. Workspace cleanup uses forced Instance removal, including Project teardown and checkout deletion. A development source_resolved workspace with no Route or one pending or failed exclusive Route is removed with its Route and target; active or shared Routes still refuse removal. Re-cancelling also removes an unattached leftover matched by Project, task-{group} name, and branch, unless a live claim owns it. Requires Gateway access. Returns extension.disabled while the extension is off and tasks.not_cancellable for completed groups and groups in settling or waiting_for_review with a pull request.
          */
         post: operations["tasks-cancel"];
         delete?: never;
@@ -3716,6 +3717,26 @@ export interface paths {
         get: operations["tasks-question-list"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/task-questions/{question}/close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Close a task question
+         * @description Closes an `open` or `escalated` question as `answered` or `superseded`, with the operator's `reason` (1 to 2,000 characters) as its answer and `answered_by` `operator`. Orbit posts one `question_closed` comment on the subtask. Closing delivers no resolution, changes no assistance flag, and counts no consult. Repeating the same status and reason returns the question unchanged. Requires Gateway access. Returns `extension.disabled` while the extension is off, `tasks.question_closed` (409) when the question is already `answered` or `superseded`, and 422 for another status or an empty reason.
+         */
+        post: operations["tasks-question-close"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4162,6 +4183,7 @@ export interface components {
             transfer?: components["schemas"]["InstanceTransfer"] | null;
             deploy_steps?: components["schemas"]["DeploymentStep"][];
             vite_port?: number | null;
+            ssr_port?: number | null;
             seed_path?: string | null;
             seed_commit?: string | null;
             annotator_port?: number | null;
@@ -4827,7 +4849,7 @@ export interface components {
             asked_by?: "implementer" | "reviewer" | "operator";
             question?: string;
             /** @enum {string} */
-            status?: "open" | "escalated" | "answered";
+            status?: "open" | "escalated" | "answered" | "superseded";
             /** @enum {string|null} */
             answered_by?: "implementer" | "reviewer" | "operator" | null;
             answer?: string | null;
@@ -8072,6 +8094,8 @@ export interface operations {
                     domain?: string;
                     /** @description Optional explicit source branch */
                     branch?: string;
+                    /** @description Database server that gets the new Instance database before setup */
+                    database_server?: string;
                 };
             };
         };
@@ -15970,6 +15994,11 @@ export interface operations {
                     before?: string;
                     /** @description Place after this step */
                     after?: string;
+                    /** @description Set another step timeout in the same write, as NAME=SECONDS; repeat as needed */
+                    rebalance?: {
+                        name: string;
+                        timeout_seconds: number;
+                    }[];
                 };
             };
         };
@@ -16101,6 +16130,11 @@ export interface operations {
                     before?: string;
                     /** @description Place after this step */
                     after?: string;
+                    /** @description Set another step timeout in the same write, as NAME=SECONDS; repeat as needed */
+                    rebalance?: {
+                        name: string;
+                        timeout_seconds: number;
+                    }[];
                 };
             };
         };
@@ -16617,6 +16651,11 @@ export interface operations {
                     before?: string;
                     /** @description Place after this step */
                     after?: string;
+                    /** @description Set another step timeout in the same write, as NAME=SECONDS; repeat as needed */
+                    rebalance?: {
+                        name: string;
+                        timeout_seconds: number;
+                    }[];
                 };
             };
         };
@@ -16748,6 +16787,11 @@ export interface operations {
                     before?: string;
                     /** @description Place after this step */
                     after?: string;
+                    /** @description Set another step timeout in the same write, as NAME=SECONDS; repeat as needed */
+                    rebalance?: {
+                        name: string;
+                        timeout_seconds: number;
+                    }[];
                 };
             };
         };
@@ -18747,6 +18791,7 @@ export interface operations {
     "tasks-list": {
         parameters: {
             query?: {
+                compact?: boolean;
                 project_id?: number;
                 status?: "backlog" | "todo" | "reserved" | "running" | "reviewing" | "settling" | "waiting_for_review" | "completed" | "failed" | "cancelled";
             };
@@ -18895,7 +18940,9 @@ export interface operations {
     };
     "tasks-show": {
         parameters: {
-            query?: never;
+            query?: {
+                compact?: boolean;
+            };
             header?: never;
             path: {
                 /** @description Numeric Task group ID. */
@@ -19674,7 +19721,10 @@ export interface operations {
     };
     "tasks-comment-list": {
         parameters: {
-            query?: never;
+            query?: {
+                type?: "ready_for_review" | "changes_requested" | "approved" | "blocked" | "answered" | "topology_requested" | "assistance_requested" | "resolution" | "question_closed";
+                limit?: number;
+            };
             header?: never;
             path: {
                 /** @description Numeric Task group ID. */
@@ -19821,7 +19871,7 @@ export interface operations {
             query?: {
                 project_id?: number;
                 cause?: "brief_unclear" | "contract_gap" | "scope" | "environment" | "missed_contract";
-                status?: "open" | "escalated" | "answered";
+                status?: "open" | "escalated" | "answered" | "superseded";
                 since?: string;
             };
             header?: never;
@@ -19853,6 +19903,80 @@ export interface operations {
             };
             /** @description The tasks extension is disabled (`extension.disabled`). A disabled extension returns HTTP 409 (`extension.disabled`). */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "tasks-question-close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric task question ID. */
+                question: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /**
+                     * @description answered or superseded
+                     * @enum {string}
+                     */
+                    status: "answered" | "superseded";
+                    /** @description Why the question is closed */
+                    reason: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["TaskQuestion"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The tasks extension is disabled (`extension.disabled`), or the question is already answered or superseded (`tasks.question_closed`). A disabled extension returns HTTP 409 (`extension.disabled`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

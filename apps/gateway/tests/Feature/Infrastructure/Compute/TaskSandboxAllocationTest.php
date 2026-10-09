@@ -57,7 +57,8 @@ function allocation_host(int $available): void
         $images = $row->spec['images'];
         if ($request['operation'] === 'provision') {
             expect($request['spec']['source_template'] ?? null)->toBe($row->spec['source_template'] ?? null)
-                ->and($request['spec']['project_slug'] ?? null)->toBe($row->spec['project_slug'] ?? null);
+                ->and($request['spec']['project_slug'] ?? null)->toBe($row->spec['project_slug'] ?? null)
+                ->and($request['spec']['project_bootstrap'] ?? null)->toBe($row->spec['project_bootstrap'] ?? null);
         }
 
         return new CommandResult(0, json_encode(['name' => $name, 'power' => 'running', 'instances' => array_map(
@@ -146,6 +147,61 @@ describe('sandbox placement', function (): void {
             ->and($sandbox->state)->toBe(SandboxState::Uncertain)
             ->and($sandbox->spec['project_slug'])->toBe('dlf')
             ->and($sandbox->spec['images'])->toBe(['operator' => str_repeat('c', 64)]);
+    });
+
+    it('reserves private Project bootstrap endpoints before host mutation and keeps them through retry and park', function (): void {
+        $this->settings['gateway_address'] = '10.44.0.2';
+        $this->settings['project_bootstrap'] = ['wireguard_address' => '93.184.216.35', 'wireguard_port' => 51820];
+        config(['compute.incus.hosts' => [$this->settings]]);
+        allocation_host(2);
+        mock(ComputeDriver::class)->shouldNotReceive('capacity', 'provision');
+        $group = allocation_group('dlf');
+        $allocator = app(AllocateTaskSandboxAction::class);
+        $first = $allocator->execute($group);
+        $expected = ['ssh_host' => '10.44.0.20', 'ssh_port' => 24001, 'gateway_address' => '10.44.0.2',
+            'wireguard_address' => '93.184.216.35', 'wireguard_port' => 51820];
+        expect($first->spec['project_bootstrap'])->toBe($expected);
+        $this->settings['project_bootstrap']['wireguard_port'] = 51821;
+        config(['compute.incus.hosts' => [$this->settings]]);
+        expect($allocator->execute($group)->spec['project_bootstrap'])->toBe($expected);
+        $first->update(['state' => SandboxState::Stopped, 'desired_power' => 'stopped']);
+        $next = Task::topLevel()->create(['project_id' => $group->project_id, 'title' => 'Next', 'brief' => 'Work', 'status' => 'todo', 'task_compute' => TaskCompute::Vm]);
+        $second = $allocator->execute($next);
+        expect($second->spec['project_bootstrap']['ssh_port'])->toBe(24002);
+        expect($first->fresh()->spec['project_bootstrap'])->toBe($expected);
+    });
+
+    it('refuses invalid Project bootstrap settings before contacting a host', function (array $bootstrap, ?string $gateway): void {
+        $this->settings['project_bootstrap'] = $bootstrap;
+        $this->settings['gateway_address'] = $gateway;
+        config(['compute.incus.hosts' => [$this->settings]]);
+        mock(SshExecutor::class)->shouldReceive('execute')->never();
+        expect(fn () => app(AllocateTaskSandboxAction::class)->execute(allocation_group('dlf')))
+            ->toThrow(ComputeException::class, 'configuration is invalid');
+        expect(TaskSandbox::query()->count())->toBe(0);
+    })->with([
+        'missing Gateway' => [['wireguard_address' => '93.184.216.35', 'wireguard_port' => 51820], null],
+        'private hub' => [['wireguard_address' => '10.44.0.1', 'wireguard_port' => 51820], '10.44.0.2'],
+        'metadata hub' => [['wireguard_address' => '169.254.169.254', 'wireguard_port' => 51820], '10.44.0.2'],
+        'shared address space hub' => [['wireguard_address' => '100.64.0.1', 'wireguard_port' => 51820], '10.44.0.2'],
+        'documentation hub' => [['wireguard_address' => '192.0.2.1', 'wireguard_port' => 51820], '10.44.0.2'],
+        'benchmark hub' => [['wireguard_address' => '198.18.0.1', 'wireguard_port' => 51820], '10.44.0.2'],
+        'multicast hub' => [['wireguard_address' => '224.0.0.1', 'wireguard_port' => 51820], '10.44.0.2'],
+        'IPv6 hub' => [['wireguard_address' => '2001:4860:4860::8888', 'wireguard_port' => 51820], '10.44.0.2'],
+        'string port' => [['wireguard_address' => '93.184.216.35', 'wireguard_port' => '51820'], '10.44.0.2'],
+        'zero port' => [['wireguard_address' => '93.184.216.35', 'wireguard_port' => 0], '10.44.0.2'],
+        'overflow port' => [['wireguard_address' => '93.184.216.35', 'wireguard_port' => 65536], '10.44.0.2'],
+        'extra field' => [['wireguard_address' => '93.184.216.35', 'wireguard_port' => 51820, 'ssh_port' => 22], '10.44.0.2'],
+    ]);
+
+    it('keeps Project bootstrap settings out of an Orbit pair reservation', function (): void {
+        $this->settings['gateway_address'] = '10.44.0.2';
+        $this->settings['project_bootstrap'] = ['wireguard_address' => '93.184.216.35', 'wireguard_port' => 51820];
+        config(['compute.incus.hosts' => [$this->settings]]);
+        allocation_host(2);
+        $sandbox = app(AllocateTaskSandboxAction::class)->execute(allocation_group('orbit'));
+        expect($sandbox->spec)->not->toHaveKey('project_bootstrap');
+        expect($sandbox->spec['pi_port'])->toBe(23001);
     });
 
     it('sends project work to cloud only when local capacity is full', function (): void {

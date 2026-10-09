@@ -18,6 +18,7 @@ use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskSandbox;
 use Symfony\Component\Process\Process;
+use Tests\Support\IncusRuntimeWorkspace;
 
 use function Pest\Laravel\mock;
 
@@ -59,19 +60,19 @@ describe('sandbox source preparation', function (): void {
     it('initializes before trusted fetching and records source readiness only after checkout succeeds', function (): void {
         $group = source_group();
         $operations = [];
-        mock(SshExecutor::class)->shouldReceive('execute')->times(4)->andReturnUsing(function ($connection, RemoteCommand $command) use (&$operations): CommandResult {
+        mock(SshExecutor::class)->shouldReceive('execute')->times(3)->andReturnUsing(function ($connection, RemoteCommand $command) use (&$operations): CommandResult {
             expect($command->arguments)->toBe(['/usr/local/bin/orbit-agent', 'sandbox']);
             $envelope = json_decode(stream_get_contents($command->protectedInput->stream()), true, flags: JSON_THROW_ON_ERROR);
             $request = json_decode(base64_decode($envelope['guest']['stdin']), true, flags: JSON_THROW_ON_ERROR);
             $operations[] = $request['operation'];
             expect($request['repository'])->toBe('https://github.com/acme/orbit.git');
-            $response = $request['operation'] === 'github_dns' ? ['ready' => true] : ($request['operation'] === 'initialize' ? ['initialized' => true] : ['head' => str_repeat('a', 40), 'starting_commit' => str_repeat('b', 40)]);
+            $response = $request['operation'] === 'initialize' ? ['initialized' => true] : ['head' => str_repeat('a', 40), 'starting_commit' => str_repeat('b', 40)];
 
             return new CommandResult(0, json_encode(['name' => 'ot-0a68f778a3', 'role' => 'operator', 'exit_code' => 0,
                 'stdout' => base64_encode(json_encode($response)), 'stderr' => '', 'duration_ms' => 1, 'truncated' => false, 'timed_out' => false]), '', 1, false);
         });
         mock(TaskBaseBranchFetcher::class)->shouldReceive('fetchForTurn')->once()->andReturnUsing(function (Task $fetching) use (&$operations): void {
-            expect($operations)->toBe(['initialize', 'github_dns']);
+            expect($operations)->toBe(['initialize']);
             expect($fetching->taskable->status)->toBe(InstanceState::Reserved);
         });
 
@@ -80,7 +81,7 @@ describe('sandbox source preparation', function (): void {
 
         expect($prepared->status)->toBe(InstanceState::SourceResolved)->and($prepared->starting_commit)->toBe(str_repeat('b', 40));
         expect($again->starting_commit)->toBe($prepared->starting_commit);
-        expect($operations)->toBe(['initialize', 'github_dns', 'checkout', 'inspect']);
+        expect($operations)->toBe(['initialize', 'checkout', 'inspect']);
     });
 
     it('does not contact the guest or obtain repository credentials without sandbox ownership', function (): void {
@@ -98,11 +99,11 @@ it('sends only the reservation template through source initialization and inspec
     $template = ['id' => '9862e1aa-605c-4b49-a65b-6cf0b3a96dfe', 'repository' => 'https://github.com/acme/orbit.git', 'base' => 'main', 'commit' => str_repeat('c', 40)];
     $sandbox = $group->taskable->taskSandbox;
     $sandbox->update(['spec' => [...$sandbox->spec, 'source_template' => $template]]);
-    mock(SshExecutor::class)->shouldReceive('execute')->times(4)->andReturnUsing(function ($connection, RemoteCommand $command) use ($template): CommandResult {
+    mock(SshExecutor::class)->shouldReceive('execute')->times(3)->andReturnUsing(function ($connection, RemoteCommand $command) use ($template): CommandResult {
         $envelope = json_decode(stream_get_contents($command->protectedInput->stream()), true, flags: JSON_THROW_ON_ERROR);
         $request = json_decode(base64_decode($envelope['guest']['stdin']), true, flags: JSON_THROW_ON_ERROR);
         expect($request['source_template'])->toBe($template);
-        $response = $request['operation'] === 'github_dns' ? ['ready' => true] : ($request['operation'] === 'initialize' ? ['initialized' => true] : ['head' => str_repeat('a', 40), 'starting_commit' => str_repeat('a', 40)]);
+        $response = $request['operation'] === 'initialize' ? ['initialized' => true] : ['head' => str_repeat('a', 40), 'starting_commit' => str_repeat('a', 40)];
 
         return new CommandResult(0, json_encode(['name' => 'ot-0a68f778a3', 'role' => 'operator', 'exit_code' => 0,
             'stdout' => base64_encode(json_encode($response)), 'stderr' => '', 'duration_ms' => 1, 'truncated' => false, 'timed_out' => false]), '', 1, false);
@@ -125,41 +126,17 @@ it('refuses a template from another Project before guest contact or fetching cre
     expect($group->taskable->fresh()->status)->toBe(InstanceState::Reserved);
 });
 
-it('refuses fetching and leaves source unresolved when guest bootstrap DNS is unavailable', function (): void {
-    $group = source_group();
-    mock(SshExecutor::class)->shouldReceive('execute')->twice()->andReturnUsing(function ($connection, RemoteCommand $command): CommandResult {
-        $envelope = json_decode(stream_get_contents($command->protectedInput->stream()), true, flags: JSON_THROW_ON_ERROR);
-        $request = json_decode(base64_decode($envelope['guest']['stdin']), true, flags: JSON_THROW_ON_ERROR);
-        $response = $request['operation'] === 'initialize' ? ['initialized' => true] : ['ready' => false];
-
-        return new CommandResult(0, json_encode(['name' => 'ot-0a68f778a3', 'role' => 'operator', 'exit_code' => 0,
-            'stdout' => base64_encode(json_encode($response)), 'stderr' => '', 'duration_ms' => 1, 'truncated' => false, 'timed_out' => false]), '', 1, false);
-    });
-    mock(TaskBaseBranchFetcher::class)->shouldReceive('fetchForTurn')->never();
-
-    expect(fn () => app(SandboxWorkspaceSource::class)->prepare($group))->toThrow(TaskPullRequestException::class, 'The sandbox GitHub DNS bootstrap is unavailable.');
-    expect($group->taskable->fresh()->status)->toBe(InstanceState::Reserved);
-});
-
-it('keeps GitHub DNS scoped and preserves private policy and foreign state', function (): void {
-    $process = new Process(['python3', base_path('tests/Fixtures/Compute/guest_github_dns_test.py'), resource_path('compute/guest-github-dns.py')]);
-    $process->mustRun();
-    expect($process->getExitCode())->toBe(0);
-});
-
-it('leaves project-lane resolver policy unchanged during source preparation', function (): void {
-    $group = source_group();
-    $group->project->update(['slug' => 'application']);
-    $group->taskable->taskSandbox->update(['node_id' => $group->taskable->node_id]);
+it('prepares project-lane source through initialization and checkout only', function (): void {
+    $workspace = IncusRuntimeWorkspace::create();
+    $group = $workspace->taskSandbox->group;
     $operations = [];
-    mock(SshExecutor::class)->shouldReceive('execute')->twice()->andReturnUsing(function ($connection, RemoteCommand $command) use (&$operations): CommandResult {
-        $envelope = json_decode(stream_get_contents($command->protectedInput->stream()), true, flags: JSON_THROW_ON_ERROR);
-        $request = json_decode(base64_decode($envelope['guest']['stdin']), true, flags: JSON_THROW_ON_ERROR);
+    mock(SshExecutor::class)->shouldReceive('execute')->twice()->andReturnUsing(function ($connection, RemoteCommand $command) use ($workspace, &$operations): CommandResult {
+        expect($connection->host)->toBe($workspace->node->wireguard_ip);
+        $request = json_decode($command->input, true, flags: JSON_THROW_ON_ERROR);
         $operations[] = $request['operation'];
         $response = $request['operation'] === 'initialize' ? ['initialized' => true] : ['starting_commit' => str_repeat('a', 40)];
 
-        return new CommandResult(0, json_encode(['name' => 'ot-0a68f778a3', 'role' => 'operator', 'exit_code' => 0,
-            'stdout' => base64_encode(json_encode($response)), 'stderr' => '', 'duration_ms' => 1, 'truncated' => false, 'timed_out' => false]), '', 1, false);
+        return new CommandResult(0, json_encode($response), '', 1, false);
     });
     mock(TaskBaseBranchFetcher::class)->shouldReceive('fetchForTurn')->once();
 

@@ -11,6 +11,7 @@ function owned_interrupted_creation_removal_migration(): object
     {
         public function down(): void
         {
+            (require base_path('database/migrations/2026_10_19_000000_allow_owned_project_sandbox_instance_removal.php'))->down();
             reserved_task_worktree_removal_migration()->down();
             (require base_path('database/migrations/2026_10_10_000001_allow_owned_interrupted_creation_removal.php'))->down();
         }
@@ -19,6 +20,7 @@ function owned_interrupted_creation_removal_migration(): object
         {
             (require base_path('database/migrations/2026_10_10_000001_allow_owned_interrupted_creation_removal.php'))->up();
             reserved_task_worktree_removal_migration()->up();
+            (require base_path('database/migrations/2026_10_19_000000_allow_owned_project_sandbox_instance_removal.php'))->up();
         }
     };
 }
@@ -67,6 +69,7 @@ function drop_app_era_instance_leftovers_for_migration_test(): void
 
 function roll_back_app_instance_environment_for_migration_test(): void
 {
+    (require base_path('database/migrations/2026_10_19_000000_allow_source_resolved_workspace_route_removal.php'))->down();
     owned_interrupted_creation_removal_migration()->down();
     (require base_path('database/migrations/2026_10_10_000000_add_instance_source_prepare_id.php'))->down();
     (require base_path('database/migrations/2026_10_09_000000_allow_pre_activation_instance_removal.php'))->down();

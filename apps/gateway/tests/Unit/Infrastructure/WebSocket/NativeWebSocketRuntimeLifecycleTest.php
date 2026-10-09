@@ -32,11 +32,11 @@ it('installs prerequisites, then clones, installs and starts Reverb with the res
 
     expect($commands)->toHaveCount(3);
 
-    $caddySource = $commands[0];
-    expect($caddySource->arguments)
-        ->toContain(CaddyPackageSourceProgram::SOURCE_URI)
-        ->toContain(CaddyPackageSourceProgram::SOURCE_PATH)
-        ->and($caddySource->input)->toContain('apt-cache madison');
+    $caddyPackage = $commands[0];
+    expect($caddyPackage->arguments)
+        ->toContain(CaddyPackageSourceProgram::RELEASE_URL)
+        ->toContain(CaddyPackageSourceProgram::LEGACY_SOURCE_PATH)
+        ->and($caddyPackage->input)->toContain('sha512sum --check');
 
     $prerequisites = $commands[1];
     expect($prerequisites->arguments)->toContain('caddy')

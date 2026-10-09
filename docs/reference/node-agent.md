@@ -176,11 +176,13 @@ One Node runs one agent. The agent holds an exclusive lock on `/etc/orbit/agent`
 
 The separate `orbit-agent sandbox` command accepts a bounded JSON request on
 standard input for task sandbox provisioning, observation, capacity, parking,
-resume, and destruction. The Gateway invokes it over pinned SSH on an Incus
+resume, destruction, and read-only Project SSH identity verification. The Gateway invokes it over pinned SSH on an Incus
 host. It runs the controller embedded in the binary and accepts no host shell
 command. It does not load the live agent secret or join the realtime channel.
 The controller checks the sandbox UUID, project ownership, VM budget, image
 fingerprints, and external network policy before changing resources.
+
+Local Project bootstrap and SSH identity operations require agent 0.4.2 or later. Install the pinned release so fleet convergence keeps the required protocol.
 
 The sandbox protocol uses the exact roles `operator`, `gateway`, `app-dev`, `app-prod`, and `app-prod-2` in image keys and guest commands. Requests with `app-prod2` are invalid. A guest command targets only a running guest in the sandbox’s recorded, owned inventory. Expanded park, resume, and destruction include every recorded role.
 
@@ -285,7 +287,7 @@ The subscriber accepts `client-log` and `client-log-end` only from `agent.{id}` 
 
 ## Install and upgrade
 
-The Gateway pins agent 0.4.1. It stores the SHA-256 checksum of each architecture's binary and picks the asset for the Node's recorded architecture, `x86_64` or `aarch64`.
+The Gateway pins a released agent version and its architecture checksums. It stores the SHA-256 checksum of each architecture's binary and picks the asset for the Node's recorded architecture, `x86_64` or `aarch64`.
 
 | Item | Path or value |
 | --- | --- |

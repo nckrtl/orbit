@@ -5,6 +5,8 @@ declare(strict_types=1);
 use App\Actions\Tasks\CancelTaskCheckAction;
 use App\Actions\Tasks\CompleteTaskGroupAction;
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
+use App\Actions\Tasks\RequestEndedPullRequestAssistanceAction;
+use App\Actions\Tasks\ResumeDeliverableCorrectionAction;
 use App\Actions\Tasks\RetryTaskBaselineAction;
 use App\Actions\Tasks\StoreTaskCommentAction;
 use App\Domain\GitHub\GitHubReviewState;
@@ -18,6 +20,7 @@ use App\Domain\Tasks\AgentThreadState;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\BriefCoverageLabeler;
 use App\Domain\Tasks\CoderSettleNotifier;
+use App\Domain\Tasks\DeliverablePathRepository;
 use App\Domain\Tasks\NullAgentSpawner;
 use App\Domain\Tasks\NullCoderSettleNotifier;
 use App\Domain\Tasks\NullTaskReviewDiff;
@@ -31,9 +34,11 @@ use App\Domain\Tasks\TaskBaseBranchFetcher;
 use App\Domain\Tasks\TaskBranchUpdate;
 use App\Domain\Tasks\TaskBriefCoverage;
 use App\Domain\Tasks\TaskCheckException;
+use App\Domain\Tasks\TaskCheckKind;
 use App\Domain\Tasks\TaskCheckReading;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskCheckStatus;
+use App\Domain\Tasks\TaskCommentType;
 use App\Domain\Tasks\TaskExecutionMode;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGitHubReviewConsumption;
@@ -71,7 +76,16 @@ use App\Domain\Tasks\TaskWorkspaceMcp;
 use App\Domain\Tasks\TaskWorkspaceSigner;
 use App\Domain\Tasks\TaskWorkspaceStateReader;
 use App\Domain\Tasks\TaskWorkspaceTopology;
+use App\Infrastructure\AppDev\DevelopmentSshExecutor;
+use App\Infrastructure\Compute\SandboxFleetIdentity;
+use App\Infrastructure\Compute\TaskSandboxDrivers;
+use App\Infrastructure\Ssh\KnownHostsStore;
+use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\Tasks\IncusSandboxHost;
 use App\Infrastructure\Tasks\Pi\PiDriver;
+use App\Infrastructure\Tasks\RemoteTaskTurnReceipts;
+use App\Infrastructure\Tasks\TaskWorkspaceExecutor;
+use App\Models\Activity;
 use App\Models\AgentThread;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
@@ -90,9 +104,11 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Exceptions;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Laravel\Ai\Classification;
 use Laravel\Ai\Responses\Data\BooleanAnswer;
+use Symfony\Component\Process\Process;
 use Tests\Feature\Domain\Tasks\ApprovalObservationFixtures as FeedbackFixtures;
 use Tests\Feature\GitHub\GitHubTestSupport;
 use Tests\Support\AcceptingTaskWorkspaceMcp;
@@ -103,6 +119,7 @@ use Tests\Support\FakeTaskCheckRunner;
 use Tests\Support\FakeTaskPullRequestReviewWatcher;
 use Tests\Support\FakeTaskTurnReceipts;
 use Tests\Support\FakeTaskWorkspaceTopology;
+use Tests\Support\LocalShellSshExecutor;
 
 use function Pest\Laravel\mock;
 
@@ -131,6 +148,7 @@ function tick_group(): Task
         'node_id' => $node->id,
         'name' => 'task-21',
         'checkout_path' => '/srv/orbit/apps/tick-app/task-21',
+        'starting_commit' => str_repeat('a', 40),
         'branch' => 'task-21',
         'status' => 'source_resolved',
     ]);
@@ -1442,6 +1460,58 @@ it('appends one check fixup naming the failed check and its url', function (Task
         ->and($agents->fetched)->toBe([])
         ->and($agents->spawned)->toBe([$fixup->id]);
 })->with([TaskGroupStatus::Settling, TaskGroupStatus::WaitingForReview]);
+
+/** The base tip as GitHub reports it: its merge base with the head, and its `Required checks` result. */
+function tick_base_tip(string $head, string $tip, string $mergeBase, string $conclusion): void
+{
+    Http::fake([
+        'https://api.github.com/repos/acme/orbit/commits?*' => Http::response([['sha' => $tip, 'parents' => [['sha' => $mergeBase]]]]),
+        'https://api.github.com/repos/acme/orbit/compare/'.$head.'...'.$tip.'*' => Http::response([
+            'status' => $mergeBase === $tip ? 'ahead' : 'diverged',
+            'base_commit' => ['sha' => $head],
+            'merge_base_commit' => ['sha' => $mergeBase],
+        ]),
+        'https://api.github.com/repos/acme/orbit/commits/'.$tip.'/check-runs*' => Http::response(['total_count' => 1, 'check_runs' => [[
+            'id' => 7, 'name' => 'Required checks', 'head_sha' => $tip, 'status' => 'completed', 'conclusion' => $conclusion,
+            'html_url' => 'https://github.com/acme/orbit/runs/7', 'app' => ['slug' => 'github-actions'],
+        ]]]),
+    ]);
+}
+
+it('puts merge-first in the Fix brief when the base tip is green and ahead of the merge-base', function (): void {
+    tick_settling_group();
+    $agents = tick_running_agents();
+    $head = str_repeat('a', 40);
+    tick_watch_pulls([tick_open_pull(['head' => ['sha' => $head]])], [$head => [[
+        'name' => 'CLI', 'status' => 'completed', 'conclusion' => 'failure', 'html_url' => 'https://github.com/acme/orbit/runs/9',
+    ]]]);
+    tick_base_tip($head, str_repeat('e', 40), str_repeat('b', 40), 'success');
+
+    app(TaskScheduler::class)->tick();
+
+    $fixup = Task::query()->where('fixup_problem', 'check:CLI')->sole();
+    expect($fixup->title)->toBe('Fix CLI')
+        ->and($fixup->brief)->toBe('Merge origin/main first; base may already fix this. Check CLI failed: https://github.com/acme/orbit/runs/9. Do not rebase and do not force-push.')
+        ->and($agents->spawned)->toBe([$fixup->id]);
+});
+
+it('keeps the Fix brief when the base tip is not green and ahead', function (string $mergeBase, string $conclusion): void {
+    tick_settling_group();
+    tick_running_agents();
+    $head = str_repeat('a', 40);
+    tick_watch_pulls([tick_open_pull(['head' => ['sha' => $head]])], [$head => [[
+        'name' => 'CLI', 'status' => 'completed', 'conclusion' => 'failure', 'html_url' => 'https://github.com/acme/orbit/runs/9',
+    ]]]);
+    tick_base_tip($head, str_repeat('e', 40), $mergeBase, $conclusion);
+
+    app(TaskScheduler::class)->tick();
+
+    expect(Task::query()->where('fixup_problem', 'check:CLI')->sole()->brief)
+        ->toBe('Check CLI failed: https://github.com/acme/orbit/runs/9. Do not rebase and do not force-push.');
+})->with([
+    'head already contains the green tip' => [str_repeat('e', 40), 'success'],
+    'red tip ahead' => [str_repeat('b', 40), 'failure'],
+]);
 
 it('runs make check for a fixup on a non-Orbit Project and on orbit', function (string $slug): void {
     $group = tick_settling_group();
@@ -5231,6 +5301,254 @@ it('replays a held direction review from the stored resolution after the flag wr
         ->and(data_get($opening, 'message.text'))->toContain('Follow ADR 0098.');
 });
 
+it('refuses pending correction recovery for either real ended PR reason on scheduler retry', function (string $held): void {
+    $group = tick_group();
+    $task = $group->tasks->sole();
+    $task->update(['deliverable_correction_check_id' => 1, 'completion_attempt' => 2]);
+    $comment = TaskComment::query()->create(['task_group_id' => $group->id, 'task_id' => $task->id, 'type' => 'resolution', 'body' => 'Corrected.', 'author' => 'operator', 'posted_at' => now()]);
+    app(ResumeDeliverableCorrectionAction::class)->reserve($task, $comment);
+    $pending = $task->fresh()?->deliverable_correction_resume;
+    $driver = new FakeAgentDriver;
+    $driver->observation = new AgentObservation(AgentThreadState::Idle);
+    AgentThread::query()->where('task_group_id', $group->id)->update(['driver' => 'example']);
+    app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
+    $receipts = new FakeTaskTurnReceipts([null]);
+    app()->instance(TaskTurnReceipts::class, $receipts);
+    $group->update(['watched_pr_url' => 'https://github.com/example/app/pull/965', 'watched_pr_state' => 'merged']);
+    app(RequestEndedPullRequestAssistanceAction::class)->execute($group);
+    $reason = $group->fresh()?->assistance_reason;
+    expect(RequestEndedPullRequestAssistanceAction::isReason($reason))->toBeTrue();
+    ($held === 'task' ? $group : $task)->update(TaskAssistance::attributes(AssistanceKind::Failure, null, 'Original invalid deliverable hold.'));
+    $taskReason = $task->fresh()?->assistance_reason;
+    $groupReason = $group->fresh()?->assistance_reason;
+    app(TaskExtensionState::class)->enable();
+
+    app(ResumeDeliverableCorrectionAction::class)->execute($task);
+    expect($task->fresh()?->assistance_reason)->toBe($taskReason)
+        ->and($group->fresh()?->assistance_reason)->toBe($groupReason);
+    app(TaskScheduler::class)->tick();
+    app(ResumeDeliverableCorrectionAction::class)->execute($task);
+
+    expect($task->fresh()?->deliverable_correction_resume)->toBe($pending)
+        ->and($task->fresh()?->completion_attempt)->toBe(2)
+        ->and($task->fresh()?->resolution_delivered_comment_id)->toBeNull();
+    expect($task->fresh()?->assistance_reason)->toBe($taskReason)
+        ->and($group->fresh()?->assistance_reason)->toBe($reason);
+    expect($receipts->prepared)->toBe([]);
+    $noticeKey = $task->fresh()?->ended_pr_notice_key;
+    expect($noticeKey)->not->toBe($pending['key']);
+    expect(array_column($driver->calls, 'key'))->toBe([$noticeKey]);
+})->with(['task', 'group']);
+
+it('preserves a real ended PR hold arriving during correction send before the final guarded commit', function (): void {
+    $group = tick_group();
+    $task = $group->tasks->sole();
+    $task->update(['assistance_requested' => true, 'deliverable_correction_check_id' => 1, 'completion_attempt' => 2]);
+    $comment = TaskComment::query()->create(['task_group_id' => $group->id, 'task_id' => $task->id, 'type' => 'resolution', 'body' => 'Corrected.', 'author' => 'operator', 'posted_at' => now()]);
+    app(ResumeDeliverableCorrectionAction::class)->reserve($task, $comment);
+    $pending = $task->fresh()?->deliverable_correction_resume;
+    $driver = new FakeAgentDriver;
+    $driver->observation = new AgentObservation(AgentThreadState::Idle);
+    AgentThread::query()->where('task_group_id', $group->id)->update(['driver' => 'example']);
+    app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
+    $receipts = new FakeTaskTurnReceipts([null]);
+    app()->instance(TaskTurnReceipts::class, $receipts);
+    $reason = null;
+    $transactionLevel = DB::transactionLevel();
+    $driver->beforeTurn = function () use ($driver, $group, &$reason, $transactionLevel): void {
+        $driver->beforeTurn = null;
+        expect(DB::transactionLevel())->toBe($transactionLevel);
+        $group->update(['watched_pr_url' => 'https://github.com/example/app/pull/965', 'watched_pr_state' => 'closed']);
+        app(RequestEndedPullRequestAssistanceAction::class)->execute($group->fresh() ?? $group);
+        $reason = $group->fresh()?->assistance_reason;
+    };
+    app(TaskExtensionState::class)->enable();
+
+    app(TaskScheduler::class)->tick();
+    $calls = $driver->calls;
+    app(ResumeDeliverableCorrectionAction::class)->execute($task);
+    app(TaskScheduler::class)->tick();
+
+    expect($task->fresh()?->deliverable_correction_resume)->toBe($pending)
+        ->and($task->fresh()?->completion_attempt)->toBe(2)
+        ->and($task->fresh()?->resolution_delivered_comment_id)->toBeNull();
+    expect(RequestEndedPullRequestAssistanceAction::isReason($reason))->toBeTrue();
+    expect($task->fresh()?->assistance_reason)->toBe($reason)
+        ->and($group->fresh()?->assistance_reason)->toBe($reason)
+        ->and($task->fresh()?->assistance_kind)->toBe(AssistanceKind::Failure)
+        ->and($group->fresh()?->assistance_kind)->toBe(AssistanceKind::Failure);
+    $noticeKey = $task->fresh()?->ended_pr_notice_key;
+    expect($noticeKey)->not->toBe($pending['key']);
+    expect(array_column($calls, 'key'))->toBe([$noticeKey, $pending['key']]);
+    expect($driver->calls)->toBe($calls)
+        ->and($receipts->prepared)->toBe(['implementer']);
+    expect(Activity::query()->where('description', 'deliverable correction resumed')->count())->toBe(0);
+});
+
+it('supersedes an uncertain correction after completed direction without erasing the newer real turn or receipt', function (string $failure): void {
+    $group = tick_group();
+    $task = $group->tasks->sole();
+    $contract = [
+        ['id' => 'corrected', 'type' => 'file', 'description' => 'Corrected path.', 'path' => 'tests/CorrectedTest.php', 'change' => 'created'],
+        ['id' => 'repro', 'type' => 'command', 'description' => 'Corrected regression.', 'command' => 'vendor/bin/pest tests/CorrectedTest.php', 'directory' => 'apps/gateway', 'fails_on_base' => true, 'paths' => ['tests/CorrectedTest.php']],
+    ];
+    $task->update(['assistance_requested' => true, 'deliverable_correction_check_id' => $failure === 'before-reservation' ? null : 1, 'deliverables' => $failure === 'before-reservation' ? [['id' => 'old', 'type' => 'review', 'description' => 'Previous contract.']] : $contract]);
+    $group->update(['assistance_requested' => true]);
+    AgentThread::query()->where('task_group_id', $group->id)->where('role', 'reviewer')->update(['task_id' => $task->id]);
+    $checkout = sys_get_temp_dir().'/orbit-correction-direction-'.bin2hex(random_bytes(6));
+    File::ensureDirectoryExists($checkout.'/.git/orbit');
+    $group->taskable->update(['checkout_path' => $checkout]);
+    $state = (object) ['implementer' => 'idle', 'turnId' => 'turn-before'];
+    $dispatcher = new class($state, $checkout, $task->implementer_agent_thread_id, $failure) implements AgentCommandDispatcher
+    {
+        /** @var array<string, array<string, mixed>> */
+        public array $accepted = [];
+
+        /** @var list<string> */
+        public array $calls = [];
+
+        public ?string $correctionKey = null;
+
+        public function __construct(private object $state, private string $checkout, private ?int $threadId, private string $failure) {}
+
+        public function dispatch(Node $node, array $command): array
+        {
+            $key = (string) $command['commandId'];
+            $this->calls[] = $key;
+            $implementer = ($command['threadId'] ?? null) === 'implementer-thread';
+            if ($implementer) {
+                $this->correctionKey ??= $key;
+            }
+            if (! isset($this->accepted[$key])) {
+                $this->accepted[$key] = $command;
+                $turn = json_decode((string) file_get_contents($this->checkout.'/.git/orbit/turn.json'), true);
+                $arguments = [$this->checkout.'/.git/orbit/turn', '--thread='.$turn['thread'], '--summary=Authoritative direction result.'];
+                $arguments = $implementer ? [...$arguments, '--outcome=ready_for_review', '--deliverable=corrected=Implemented', '--deliverable=repro=Passed'] : [...$arguments, '--outcome=answered', '--cause=scope'];
+                (new Process($arguments, cwd: $this->checkout))->mustRun();
+                if ($implementer) {
+                    $this->state->turnId = $key;
+                    $this->state->messageId = $key;
+                    file_put_contents($this->checkout.'/.git/orbit/run', $key);
+                    file_put_contents($this->checkout.'/.git/orbit/run.json', json_encode(['turn' => $key], JSON_THROW_ON_ERROR));
+                }
+            }
+            if ($implementer && $key === $this->correctionKey && str_starts_with($this->failure, 'lost-acceptance')) {
+                throw new AgentDriverException('Both correction send replies lost after acceptance.');
+            }
+
+            return ['sequence' => count($this->accepted), 'thread_id' => (string) $command['threadId']];
+        }
+    };
+    tick_relay_runtime(new FakeTaskTurnReceipts, $dispatcher, $state);
+    $preparations = [];
+    $keys = Mockery::mock(SshKeyProvider::class);
+    $keys->shouldReceive('privateKeyPath')->andReturn('/unused-local-fixture-key');
+    $hosts = Mockery::mock(KnownHostsStore::class);
+    $hosts->shouldReceive('path')->andReturn('/unused-local-fixture-known-hosts');
+    $nativeReceipts = new RemoteTaskTurnReceipts(new TaskWorkspaceExecutor(new DevelopmentSshExecutor(new LocalShellSshExecutor, $keys, $hosts), app(IncusSandboxHost::class), app(TaskSandboxDrivers::class), app(SandboxFleetIdentity::class)));
+    $receipts = Mockery::mock(TaskTurnReceipts::class);
+    $receipts->shouldReceive('prepare')->andReturnUsing(function (Instance $instance, TaskThreadRole $role, bool $final, array $deliverables, ?int $threadId, ?TaskTurnMode $mode = null, ?string $context = null) use ($nativeReceipts, &$preparations): void {
+        $preparations[] = $mode?->deliveryKey;
+        $nativeReceipts->prepare($instance, $role, $final, $deliverables, $threadId, $mode, $context);
+    });
+    $receipts->shouldReceive('hasLegacyTurn')->andReturnUsing($nativeReceipts->hasLegacyTurn(...));
+    $receipts->shouldReceive('read')->andReturnUsing($nativeReceipts->read(...));
+    $receipts->shouldReceive('clear')->andReturnUsing($nativeReceipts->clear(...));
+    app()->instance(TaskTurnReceipts::class, $receipts);
+    $crash = $failure === 'commit-crash';
+    DB::beforeExecuting(function (string $sql) use (&$crash): void {
+        if ($crash && str_starts_with($sql, 'update') && str_contains($sql, 'completion_attempt') && str_contains($sql, 'deliverable_correction_resume')) {
+            $crash = false;
+            throw new RuntimeException('Correction delivery commit crashed.');
+        }
+    });
+    try {
+        $actor = $group->taskable->node;
+        $requestId = '53a762c6-4d7e-4cae-a9a7-7af51949e1cd';
+        if ($failure === 'before-reservation') {
+            $this->markAsGateway($actor);
+            $this->withServerVariables(['REMOTE_ADDR' => $actor->wireguard_ip]);
+            $handoff = TaskComment::query()->create(['task_group_id' => $group->id, 'task_id' => $task->id, 'type' => TaskCommentType::ReadyForReview, 'body' => 'Invalid deliverable.', 'author' => 'implementer', 'posted_at' => now(), 'completion_attempt' => $task->completion_attempt]);
+            $task->update(['completion_handoff_comment_id' => $handoff->id]);
+            TaskCheck::query()->create(['task_id' => $task->id, 'task_comment_id' => $handoff->id, 'kind' => TaskCheckKind::Handoff, 'status' => TaskCheckStatus::Failed, 'failed_step' => 'invalid_deliverable', 'pid' => 123, 'process_started' => 'check-start', 'head_before' => str_repeat('a', 40), 'tree_before' => str_repeat('b', 40), 'started_at' => now(), 'finished_at' => now()]);
+            $repository = Mockery::mock(DeliverablePathRepository::class);
+            $repository->shouldReceive('files')->once()->andReturn([]);
+            app()->instance(DeliverablePathRepository::class, $repository);
+            $this->patchJson("/api/v1/task-groups/{$group->id}/tasks/{$task->id}", ['deliverables' => $contract])->assertOk();
+            expect($task->fresh()?->deliverable_correction_check_id)->not->toBeNull();
+            expect($task->fresh()?->deliverable_correction_resume)->toBeNull();
+        } else {
+            $resolve = fn () => app(StoreTaskCommentAction::class)->execute($task, ['type' => 'resolution', 'body' => 'Resume corrected handoff.', 'author' => 'operator']);
+            if ($failure === 'commit-crash') {
+                expect($resolve)->toThrow(RuntimeException::class, 'Correction delivery commit crashed.');
+            } else {
+                $resolve();
+            }
+            expect($task->fresh()?->deliverable_correction_resume['state'])->toBe('pending');
+        }
+        app(StoreTaskCommentAction::class)->execute($task, ['type' => 'assistance_requested', 'body' => 'Which approach is authoritative?', 'author' => 'operator']);
+        if ($failure === 'before-reservation') {
+            $this->withHeader('X-Orbit-Request-Id', $requestId)->postJson("/api/v1/task-groups/{$group->id}/tasks/{$task->id}/comments", ['type' => 'resolution', 'body' => 'Use the reviewer direction.', 'author' => 'not-the-authenticated-caller'])->assertCreated();
+            $firstReservation = $task->fresh()?->deliverable_correction_resume;
+            $this->withHeader('X-Orbit-Request-Id', 'c0ccde43-30c9-44c0-973f-14a665fd2a16')->postJson("/api/v1/task-groups/{$group->id}/tasks/{$task->id}/comments", ['type' => 'resolution', 'body' => 'Repeated resolution must not reserve a new delivery.', 'author' => 'another-author'])->assertCreated();
+            expect($task->fresh()?->deliverable_correction_resume)->toBe($firstReservation);
+            expect($dispatcher->accepted)->toHaveCount(1);
+        } else {
+            app(StoreTaskCommentAction::class)->execute($task, ['type' => 'resolution', 'body' => 'Use the reviewer direction.', 'author' => 'operator']);
+        }
+        expect($task->fresh()?->direction_relay_comment_id)->not->toBeNull();
+
+        if ($failure === 'lost-acceptance-direction-commit-crash') {
+            $crashDirection = true;
+            DB::beforeExecuting(function (string $sql) use (&$crashDirection): void {
+                if ($crashDirection && str_starts_with($sql, 'update') && str_contains($sql, 'review_handled_comment_id')) {
+                    $crashDirection = false;
+                    throw new RuntimeException('Direction delivery commit crashed.');
+                }
+            });
+            expect(fn () => app(TaskScheduler::class)->tick())->toThrow(RuntimeException::class, 'Direction delivery commit crashed.');
+            expect($task->fresh()?->deliverable_correction_resume['state'])->toBe('pending');
+            expect($task->fresh()?->direction_relay_comment_id)->not->toBeNull();
+        }
+        app(TaskScheduler::class)->tick();
+
+        expect($task->fresh()?->direction_relay_comment_id)->toBeNull();
+        expect($dispatcher->accepted)->toHaveCount($failure === 'before-reservation' ? 2 : 3);
+        $continuation = array_last($dispatcher->accepted)['message']['text'];
+        $files = ['turn.json', 'receipt.json', 'run', 'run.json'];
+        $before = array_map(fn (string $file): string => (string) file_get_contents($checkout.'/.git/orbit/'.$file), $files);
+        expect(json_decode($before[0], true)['deliverables'])->toBe([
+            ['id' => 'corrected', 'type' => 'file', 'description' => 'Corrected path.'],
+            ['id' => 'repro', 'type' => 'command', 'description' => 'Corrected regression.', 'fails_on_base' => true, 'paths' => ['tests/CorrectedTest.php']],
+        ]);
+        expect(json_decode($before[0], true)['thread'])->toBe($task->implementer_agent_thread_id);
+        expect(array_last($dispatcher->accepted)['threadId'])->toBe('implementer-thread');
+        $prepared = $preparations;
+        $calls = $dispatcher->calls;
+        $state->implementer = 'running';
+        app(TaskScheduler::class)->tick();
+        app(ResumeDeliverableCorrectionAction::class)->execute($task);
+        app(ResumeDeliverableCorrectionAction::class)->execute($task);
+        expect(array_map(fn (string $file): ?string => file_exists($checkout.'/.git/orbit/'.$file) ? (string) file_get_contents($checkout.'/.git/orbit/'.$file) : null, $files))->toBe($before);
+        expect($preparations)->toBe($prepared);
+        expect($dispatcher->calls)->toBe($calls);
+        expect($continuation)->toContain('The direction above is authoritative.');
+        expect(json_decode(explode("\n```", explode("```json\n", $continuation)[1])[0], true))->toBe($contract);
+        expect($task->fresh()?->deliverable_correction_resume['state'])->toBe('superseded');
+        $audit = Activity::query()->where('description', 'deliverable correction superseded by direction')->sole();
+        expect($audit->properties?->get('comment_id'))->toBe($task->fresh()?->deliverable_correction_resume['comment_id']);
+        if ($failure === 'before-reservation') {
+            expect($audit->getRawOriginal('caller_node_id'))->toBe($actor->id);
+            expect($audit->caller_ip)->toBe($actor->wireguard_ip);
+            expect($audit->request_id)->toBe($requestId);
+            $this->patchJson("/api/v1/task-groups/{$group->id}/tasks/{$task->id}", ['deliverables' => $contract])->assertConflict()->assertJsonPath('error.code', 'tasks.deliverables_locked');
+            expect($task->fresh()?->deliverables)->toBe($contract);
+        }
+    } finally {
+        File::deleteDirectory($checkout);
+    }
+})->with(['lost-acceptance', 'commit-crash', 'lost-acceptance-direction-commit-crash', 'before-reservation']);
+
 it('does not send a second implementer turn when an accepted relay answer lost its response', function (): void {
     [$group, $task] = tick_held_relay();
     $receipts = new FakeTaskTurnReceipts([
@@ -5427,12 +5745,13 @@ it('starts the reviewer with the first review request when the group has no revi
         ->and(app(TaskTurnReceipts::class)->prepared)->toBe(['reviewer:final']);
 });
 
-function tick_final_approval(): string
+/** @param list<string> $changes */
+function tick_final_approval(array $changes = ['Tasks store their records.']): string
 {
     return json_encode([
         'outcome' => 'approved',
         'summary' => 'Checked the feature.',
-        'pull_request' => ['summary' => 'Adds tick routing.', 'changes' => ['Tasks store their records.'], 'breaking' => []],
+        'pull_request' => ['summary' => 'Adds tick routing.', 'changes' => $changes, 'breaking' => []],
         'nonce' => bin2hex(random_bytes(8)),
     ], JSON_THROW_ON_ERROR);
 }
@@ -5507,6 +5826,31 @@ it('continues an approval tick after Jev recording fails and reaches later work'
         ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Settling)
         ->and($task->fresh()?->status)->toBe(TaskStatus::Completed);
     Exceptions::assertReported(QueryException::class);
+});
+
+it('publishes when a change starts with the last subtask title, without asking Jev', function (): void {
+    [$group, $task, , $signer, $publisher] = tick_review([tick_final_approval(['Models: tasks store their records.'])], last: true);
+    Classification::fake([['subtask_'.$task->id => new BooleanAnswer(0.45)]])->preventStrayClassifications();
+
+    app(TaskScheduler::class)->tick();
+
+    Classification::assertNothingClassified();
+    expect($signer->messages)->toBe(["Models\n\nChecked the feature."])
+        ->and($publisher->pushes)->toBe([$group->id])
+        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Settling)
+        ->and($task->fresh()?->status)->toBe(TaskStatus::Completed);
+});
+
+it('holds the approval when no change starts with the last subtask title and Jev answers no', function (): void {
+    [, $task, , $signer, $publisher] = tick_review([tick_final_approval()], last: true);
+    Classification::fake([['subtask_'.$task->id => new BooleanAnswer(0.45)]])->preventStrayClassifications();
+
+    app(TaskScheduler::class)->tick();
+
+    expect(app(AgentCommandDispatcher::class)->commands[0]['message']['text'])->toContain('The pull request change list does not cover the subtask "Models".')
+        ->and($signer->messages)->toBe([])
+        ->and($publisher->pushes)->toBe([])
+        ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing);
 });
 
 it('commits the last approved subtask, opens the pull request with the reviewer fields, and settles the group', function (): void {
@@ -6555,6 +6899,93 @@ it('never resets a failed baseline workspace after an implementer has started el
 });
 
 /**
+ * A baseline that failed on `$failed`, and GitHub's view of main: the `Required checks` result on the failed
+ * commit and on the tip, and how the tip relates to the failed commit.
+ *
+ * @return array{Task, Task, FakeTaskCheckRunner}
+ */
+function tick_red_main_baseline(string $slug, string $failed, string $tip, string $failedConclusion, string $tipConclusion, string $status = 'ahead'): array
+{
+    app(TaskExtensionState::class)->enable();
+    $group = tick_baseline_group($slug, 'composer check', [], '10.51.0.10');
+    tick_running_agents();
+    $runner = new FakeTaskCheckRunner([TaskCheckReading::finished(1, str_repeat('a', 40), str_repeat('b', 40), [], "main was red\n")]);
+    app()->instance(TaskCheckRunner::class, $runner);
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+    $task = $group->tasks()->sole();
+    expect($task->assistance_requested)->toBeTrue();
+    // The fake runner starts every check on aaaa…; the failed baseline ran on the red main commit.
+    TaskCheck::query()->where('task_id', $task->id)->update(['head_before' => $failed]);
+
+    $group->project->update(['repository_url' => "https://github.com/acme/{$slug}.git"]);
+    GitHubTestSupport::storeApp();
+    $runs = static fn (string $sha, string $conclusion): array => ['total_count' => 1, 'check_runs' => [[
+        'id' => 7, 'name' => 'Required checks', 'head_sha' => $sha,
+        'status' => $conclusion === 'pending' ? 'in_progress' : 'completed', 'conclusion' => $conclusion === 'pending' ? null : $conclusion,
+        'html_url' => "https://github.com/acme/{$slug}/runs/7", 'app' => ['slug' => 'github-actions'],
+    ]]];
+    Http::preventStrayRequests();
+    Http::fake([
+        "https://api.github.com/repos/acme/{$slug}/installation" => Http::response(['id' => 9]),
+        'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_read'], 201),
+        "https://api.github.com/repos/acme/{$slug}/commits?*" => Http::response([['sha' => $tip, 'parents' => [['sha' => $failed]]]]),
+        "https://api.github.com/repos/acme/{$slug}/compare/{$failed}...{$tip}*" => Http::response([
+            'status' => $status, 'base_commit' => ['sha' => $failed], 'merge_base_commit' => ['sha' => $status === 'ahead' ? $failed : str_repeat('d', 40)],
+        ]),
+        "https://api.github.com/repos/acme/{$slug}/commits/{$failed}/check-runs*" => Http::response($runs($failed, $failedConclusion)),
+        "https://api.github.com/repos/acme/{$slug}/commits/{$tip}/check-runs*" => Http::response($runs($tip, $tipConclusion)),
+    ]);
+
+    return [$group, $task, $runner];
+}
+
+it('queues the baseline retry when main was red and its green tip contains the failed commit', function (): void {
+    // Task 1293: the baseline failed on red main 82fcdd38, and main then turned green at e43566fe.
+    $failed = '82fcdd38'.str_repeat('0', 32);
+    $tip = 'e43566fe'.str_repeat('0', 32);
+    [$group, $task, $runner] = tick_red_main_baseline('baseline-red-main', $failed, $tip, 'failure', 'success');
+    $fetcher = mock(TaskBaseBranchFetcher::class);
+    $fetcher->shouldReceive('fetchForTurn')->once()->ordered();
+    $fetcher->shouldReceive('resetToDefault')->once()->ordered()->andReturn($tip);
+
+    app(TaskScheduler::class)->tick();
+
+    $resolution = TaskComment::query()->where('task_id', $task->id)->where('type', 'resolution')->sole();
+    expect($resolution->author)->toBe('orbit')
+        ->and($resolution->body)->toBe('The baseline failed on '.$failed.', where Required checks failed. The default branch tip '.$tip.' contains it and passed Required checks, so Orbit retries the baseline.');
+    $this->assertDatabaseHas('tasks', [
+        'id' => $task->id, 'subtask_start_commit' => $tip, 'assistance_requested' => false,
+        'resolution_delivered_comment_id' => $resolution->id, 'implementer_agent_thread_id' => null,
+    ]);
+    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'assistance_requested' => false]);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($runner->starts)->toBe(2);
+});
+
+it('keeps baseline assistance unless main was red and its tip is green and contains the failed commit', function (string $failedConclusion, string $tipConclusion, string $status): void {
+    $failed = '82fcdd38'.str_repeat('0', 32);
+    [$group, $task, $runner] = tick_red_main_baseline('baseline-not-red-main', $failed, 'e43566fe'.str_repeat('0', 32), $failedConclusion, $tipConclusion, $status);
+    $fetcher = mock(TaskBaseBranchFetcher::class);
+    $fetcher->shouldNotReceive('fetchForTurn');
+    $fetcher->shouldNotReceive('resetToDefault');
+
+    app(TaskScheduler::class)->tick();
+
+    expect(TaskComment::query()->where('task_id', $task->id)->where('type', 'resolution')->exists())->toBeFalse()
+        ->and($task->fresh()?->assistance_requested)->toBeTrue()
+        ->and($group->fresh()?->assistance_requested)->toBeTrue()
+        ->and($runner->starts)->toBe(1);
+})->with([
+    'main was green' => ['success', 'success', 'ahead'],
+    'tip pending' => ['failure', 'pending', 'ahead'],
+    'tip red' => ['failure', 'failure', 'ahead'],
+    'tip does not contain the failed commit' => ['failure', 'success', 'diverged'],
+]);
+
+/**
  * A fresh running task whose baseline has not started.
  *
  * @param  list<array{name: string, command: string, timeout_seconds: int, position: int}>  $steps
@@ -6580,6 +7011,7 @@ function tick_baseline_group(string $slug, ?string $taskCheck, array $steps, str
         'node_id' => $node->id,
         'name' => $slug,
         'checkout_path' => '/tmp/tasks-'.$slug,
+        'starting_commit' => str_repeat('a', 40),
         'status' => 'source_resolved',
     ]);
     $group = Task::topLevel()->create([

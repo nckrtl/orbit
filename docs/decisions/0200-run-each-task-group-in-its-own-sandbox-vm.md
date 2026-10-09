@@ -18,75 +18,72 @@ Today a task group shares a node with other groups ([Shared Instance](/reference
 - **Capacity.** Groups that wait for assistance or a merge keep their node slot. Todo groups pinned to a leftover `reserved` Instance wait silently on a full node.
 - **The trend.** The median group took 1.5 h for ids below 200 and 5.4 h for ids from 1200.
 
-An UpCloud experiment on 6 Oct 2026 proved the building blocks for the project lane. A VM was created, enrolled with `node:add` as an `app-dev` node in dev Cluster #4, served a DLF Instance on a private Route through the beast router, and ran a Pi coding probe through CLIProxyAPI. Allocation per group and the lifecycle were not built.
+An UpCloud experiment on 6 Oct 2026 proved the building blocks for the web lane. A VM was created, enrolled with `node:add` as an `app-dev` node in dev Cluster #4, served a DLF Instance on a private Route through the beast router, and ran a Pi coding probe through CLIProxyAPI.
+
+A review of the first web-lane build on 9 Oct 2026 (main at `bd36565c3`) found that no implementer, check, reviewer, and publish cycle had run on either lane. Two choices caused most of the work: offline Project images, and egress limited to HTTP(S) and DNS behind a private bridge reached through host proxy, DNAT, and SNAT rules. The build had about 12.7k production lines, 26 Python programs, 93 Instance guard calls, and a 9-state model with 10 marker timestamps. A spike on beast the same day showed the alternative. A stock Ubuntu 26.04 cloud VM was ready in 31 to 48 seconds. One host forward rule, one bridge ACL, and NIC port isolation formed its whole network boundary.
 
 ## Decision
 
-Orbit assigns each task group its own sandbox through the compute driver and lane defined below.
-
-### Compute drivers
-
-A **compute driver** provides sandboxes. Its interface is `provision(image, size, network)`, `park`, `resume`, `destroy`, and `capacity`. The first driver is local Incus, on beast, sabre, and shark. UpCloud follows as overspill. The scheduler places a group on local capacity first and on a cloud driver when local capacity is full. A `vm` group counts against the driver's VM budget, not `TaskCeilings::PerNode`.
-
-### Local host firewall boundary
-
-The trusted Incus host installs a fixed root-owned network helper, selected projects, and a boot dependency before enabling new local sandboxes. The helper derives ownership and network identity from local Incus and accepts no caller-supplied rules or host commands. It persists one policy per bridge and checks it before guests start or resume. Existing unmarked bridges keep their policy. Dedicated filter chains enforce the complete boundary before permitting traffic through the host firewall; an unconditional bridge accept bypasses the intended restrictions. Persistent recovery and exact cleanup are part of the compute lifecycle. See [Durable firewall policy](/reference/compute-drivers#durable-firewall-policy-on-an-incus-host).
+Orbit assigns each task group its own VM through the lane of its Project. This amendment replaces the web-lane design of the first build. The Orbit lane is unchanged and gets its own design pass in Phase 4.
 
 ### Two lanes
 
-| | Orbit lane (the `orbit` Project) | Project lane (every other Project) |
+| | Orbit lane (the `orbit` Project) | Web lane (every other Project) |
 | --- | --- | --- |
-| Machines | An **operator** VM and a **test gateway** VM by default. `app-dev` and `app-prod` join when a subtask declares them | One VM |
-| Network | Its own Incus network for each group. It never joins the live fleet | Joins the live fleet over WireGuard as an `app-dev` node of the dev Cluster |
-| Control path | The real Gateway reaches the operator through the host's Orbit agent: an Incus proxy device for the Pi port, and `incus exec` for the check and turn receipts | The Gateway sends typed envelopes to the Orbit Agent, as on any node |
-| Code | One worktree volume for each group, attached to the operator, the test gateway, and `app-dev` | A checkout inside the VM, served as a real Instance |
+| Machines | An **operator** VM and a **test gateway** VM by default. `app-dev` and `app-prod` join when a subtask declares them | One task VM, which is a normal `app-dev` Node |
+| Network | Its own Incus network for each group. It never joins the live fleet | Joins the live fleet over WireGuard as an `app-dev` Node of the dev Cluster, with an address in the reserved range `10.44.64.0/20` |
+| Control path | The real Gateway reaches the operator through the host's Orbit agent: an Incus proxy device for the Pi port, and `incus exec` for the check and turn receipts | Normal Node SSH. Before enrollment through the compute host as a jump host, and after it over WireGuard |
+| Code | One worktree volume for each group, attached to the operator, the test gateway, and `app-dev` | A checkout inside the VM, served as a normal Instance `task-<group id>` |
 | Routes | Only inside the test topology. Exposing the topology outside is out of scope | A private dev-cluster Route, `task-<id>.<project>.<dev-tld>` |
+
+### Web lane
+
+1. **Image.** Every provider uses the stock Ubuntu 26.04 cloud image and cloud-init. Cloud-init creates the user `orbit` with passwordless sudo and the Gateway's SSH key, and installs `openssh-server`. The web lane has no Project images, templates, or warm pools.
+2. **Enrollment.** The VM joins through the normal `node:add` path as an `app-dev` Node of the dev Cluster. Before enrollment, the Gateway reaches it with SSH ProxyJump through the compute host, and reads its host key from that trusted host. After enrollment, the Gateway uses WireGuard.
+3. **Host network.** Each host has one task bridge under the reserved `orbittask` prefix, with its ACL attached when the bridge is created. The ACL drops private, link-local, CGNAT, and multicast egress and allows all other egress. Ingress allows SSH from the host only. NIC port isolation is on. One persistent host rule, `ufw route allow in on orbittask+`, lets the bridge pass the host's forward policy. This replaces the root-owned helper, the per-bridge policies, the proxy, DNAT, and SNAT rules, and the HTTP(S)-only egress rule.
+4. **Fleet limits.** A static nft filter on the WireGuard hub covers the reserved range `10.44.64.0/20`. It lets task VMs reach the Gateway API, Reverb, CLIProxyAPI, and DNS on the hub. It lets the Gateway reach them over SSH and Pi, and the dev Cluster router reach their previews. The address allocator keeps other Nodes out of the range. A task VM Node has no access grants. This replaces the hub table for each sandbox.
+5. **GitHub.** No GitHub token enters the VM. The Gateway fetches and pushes over SSH, as for shared groups. This reverses "temporary GitHub App tokens enter the owned sandbox" for the web lane.
+6. **Pi.** The Gateway installs a pinned Pi artifact. Pi runs as a normal `pi-server` Process under `orbit`, with a token for each VM and a CLIProxyAPI key for each group.
+7. **State.** The `task_vms` table holds one row for each VM. `TaskVmState` has five cases: `provisioning`, `ready`, `destroying`, `destroyed`, and `failed`. There are no marker timestamps. `IncusTaskVmProvider` validates host and guest output once. The Gateway trusts its own rows.
+8. **Jobs.** `ProvisionTaskVm`, `EnrollTaskVm`, `PrepareTaskVmRuntime`, and `DestroyTaskVm` are queued jobs on the `task-vms` database queue. The Gateway scheduler starts the worker every minute.
+9. **Lifecycle.** The VM is destroyed when the group ends, in this order: Instance removal, the `destroying` state, model key revocation, VM deletion, offline Node removal, and the `destroyed` state. Park and resume move to Phase 2, using the spike measurements: park in 2.5 seconds, resume in 14 seconds.
+10. **No guard.** Generic Instance operations need no sandbox guard. One placement invariant protects task VM Nodes. Task VM Nodes are left out of the fleet rollout and of shared-group placement.
+11. **Public egress.** Task VMs reach public addresses on every port. The VM edge and the hub filter are the boundary, and CI on the pushed commit is the gate.
+12. **Accepted risk.** A VM can query port 53 on any host address, because Incus accepts DNS before the ACL. It can read instance names from the DNS of other bridges on that host. Phase 1 accepts this. Phase 2 decides on a host rule that drops it.
+
+The first provider is Incus, on beast and shark. UpCloud uses the same cloud-init and enrollment path in Phase 3. Until then the UpCloud driver, its cloud-init, its bootstrap, and its enrollment action stay in the code without a claim path. ADR 0204 on a nightly UpCloud base image (pull requests #1072 and #1074) stays on hold for Phase 3.
+
+### Orbit lane
 
 The operator stays a roleless node, registered with the test gateway. It becomes a VM instead of a system container. The test topology keeps the fleet's WireGuard addresses, so the operator must never also join the live fleet.
 
-**Local Project admission.** A local Project reservation owns exactly one guest from that Project's pinned development image. Its recorded Incus host, project, storage pool, subnet, image and bootstrap endpoint must still match before fleet enrollment. An Orbit topology image is never a Project development image. The guest has the managed account and no existing fleet or private-topology identity. The trusted host reads the SSH public key from that exact guest; private keys stay inside it.
+A **compute driver** provides Orbit sandboxes. Its interface is `provision(image, size, network)`, `park`, `resume`, `destroy`, and `capacity`. A `vm` group counts against the driver's VM budget, not `TaskCeilings::PerNode`.
 
-Before WireGuard enrollment, the live Gateway uses a private host proxy to the guest's SSH port. Only the recorded Gateway can reach that proxy through the host's WireGuard interface. A distinct, separately approved host policy permits this bootstrap path and UDP to the recorded public WireGuard hub endpoint. The host policy for an isolated Orbit pair does not authorize a Project VM to join the live fleet. The hub installs the reservation's limits before publishing its peer. Retries retain the same guest, SSH identity and two-way Node ownership; they never adopt another Node or grant access to other Nodes.
-
-After enrollment, the Gateway reaches the guest through its recorded fleet address. The owned development Instance and private task Route use the native runtime. Cleanup removes the Route, Instance, Node and hub peer before destroying local compute. Local park retains that identity, and resume verifies it before another agent starts. Existing UpCloud reservations retain their provider-specific identity and destroy/rebuild behavior.
+The trusted Incus host installs a fixed root-owned network helper, selected projects, and a boot dependency before enabling new Orbit sandboxes. The helper derives ownership and network identity from local Incus and accepts no caller-supplied rules or host commands. It persists one policy per bridge and checks it before guests start or resume. Dedicated filter chains enforce the complete boundary before permitting traffic through the host firewall. See [Durable firewall policy](/reference/compute-drivers#durable-firewall-policy-on-an-incus-host).
 
 **Declared topology.** A subtask declares the nodes it needs, for example `topology: ["app-dev"]`. Orbit adds them before that subtask starts. A workload node always joins the group's test gateway. `topology_requested` stays as a fallback for discovery.
 
-**Images.**
-- The Orbit lane clones a saved operator+gateway pair, with the operator already registered and its CLI profile set. A warm pool keeps one or two pairs ready. `app-dev` and `app-prod` join from prebuilt images.
-- Each project-lane Project has a dev image with its runtime, the Orbit Agent, the Pi server, and the managed user.
-- Every image starts with the TIA baseline of `main`, imported from CI.
+**Images.** The Orbit lane clones a saved operator and gateway pair, with the operator already registered and its CLI profile set. A warm pool keeps one or two pairs ready. `app-dev` and `app-prod` join from prebuilt images. Every image starts with the TIA baseline of `main`, imported from CI.
 
-### One user and one environment inside the sandbox
+**Secrets.** Temporary GitHub App tokens enter the Orbit sandbox. The App private key stays on the Gateway. Tokens are scoped to the Project repository. The operator reaches CLIProxyAPI through a host proxy device, because `10.44.0.3` belongs to the test topology there. An Incus network ACL on the host limits outbound traffic to public HTTP(S) and DNS, CLIProxyAPI, and the group's own network.
+
+**Lifecycle.** VM power is `running`, `stopped`, or `destroyed`, separate from task status.
+
+- When the PR opens, the driver parks the sandbox: a snapshot, then a stop. It keeps the sandbox running for a 5-minute grace period only when no group waits for capacity. A group with `preview: true` stays running until the merge.
+- Resume happens on changes requested, red CI, or a real conflict, and restores the snapshot taken when the PR opened. Resume groups are claimed before `todo` groups.
+- When the PR merges, Orbit destroys the sandbox and its snapshots. Orbit marks every sandbox as a task sandbox, sweeps sandboxes left behind, and doctor does not report them as drift.
+
+### Both lanes
 
 There is no `orbit-worker` in a sandbox. Agents, the Pi server, and the task check run as the managed user with passwordless sudo, so the privileged tests run. Orbit's handoff check stays as fast feedback and still compares tree hashes. **CI on the pushed commit is the authoritative gate.** `bin/pr-head-check` already requires it before merge.
 
-### Secrets and network
+- **Model calls** go only through CLIProxyAPI. Each group gets its own key, created at claim and revoked at the end. No subscription sign-in is stored in any sandbox.
+- **The Pi token is per VM.** The Gateway-wide `ORBIT_PI_TOKEN` is not used for sandboxes.
+- **Blocked destinations.** No sandbox reaches `10.44.0.0/16` outside its allowed endpoints, the LAN, the host, other groups' networks, or `169.254.169.254`.
+- **Task status and VM power are separate.** After the last approval Orbit opens the PR, and the group moves to the status `waiting_for_review`.
+- **Base updates** come from the GitHub update-branch API, not an agent fixup.
 
-- **Temporary GitHub App tokens enter the owned sandbox.** The App private key stays on the Gateway. Tokens are scoped to the Project repository and renewed for direct fetch and push. UpCloud guests authenticate renewal with their enrolled WireGuard identity and private Pi token. A root agent can read its repository token; this is an accepted boundary for a disposable Project VM. Publication still pushes only the approved commit.
-- **Model calls** go only through CLIProxyAPI. Each group gets its own key, created at claim and revoked at the end. The Orbit-lane operator reaches it through a host proxy device, because `10.44.0.3` belongs to the test topology there. No subscription sign-in is stored in any sandbox.
-- **The Pi token is per node.** The Gateway-wide `ORBIT_PI_TOKEN` is not used for sandboxes.
-- **Limits on outbound and fleet traffic are enforced outside the sandbox.** Project lane: the WireGuard hub ACL. Orbit lane: an Incus network ACL on the host. Cloud: the provider firewall as well.
-  - The public internet over HTTP(S) is allowed.
-  - Blocked: `10.44.0.0/16`, the LAN, the host, other groups' networks, and `169.254.169.254`.
-  - Exceptions: CLIProxyAPI. In the project lane, also the Gateway API and the dev-cluster router.
-- **Incoming traffic to a project-lane node** comes only from the Gateway, the dev-cluster router, and nodes granted access. The node has no grants to other nodes. Orbit firewall rules express this, so doctor sees drift.
-
-### Lifecycle
-
-- **Task status and VM power are separate.** After the last approval Orbit opens the PR, and the group moves to the new status `waiting_for_review`. VM power is `running`, `stopped`, or `destroyed`.
-- **Park and resume.**
-  - When the PR opens, the compute driver parks the sandbox. It keeps the sandbox running for a 5-minute grace period only when no group waits for capacity.
-  - Local Incus takes a snapshot and stops the VM.
-  - UpCloud Starter plans bill while stopped, so the VM is kept for at most 1 hour and then destroyed.
-  - A group with `preview: true` stays running until the merge.
-- **Resume** happens on changes requested, red CI, or a real conflict. Incus restores the snapshot taken when the PR opened. Cloud drivers build a new VM from the image and the `task-<id>` branch. Resume groups are claimed before `todo` groups.
-- **When the PR merges**, a project-lane node leaves the fleet. Orbit destroys the sandbox and its snapshots. Orbit marks every sandbox as a task sandbox, sweeps sandboxes left behind, and doctor does not report them as drift.
-- **Base updates** come from the GitHub update-branch API, not an agent fixup. Only a real conflict or red CI resumes the group.
-
-### Rollout
-
-Each Project has the setting `task_compute: shared | vm`. `shared` keeps today's flow and stays the default until each lane is proven. A group never switches mode while it runs. A `vm` group that cannot get a sandbox waits with a visible reason and never falls back to `shared`. The Orbit lane is built first.
+Each Project has the setting `task_compute: shared | vm`. `shared` keeps today's flow and stays the default until each lane is proven. A group never switches mode while it runs. A `vm` group that cannot get a sandbox waits with a visible reason and never falls back to `shared`. The web lane is built first, on Incus. UpCloud follows in Phase 3 and the Orbit lane in Phase 4.
 
 This decision changes [Shared Instance](/reference/tasks#shared-instance) and [One user for every task agent](/reference/pi-server#one-user-for-every-task-agent) for `vm` groups. Once no Project uses `shared`, the `orbit-worker` account and its `incus-admin` membership are retired.
 
@@ -96,29 +93,38 @@ This decision changes [Shared Instance](/reference/tasks#shared-instance) and [O
 - **Run agents as the managed user on shared hosts.** Every agent would get passwordless sudo, Docker, and the managed user's credentials. One prompt injection can reach the fleet.
 - **The operator joins the live fleet as well as the test topology.** Both networks use `10.44.0.0/16`. Mixing live and disposable traffic is already refused in [The operator guest](/reference/incus-topologies#the-operator-guest).
 - **Operator only by default, adding the test gateway on demand.** Most Orbit features need a real machine. A default gateway makes every added node a plain join and gives the operator a working CLI target from the first turn.
+- **Keep Orbit sandboxes running until merge.** In the measured PRs, 1 of 22 got `CHANGES_REQUESTED`. Parked sandboxes free capacity, and restoring a snapshot starts from a clean state.
 - **Isolated sandboxes for every Project.** Project features need real routes, deployment, and a preview a human can open. Joining the fleet with no grants and hub-enforced limits keeps that and stays contained.
-- **Keep sandboxes running until merge.** In the measured PRs, 1 of 22 got `CHANGES_REQUESTED`. Parked sandboxes free capacity, and restoring a snapshot starts from a clean state.
 - **Copy subscription sign-ins into each sandbox.** It exposes the subscriptions, and rotating OAuth refresh tokens break when many copies refresh.
 - **Fall back to `shared` silently when no sandbox is available.** It would mix environments again, which is the problem this decision removes.
+- **WireGuard configured in cloud-init.** It bypasses normal enrollment, so the Node record, peer, and roles would not come from one path.
+- **An Incus proxy device for SSH to a web-lane VM.** Its host port does not match the Node firewall catalog, and it needs forward and DNAT rules on the host.
+- **The Incus REST API with a restricted certificate.** It needs more host setup, and the Gateway already has root SSH to the host.
+- **A hub table for each VM.** One static filter on a reserved range enforces the same limits without per-VM rules on the live hub.
+- **Egress limited to HTTP(S) and DNS.** The first build spent most of its acceptance work on clock sync, package sources, and key installs that this limit broke. It adds no protection beyond the VM edge.
+- **Prebuilt Project images in Phase 1.** A stock image with cloud-init works on every provider and needs no offline build. Prebuilt images stay an option if enrollment proves too slow.
 
 ## Consequences
 
 - Agents get the same verdict as the gate. The largest source of blocked turns and failed local checks goes away.
 - The privileged tests run inside the sandbox. The ACL, `safe.directory`, and check-directory ownership work is removed for `vm` groups.
-- Overspill to cloud capacity uses the same lifecycle and images.
-- Images, snapshots, warm pools, and VM budgets need to be built and kept current. That work is listed in the implementation plan.
-- Publication runs directly in the owned sandbox with temporary repository access. The Gateway retains the approved-commit gate.
+- A web-lane VM uses the same enrollment, Instance, Route, check, and publication code as a shared group. The new code is one table, one enum, one provider, four jobs, a cloud-init renderer, two setup scripts, and SSH jump support.
+- Phase 1 deletes the code of the first web-lane build that the new lane leaves unused. The UpCloud driver stays until Phase 3. The Orbit lane and the old Incus controller stay until Phase 5.
+- The first `app-dev` convergence on a fresh VM installs PHP, Caddy, Docker, and the agent. Its time on Incus is not measured yet. Prebuilt images are the fallback.
+- A single worker started by the scheduler runs the jobs one at a time. A release that stops the scheduler interrupts a running job, which runs again.
+- Task VM Nodes can appear in doctor while they exist.
 - A root agent can tamper with the in-sandbox check result. CI on the pushed commit stays the authoritative gate.
-- Nested virtualization is required wherever the Orbit lane adds VMs. Cloud drivers serve the project lane first.
+- Nested virtualization is required wherever the Orbit lane adds VMs.
 
 ## Affects
 
 - Components: apps/gateway, apps/e2e, apps/cli, apps/docs
-- ADRs: none in progress
-- Detail: [Tasks](/reference/tasks): Shared Instance becomes "Task sandbox", plus Lifecycle and Scheduler. [Pi server](/reference/pi-server): host setup and the user model. [Incus topology registry](/reference/incus-topologies): operator VM and declared nodes. A new page, `docs/reference/compute-drivers.md`. [Projects](/reference/projects): `task_compute`.
+- ADRs: none in progress on main. ADR 0204 (pull request #1072) stays on hold until Phase 3.
+- Detail: [Compute drivers: Task VMs](/reference/compute-drivers#task-vms). [Node provisioning: Enroll through a jump host](/reference/node-provisioning#enroll-through-a-jump-host). [Tasks: Task VM workspace](/reference/tasks#task-vm-workspace). [Pi server: Run Pi on a task VM](/reference/pi-server#run-pi-on-a-task-vm). [Incus topology registry](/reference/incus-topologies): operator VM and declared nodes. [Projects](/reference/projects): `task_compute`.
 - Verify: The disposable-environment proofs check these outcomes.
-  - A one-subtask Orbit group runs end to end in an operator VM.
+  - One DLF group on beast runs claim, VM, enrollment, Route, implementer, check, reviewer, pull request, green CI, and merge. After merge, its Instance, Node, VM, and model key are gone, and `node:list` and `incus list` are clean.
+  - A task VM reaches public addresses, and cannot reach private, link-local, CGNAT, or multicast addresses, another task VM, or the fleet outside the hub filter.
   - A local check run by an agent and Orbit's handoff check give the same verdict on the same tree.
-  - A group runs to PR, then parks, resumes, merges, and nothing is left behind.
-  - A sandbox cannot reach `10.44.0.0/16` except at its allowed endpoints.
-  - No App private key or provider credential enters a sandbox. GitHub tokens never appear in argv, logs, stored origins, or Git configuration.
+  - A one-subtask Orbit group runs end to end in an operator VM.
+  - An Orbit group runs to PR, then parks, resumes, merges, and nothing is left behind.
+  - No App private key or provider credential enters a sandbox. No GitHub token enters a web-lane VM. GitHub tokens never appear in argv, logs, stored origins, or Git configuration.

@@ -22,6 +22,10 @@ final class StoreProjectLifecycleStepRequest extends FormRequest
             'timeout_seconds' => ['sometimes', 'integer'],
             'before' => ['sometimes', 'string'],
             'after' => ['sometimes', 'string'],
+            'rebalance' => ['sometimes', 'list', 'max:32'],
+            'rebalance.*' => ['array:name,timeout_seconds'],
+            'rebalance.*.name' => ['required', 'string'],
+            'rebalance.*.timeout_seconds' => ['required', 'integer'],
         ];
     }
 
@@ -35,6 +39,7 @@ final class StoreProjectLifecycleStepRequest extends FormRequest
                 'timeout_seconds',
                 'before',
                 'after',
+                'rebalance',
             ]);
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
@@ -70,5 +75,23 @@ final class StoreProjectLifecycleStepRequest extends FormRequest
         $after = $this->validated('after');
 
         return is_string($after) ? $after : null;
+    }
+
+    /**
+     * Other steps of the list and their new timeouts, set in the same write.
+     *
+     * @return list<array{name: string, timeout_seconds: int}>
+     */
+    public function rebalance(): array
+    {
+        $rebalance = [];
+
+        foreach ((array) $this->validated('rebalance', []) as $entry) {
+            if (is_array($entry) && is_string($entry['name'] ?? null) && is_int($entry['timeout_seconds'] ?? null)) {
+                $rebalance[] = ['name' => $entry['name'], 'timeout_seconds' => $entry['timeout_seconds']];
+            }
+        }
+
+        return $rebalance;
     }
 }

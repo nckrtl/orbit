@@ -122,7 +122,7 @@ Caddy gives up on a Gateway request after 600 seconds and sends the client a 504
 | `properties` | The request method and path, the redacted request input, and the outcome details that the command adds. |
 | `occurred_at` | When the request started. A read keeps its start time, although the Gateway writes it when the request ends. |
 
-`properties` holds `method`, `path`, and `input`: the request body after [redaction](#redaction). So a `process:create` record keeps the Process command and working directory, and an environment map keeps its variable names without values. A command that returns a remote command result adds its redacted `stdout` and `stderr` and `output_truncated`. A deployment or rollback adds its terminal status, selected release, failed step, and error code. The SDK redacts credential-shaped values from `properties` again before the CLI prints them.
+`properties` holds `method`, `path`, and `input`: the request body after [redaction](#redaction). So a `process:create` record keeps the Process command and working directory, and an environment map keeps its variable names without values. A command that returns a remote command result adds its redacted `stdout` and `stderr` and `output_truncated`. A deployment or rollback adds its terminal status, selected release, failed step, and error code. An `env:sync` record for an Instance that owns its `DB` database adds `testing`: the file `.env.testing`, the status `written`, `unchanged`, or `skipped_tracked`, and the test database name. The SDK redacts credential-shaped values from `properties` again before the CLI prints them.
 
 ## Redaction
 

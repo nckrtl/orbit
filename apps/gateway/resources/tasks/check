@@ -491,12 +491,14 @@ def share_with_worker(checkout, worker):
         return
     managed = pwd.getpwuid(os.geteuid()).pw_name
     # Default ACLs first, as inspection does, so a partial grant never leaves a directory without inheritance.
-    for selection, grant in ((['-type', 'd'], f'd:u:{worker}:rwX,d:u:{managed}:rwX'),
-                             (['!', '-type', 'l'], f'u:{worker}:rwX,u:{managed}:rwX')):
-        # Skip directories the managed user cannot enter, such as private directories an agent or an earlier
-        # worker-run gate created. Their owner keeps access, and find would otherwise fail on them.
-        subprocess.run([*grant_options(os.geteuid()), *selection, '-exec', 'setfacl', '-m', grant, '--', '{}', '+'],
-                       cwd=checkout, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+    # Setting the named entries also recalculates the ACL mask, which repairs a mask of --- on a private directory.
+    for options in grant_scopes(checkout, os.geteuid()):
+        for selection, grant in ((['-type', 'd'], f'd:u:{worker}:rwX,d:u:{managed}:rwX'),
+                                 (['!', '-type', 'l'], f'u:{worker}:rwX,u:{managed}:rwX')):
+            # Skip directories the managed user cannot enter, such as private directories an agent or an earlier
+            # worker-run gate created. Their owner keeps access, and find would otherwise fail on them.
+            subprocess.run([*options, *selection, '-exec', 'setfacl', '-m', grant, '--', '{}', '+'],
+                           cwd=checkout, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
 
 
 def grant_options(owner):
@@ -505,6 +507,32 @@ def grant_options(owner):
     return ['find', '-P', '.', '(', '-path', './.git/config', '-o', '-path', './.git/hooks',
             '-o', '-path', './.git/orbit/tmp',
             '-o', '(', '-type', 'd', '!', '(', '-readable', '-executable', ')', ')', ')', '-prune', '-o', '-user', str(owner)]
+
+
+def grant_scopes(checkout, owner):
+    """The checkout, plus the check reports in a linked worktree's Git common directory.
+
+    bin/review-check writes reports to <git-common-dir>/orbit-checks. For a linked worktree, that directory is
+    outside the checkout, so the checkout walk never reaches it. Only that directory is added."""
+    scopes = [grant_options(owner)]
+    reports = common_reports(checkout)
+    if reports:
+        scopes.append(['find', '-P', reports, '(', '-type', 'd', '!', '(', '-readable', '-executable', ')', ')',
+                       '-prune', '-o', '-user', str(owner)])
+    return scopes
+
+
+def common_reports(checkout):
+    """Return <git-common-dir>/orbit-checks when it is a real directory outside the checkout."""
+    try:
+        common = os.path.realpath(git(checkout, 'rev-parse', '--path-format=absolute', '--git-common-dir'))
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    root = os.path.realpath(checkout)
+    reports = os.path.join(common, 'orbit-checks')
+    if os.path.commonpath([root, common]) == root or os.path.islink(reports) or not os.path.isdir(reports):
+        return None
+    return reports
 
 
 def claim_from_worker(checkout, worker):
@@ -526,14 +554,15 @@ def claim_from_worker(checkout, worker):
                       stderr=subprocess.DEVNULL).returncode != 0:
         raise RuntimeError(f'The managed user cannot run commands as {worker}.')
     # Default ACLs first, as inspection does, so a partial grant never leaves a directory without inheritance.
-    for selection, grant in ((['-type', 'd'], f'd:u:{worker}:rwX,d:u:{managed}:rwX'),
-                             (['!', '-type', 'l'], f'u:{managed}:rwX')):
-        result = subprocess.run([*switch, *grant_options(worker_uid), *selection,
-                                 '-exec', 'setfacl', '-m', grant, '--', '{}', '+'],
-                                cwd=checkout, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
-        if result.returncode != 0:
-            raise RuntimeError(f'Could not grant {managed} access to the files {worker} owns: '
-                               + result.stderr.decode('utf-8', errors='replace').strip()[-2000:])
+    for options in grant_scopes(checkout, worker_uid):
+        for selection, grant in ((['-type', 'd'], f'd:u:{worker}:rwX,d:u:{managed}:rwX'),
+                                 (['!', '-type', 'l'], f'u:{managed}:rwX')):
+            result = subprocess.run([*switch, *options, *selection,
+                                     '-exec', 'setfacl', '-m', grant, '--', '{}', '+'],
+                                    cwd=checkout, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+            if result.returncode != 0:
+                raise RuntimeError(f'Could not grant {managed} access to the files {worker} owns: '
+                                   + result.stderr.decode('utf-8', errors='replace').strip()[-2000:])
 
 
 def perform(checkout, head, tree, setup, deliverables, command, started_at, worker=''):

@@ -1528,7 +1528,7 @@ function baseline_ssh(array &$events): SshExecutor
         public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
         {
             $label = $command->arguments[4] ?? 'unknown';
-            $this->events[] = 'ssh:'.($label === CaddyPackageSourceProgram::SOURCE_URI ? 'caddy-source' : $label);
+            $this->events[] = 'ssh:'.(in_array(CaddyPackageSourceProgram::RELEASE_URL, $command->arguments, true) ? 'caddy-source' : $label);
 
             return new CommandResult(0, '', '', 1, false);
         }

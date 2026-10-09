@@ -20,6 +20,7 @@ use App\Domain\Instances\DevelopmentSourceResolution;
 use App\Domain\Instances\Environment\InstanceEnvironmentContext;
 use App\Domain\Instances\Environment\InstanceEnvironmentContextResolver;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
+use App\Domain\Instances\Environment\InstanceEnvironmentReader;
 use App\Domain\Instances\Environment\InstanceEnvironmentRenderer;
 use App\Domain\Instances\Environment\InstanceEnvironmentStore;
 use App\Domain\Instances\Environment\InstanceEnvironmentValidator;
@@ -126,6 +127,7 @@ it('clones and deploys an Instance without a route', function (): void {
     app()->instance(InstanceEnvironmentOperationLock::class, $lock);
     app()->instance(InstanceOperationPreflight::class, $preflight);
     app()->instance(InstanceEnvironmentWriter::class, $writer);
+    app()->instance(InstanceEnvironmentReader::class, $writer);
     $contexts = new InstanceEnvironmentContextResolver;
     $store = new InstanceEnvironmentStore($contexts, new InstanceEnvironmentValidator);
     $cloneEnvironment = new CloneInstanceEnvironmentAction(
@@ -472,6 +474,7 @@ function bind_clone_environment_fakes(bool $changed = true): array
     app()->instance(InstanceEnvironmentOperationLock::class, $lock);
     app()->instance(InstanceOperationPreflight::class, $preflight);
     app()->instance(InstanceEnvironmentWriter::class, $writer);
+    app()->instance(InstanceEnvironmentReader::class, $writer);
 
     return [$lock, $preflight, $writer];
 }
@@ -506,13 +509,18 @@ final class Orb198CloneEnvironmentPreflight implements InstanceOperationPrefligh
     }
 }
 
-final class Orb198CloneEnvironmentWriter implements InstanceEnvironmentWriter
+final class Orb198CloneEnvironmentWriter implements InstanceEnvironmentReader, InstanceEnvironmentWriter
 {
     public ?InstanceEnvironmentContext $context = null;
 
     public ?string $contents = null;
 
     public function __construct(private readonly bool $changed) {}
+
+    public function read(InstanceEnvironmentContext $context): string
+    {
+        return $this->contents ?? '';
+    }
 
     public function write(
         InstanceEnvironmentContext $context,

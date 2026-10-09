@@ -38,3 +38,10 @@ it('requires the isolated native pair and matching Gateway version before templa
 
     expect($process->getExitCode())->toBe(0);
 });
+
+it('publishes a Project development image only from an owned blank workload base and leaves foreign resources intact', function (): void {
+    $process = new Process(['python3', base_path('tests/Fixtures/Compute/project_image_test.py'), resource_path('compute/project-image.py')]);
+    $process->mustRun();
+
+    expect($process->getExitCode())->toBe(0);
+});

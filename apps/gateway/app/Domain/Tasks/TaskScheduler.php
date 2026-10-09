@@ -8,6 +8,7 @@ use App\Actions\Tasks\CompleteTaskGroupAction;
 use App\Actions\Tasks\RemoveTaskSandboxAction;
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Actions\Tasks\RequestEndedPullRequestAssistanceAction;
+use App\Actions\Tasks\ResumeDeliverableCorrectionAction;
 use App\Actions\Tasks\RetryTaskBaselineAction;
 use App\Actions\Tasks\StoreTaskCommentAction;
 use App\Actions\Tasks\WatchTaskBranchPullRequestAction;
@@ -142,6 +143,8 @@ final readonly class TaskScheduler
         private TaskSandboxGroupLifecycle $sandboxes,
         private TaskSandboxWarmPool $warmPool,
         private TaskPullRequestMerger $merger,
+        private DeliverablePathChecker $deliverablePaths,
+        private ResumeDeliverableCorrectionAction $correctionResume,
     ) {}
 
     /**
@@ -251,9 +254,17 @@ final readonly class TaskScheduler
                 if (! $task instanceof Task || ! in_array($task->status, [TaskStatus::Running, TaskStatus::Reviewing], true)) {
                     continue;
                 }
+                if ($task->status === TaskStatus::Running && ($task->deliverable_correction_resume['state'] ?? null) === 'pending') {
+                    $this->correctionResume->execute($task);
+                    $task->refresh();
+                    $group = $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
+                }
+                if ($task->status === TaskStatus::Running && $task->assistance_requested && $this->queueBaselineRetryOnGreenTip($group, $task)) {
+                    $task->refresh();
+                }
                 if ($task->status === TaskStatus::Running && $task->assistance_requested && $task->resolution_delivered_comment_id !== null) {
                     try {
-                        if ($this->retryBaseline->recover($task)) {
+                        if (TaskExecutionHold::run($group, fn (): bool => $this->retryBaseline->recover($task)) === true) {
                             $task->refresh();
                             $group = $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
                         }
@@ -712,7 +723,7 @@ final readonly class TaskScheduler
                 $missing = $this->coverage->missing(
                     $group,
                     $pullRequest,
-                    $receipt instanceof TaskComment ? $receipt->id : null,
+                    $receipt->id,
                     $pullRequest->changes,
                 );
             } catch (TaskSessionClassificationException $exception) {
@@ -2140,7 +2151,7 @@ final readonly class TaskScheduler
             if (! $this->prepareTurn($group, $task, TaskThreadRole::Implementer, $implementer->threadId)) {
                 return;
             }
-            $this->actor->relayAnswer($group, $implementer, $receipt->body, $key);
+            $this->actor->relayAnswer($group, $implementer, $this->correctionResume->continuationMessage($task, $receipt->body), $key);
         } catch (Throwable $exception) {
             report($exception);
             $this->recordCommunicationFailure($task, $group, 'The consult answer could not be sent to the implementer. ('.class_basename($exception).').');
@@ -2157,6 +2168,7 @@ final readonly class TaskScheduler
             if ($locked->consult_comment_id === null) {
                 return;
             }
+            $this->correctionResume->supersede($locked, $receipt);
             $locked->update([
                 'consult_comment_id' => null,
                 'direction_answer_key' => null,
@@ -2323,7 +2335,7 @@ final readonly class TaskScheduler
             if (! $this->prepareTurn($group, $task, TaskThreadRole::Implementer, $implementer->threadId)) {
                 return;
             }
-            $this->actor->relayAnswer($group, $implementer, $receipt->body, $key);
+            $this->actor->relayAnswer($group, $implementer, $this->correctionResume->continuationMessage($task, $receipt->body), $key);
         } catch (Throwable $exception) {
             // Keep this receipt's key. An uncertain response may still have been accepted, and a
             // rejected T3 command id stays rejected, so the same id is not replaced on this failure.
@@ -2380,6 +2392,7 @@ final readonly class TaskScheduler
             if ($locked->direction_relay_comment_id === null) {
                 return;
             }
+            $this->correctionResume->supersede($locked, $receipt);
             $locked->update([
                 'direction_relay_comment_id' => null,
                 'direction_answer_key' => null,
@@ -3892,9 +3905,27 @@ final readonly class TaskScheduler
             return;
         }
 
-        if ($this->appendFixup($group, $plan, $health->headSha) instanceof Task) {
+        if ($this->appendFixup($group, $this->mergeBaseFirstWhenGreenAhead($group, $health, $plan), $health->headSha) instanceof Task) {
             $this->resumeWaitingSubtask($group);
         }
+    }
+
+    /**
+     * A failed check may already be fixed on the base. When the base tip passed the merge check, or
+     * `Required checks` without one, and is strictly ahead of the head's merge base, the fixup merges the base first.
+     * The GitHub reads run before appendFixup takes its lock.
+     */
+    private function mergeBaseFirstWhenGreenAhead(Task $group, TaskPullRequestHealth $health, TaskSettlingFixup $plan): TaskSettlingFixup
+    {
+        if (! str_starts_with($plan->identity, 'check:') || ! is_string($health->baseRef) || $health->baseRef === ''
+            || ! is_string($health->headSha) || $health->headSha === '') {
+            return $plan;
+        }
+        $check = $group->project->mergeCheckName() ?? TaskPullRequestCheck::ROLLUP_NAMES[0];
+
+        return $this->merger->baseTipGreenAhead($group, $health->baseRef, $health->headSha, $check)
+            ? $plan->mergingBaseFirst($health->baseRef)
+            : $plan;
     }
 
     private static function isReviewFeedbackReason(?string $reason): bool
@@ -4097,6 +4128,41 @@ final readonly class TaskScheduler
     private function progressBlockedByAssistance(Task $group): bool
     {
         return $group->assistance_requested && ! self::isReviewFeedbackReason($group->assistance_reason);
+    }
+
+    /**
+     * A baseline that failed on a red default-branch commit retries once the branch tip is green and contains
+     * that commit, as an operator resolution would. GitHub is read before the lock, at most every five minutes
+     * per check. The queue then locks the rows and validates the retry again. The recovery after it resets.
+     */
+    private function queueBaselineRetryOnGreenTip(Task $group, Task $task): bool
+    {
+        $check = $this->retryBaseline->unrequested($task);
+        if (! $check instanceof TaskCheck || ! Cache::add('tasks.baseline-green-tip.'.$check->id, true, 300)) {
+            return false;
+        }
+        $name = $group->project->mergeCheckName() ?? TaskPullRequestCheck::ROLLUP_NAMES[0];
+        if ($this->merger->requiredCheck($group, $check->head_before, $name) !== RequiredCheckState::Failed) {
+            return false;
+        }
+        $tip = $this->merger->greenDefaultTipAfter($group, $check->head_before, $name);
+        if ($tip === null) {
+            return false;
+        }
+
+        return TaskExecutionHold::run($group, fn (): bool => DB::transaction(function () use ($task, $check, $name, $tip): bool {
+            if ($this->retryBaseline->unrequested($task)?->id !== $check->id) {
+                return false;
+            }
+            $comment = TaskComment::query()->create([
+                'task_group_id' => $task->parent_id, 'task_id' => $task->id, 'completion_attempt' => $task->completion_attempt,
+                'type' => TaskCommentType::Resolution, 'author' => 'orbit', 'posted_at' => now(),
+                'body' => 'The baseline failed on '.$check->head_before.', where '.$name.' failed. The default branch tip '.$tip
+                    .' contains it and passed '.$name.', so Orbit retries the baseline.',
+            ]);
+
+            return $this->retryBaseline->queue($task, $comment);
+        })) === true;
     }
 
     /** @param  Collection<int, Task>  $tasks */
@@ -4865,7 +4931,12 @@ final readonly class TaskScheduler
             return;
         }
 
-        $group = $task->parent()->with('taskable')->first();
+        $this->recordSubtaskStart($task);
+        $group = $task->parent()->with(['project', 'taskable'])->first();
+        if ($group instanceof Task && ! $this->validateImplementerDeliverablePaths($task, $group)) {
+            return;
+        }
+
         $threadId = null;
         try {
             if ($group instanceof Task) {
@@ -4890,6 +4961,33 @@ final readonly class TaskScheduler
 
         $task->implementer_agent_thread_id = $threadId;
         $task->save();
+    }
+
+    /** No thread is reserved or spawned until its deliverables pass on the actual review base. */
+    private function validateImplementerDeliverablePaths(Task $task, Task $group): bool
+    {
+        $base = TaskReviewBase::commit($task);
+        if ($base === '') {
+            $this->requestAssistance($task, $group, TaskGroupGuard::DeliverableGatePrefix.'cannot start the implementer: the review base is unresolved.');
+
+            return false;
+        }
+
+        try {
+            $workspace = $group->taskable instanceof Instance ? $group->taskable : null;
+            $errors = $this->deliverablePaths->check($group->project, $task->deliverables ?? [], $base, 'resolved', $workspace);
+        } catch (ResourceOperationException $exception) {
+            $this->requestAssistance($task, $group, TaskGroupGuard::DeliverableGatePrefix."could not read base {$base}: ".$exception->getMessage());
+
+            return false;
+        }
+        if ($errors !== []) {
+            $this->requestAssistance($task, $group, TaskGroupGuard::DeliverableGatePrefix.'failed before implementer start. '.implode(' ', $errors));
+
+            return false;
+        }
+
+        return true;
     }
 
     /**

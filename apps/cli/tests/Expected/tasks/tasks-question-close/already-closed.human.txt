@@ -1,0 +1,9 @@
+Closing question...
+
+┌  Close question
+│
+├  ● Closing question
+│
+└  Operation failed.
+
+Question 1 is already superseded.

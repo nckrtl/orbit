@@ -11,6 +11,7 @@ use App\Domain\Instances\Environment\InstanceEnvironmentReader;
 use App\Domain\Instances\Environment\InstanceEnvironmentResult;
 use App\Domain\Instances\Environment\InstanceEnvironmentStore;
 use App\Domain\Instances\Environment\InstanceOperationPreflight;
+use App\Domain\Instances\Environment\LaravelApplicationKey;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
 
@@ -37,6 +38,7 @@ final readonly class ImportInstanceEnvironmentAction
 
             if ($context->laravel) {
                 $values['APP_URL'] = 'https://{{instance.domain}}';
+                $values = $this->initializeEmptyAppKey($instance, $values);
             }
 
             return $this->store->import($context, $values, $replace);
@@ -66,9 +68,25 @@ final readonly class ImportInstanceEnvironmentAction
 
             if ($context->laravel) {
                 $values['APP_URL'] = 'https://{{instance.domain}}';
+                $values = $this->initializeEmptyAppKey($instance, $values);
             }
 
             return $this->store->import($context, $values, replace: false);
         });
+    }
+
+    /**
+     * @param  array<string, string>  $values
+     * @return array<string, string>
+     */
+    private function initializeEmptyAppKey(Instance $instance, #[\SensitiveParameter] array $values): array
+    {
+        if (($values['APP_KEY'] ?? null) !== '') {
+            return $values;
+        }
+
+        $values['APP_KEY'] = LaravelApplicationKey::storedOrGenerated($instance);
+
+        return $values;
     }
 }

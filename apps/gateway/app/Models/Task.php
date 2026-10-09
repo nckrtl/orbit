@@ -16,6 +16,7 @@ use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskHierarchyException;
 use App\Domain\Tasks\TaskLevelStatusCast;
 use App\Domain\Tasks\TaskMergeStatus;
+use App\Domain\Tasks\TaskQuestions;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskType;
 use BackedEnum;
@@ -69,6 +70,8 @@ use LogicException;
  * @property string|null $pi_restart_source_turn_id
  * @property string|null $pi_restart_reservation
  * @property string|null $pi_restart_session_revision
+ * @property int|null $deliverable_correction_check_id
+ * @property array{comment_id: int, thread_id: int|null, key: string, message: string, state: string, caller_node_id?: int|null, caller_ip?: string|null, request_id?: string}|null $deliverable_correction_resume
  * @property int|null $resolution_delivered_comment_id
  * @property string $title
  * @property string $brief
@@ -183,6 +186,8 @@ final class Task extends Model
         'review_workspace_tree',
         'deliverables',
         'topology',
+        'deliverable_correction_check_id',
+        'deliverable_correction_resume',
         'fixup_problem',
         'fixup_head_sha',
         'communication_failures',
@@ -228,6 +233,8 @@ final class Task extends Model
         'fixup_head_sha',
         'deliverables',
         'topology',
+        'deliverable_correction_check_id',
+        'deliverable_correction_resume',
         'settled_at',
         'completion_attempt',
         'completion_handoff_comment_id',
@@ -285,6 +292,10 @@ final class Task extends Model
             $task->guardHierarchy();
             $task->guardStatus();
             $task->clearAssistanceWhenEnded();
+        });
+
+        self::saved(static function (Task $task): void {
+            $task->settleQuestionsWhenEnded();
         });
     }
 
@@ -537,6 +548,8 @@ final class Task extends Model
             'pi_restart_resumes' => 'integer',
             'pi_restart_thread_id' => 'integer',
             'ended_pr_notice_thread_id' => 'integer',
+            'deliverable_correction_check_id' => 'integer',
+            'deliverable_correction_resume' => 'array',
             'resolution_delivered_comment_id' => 'integer',
         ];
     }
@@ -788,6 +801,29 @@ final class Task extends Model
 
         if ($ended) {
             $this->assistance_requested = false;
+        }
+    }
+
+    /**
+     * A task that completes or is cancelled leaves no question open or escalated. They become `superseded`.
+     * A query-builder update of subtask statuses skips this hook, so it relies on the task's own update.
+     */
+    private function settleQuestionsWhenEnded(): void
+    {
+        if (! $this->wasChanged('status')) {
+            return;
+        }
+
+        $reason = match ($this->status) {
+            TaskStatus::Completed => 'Subtask completed.',
+            TaskStatus::Cancelled => 'Subtask cancelled.',
+            TaskGroupStatus::Completed => 'Task completed.',
+            TaskGroupStatus::Cancelled => 'Task cancelled.',
+            default => null,
+        };
+
+        if ($reason !== null) {
+            TaskQuestions::settle($this, $reason);
         }
     }
 

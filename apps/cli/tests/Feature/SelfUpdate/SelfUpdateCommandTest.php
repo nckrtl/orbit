@@ -499,15 +499,15 @@ describe('self-update agent step', function (): void {
                 'reason' => null,
                 'path' => $this->machine.'/bin/orbit-agent',
                 'before' => ['version' => null, 'sha256' => hash('sha256', "orbit-agent 0.2.0\n")],
-                'after' => ['version' => '0.4.1', 'sha256' => hash('sha256', SELF_UPDATE_AGENT_BYTES)],
+                'after' => ['version' => '0.4.2', 'sha256' => hash('sha256', SELF_UPDATE_AGENT_BYTES)],
                 'error' => null,
             ])
             ->and(file_get_contents($this->machine.'/bin/orbit-agent'))->toBe(SELF_UPDATE_AGENT_BYTES)
             ->and(file_get_contents($this->machine.'/bin/orbit-agent.orbit-previous'))->toBe("orbit-agent 0.2.0\n")
             ->and(fileperms($this->machine.'/bin/orbit-agent') & 0777)->toBe(0755)
             ->and(self_update_commands($this))->toBe([
-                'curl agent-v0.4.1/SHA256SUMS',
-                'curl agent-v0.4.1/orbit-agent-0.4.1-linux-x86_64',
+                'curl agent-v0.4.2/SHA256SUMS',
+                'curl agent-v0.4.2/orbit-agent-0.4.2-linux-x86_64',
                 'systemctl restart orbit-agent.service',
                 ...array_fill(0, 6, 'systemctl show'),
             ]);
@@ -550,7 +550,7 @@ describe('self-update agent step', function (): void {
         $result = run_self_update();
 
         expect($result['outcome'])->toBe('unchanged')
-            ->and(self_update_step($result, 'agent'))->toMatchArray(['outcome' => 'unchanged', 'before' => ['version' => '0.4.1', 'sha256' => hash('sha256', SELF_UPDATE_AGENT_BYTES)]])
+            ->and(self_update_step($result, 'agent'))->toMatchArray(['outcome' => 'unchanged', 'before' => ['version' => '0.4.2', 'sha256' => hash('sha256', SELF_UPDATE_AGENT_BYTES)]])
             ->and($this->processes)->toBe([]);
     });
 
@@ -566,26 +566,26 @@ describe('self-update agent step', function (): void {
 
     it('changes nothing and restarts nothing when the agent download fails its checksum', function (): void {
         MockClient::global([ShowDesiredFleetStateRequest::class => self_update_state_with_agent()]);
-        fake_self_update_processes($this, ['agent-v0.4.1/orbit-agent-0.4.1-linux-x86_64' => "tampered\n"]);
+        fake_self_update_processes($this, ['agent-v0.4.2/orbit-agent-0.4.2-linux-x86_64' => "tampered\n"]);
 
         $result = run_self_update(exitCode: 1);
 
         expect(self_update_step($result, 'agent')['error']['code'])->toBe('agent.checksum_mismatch')
             ->and(file_get_contents($this->machine.'/bin/orbit-agent'))->toBe("orbit-agent 0.2.0\n")
-            ->and(self_update_commands($this))->toBe(['curl agent-v0.4.1/SHA256SUMS', 'curl agent-v0.4.1/orbit-agent-0.4.1-linux-x86_64']);
+            ->and(self_update_commands($this))->toBe(['curl agent-v0.4.2/SHA256SUMS', 'curl agent-v0.4.2/orbit-agent-0.4.2-linux-x86_64']);
     });
 
     it('changes nothing when the agent release SHA256SUMS does not confirm the pin', function (): void {
         MockClient::global([ShowDesiredFleetStateRequest::class => self_update_state_with_agent()]);
-        fake_self_update_processes($this, ['agent-v0.4.1/SHA256SUMS' => str_repeat('0', 64)."  orbit-agent-0.4.1-linux-x86_64\n"]);
+        fake_self_update_processes($this, ['agent-v0.4.2/SHA256SUMS' => str_repeat('0', 64)."  orbit-agent-0.4.2-linux-x86_64\n"]);
 
         expect(self_update_step(run_self_update(exitCode: 1), 'agent')['error']['code'])->toBe('agent.checksum_mismatch')
-            ->and(self_update_commands($this))->toBe(['curl agent-v0.4.1/SHA256SUMS']);
+            ->and(self_update_commands($this))->toBe(['curl agent-v0.4.2/SHA256SUMS']);
     });
 
     it('refuses an agent the Gateway names outside the Orbit release', function (): void {
         MockClient::global([ShowDesiredFleetStateRequest::class => self_update_state(static function (array $data): array {
-            $data['agent']['assets'][0]['url'] = 'https://evil.example/orbit-agent-0.4.1-linux-x86_64';
+            $data['agent']['assets'][0]['url'] = 'https://evil.example/orbit-agent-0.4.2-linux-x86_64';
 
             return $data;
         })]);
@@ -599,7 +599,7 @@ describe('self-update agent step', function (): void {
         config()->set('app.version', '0.4600.0');
         file_put_contents($this->machine.'/bin/orbit', SELF_UPDATE_OLD_BINARY);
         MockClient::global([ShowDesiredFleetStateRequest::class => self_update_state_with_agent()]);
-        fake_self_update_processes($this, ['agent-v0.4.1/orbit-agent-0.4.1-linux-x86_64' => "tampered\n"]);
+        fake_self_update_processes($this, ['agent-v0.4.2/orbit-agent-0.4.2-linux-x86_64' => "tampered\n"]);
 
         $result = run_self_update(exitCode: 1);
 

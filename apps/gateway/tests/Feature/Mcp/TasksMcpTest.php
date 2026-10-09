@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Instances\InstanceRemover;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Tasks\TaskCommentType;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Models\Instance;
@@ -105,6 +106,201 @@ it('creates and lists a task group through MCP after the extension is enabled', 
     expect($shown['result']['isError'] ?? true)->toBeFalse()
         ->and($showDocument['data']['id'])->toBe($document['data']['id'])
         ->and($showDocument['data']['brief'])->toBe('Create through the generated tool.');
+});
+
+describe('compact task group show', function (): void {
+    it('keeps all subtasks under 64 KiB through MCP and preserves default show and list responses', function (): void {
+        app(TaskExtensionState::class)->enable();
+        $group = Task::topLevel()->create([
+            'project_id' => $this->appRecord->id,
+            'title' => 'Large group',
+            'brief' => str_repeat('g', 8000),
+            'status' => TaskGroupStatus::Backlog,
+            'assistance_requested' => true,
+            'assistance_kind' => 'direction',
+            'assistance_question' => str_repeat('q', 8000),
+            'assistance_reason' => str_repeat('r', 8000),
+        ]);
+        $tasks = [];
+        for ($position = 1; $position <= 10; $position++) {
+            $task = $group->tasks()->create([
+                'title' => 'Subtask '.$position,
+                'brief' => str_repeat('b', 8000),
+                'completion_summary' => str_repeat('s', 8000),
+                'position' => $position,
+                'assistance_requested' => true,
+                'assistance_kind' => 'direction',
+                'assistance_question' => str_repeat('q', 8000),
+                'assistance_reason' => str_repeat('r', 8000),
+                'questions' => 3,
+                'escalations' => 2,
+            ]);
+            $task->checks()->create([
+                'kind' => 'handoff',
+                'pid' => 123,
+                'process_started' => '123',
+                'head_before' => str_repeat('a', 40),
+                'tree_before' => str_repeat('b', 40),
+                'status' => 'passed',
+                'started_at' => now(),
+                'exit_code' => 0,
+                'output' => str_repeat('o', 8000),
+            ]);
+            $tasks[] = $task;
+        }
+        $call = function (string $name, array $arguments): string {
+            $message = tasks_mcp_message(tasks_mcp_call($this, 'tools/call', [
+                'name' => $name,
+                'arguments' => $arguments,
+            ]));
+            expect($message['result']['isError'] ?? true)->toBeFalse();
+
+            return $message['result']['content'][0]['text'];
+        };
+
+        $defaultText = $call('tasks-show', ['group' => $group->id]);
+        $default = json_decode($defaultText, true)['data'];
+        expect(strlen($defaultText))->toBeGreaterThan(65536);
+        expect($default['brief'])->toBe($group->brief);
+        expect($default['tasks'][0]['brief'])->toBe($tasks[0]->brief);
+        expect($default['tasks'][0]['completion_summary'])->toBe($tasks[0]->completion_summary);
+        expect($default['tasks'][0]['check']['output'])->toBe(str_repeat('o', 8000));
+        expect(json_decode($call('tasks-show', ['group' => $group->id, 'compact' => false]), true)['data'])->toBe($default);
+
+        $compactText = $call('tasks-show', ['group' => $group->id, 'compact' => true]);
+        $compact = json_decode($compactText, true)['data'];
+        expect(strlen($compactText))->toBeLessThan(65536);
+        expect($compact)->not->toHaveKeys(['brief', 'assistance_question', 'assistance_reason']);
+        expect($compact['assistance_requested'])->toBeTrue();
+        expect($compact['assistance_kind'])->toBe('direction');
+        expect($compact['tasks'])->toHaveCount(10);
+        expect(array_column($compact['tasks'], 'id'))->toBe(array_column($tasks, 'id'));
+        expect(array_column($compact['tasks'], 'title'))->toBe(array_column($tasks, 'title'));
+        foreach ($compact['tasks'] as $index => $task) {
+            expect($task)->not->toHaveKeys(['brief', 'completion_summary', 'assistance_question', 'assistance_reason', 'deliverables', 'fixup_problem']);
+            expect($task['status'])->toBe('todo');
+            expect($task['position'])->toBe($index + 1);
+            expect($task['assistance_requested'])->toBeTrue();
+            expect($task['assistance_kind'])->toBe('direction');
+            expect($task['questions'])->toBe(3);
+            expect($task['escalations'])->toBe(2);
+            expect($task['check'])->not->toHaveKey('output');
+            expect($task['check']['status'])->toBe('passed');
+            expect($task['check']['exit_code'])->toBe(0);
+        }
+
+        $listArguments = ['project_id' => $this->appRecord->id];
+        $defaultList = json_decode($call('tasks-list', $listArguments), true)['data'];
+        expect($defaultList[0])->toBe($default);
+        expect(json_decode($call('tasks-list', [...$listArguments, 'compact' => false]), true)['data'])->toBe($defaultList);
+        expect(json_decode($call('tasks-list', [...$listArguments, 'compact' => true]), true)['data'])->toBe([$compact]);
+
+        $this->getJson('/api/v1/task-groups/'.$group->id.'?compact=true')->assertOk()->assertJsonPath('data', $compact);
+        $this->getJson('/api/v1/task-groups/'.$group->id.'?compact=false')->assertOk()->assertJsonPath('data', $default);
+    });
+
+    it('returns 422 validation.failed for invalid compact input', function (string $name): void {
+        app(TaskExtensionState::class)->enable();
+        $group = Task::topLevel()->create([
+            'project_id' => $this->appRecord->id,
+            'title' => 'Validate compact',
+            'brief' => 'Reject invalid booleans.',
+            'status' => TaskGroupStatus::Backlog,
+        ]);
+
+        $message = tasks_mcp_message(tasks_mcp_call($this, 'tools/call', [
+            'name' => $name,
+            'arguments' => ['group' => $group->id, 'compact' => 'notabool'],
+        ]));
+        $error = json_decode($message['result']['content'][0]['text'], true);
+
+        expect($message['result']['isError'] ?? false)->toBeTrue();
+        expect($error['status'])->toBe(422);
+        expect($error['error']['code'])->toBe('validation.failed');
+    })->with(['tasks-show', 'tasks-list']);
+});
+
+describe('comment list type and limit filters', function (): void {
+    it('returns the newest resolution under 64 KiB and keeps unfiltered comments newest first', function (): void {
+        app(TaskExtensionState::class)->enable();
+        $this->freezeTime();
+        $group = Task::topLevel()->create([
+            'project_id' => $this->appRecord->id,
+            'title' => 'Long comment history',
+            'brief' => 'Read only the latest resolution.',
+            'status' => TaskGroupStatus::Backlog,
+        ]);
+        $task = $group->tasks()->create(['title' => 'Subtask', 'brief' => 'Many comments.', 'position' => 1]);
+        $comments = [];
+        for ($index = 0; $index < 40; $index++) {
+            $comments[] = $task->comments()->create([
+                'task_group_id' => $group->id,
+                'type' => $index % 2 === 0 ? TaskCommentType::Resolution : TaskCommentType::AssistanceRequested,
+                'body' => 'Comment '.$index.': '.str_repeat('x', 4096),
+                'author' => 'operator',
+                'posted_at' => now()->addSeconds($index),
+            ]);
+        }
+        $arguments = ['group' => $group->id, 'task' => $task->id];
+        $call = function (array $filters) use ($arguments): array {
+            $message = tasks_mcp_message(tasks_mcp_call($this, 'tools/call', [
+                'name' => 'tasks-comment-list',
+                'arguments' => [...$arguments, ...$filters],
+            ]));
+            expect($message['result']['isError'] ?? true)->toBeFalse();
+
+            return $message;
+        };
+
+        $unfiltered = $call([]);
+        $unfilteredText = $unfiltered['result']['content'][0]['text'];
+        $unfilteredData = json_decode($unfilteredText, true)['data'];
+        expect(strlen($unfilteredText))->toBeGreaterThan(65536);
+        expect(array_column($unfilteredData, 'id'))->toBe(array_reverse(array_column($comments, 'id')));
+        expect(array_column($unfilteredData, 'body'))->toBe(array_reverse(array_column($comments, 'body')));
+
+        $filtered = $call(['type' => 'resolution', 'limit' => 1]);
+        $filteredText = $filtered['result']['content'][0]['text'];
+        $filteredData = json_decode($filteredText, true)['data'];
+        expect(strlen($filteredText))->toBeLessThan(65536);
+        expect($filteredData)->toHaveCount(1);
+        expect($filteredData[0]['id'])->toBe($comments[38]->id);
+        expect($filteredData[0]['body'])->toBe($comments[38]->body);
+        expect($filteredData[0]['type'])->toBe('resolution');
+
+        $typeOnly = json_decode($call(['type' => 'resolution'])['result']['content'][0]['text'], true)['data'];
+        expect(array_column($typeOnly, 'id'))->toBe(array_reverse(array_column(array_filter($comments, static fn ($comment): bool => $comment->type === TaskCommentType::Resolution), 'id')));
+        $limitOnly = json_decode($call(['limit' => 2])['result']['content'][0]['text'], true)['data'];
+        expect(array_column($limitOnly, 'id'))->toBe([$comments[39]->id, $comments[38]->id]);
+        $maximum = json_decode($call(['limit' => 100])['result']['content'][0]['text'], true)['data'];
+        expect(array_column($maximum, 'id'))->toBe(array_column($unfilteredData, 'id'));
+    });
+
+    it('returns 422 validation.failed for invalid inputs', function (array $filters): void {
+        app(TaskExtensionState::class)->enable();
+        $group = Task::topLevel()->create([
+            'project_id' => $this->appRecord->id,
+            'title' => 'Invalid comment filters',
+            'brief' => 'Reject invalid inputs.',
+            'status' => TaskGroupStatus::Backlog,
+        ]);
+        $task = $group->tasks()->create(['title' => 'Subtask', 'brief' => 'Validate filters.', 'position' => 1]);
+
+        $message = tasks_mcp_message(tasks_mcp_call($this, 'tools/call', [
+            'name' => 'tasks-comment-list',
+            'arguments' => ['group' => $group->id, 'task' => $task->id, ...$filters],
+        ]));
+        $error = json_decode($message['result']['content'][0]['text'], true);
+
+        expect($message['result']['isError'] ?? false)->toBeTrue();
+        expect($error['status'])->toBe(422);
+        expect($error['error']['code'])->toBe('validation.failed');
+    })->with([
+        'unknown type' => [['type' => 'bogus']],
+        'zero limit' => [['limit' => 0]],
+        'over maximum' => [['limit' => 101]],
+        'non-integer limit' => [['limit' => 1.5]],
+    ]);
 });
 
 it('creates, shows, updates, and destroys a task definition through MCP', function (): void {

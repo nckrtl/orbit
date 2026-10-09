@@ -46,7 +46,7 @@ class RuntimeBoundary(unittest.TestCase):
         request = {'sandbox_id': 'ca656ccf-240d-476c-90f1-cf70f9dd7a12', 'checkout': '/home/orbit/orbit',
                    'pi_token': 'a' * 64, 'model_key': 'b' * 64,
                    'models': [{'id': 'probe', 'name': 'Proof', 'reasoning': False, 'input': ['text'], 'contextWindow': 8192, 'maxTokens': 1024}],
-                   'model_relay_kind': 'upcloud', 'model_relay_address': '10.44.0.3', 'model_relay_port': 8320}
+                   'model_relay_kind': 'fleet', 'model_relay_address': '10.44.0.3', 'model_relay_port': 8320}
         runtime.validate(request)
         for address in ['127.0.0.1', '169.254.169.254', '10.233.201.1', 'example.test', None]:
             with self.subTest(address=address), self.assertRaises(ValueError):
