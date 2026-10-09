@@ -11,22 +11,23 @@ final readonly class SshHostKeyScanner implements HostKeyScanner
 {
     public function __construct(
         private ProcessRunner $runner,
+        private SshExecutor $ssh,
     ) {}
 
-    public function scan(string $host, int $port): HostKey
+    public function scan(string $host, int $port, ?SshConnection $via = null): HostKey
     {
-        $scan = $this->runner->run(new ProcessInvocation(
-            arguments: [
-                'ssh-keyscan',
-                '-T',
-                '10',
-                '-p',
-                (string) $port,
-                '--',
-                $host,
-            ],
-            timeout: 15.0,
-        ));
+        $arguments = [
+            'ssh-keyscan',
+            '-T',
+            '10',
+            '-p',
+            (string) $port,
+            '--',
+            $host,
+        ];
+        $scan = $via === null
+            ? $this->runner->run(new ProcessInvocation(arguments: $arguments, timeout: 15.0))
+            : $this->ssh->execute($via, new RemoteCommand($arguments, timeout: 15.0));
 
         if (! $scan->succeeded()) {
             throw new SshHostKeyScanException(

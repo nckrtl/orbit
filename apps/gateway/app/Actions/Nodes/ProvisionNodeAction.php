@@ -352,6 +352,7 @@ final readonly class ProvisionNodeAction
             'dns_server_override' => $data->dnsServerOverride ?? $node->dns_server_override,
             'failed_step' => null,
             'error_code' => null,
+            ...($data->sshJumpNodeId === null ? [] : ['ssh_jump_node_id' => $data->sshJumpNodeId]),
         ]);
 
         try {

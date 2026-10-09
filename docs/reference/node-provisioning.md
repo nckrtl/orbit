@@ -4,11 +4,11 @@ description: "How node:add bootstraps or converges a Node, how roles share and l
 covers:
   - apps/gateway/app/Actions/Nodes/{ProvisionNodeAction,EnrollMacOsNodeAction,RemoveNodeAction,AddNodeRoleAction,RemoveNodeRoleAction,AssignRoleAction}.php
   - apps/gateway/app/Domain/Nodes/RoleRegistry.php
-  - apps/gateway/app/Infrastructure/Nodes/{NativeNodeConverger,MacOsNodeConverger,NodeBootstrapCommandFactory,NodeBootstrapDnsProgram,NodeBootstrapPackageCatalog,CaddyPackageSourceProgram,RemotePhpPackageManager,NodeLocks,NodeLock}.php
+  - apps/gateway/app/Infrastructure/Nodes/{NativeNodeConverger,MacOsNodeConverger,NodeSshJump,NodeBootstrapCommandFactory,NodeBootstrapDnsProgram,NodeBootstrapPackageCatalog,CaddyPackageSourceProgram,RemotePhpPackageManager,NodeLocks,NodeLock}.php
   - apps/gateway/app/Infrastructure/Firewall/NodeFirewallRuleCatalog.php
   - apps/gateway/app/Infrastructure/WireGuard/NativeGatewayPeerProjectionManager.php
   - apps/gateway/app/Console/Commands/ProvisionNodeCommand.php
-  - apps/gateway/app/Infrastructure/Ssh/{NativeSshExecutor,SshConnection}.php
+  - apps/gateway/{app/Infrastructure/Ssh/{NativeSshExecutor,SshConnection}.php,database/migrations/*add_ssh_jump_node_id_to_nodes.php}
   - apps/gateway/app/{Infrastructure/Nodes/*Cli*.php,Domain/Nodes/NodeCli*.php,Domain/Fleet/NodeFootprint*.php,Domain/Fleet/NodeCliConvergence.php,Infrastructure/Fleet/Footprint/**,Actions/Fleet/ConvergeNodeFootprintAction.php,Http/Controllers/Api/NodeFootprintsController.php}
 ---
 
@@ -365,6 +365,19 @@ The sockets live in `ORBIT_HOME/ssh/mux`, and the directory has mode `0700`. Eve
 
 A reachability check always opens a new connection. Doctor's Node inspection, the `--offline` probe of role and Node removal, and the Node probe of task cancellation use it. File copies between Nodes for Instance transfer and clone use `scp` on their own connections.
 
+### Through a jump Node
+
+A Node can have a jump Node: another active Node that reaches its public SSH host when the Gateway cannot. The Gateway sets it only internally, for example for a task VM on a private bridge. No API or CLI field sets it.
+
+While the Node has no active role, the Gateway reaches its public SSH host through the jump Node:
+
+- It scans the host key with `ssh-keyscan` on the jump Node.
+- It runs each command through an `ssh` hop to the jump Node's WireGuard address.
+- The hop uses the same key, pinned host keys, and strict options as the command.
+- These connections are never shared, because private addresses can repeat behind different jump Nodes.
+
+SSH over WireGuard never uses the jump Node. After the first active role, the Gateway ignores it. A jump Node without a WireGuard address fails with `vpn.peer_address_missing` before SSH.
+
 ## Public SSH
 
 The bootstrap adds the UFW rule `orbit:public-ssh-recovery` and enables UFW. Once SSH answers over WireGuard, the Gateway adds `orbit:wireguard-members` and keeps public SSH open. The first active role removes the public SSH rule, so the Gateway then reaches the Node only over WireGuard.
@@ -437,6 +450,10 @@ These reasons explain the design. Check them before you propose a change.
 ### One shared SSH connection per Node
 
 Converges and removals run long chains of commands, and a new connection costs about ten times the command. A persistent SSH tunnel is rejected, because WireGuard already gives the private network. A higher `MaxSessions` on every Node is rejected, because OpenSSH already falls back to a direct connection. A reachability check cannot use the shared connection, because that connection outlives a stopped sshd and would report a Node as reachable.
+
+### An explicit hop, not ProxyJump
+
+OpenSSH's `ProxyJump` does not pass the identity file, the known-hosts file, or the strict host-key options to the jump hop. The Gateway keeps its key and pinned host keys in `ORBIT_HOME/ssh`, so that hop would not find them. An explicit `ProxyCommand` hop passes them.
 
 ### Public SSH before the peer goes
 

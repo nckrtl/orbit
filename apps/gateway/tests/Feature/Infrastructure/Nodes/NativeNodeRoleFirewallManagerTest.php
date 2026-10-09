@@ -483,6 +483,36 @@ it('rejects missing WireGuard addresses before firewall mutation', function (): 
     expect($ssh->calls)->toBeEmpty();
 });
 
+it('reaches public SSH through the jump node only while the Node has no active role', function (): void {
+    $jump = orb197_persisted_firewall_node('jump-host');
+    $node = orb197_persisted_firewall_node('jumped-node');
+    $node->update(['status' => LifecycleStatus::Provisioning, 'ssh_jump_node_id' => $jump->id]);
+    $direct = new RoleFirewallSshExecutor(active: false);
+    $jumped = new RoleFirewallSshExecutor(active: false);
+
+    role_firewall_manager($direct)->convergeBase(role_firewall_node(), 'nckrtl');
+    role_firewall_manager($jumped)->convergeBase($node, 'nckrtl');
+
+    expect(array_map(static fn (array $call): ?SshConnection => $call['connection']->proxyJump, $direct->calls))
+        ->each->toBeNull()
+        ->and(array_map(static fn (array $call): string => $call['connection']->host, $jumped->calls))
+        ->each->toBe($node->public_ssh_host)
+        ->and(array_map(
+            static fn (array $call): string => "{$call['connection']->proxyJump?->user}@{$call['connection']->proxyJump?->host}:{$call['connection']->proxyJump?->port}",
+            $jumped->calls,
+        ))
+        ->each->toBe("nckrtl@{$jump->wireguard_ip}:22");
+
+    $node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
+    $jumped->calls = [];
+    role_firewall_manager($jumped)->convergeBase($node, 'nckrtl');
+
+    expect($jumped->calls)
+        ->not->toBeEmpty()
+        ->and(array_map(static fn (array $call): ?SshConnection => $call['connection']->proxyJump, $jumped->calls))
+        ->each->toBeNull();
+});
+
 function role_firewall_node(): Node
 {
     return new Node([
