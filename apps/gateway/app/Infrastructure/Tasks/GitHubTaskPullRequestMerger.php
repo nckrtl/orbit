@@ -103,6 +103,27 @@ final readonly class GitHubTaskPullRequestMerger implements TaskPullRequestMerge
         }
     }
 
+    public function greenDefaultTipAfter(Task $group, string $sha, string $checkName): ?string
+    {
+        $repository = $this->repository($group->project);
+        $default = $group->project->default_branch;
+        if (! $repository instanceof GitHubRepository || ! is_string($default) || $default === '') {
+            return null;
+        }
+
+        try {
+            $token = $this->access->readToken($repository);
+            $tip = array_first($this->github->branchCommits($token, $repository, $default))?->sha;
+            if (! is_string($tip) || ! $this->github->compareCommits($token, $repository, $sha, $tip)->headDescendsFromBase()) {
+                return null;
+            }
+        } catch (GitHubApiException) {
+            return null;
+        }
+
+        return $this->requiredCheck($group, $tip, $checkName) === RequiredCheckState::Passed ? $tip : null;
+    }
+
     /**
      * @return array{GitHubRepository, int}
      *

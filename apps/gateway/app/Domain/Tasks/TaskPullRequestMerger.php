@@ -48,4 +48,10 @@ interface TaskPullRequestMerger
      * @throws TaskPullRequestException
      */
     public function openPullRequests(Project $project): array;
+
+    /**
+     * The default branch tip when it strictly descends from `$sha` and `$checkName` passed on it, or null.
+     * A failed read is null. A baseline that failed on a red `$sha` retries on that tip.
+     */
+    public function greenDefaultTipAfter(Task $group, string $sha, string $checkName): ?string;
 }

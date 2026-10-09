@@ -984,6 +984,12 @@ When a baseline check fails and no implementer has started in the task, fix the 
 
 Orbit records the retry request with the resolution before moving the workspace. If the reset reply is lost or the Gateway stops before recording the new start commit, a later tick finishes the reset and bookkeeping without another resolution. Assistance stays set until that preparation succeeds.
 
+The reset refuses a workspace that holds manual work: another branch checked out, a commit that is not on the default branch, or a tracked change in the index or working tree. The checks and the reset run in one command. The retry then keeps assistance and records a communication failure.
+
+When main was red, Orbit retries without a resolution. The failed baseline ran on a commit where the Project's `merge_check`, or `Required checks` without one, failed. Once the default branch tip strictly descends from that commit and the check passed on the tip, the tick posts a `resolution` by `orbit` that names both commits and queues the same retry. The check runs follow the [green-commit rules](/reference/github-app#find-the-newest-green-commit).
+
+Orbit reads GitHub at most every five minutes per failed baseline, and never while a database transaction is open. It does not retry while the tip is red or pending, after an implementer started, or while assistance is a direction request. Every retry runs under the task execution lock, which stops it once the watched pull request merged or closed.
+
 ## Review a subtask
 
 When the handoff check and the deliverables pass, the subtask moves to `reviewing`. Its first review starts a fresh reviewer thread with the task's reviewer driver and model and the current configured effort. The task's `reviewer_agent_thread_id` then points at it. A `changes_requested` re-review continues that thread. When the continued thread cannot take a turn, Orbit starts a fresh one with a full packet. The next subtask starts another fresh reviewer.
