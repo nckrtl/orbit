@@ -47,6 +47,7 @@ describe('gateway response fixtures', function (): void {
                 'reason' => 'release_missing',
                 'version' => '0.4681.0',
                 'tag' => 'cli-v0.4681.0',
+                'commit' => CLI_RELEASE_FIXTURE_COMMIT,
                 'checksums_url' => null,
                 'assets' => [],
             ]);

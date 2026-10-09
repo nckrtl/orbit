@@ -7539,7 +7539,7 @@
       "name": "t3-environment-register",
       "extension": null,
       "title": "Register a T3 server",
-      "description": "Called by a T3 server on startup. The Gateway checks that `url` serves `environment_id`, exchanges `pairing_url` for an admin session as a T3 client pairs, stores the session encrypted, and revokes its earlier sessions on that server. Returns `t3.environment_mismatch` or `t3.admin_scope_missing` (422), and `t3.server_unreachable`, `t3.session_rejected`, `t3.request_refused`, or `t3.response_invalid` (502).",
+      "description": "Called from a T3 server's host on startup with an admin session from `t3 auth session issue --label \"Orbit Gateway\"`. The Gateway checks that `url` serves `environment_id` and that T3 accepts `admin_session` with admin scopes, stores the session encrypted, and revokes its earlier sessions on that server. Returns `t3.environment_mismatch` or `t3.admin_scope_missing` (422), and `t3.server_unreachable`, `t3.session_rejected`, `t3.request_refused`, or `t3.response_invalid` (502).",
       "method": "POST",
       "path": "/api/v1/t3/environments",
       "path_inputs": [],
@@ -7562,9 +7562,9 @@
             "format": "uri",
             "maxLength": 2048
           },
-          "pairing_url": {
+          "admin_session": {
             "type": "string",
-            "format": "uri",
+            "pattern": "^\\S+$(?![\\s\\S])",
             "maxLength": 4096
           }
         },
@@ -7573,7 +7573,7 @@
           "environment_id",
           "label",
           "url",
-          "pairing_url"
+          "admin_session"
         ]
       }
     },
