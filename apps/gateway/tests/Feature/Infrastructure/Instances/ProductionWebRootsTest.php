@@ -6,6 +6,7 @@ use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Instances\Deployment\DeploymentRelease;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\ProductionPhpRuntimeIdentity;
+use App\Domain\Routes\RouteWebRoot;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppProd\ProductionSshExecutor;
@@ -96,6 +97,23 @@ describe('production web roots', function (): void {
         expect(prodweb_run($this, $release, ProductionWebRootProgram::entries([['web_root' => 'apps/gone/public', 'directory' => 'apps/gone', 'suffix' => 'c']]))->getExitCode())->not->toBe(0);
     });
 
+    it('checks a web root and its application directory in the release without changing it', function (): void {
+        $release = $this->sandbox.'/home/releases/r1';
+        mkdir("{$release}/apps/docs/public", 0o755, true);
+        $check = function (string $webRoot) use ($release): int {
+            $process = new Process(['bash', '-seu', '--', $release, ProductionWebRootProgram::entries([['web_root' => $webRoot, 'directory' => RouteWebRoot::relativeDirectory($webRoot), 'suffix' => '']])], env: ['PATH' => $this->sandbox.'/bin:'.getenv('PATH')]);
+            $process->setInput(ProductionWebRootProgram::functions()."\nuser=\$(id -un)\nserved_web_roots=\$2\ncheck_served_web_roots \"\$1\"\n");
+
+            return $process->run();
+        };
+
+        expect($check('apps/docs/public'))->toBe(0)
+            ->and($check('apps/doc/public'))->not->toBe(0)
+            ->and(file_exists("{$release}/apps/docs/.env") || is_link("{$release}/apps/docs/.env"))->toBeFalse();
+        symlink('/etc', "{$release}/apps/docs/public/escape");
+        expect($check('apps/docs/public'))->not->toBe(0);
+    });
+
     it('prepares the selected release for a Route operation and asks for a deployment first', function (): void {
         [$instance] = prodweb_instance();
         prodweb_route($instance, 'docs.example.com', 'apps/docs/public');
@@ -166,7 +184,8 @@ describe('production web roots', function (): void {
             ->toContain("chdir = /home/orbit-acme/current/apps/docs\n")
             ->and(base64_decode($converges[1]->arguments[23], true))->toContain("chdir = /home/orbit-acme/releases/initial/apps/docs\n")
             ->and($converges[1]->input)->toContain("sed -n 's/^chdir = //p' | tail -n +2", "sed -n 's/^listen = //p' | tail -n +2")
-            ->and($remove?->input)->toContain('for served_socket in /run/php/"$user".*.sock; do');
+            ->and($converges[0]->input)->not->toContain('served_directory')
+            ->and($remove?->input)->not->toContain('served');
     });
 });
 

@@ -105,6 +105,8 @@ The Gateway API accepts `POST /api/v1/routes` with an app Route body such as `{"
 | `route.target_web_root_unsupported` | The Instance has no supported relative web root, such as a package rooted at `.`. |
 | `route.target_conflict` | The target Instance already has a Route without a web root. |
 | `route.web_root_release_missing` | A `web_root` names a production Instance that has no selected release. |
+| `route.web_root_unsafe` | A production web root would serve an application `.env`, or sits in the default directory without being the Instance root. |
+| `app-prod.web_root_invalid` | The selected production release lacks the web root or its application directory, or the web root holds a link. |
 | `route.router_required` | The Cluster has no active Router. |
 | `route.node_inactive`, `route.cluster_inactive` | The Instance's Node or Cluster, or the custom proxy's Node, is not active. |
 | `route.upstream_invalid` | The upstream is not a loopback HTTP URL. |
@@ -195,18 +197,20 @@ Once the Instance has a PHP runtime, Doctor checks `APP_URL` in each directory t
 
 ### Web roots on production
 
-A production Instance serves each web root from its selected release, `<home>/current/<web root>`. Deploy the Instance first. Without `current`, creation fails with `route.web_root_release_missing`.
+A production Instance serves each web root from its selected release, `<home>/current/<web root>`. Deploy the Instance first. Before Orbit stores the Route, it checks the selected release: without `current`, creation fails with `route.web_root_release_missing`; a missing web root or application directory, or a link in the web root, fails with `app-prod.web_root_invalid`. Creation and a web-root change wait for a deployment or rollback of the Instance.
 
 | Part | Production behavior |
 | --- | --- |
 | PHP-FPM | One more pool under the Instance's dedicated master: `orbit-<production-user>-<suffix>`, with socket `/run/php/<production-user>.<suffix>.sock`. See [PHP runtimes](/reference/php-runtime#production-runtime). |
 | `.env` | A stable file, `<home>/env/<directory>/.env`. Each release links its `<directory>/.env` to that file. Orbit writes `APP_URL` there, and a new file gets its own key. |
 | Create or change | Orbit links the `.env` and grants Caddy access in the selected release before the pool starts. |
-| Deploy and roll back | A new release gets the links before its deploy steps. Activation checks each web root, adds the links, and grants Caddy access before it switches `current`. See [Instance releases](/reference/deployments#the-production-home). |
+| Deploy and roll back | A new release gets links before deploy steps, or fails preparation without the directory. Activation checks each web root, links, and grants Caddy access before the switch. See [releases](/reference/deployments#the-production-home). |
+| Failed creation | The Route becomes `failed`, and Orbit withdraws its pool and site. Deployments, pools, and Doctor count only active Routes. Remove it with `route:destroy`. |
+| Own Route | The only Route without a web root keeps it. A web root on it returns `route.web_root_conflict`, also for a `monorepo` Instance. |
 | Removal | The pool leaves with the Route. `<home>/env/` stays. Instance removal first removes these Routes, as in development. |
 | Target set | The Route keeps one target. A target-set change, or a move to a production Instance, returns `route.web_root_unsupported`. |
 
-A web root must not hold a link, the same rule as for the Instance root. So a web root that is its own application directory, such as `apps/docs`, fails: its `.env` link would be inside the web root. A cached configuration in a release keeps its old `APP_URL` until the next deployment rebuilds it.
+A web root must not hold a link, the same rule as for the Instance root. So no web root of the Instance, its own root included, may contain the `.env` of a served directory. A web root that is its own application directory, such as `apps/docs`, or one inside the Instance root, such as `public/docs/public`, returns `route.web_root_unsafe`. A web root in the default directory must be the Instance root itself; `apps/site` on root `apps/site/public` returns `route.web_root_unsafe`. Doctor's `APP_URL` check of each directory skips production. A cached configuration in a release keeps its old `APP_URL` until the next deployment rebuilds it.
 
 ## Custom proxy Routes
 

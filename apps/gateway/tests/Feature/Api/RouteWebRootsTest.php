@@ -5,7 +5,10 @@ declare(strict_types=1);
 use App\Actions\Instances\RemoveInstanceAction;
 use App\Actions\Routes\SynchronizeRouteWebRootUrlsAction;
 use App\Domain\AppDev\AppDevPhpFpmManager;
+use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Instances\DevelopmentRouteProjector;
+use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\ProductionCloneRouteProjector;
 use App\Domain\Instances\ProductionPhpRuntimeIdentity;
@@ -29,10 +32,15 @@ use App\Infrastructure\AppDev\DevelopmentCaddyConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentPhpFpmConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentSite;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
+use App\Infrastructure\AppProd\ProductionSshExecutor;
 use App\Infrastructure\Doctor\ProductionInstanceInspectionExpectationFactory;
 use App\Infrastructure\Instances\ProductionPhpRuntimeConfigRenderer;
+use App\Infrastructure\Instances\RemoteProductionDeployment;
+use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Projects\NativeProjectUpdateProjectionMutator;
 use App\Infrastructure\Routes\NativeRouteRemovalProjector;
+use App\Infrastructure\Ssh\KnownHostsStore;
+use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
 use App\Models\Node;
@@ -42,6 +50,7 @@ use Illuminate\Database\QueryException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\FakeRouteRemovalProjector;
 
 beforeEach(function (): void {
@@ -301,7 +310,8 @@ describe('route web root', function (): void {
             ->assertJsonPath('data.web_root', 'apps/docs/public')
             ->assertJsonPath('data.status', 'active');
 
-        expect($events->all)->toBe(['certificate', 'web-roots', 'runtime', 'firewall', 'workload-caddy', 'router-certificate', 'route-firewall', 'verify-workload', 'router-caddy', 'dns'])
+        expect($events->all)->toBe(['check', 'certificate', 'web-roots', 'runtime', 'firewall', 'workload-caddy', 'router-certificate', 'route-firewall', 'verify-workload', 'router-caddy', 'dns'])
+            ->and($events->locks)->toBe([[$instance->id]])
             ->and($this->urls->writes)->toBe([['apps/docs', 'https://docs.example.com']]);
     });
 
@@ -313,8 +323,80 @@ describe('route web root', function (): void {
         $this->patchJson("/api/v1/routes/{$docs->id}", ['web_root' => 'apps/admin/public'])
             ->assertOk()
             ->assertJsonPath('data.web_root', 'apps/admin/public');
-        expect($events->all)->toBe(['certificate', 'web-roots', 'runtime', 'workload-caddy'])
+        expect($events->all)->toBe(['check', 'certificate', 'web-roots', 'runtime', 'workload-caddy'])
+            ->and($events->locks)->toBe([[$instance->id]])
             ->and($this->urls->writes)->toBe([['apps/admin', 'https://docs.example.com']]);
+
+        $this->patchJson("/api/v1/routes/{$own->id}", ['web_root' => 'apps/docs/public'])
+            ->assertConflict()
+            ->assertJsonPath('error.code', 'route.web_root_conflict');
+        expect($own->refresh()->web_root)->toBeNull();
+    });
+
+    it('refuses an unservable production web root before it stores the Route', function (string $trigger): void {
+        [$instance, $events] = web_root_production($this->project);
+        web_root_route($instance, 'acme.example.com');
+        $webRoot = 'apps/docs/public';
+
+        if ($trigger === 'missing release') {
+            $events->checkFailure = new ResourceOperationException('route.web_root_release_missing', 'Deploy first.', 409);
+        } elseif ($trigger === 'missing directory') {
+            $events->checkFailure = new ResourceOperationException('app-prod.web_root_invalid', 'No such web root.', 409);
+        } elseif ($trigger === 'web root is its application directory') {
+            $webRoot = 'apps/docs';
+        } else {
+            $webRoot = 'public/docs/public';
+        }
+
+        $response = $this->postJson('/api/v1/routes', ['instance_id' => $instance->id, 'domain' => 'docs.example.com', 'web_root' => $webRoot])
+            ->assertConflict();
+
+        expect($response->json('error.code'))->toBe(match ($trigger) {
+            'missing release' => 'route.web_root_release_missing',
+            'missing directory' => 'app-prod.web_root_invalid',
+            default => 'route.web_root_unsafe',
+        })
+            ->and(Route::query()->where('domain', 'docs.example.com')->exists())->toBeFalse()
+            ->and(RouteWebRoot::servedApplications($instance))->toBe([])
+            ->and(web_root_production_deploy_arguments($instance))->toHaveCount(10);
+    })->with(['missing release', 'missing directory', 'web root is its application directory', 'web root inside the Instance root']);
+
+    it('refuses a production web root in the default directory other than the Instance root', function (): void {
+        [$instance] = web_root_production($this->project);
+        $instance->update(['root' => 'apps/site/public']);
+        web_root_route($instance, 'acme.example.com');
+
+        $this->postJson('/api/v1/routes', ['instance_id' => $instance->id, 'domain' => 'site.example.com', 'web_root' => 'apps/site'])
+            ->assertConflict()
+            ->assertJsonPath('error.code', 'route.web_root_unsafe');
+        $this->postJson('/api/v1/routes', ['instance_id' => $instance->id, 'domain' => 'alias.example.com', 'web_root' => 'apps/site/public'])
+            ->assertCreated();
+        expect(RouteWebRoot::servedApplications($instance->refresh()))->toBe([]);
+    });
+
+    it('marks a production web-root Route failed and withdraws its pool when activation fails', function (): void {
+        [$instance, $events] = web_root_production($this->project);
+        web_root_route($instance, 'acme.example.com');
+        $events->failAt = 'runtime';
+
+        $this->postJson('/api/v1/routes', ['instance_id' => $instance->id, 'domain' => 'docs.example.com', 'web_root' => 'apps/docs/public'])
+            ->assertStatus(502);
+        $docs = Route::query()->where('domain', 'docs.example.com')->sole();
+
+        expect($events->all)->toBe(['check', 'certificate', 'web-roots', 'runtime', 'withdraw-pool'])
+            ->and($docs->status->value)->toBe('failed')
+            ->and($docs->sites_published)->toBeFalse()
+            ->and($docs->error_code)->toBe('app-prod.injected_failure')
+            ->and(RouteWebRoot::servedApplications($instance))->toBe([])
+            ->and(RouteWebRoot::servedApplications($instance, $docs))->toHaveCount(1)
+            ->and(web_root_production_deploy_arguments($instance))->toHaveCount(10)
+            ->and(app(ProductionInstanceInspectionExpectationFactory::class)->make($instance)->runtimeConfiguration?->pool)->not->toContain('apps/docs');
+    });
+
+    it('keeps the only Route of a production Instance without a web root', function (): void {
+        [$instance] = web_root_production($this->project);
+        $this->project->update(['type' => 'monorepo']);
+        $own = web_root_route($instance, 'acme.example.com');
 
         $this->patchJson("/api/v1/routes/{$own->id}", ['web_root' => 'apps/docs/public'])
             ->assertConflict()
@@ -541,6 +623,22 @@ function web_root_production(Project $project): array
     {
         /** @var list<string> */
         public array $all = [];
+
+        public ?string $failAt = null;
+
+        public ?Throwable $checkFailure = null;
+
+        /** @var list<list<int>> */
+        public array $locks = [];
+
+        public function hit(string $step): void
+        {
+            $this->all[] = $step;
+
+            if ($this->failAt === $step) {
+                throw new RuntimeConvergenceException($step, 'app-prod.injected_failure', "Injected failure at {$step}.");
+            }
+        }
     };
     $projection = new class($events) implements ProductionCloneRouteProjector, ProductionRouteProjector
     {
@@ -548,53 +646,53 @@ function web_root_production(Project $project): array
 
         public function prepareRuntime(Instance $instance, Route $route): void
         {
-            $this->events->all[] = 'runtime';
+            $this->events->hit('runtime');
         }
 
         public function prepareCertificate(Instance $instance, Route $route): void
         {
-            $this->events->all[] = 'certificate';
+            $this->events->hit('certificate');
         }
 
         public function prepareFirewall(Instance $instance): void
         {
-            $this->events->all[] = 'firewall';
+            $this->events->hit('firewall');
         }
 
         public function publish(Instance $instance, Route $route): void
         {
-            $this->events->all[] = 'publish';
+            $this->events->hit('publish');
         }
 
         public function prepareWorkloadCaddy(Instance $instance, Route $route): void
         {
             $route->publishSites();
-            $this->events->all[] = 'workload-caddy';
+            $this->events->hit('workload-caddy');
         }
 
         public function prepareRouterCertificate(Instance $instance, Route $route): void
         {
-            $this->events->all[] = 'router-certificate';
+            $this->events->hit('router-certificate');
         }
 
         public function prepareRouteFirewall(Instance $instance, Route $route): void
         {
-            $this->events->all[] = 'route-firewall';
+            $this->events->hit('route-firewall');
         }
 
         public function verifyWorkload(Instance $instance, Route $route): void
         {
-            $this->events->all[] = 'verify-workload';
+            $this->events->hit('verify-workload');
         }
 
         public function prepareRouterCaddy(Instance $instance, Route $route): void
         {
-            $this->events->all[] = 'router-caddy';
+            $this->events->hit('router-caddy');
         }
 
         public function prepareDns(Route $route): void
         {
-            $this->events->all[] = 'dns';
+            $this->events->hit('dns');
         }
     };
     app()->instance(ProductionRouteProjector::class, $projection);
@@ -603,13 +701,64 @@ function web_root_production(Project $project): array
     {
         public function __construct(private readonly object $events) {}
 
-        public function prepare(Instance $instance): void
+        public function prepare(Instance $instance, ?Route $activating = null): void
         {
-            $this->events->all[] = 'web-roots';
+            $this->events->hit('web-roots');
+        }
+
+        public function assertServable(Instance $instance, string $webRoot): void
+        {
+            $this->events->hit('check');
+
+            if ($this->events->checkFailure instanceof Throwable) {
+                throw $this->events->checkFailure;
+            }
+        }
+    });
+
+    app()->instance(ProductionPhpRuntimeManager::class, new class($events) implements ProductionPhpRuntimeManager
+    {
+        public function __construct(private readonly object $events) {}
+
+        public function converge(Instance $instance, ?Route $activating = null): void
+        {
+            $this->events->hit('withdraw-pool');
+        }
+
+        public function convergeMonitoring(Instance $instance, bool $enabled): void {}
+
+        public function refreshCache(Instance $instance): void {}
+
+        public function remove(Instance $instance): void {}
+    });
+    app()->instance(InstanceEnvironmentOperationLock::class, new class($events) implements InstanceEnvironmentOperationLock
+    {
+        public function __construct(private readonly object $events) {}
+
+        public function run(array $instanceIds, Closure $operation): mixed
+        {
+            $this->events->locks[] = $instanceIds;
+
+            return $operation();
         }
     });
 
     return [$instance->refresh(), $events];
+}
+
+/** @return list<string> The arguments of a later production release preparation. */
+function web_root_production_deploy_arguments(Instance $instance): array
+{
+    $ssh = new AppDevFakeSshExecutor([new CommandResult(0, "20261009-a1\t".str_repeat('b', 40)."\n", '', 1, false)]);
+    $executor = new ProductionSshExecutor(
+        $ssh,
+        Mockery::mock(SshKeyProvider::class)->shouldReceive('privateKeyPath')->andReturn('/unused')->getMock(),
+        Mockery::mock(KnownHostsStore::class)->shouldReceive('path')->andReturn('/unused')->getMock(),
+    );
+    $instance->update(['source_layout' => 'checkout']);
+    new RemoteProductionDeployment($executor, app(RepositoryReadAccess::class), static fn (): string => '20261009-a1')->prepare($instance->refresh(), 'main');
+
+    return $ssh->commands[0]->arguments;
 }
 
 function web_root_route(Instance $instance, string $domain, ?string $webRoot = null): Route

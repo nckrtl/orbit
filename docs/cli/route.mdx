@@ -72,6 +72,8 @@ The app form creates and activates a Route for the Instance. The Instance implie
 | `route.target_web_root_unsupported` | The target Instance has no supported relative web root, such as a package rooted at `.`. |
 | `route.target_conflict` | The target Instance already has a Route without a web root. |
 | `route.web_root_release_missing` | The production Instance has no selected release. Deploy it first. |
+| `route.web_root_unsafe` | The production web root would serve an application `.env`, or sits in the default directory without being the Instance root. |
+| `app-prod.web_root_invalid` | The selected production release lacks the web root or its application directory, or the web root holds a link. |
 | `route.web_root_unsupported` | A custom proxy Route got a web root. |
 | `route.router_required` | The Cluster has no active Router. |
 | `route.node_inactive`, `route.cluster_inactive` | The Instance's Node or Cluster, or the custom proxy's Node, is not active. |
@@ -131,7 +133,7 @@ During a domain change, `route:show` shows both Routes, `replacement_step`, `fai
 | `route.web_root_domain_immutable` | A Route with a web root keeps its domain. Create a new Route and remove the old one. |
 | `route.web_root_update_separate` | `--web-root` was combined with another option. |
 | `route.web_root_unsupported` | The Route is not an active app Route with one active target. |
-| `route.web_root_conflict` | The Route is the only Route without a web root of a `laravel-app` or `symfony-app` Instance. |
+| `route.web_root_conflict` | The Route is the only Route without a web root of a `laravel-app` or `symfony-app` Instance, or of a production Instance. |
 | `route.target_conflict` | A cleared web root would give the Instance a second Route without a web root. |
 | `route.reconciliation_required` | The Route or its targets do not allow this change, for example a public domain for development Instances. |
 | `instance.source_profile_missing` | A target has no recorded source profile. Orbit does not recover missing profiles on older Instances; see the [no-legacy-support rule](/reference/projects#one-public-name-without-compatibility). |

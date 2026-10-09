@@ -28,8 +28,9 @@ use Tests\Support\AppDevFakeSshExecutor;
 /*
  * Production Instances that existed before Routes with a web root reached production have no such
  * Route. The fixture holds what the code before that change rendered for them: the workload Caddy
- * file, every PHP-FPM file, the release `.env` link, and the arguments of each command that writes
- * them on the Node. The current code must render the same bytes.
+ * file, every PHP-FPM file, the release `.env` link, and each command, with its arguments, standard
+ * input, and protected input, that deploys, activates, converges, monitors, removes, or refreshes the
+ * runtime on the Node. The current code must render the same bytes.
  */
 it('renders existing production Instances byte for byte as before production web roots', function (): void {
     $node = Node::query()->create([
@@ -129,19 +130,40 @@ function prod_equivalence_render(Node $node, array $instances): array
         $deployment = new RemoteProductionDeployment($executor, app(RepositoryReadAccess::class), static fn (): string => '20261009-a1');
         $release = $deployment->prepare($instance, 'main');
         $deployment->activate($instance, new DeploymentRelease($release->name, $release->path, $release->commit));
-        $runtime = new AppDevFakeSshExecutor;
-        new RemoteProductionPhpRuntimeManager(new ProductionPhpRuntimeConfigRenderer, prod_equivalence_executor($runtime), '/run/lock/orbit')->converge($instance);
-        $converge = collect($runtime->commands)->first(static fn (RemoteCommand $command): bool => ($command->arguments[4] ?? null) === 'converge');
+        $runtime = static function (Closure $operation, array $results = []): array {
+            $fake = new AppDevFakeSshExecutor($results);
+            $operation(new RemoteProductionPhpRuntimeManager(new ProductionPhpRuntimeConfigRenderer, prod_equivalence_executor($fake), '/run/lock/orbit'));
+
+            return array_map(prod_equivalence_command(...), $fake->commands);
+        };
 
         $rendered[$instance->production_user] = [
             'php_fpm' => $files,
             'release_environment_link' => ProductionApplicationPaths::render('__APPLICATION_SUFFIX__|__ENVIRONMENT_TARGET__|__ENVIRONMENT_PATH__', $instance->root),
-            'deployment_arguments' => array_map(static fn (RemoteCommand $command): array => $command->arguments, $ssh->commands),
-            'php_fpm_converge_arguments' => $converge?->arguments,
+            'deployment_commands' => array_map(prod_equivalence_command(...), $ssh->commands),
+            'php_fpm_converge_commands' => $runtime(static fn (RemoteProductionPhpRuntimeManager $manager) => $manager->converge($instance)),
+            'php_fpm_monitor_commands' => $runtime(static fn (RemoteProductionPhpRuntimeManager $manager) => $manager->convergeMonitoring($instance, true)),
+            'php_fpm_remove_commands' => $runtime(static fn (RemoteProductionPhpRuntimeManager $manager) => $manager->remove($instance)),
+            'php_fpm_refresh_commands' => $runtime(
+                static fn (RemoteProductionPhpRuntimeManager $manager) => $manager->refreshCache($instance),
+                [new CommandResult(0, "COMPLETE\n", '', 1, false)],
+            ),
         ];
     }
 
     return $rendered;
+}
+
+/** @return array{arguments: list<string>, input: ?string, protected_input: ?string} */
+function prod_equivalence_command(RemoteCommand $command): array
+{
+    $protected = $command->protectedInput?->stream();
+
+    return [
+        'arguments' => $command->arguments,
+        'input' => $command->input,
+        'protected_input' => $protected === null ? null : (string) stream_get_contents($protected),
+    ];
 }
 
 function prod_equivalence_executor(AppDevFakeSshExecutor $ssh): ProductionSshExecutor

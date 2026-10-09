@@ -41,7 +41,17 @@ final readonly class ChangeRouteWebRootAction
     {
         $webRoot = RouteWebRoot::normalize($webRoot);
 
-        return $this->projection->run(function () use ($route, $webRoot): Route {
+        $target = $route->targets()->with(['instance.project', 'instance.node'])->first()?->instance;
+        $production = $target instanceof Instance && $target->placedOnAppProd();
+
+        // UpdateRouteAction holds the environment lock of the Route's targets, so a production change waits
+        // for a deployment or rollback of the Instance.
+        return $this->projection->run(function () use ($route, $webRoot, $target, $production): Route {
+            if ($production && $webRoot !== null) {
+                RouteWebRoot::assertProductionLayout($target, $webRoot, $route);
+                $this->productionWebRoots->assertServable($target, $webRoot);
+            }
+
             [$route, $instance, $previous] = DB::transaction(fn (): array => $this->store($route, $webRoot));
 
             if ($previous === $webRoot) {
@@ -113,7 +123,8 @@ final readonly class ChangeRouteWebRootAction
                     status: 409,
                 );
             }
-        } elseif ($previous === null && $instance->requiresRoute()) {
+        } elseif ($previous === null && ($instance->requiresRoute() || $instance->placedOnAppProd())) {
+            // A production Instance keeps one Route without a web root, which its removal requires.
             throw new ResourceOperationException(
                 errorCode: 'route.web_root_conflict',
                 message: "Instance [{$instance->id}] keeps Route [{$locked->id}] for its effective root. Create another Route with a web root instead.",

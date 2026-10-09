@@ -12,6 +12,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppProd\ProductionSshExecutor;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Instance;
+use App\Models\Route;
 
 final readonly class RemoteProductionWebRootManager implements ProductionWebRootManager
 {
@@ -19,11 +20,11 @@ final readonly class RemoteProductionWebRootManager implements ProductionWebRoot
         private ProductionSshExecutor $ssh,
     ) {}
 
-    public function prepare(Instance $instance): void
+    public function prepare(Instance $instance, ?Route $activating = null): void
     {
         InstanceSandboxGuard::assertHostOperation($instance);
         $instance->loadMissing(['project', 'node']);
-        $applications = RouteWebRoot::servedApplications($instance);
+        $applications = RouteWebRoot::servedApplications($instance, $activating);
         $user = $instance->production_user;
         $home = $instance->production_home;
 
@@ -73,6 +74,64 @@ final readonly class RemoteProductionWebRootManager implements ProductionWebRoot
             }
 
             throw $exception;
+        }
+    }
+
+    public function assertServable(Instance $instance, string $webRoot): void
+    {
+        InstanceSandboxGuard::assertHostOperation($instance);
+        $instance->loadMissing(['project', 'node']);
+        $user = $instance->production_user;
+        $home = $instance->production_home;
+
+        if (! $instance->placedOnAppProd() || ! is_string($user) || ! is_string($home) || $home !== "/home/{$user}") {
+            throw new ResourceOperationException('app-prod.web_root_invalid', 'The production Instance identity is incomplete.', 409);
+        }
+
+        $entries = ProductionWebRootProgram::entries([['web_root' => $webRoot, 'directory' => RouteWebRoot::relativeDirectory($webRoot), 'suffix' => '']]);
+
+        try {
+            $this->ssh->execute(
+                $instance->node,
+                new RemoteCommand(
+                    arguments: ['bash', '-seu', '--', $user, $home, $entries],
+                    input: ProductionWebRootProgram::functions()."\n".<<<'BASH'
+                        user=$1
+                        home=$2
+                        served_web_roots=$3
+                        printf '%s' "$user" | grep -Eq '^[a-z_][a-z0-9_-]{0,31}$'
+                        test "$home" = "/home/$user"
+                        current="$home/current"
+                        if ! sudo -u "$user" -H test -L "$current"; then exit 3; fi
+                        selected=$(sudo -u "$user" -H realpath -e -- "$current")
+                        case "$selected" in "$home/releases/"*) ;; *) exit 1 ;; esac
+                        check_served_web_roots "$selected"
+                        BASH,
+                    maxOutputBytes: 4096,
+                ),
+                'app-prod-web-root-check',
+                'app-prod.web_root_invalid',
+            );
+        } catch (RuntimeConvergenceException $exception) {
+            if ($exception->result?->exitCode === 3) {
+                throw new ResourceOperationException(
+                    errorCode: 'route.web_root_release_missing',
+                    message: 'Deploy the production Instance before a Route with a web root serves it.',
+                    status: 409,
+                    previous: $exception,
+                );
+            }
+
+            if ($exception->result?->exitCode !== 1) {
+                throw $exception;
+            }
+
+            throw new ResourceOperationException(
+                errorCode: 'app-prod.web_root_invalid',
+                message: "The selected release does not hold web root [{$webRoot}] as a directory without links, with its application directory.",
+                status: 409,
+                previous: $exception,
+            );
         }
     }
 }

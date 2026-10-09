@@ -81,17 +81,27 @@ final class RouteWebRoot
      * pool suffix of that directory. Production renders one PHP-FPM pool and one stable `.env` for each
      * distinct directory, and grants Caddy access to each web root.
      *
+     * Only active Routes count, plus the Route that the caller is activating. A Route whose creation
+     * stopped part way never reaches release, pool, or Doctor work.
+     *
      * @return list<array{web_root: string, directory: string, suffix: string}>
      */
-    public static function servedApplications(Instance $instance): array
+    public static function servedApplications(Instance $instance, ?Route $activating = null): array
     {
         $instance->loadMissing('project');
         $default = self::relativeDirectory($instance->root ?? $instance->project->root);
         $webRoots = Route::query()
             ->whereNotNull('web_root')
-            ->whereIn('status', [RouteStatus::Active->value, RouteStatus::Activating->value])
+            ->where('status', RouteStatus::Active->value)
             ->whereHas('targets', static fn ($query) => $query->where('instance_id', $instance->id))
-            ->pluck('web_root')
+            ->pluck('web_root');
+
+        if ($activating instanceof Route && $activating->hasWebRoot()
+            && $activating->targets()->where('instance_id', $instance->id)->exists()) {
+            $webRoots->push($activating->web_root);
+        }
+
+        $webRoots = $webRoots
             ->filter(static fn (mixed $webRoot): bool => is_string($webRoot))
             ->unique()
             ->sort()
@@ -107,6 +117,49 @@ final class RouteWebRoot
         }
 
         return $served;
+    }
+
+    /**
+     * A production release links each served directory's `.env` to its stable file, and a web root must
+     * not hold a link. So no web root of the Instance, its own root included, may contain the `.env` of
+     * the default directory or of a directory that a Route with a web root serves. A web root in the
+     * default directory must be the Instance root itself, which activation already checks.
+     */
+    public static function assertProductionLayout(Instance $instance, string $webRoot, ?Route $changing = null): void
+    {
+        $instance->loadMissing('project');
+        $root = $instance->root ?? $instance->project->root;
+        $default = self::relativeDirectory($root);
+
+        if (self::relativeDirectory($webRoot) === $default && $webRoot !== $root) {
+            self::unsafe("Web root [{$webRoot}] is in the default application directory of the production Instance. Only the Instance root [{$root}] can serve it.");
+        }
+
+        $others = Route::query()
+            ->whereNotNull('web_root')
+            ->whereIn('status', [RouteStatus::Active->value, RouteStatus::Activating->value])
+            ->whereHas('targets', static fn ($query) => $query->where('instance_id', $instance->id))
+            ->when($changing instanceof Route, static fn ($query) => $query->whereKeyNot($changing?->id))
+            ->pluck('web_root')
+            ->filter(static fn (mixed $value): bool => is_string($value))
+            ->all();
+        $webRoots = array_values(array_filter([$root, $webRoot, ...$others], static fn (mixed $value): bool => is_string($value) && $value !== '' && $value !== '.'));
+        $directories = array_unique([$default, ...array_map(self::relativeDirectory(...), [$webRoot, ...$others])]);
+
+        foreach ($directories as $directory) {
+            $environment = $directory === '' ? '.env' : "{$directory}/.env";
+
+            foreach ($webRoots as $served) {
+                if (str_starts_with($environment, "{$served}/")) {
+                    self::unsafe("Web root [{$served}] would serve [{$environment}]. A production web root must not contain an application .env.");
+                }
+            }
+        }
+    }
+
+    private static function unsafe(string $message): never
+    {
+        throw new ResourceOperationException(errorCode: 'route.web_root_unsafe', message: $message, status: 409);
     }
 
     /**

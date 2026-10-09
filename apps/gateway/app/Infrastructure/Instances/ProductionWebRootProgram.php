@@ -66,6 +66,22 @@ final class ProductionWebRootProgram
                     fi
                 done < <(served_web_root_entries)
             }
+            # Checks without a change that each web root and its application directory exist in the release,
+            # and that the web root holds no link.
+            check_served_web_roots() {
+                local release=$1 web_root directory selected_root application unexpected_symlink
+                while IFS=$'\t' read -r web_root directory; do
+                    served_relative_path "$web_root" || exit 1
+                    selected_root=$(sudo -u "$user" -H realpath -m -- "$release/$web_root")
+                    test "$selected_root" = "$release/$web_root" || exit 1
+                    sudo -u "$user" -H test -d "$selected_root" || exit 1
+                    unexpected_symlink=$(sudo find -P "$selected_root" -type l -print -quit)
+                    test -z "$unexpected_symlink" || exit 1
+                    application=$release
+                    if [ -n "$directory" ]; then application="$release/$directory"; fi
+                    test "$(sudo -u "$user" -H realpath -e -- "$application")" = "$application" || exit 1
+                done < <(served_web_root_entries)
+            }
             # Grants Caddy the same access to each web root as activation grants to the Instance root.
             grant_served_web_roots() {
                 local release=$1 web_root directory selected_root unexpected_symlink ancestor

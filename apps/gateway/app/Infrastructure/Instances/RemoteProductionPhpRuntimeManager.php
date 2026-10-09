@@ -15,6 +15,7 @@ use App\Infrastructure\Nodes\RemotePhpPackageManager;
 use App\Infrastructure\SharedOrbitDirectory;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Instance;
+use App\Models\Route;
 
 final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpRuntimeManager
 {
@@ -28,10 +29,10 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
         private ?ServiceMetricsProjection $serviceMetrics = null,
     ) {}
 
-    public function converge(Instance $instance): void
+    public function converge(Instance $instance, ?Route $activating = null): void
     {
         InstanceSandboxGuard::assertHostOperation($instance);
-        $this->convergeWithTuning($instance);
+        $this->convergeWithTuning($instance, activating: $activating);
     }
 
     public function convergeMonitoring(Instance $instance, bool $enabled): void
@@ -44,10 +45,11 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
         Instance $instance,
         ?bool $metricsEnabled = null,
         string $operation = 'converge',
+        ?Route $activating = null,
     ): void {
         $identity = ProductionPhpRuntimeIdentity::from($instance);
         $metrics = $metricsEnabled ?? $this->serviceMetrics?->enabled($instance->node) ?? false;
-        $applications = RouteWebRoot::servedApplications($instance);
+        $applications = RouteWebRoot::servedApplications($instance, $activating);
         $configuration = $this->renderer->render($identity, $metrics, applications: $applications);
         $initialConfiguration = $this->renderer->render($identity, $metrics, initialRelease: true, applications: $applications);
         $versions = collect([$identity->version]);
@@ -88,7 +90,7 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
                     $identity->applicationDirectory(),
                     $identity->applicationDirectory(initialRelease: true),
                 ],
-                input: $this->convergeScript(),
+                input: $this->convergeScript($applications !== []),
             ),
             step: 'app-prod-php-runtime-converge',
             errorCode: 'app-prod.php_runtime_convergence_failed',
@@ -663,9 +665,10 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
             BASH;
     }
 
-    private function convergeScript(): string
+    /** The checks of the pools that Routes with a web root add run only when such a pool exists. */
+    private function convergeScript(bool $servedApplications): string
     {
-        return $this->sharedOrbitDirectory->convergenceFunction()."\n".self::monitoringPoolConvergenceFunction()."\n".self::cleanupInterruptedMonitoringCandidateFunction()."\n".self::applicationPoolSelectionFunction()."\n".ProductionRuntimeGenerationProgram::functions()."\n".<<<'BASH'
+        $script = $this->sharedOrbitDirectory->convergenceFunction()."\n".self::monitoringPoolConvergenceFunction()."\n".self::cleanupInterruptedMonitoringCandidateFunction()."\n".self::applicationPoolSelectionFunction()."\n".ProductionRuntimeGenerationProgram::functions()."\n".<<<'BASH'
             operation=$1
             proc_root=/proc
             user=$2
@@ -776,13 +779,7 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
 
             monitoring=0
             select_application_pool
-            # A Route with a web root adds a pool for its application directory after the default pool.
-            # PHP-FPM cannot start while a pool names a missing directory, so each must be in a release.
-            while IFS= read -r served_directory; do
-                served_resolved=$(realpath -e -- "$served_directory")
-                case "$served_resolved" in "$home/releases/"*) ;; *) exit 1 ;; esac
-                test -d "$served_resolved"
-            done < <(printf '%s' "$pool_configuration" | base64 --decode | sed -n 's/^chdir = //p' | tail -n +2)
+            __SERVED_POOL_DIRECTORIES__
 
             if printf '%s' "$pool_configuration" | base64 --decode | grep -q '^pm.status_path = /orbit-fpm-status$'; then
                 monitoring=1
@@ -978,10 +975,7 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
             test "$(readlink -f -- "$proc_root/$main_pid/exe")" = "/usr/sbin/php-fpm$version"
             test -S "$socket"
             test "$(stat -c '%U:%G:%a' -- "$socket")" = "$user:caddy:660"
-            while IFS= read -r served_socket; do
-                test -S "$served_socket"
-                test "$(stat -c '%U:%G:%a' -- "$served_socket")" = "$user:caddy:660"
-            done < <(printf '%s' "$pool_configuration" | base64 --decode | sed -n 's/^listen = //p' | tail -n +2)
+            __SERVED_POOL_SOCKETS__
             local_after=$(sha256sum -- "$local_tuning" | awk '{print $1}')
             test "$local_before" = "$local_after"
             test "$(systemctl show --property MainPID --value "$service")" = "$main_pid"
@@ -996,6 +990,26 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
             rm -f -- "$expected_marker"
             rm -rf -- "$work_directory"
             BASH;
+
+        // A Route with a web root adds a pool for its application directory after the default pool.
+        // PHP-FPM cannot start while a pool names a missing directory, so each must be in a release.
+        return strtr($script, [
+            "__SERVED_POOL_DIRECTORIES__\n" => $servedApplications ? <<<'BASH'
+                while IFS= read -r served_directory; do
+                    served_resolved=$(realpath -e -- "$served_directory")
+                    case "$served_resolved" in "$home/releases/"*) ;; *) exit 1 ;; esac
+                    test -d "$served_resolved"
+                done < <(printf '%s' "$pool_configuration" | base64 --decode | sed -n 's/^chdir = //p' | tail -n +2)
+
+                BASH : '',
+            "__SERVED_POOL_SOCKETS__\n" => $servedApplications ? <<<'BASH'
+                while IFS= read -r served_socket; do
+                    test -S "$served_socket"
+                    test "$(stat -c '%U:%G:%a' -- "$served_socket")" = "$user:caddy:660"
+                done < <(printf '%s' "$pool_configuration" | base64 --decode | sed -n 's/^listen = //p' | tail -n +2)
+
+                BASH : '',
+        ]);
     }
 
     private static function cleanupInterruptedMonitoringCandidateFunction(): string
@@ -1217,14 +1231,6 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
                 test "$(stat -c '%U:%G' -- "$socket")" = "$user:caddy"
                 rm -f -- "$socket"
             fi
-            # The pools of other application directories listen on /run/php/<user>.<suffix>.sock.
-            for served_socket in /run/php/"$user".*.sock; do
-                if [ -e "$served_socket" ] || [ -L "$served_socket" ]; then
-                    test -S "$served_socket"
-                    test "$(stat -c '%U:%G' -- "$served_socket")" = "$user:caddy"
-                    rm -f -- "$served_socket"
-                fi
-            done
             if [ -e "$local_tuning" ] || [ -L "$local_tuning" ]; then
                 test -f "$local_tuning"
                 test ! -L "$local_tuning"

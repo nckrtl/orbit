@@ -46,8 +46,9 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
         [$repository, $user, $home, $root] = $this->identity($instance);
         $name = ($this->releaseName)();
         $this->assertReleaseName($name);
+        $served = $this->servedWebRoots($instance);
 
-        $script = GitReadScript::for($this->access->for($repository, $instance->loadMissing('project')->project->source_access), ProductionApplicationPaths::render(ProductionWebRootProgram::functions()."\n".<<<'BASH'
+        $script = GitReadScript::for($this->access->for($repository, $instance->loadMissing('project')->project->source_access), ProductionApplicationPaths::render(self::withServedWebRoots(<<<'BASH'
                     repository=$1
                     user=$2
                     home=$3
@@ -55,7 +56,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
                     branch=$5
                     name=$6
                     relative_root=$7
-                    served_web_roots=${8:-}
+                    __SERVED_WEB_ROOTS__
                     state_directory="/var/lib/orbit/app-instance-sources/$instance"
                     marker="$state_directory/release-layout"
                     releases="$home/releases"
@@ -94,7 +95,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
                     test "$(sudo -u "$user" -H realpath -e -- "$release__APPLICATION_SUFFIX__")" = "$release__APPLICATION_SUFFIX__"
                     sudo -u "$user" -H ln -s __ENVIRONMENT_TARGET__ "$release_environment"
                     test "$(sudo -u "$user" -H realpath -e -- "$release_environment")" = "$environment"
-                    link_served_environments "$release"
+                    __SERVED_LINKS__
                     selected_root=$(sudo -u "$user" -H realpath -m -- "$release/$relative_root")
                     case "$selected_root" in "$release"|"$release"/*) ;; *) exit 1 ;; esac
                     sudo -u "$user" -H test -d "$selected_root"
@@ -106,7 +107,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
                     test -z "$unexpected_group"
                     commit=$(sudo -u "$user" -H git -C "$release" rev-parse --verify HEAD)
                     printf '%s\t%s\n' "$name" "$commit"
-                    BASH, $root));
+                    BASH, $served, ['__SERVED_LINKS__' => 'link_served_environments "$release"']), $root));
         $result = $this->execute(
             $instance,
             new RemoteCommand(
@@ -121,7 +122,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
                     $branch,
                     $name,
                     $root,
-                    ...$this->servedWebRoots($instance),
+                    ...$served,
                 ],
                 input: $script->input,
                 protectedInput: $script->protectedInput,
@@ -254,6 +255,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
         InstanceSandboxGuard::assertHostOperation($instance);
         [$repository, $user, $home, $root] = $this->identity($instance);
         $this->assertRelease($release, $home);
+        $served = $this->servedWebRoots($instance);
 
         $result = $this->execute(
             $instance,
@@ -269,9 +271,9 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
                     $release->name,
                     $release->commit,
                     $root,
-                    ...$this->servedWebRoots($instance),
+                    ...$served,
                 ],
-                input: ProductionApplicationPaths::render(ProductionWebRootProgram::functions()."\n".<<<'BASH'
+                input: ProductionApplicationPaths::render(self::withServedWebRoots(<<<'BASH'
                     repository=$1
                     user=$2
                     home=$3
@@ -279,7 +281,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
                     name=$5
                     expected_commit=$6
                     relative_root=$7
-                    served_web_roots=${8:-}
+                    __SERVED_WEB_ROOTS__
                     state_directory="/var/lib/orbit/app-instance-sources/$instance"
                     marker="$state_directory/release-layout"
                     releases="$home/releases"
@@ -324,17 +326,14 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
                     sudo setfacl -m u:caddy:--x "$release"
                     sudo setfacl -P -R -m u:caddy:r-X "$selected_root"
                     sudo find -P "$selected_root" -type d -exec setfacl -m d:u:caddy:r-x -- {} +
-                    # Each Route with a web root needs its directory, .env link, and Caddy access in the
-                    # selected release, also in an older release that a rollback selects.
-                    link_served_environments "$release"
-                    grant_served_web_roots "$release"
+                    __SERVED_ACTIVATION__
                     temporary="$home/.current.$$.tmp"
                     trap 'sudo -u "$user" -H rm -f -- "$temporary"' EXIT
                     sudo -u "$user" -H ln -s "releases/$name" "$temporary"
                     sudo -u "$user" -H mv -Tf -- "$temporary" "$current"
                     trap - EXIT
                     printf '%s\t%s\n' "$name" "$expected_commit"
-                    BASH, $root),
+                    BASH, $served, ['__SERVED_ACTIVATION__' => "# Each Route with a web root needs its directory, .env link, and Caddy access in the selected\n# release, also in an older release that a rollback selects.\nlink_served_environments \"\$release\"\ngrant_served_web_roots \"\$release\""]), $root),
                 maxOutputBytes: 4096,
             ),
             'deployment-activate',
@@ -498,6 +497,24 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
         $entries = ProductionWebRootProgram::entries(RouteWebRoot::servedApplications($instance));
 
         return $entries === '' ? [] : [$entries];
+    }
+
+    /**
+     * Adds the web-root work to a release program only for an Instance with such a Route, so the program
+     * of any other Instance stays byte for byte as it was.
+     *
+     * @param  list<string>  $served
+     * @param  array<string, string>  $calls  Placeholder line to the command that replaces it.
+     */
+    private static function withServedWebRoots(string $program, array $served, array $calls): string
+    {
+        $replacements = ["__SERVED_WEB_ROOTS__\n" => $served === [] ? '' : "served_web_roots=\$8\n"];
+
+        foreach ($calls as $placeholder => $command) {
+            $replacements["{$placeholder}\n"] = $served === [] ? '' : "{$command}\n";
+        }
+
+        return ($served === [] ? '' : ProductionWebRootProgram::functions()."\n").strtr($program, $replacements);
     }
 
     /** @return array{string, string, string, string} */
