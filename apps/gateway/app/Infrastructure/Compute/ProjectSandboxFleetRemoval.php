@@ -9,6 +9,7 @@ use App\Actions\Nodes\RemoveNodeRoleAction;
 use App\Domain\Compute\ComputeException;
 use App\Domain\Compute\SandboxFleetRemover;
 use App\Domain\Compute\SandboxNetworkPolicy;
+use App\Domain\Instances\ProjectSandboxRuntimeGuard;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskCompute;
@@ -17,19 +18,19 @@ use App\Domain\Tasks\TaskWorkspaceName;
 use App\Models\DatabaseServer;
 use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Route;
 use App\Models\Task;
 use App\Models\TaskSandbox;
-use Illuminate\Support\Facades\DB;
 
 /** Remove only the enrolled fleet footprint pinned to this reservation. */
-final readonly class UpCloudSandboxFleetRemoval implements SandboxFleetRemover
+final readonly class ProjectSandboxFleetRemoval implements SandboxFleetRemover
 {
     public function __construct(private SandboxFleetIdentity $identity, private RemoveNodeRoleAction $roles,
-        private RemoveNodeAction $nodes, private SandboxNetworkPolicy $network) {}
+        private RemoveNodeAction $nodes, private SandboxNetworkPolicy $network, private ProjectSandboxInstanceRemoval $workspaces) {}
 
     public function assertRemovable(TaskSandbox $sandbox): void
     {
-        if ($sandbox->provider !== 'upcloud' || $sandbox->enrollment === null) {
+        if (! in_array($sandbox->provider, ['upcloud', 'incus'], true) || $sandbox->enrollment === null) {
             throw new ComputeException('compute.node_attached', 'Remove the sandbox Node from the fleet before destroying its VM.');
         }
         $group = $sandbox->group;
@@ -57,12 +58,29 @@ final readonly class UpCloudSandboxFleetRemoval implements SandboxFleetRemover
         foreach ($workspaces as $workspace) {
             if ($group === null || $node === null || $workspace->node_id !== $node->id || $workspace->project_id !== $group->project_id
                 || $workspace->name !== TaskWorkspaceName::for($group) || $workspace->branch_override !== $workspace->name
-                || $workspace->checkout_path !== '/home/orbit/orbit' || $workspace->task_workspace_routed !== false
+                || $workspace->checkout_path !== '/home/orbit/orbit' || ! is_bool($workspace->task_workspace_routed)
+                || ($workspace->task_workspace_routed && (! $workspace->requiresRoute() || $workspace->root !== $group->project->root))
                 || ($group->taskable_id !== null && ($group->taskable_id !== $workspace->id || $group->taskable_type !== $workspace->getMorphClass()))
                 || Task::withoutGlobalScope('subtask')->where('taskable_type', $workspace->getMorphClass())->where('taskable_id', $workspace->id)->whereKeyNot($group->id)->exists()
-                || $workspace->routeTargets()->exists() || $workspace->processes()->exists() || $workspace->schedules()->exists()
-                || $workspace->databaseConnectionTargets()->exists() || $workspace->removalMember()->exists() || $workspace->transfers()->exists()) {
+                || (! $workspace->task_workspace_routed && $workspace->routeTargets()->exists()) || $workspace->processes()->exists() || $workspace->schedules()->exists()
+                || $workspace->databaseConnectionTargets()->exists() || $workspace->transfers()->exists()) {
                 throw $this->ownership();
+            }
+            $member = $workspace->removalMember()->first();
+            if ($member !== null) {
+                ProjectSandboxInstanceRemoval::assertJournal($workspace, $member);
+            }
+            $routes = $workspace->routes()->get();
+            $recorded = $member?->route_id === null ? null : Route::query()->find($member->route_id);
+            if ($recorded !== null && ! $routes->contains('id', $recorded->id)) {
+                $routes->push($recorded);
+            }
+            foreach ($routes as $route) {
+                try {
+                    ProjectSandboxRuntimeGuard::assertRoute($workspace, $route, $member);
+                } catch (\Throwable) {
+                    throw $this->ownership();
+                }
             }
         }
     }
@@ -81,14 +99,9 @@ final readonly class UpCloudSandboxFleetRemoval implements SandboxFleetRemover
                 || ! $gateway->roles()->where('role', RoleName::Gateway)->where('status', LifecycleStatus::Active)->exists()) {
                 throw $this->ownership();
             }
-            DB::transaction(function () use ($sandbox): void {
-                $this->assertRemovable($sandbox);
-                foreach (Instance::query()->where('task_sandbox_id', $sandbox->id)->get() as $workspace) {
-                    Task::withoutGlobalScope('subtask')->where('taskable_type', $workspace->getMorphClass())->where('taskable_id', $workspace->id)
-                        ->update(['taskable_type' => null, 'taskable_id' => null]);
-                    $workspace->delete();
-                }
-            });
+            foreach (Instance::query()->where('task_sandbox_id', $sandbox->id)->get() as $workspace) {
+                $this->workspaces->remove($workspace);
+            }
             if ($node->roles()->where('role', RoleName::AppDev)->exists()) {
                 $this->roles->execute($node, RoleName::AppDev, force: true, offline: true);
             }

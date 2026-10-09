@@ -9,6 +9,7 @@ use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Instances\DevelopmentRouteProjector;
 use App\Domain\Instances\DevelopmentSourceAccess;
 use App\Domain\Instances\InstanceSandboxGuard;
+use App\Domain\Instances\ProjectSandboxRuntimeGuard;
 use App\Domain\Instances\Transfer\InstanceTransferRouteProjector;
 use App\Domain\Routes\PublicRouteEdgeProjector;
 use App\Domain\Routes\RouteDomainProjector;
@@ -42,7 +43,7 @@ final readonly class NativeDevelopmentRouteProjector implements DevelopmentRoute
 
     public function converge(Instance $instance, Route $route): void
     {
-        InstanceSandboxGuard::assertHostOperation($instance);
+        ProjectSandboxRuntimeGuard::assertRuntime($instance, $route);
         $instance->loadMissing('node');
         $route->loadMissing('cluster.routerAssignment.node');
         // Creation stores the publication record once the certificate its sites name exists, and

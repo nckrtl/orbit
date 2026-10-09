@@ -8,7 +8,7 @@ use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Instances\ComposerSourceClassifier;
 use App\Domain\Instances\DevelopmentInstanceConfigurator;
 use App\Domain\Instances\DevelopmentSourceProfile;
-use App\Domain\Instances\InstanceSandboxGuard;
+use App\Domain\Instances\ProjectSandboxRuntimeGuard;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Projects\ProjectType;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
@@ -26,7 +26,7 @@ final readonly class RemoteDevelopmentInstanceConfigurator implements Developmen
 
     public function inspect(Instance $instance): DevelopmentSourceProfile
     {
-        InstanceSandboxGuard::assertHostOperation($instance);
+        ProjectSandboxRuntimeGuard::assertRuntime($instance);
         $instance->loadMissing(['project', 'node']);
 
         // An unrouted monorepo is a source checkout, not a single PHP application.
@@ -78,7 +78,7 @@ final readonly class RemoteDevelopmentInstanceConfigurator implements Developmen
 
     public function configureLaravelUrl(Instance $instance, string $url): void
     {
-        InstanceSandboxGuard::assertHostOperation($instance);
+        ProjectSandboxRuntimeGuard::assertRuntime($instance);
         $instance->loadMissing('node');
         $account = $this->accounts->resolve($instance->node);
         $this->ssh->execute(

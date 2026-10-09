@@ -187,9 +187,11 @@ The Gateway reads the branch through its full ref, so a tag with the same name i
 
 ## What the App does not cover
 
-Git commands that you run by hand in a development checkout use your own credentials. Orbit installs no credential helper on a Node and does not sign the GitHub CLI in on a Node.
+Git commands that you run by hand in a development checkout use your own credentials. Shared Nodes have no Orbit credential helper or GitHub CLI login.
 
-A task agent does not receive a GitHub token and never fetches or pushes. The agent runs as `orbit-worker`. The token exists only in the environment of one `git` command, and that command uses the private git directory above, running as the Node's managed user. A program that the agent starts cannot see the token.
+A shared task agent does not receive a GitHub token and never fetches or pushes. The agent runs as `orbit-worker`. The token exists only in the environment of one `git` command, and that command uses the private git directory above, running as the Node's managed user. A program that the agent starts cannot see the token.
+
+VM task agents run as the managed guest user and can fetch and push with temporary repository-scoped App tokens. The Gateway holds the App private key. An enrolled Project guest renews access with its own fleet identity and Pi token. See [Sandbox repository access](/reference/compute-drivers#vms-use-temporary-github-app-access).
 
 The candidate gate is the exception: it runs workspace programs as the managed user, and such a program could observe a token-bearing `git` process of that user that runs at the same time. [The candidate gate runs as the managed user](/reference/pi-server#the-candidate-gate-runs-as-the-managed-user) records that cost. The agent shares the Pi server's user, so it can read that server's token and provider sign-in. [Limits](/reference/pi-server#limits) records both bounds. [One user for every task agent](/reference/pi-server#one-user-for-every-task-agent) explains the account boundary.
 

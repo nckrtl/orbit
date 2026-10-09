@@ -16,7 +16,7 @@ it('fails loudly when a legacy test deliverable does not name one exact test fil
             'driver' => 'sqlite', 'database' => ':memory:', 'foreign_key_constraints' => true,
         ]);
         DB::setDefaultConnection('test_deliverables_migration');
-        $paths = array_values(array_filter(glob(database_path('migrations/*.php')) ?: [], static fn (string $path): bool => ! str_contains($path, 'merge_task_groups_into_tasks')));
+        $paths = array_values(array_filter(glob(database_path('migrations/*.php')) ?: [], static fn (string $path): bool => ! str_contains($path, 'merge_task_groups_into_tasks') && ! str_contains($path, 'allow_owned_project_sandbox_instance_removal')));
         Artisan::call('migrate', ['--database' => 'test_deliverables_migration', '--path' => $paths, '--realpath' => true, '--force' => true]);
 
         $projectId = DB::table('projects')->insertGetId([
@@ -48,7 +48,7 @@ it('converts stored test deliverables with the explicit legacy Pest mapping', fu
             'driver' => 'sqlite', 'database' => ':memory:', 'foreign_key_constraints' => true,
         ]);
         DB::setDefaultConnection('test_deliverables_migration');
-        $paths = array_values(array_filter(glob(database_path('migrations/*.php')) ?: [], static fn (string $path): bool => ! str_contains($path, 'merge_task_groups_into_tasks')));
+        $paths = array_values(array_filter(glob(database_path('migrations/*.php')) ?: [], static fn (string $path): bool => ! str_contains($path, 'merge_task_groups_into_tasks') && ! str_contains($path, 'allow_owned_project_sandbox_instance_removal')));
         Artisan::call('migrate', ['--database' => 'test_deliverables_migration', '--path' => $paths, '--realpath' => true, '--force' => true]);
 
         $projectId = DB::table('projects')->insertGetId([

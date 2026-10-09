@@ -128,7 +128,7 @@ final readonly class AllocateTaskSandboxAction
                         ...($candidate['template'] === null ? [] : ['source_template' => $candidate['template']]),
                         ...($locked->project->slug === 'orbit' ? [] : ['project_slug' => $locked->project->slug]),
                         'images' => $candidate['images'], 'subnet' => $subnet, 'blocked_networks' => $settings['blocked_networks'], ...$proxy,
-                        ...($settings['model_proxy_origin'] === null ? [] : ['model_proxy_origin' => $settings['model_proxy_origin']]),
+                        ...($group->project->slug !== 'orbit' || $settings['model_proxy_origin'] === null ? [] : ['model_proxy_origin' => $settings['model_proxy_origin']]),
                     ],
                 ]);
             }
