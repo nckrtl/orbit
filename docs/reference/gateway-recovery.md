@@ -197,7 +197,7 @@ Smoke does not run before the web switch. Any failure after the switch counts, a
 
 To decide, deploy compares the migrations the database has applied with the previous release's files, never with what is pending now. A killed attempt of the same commit can leave such a migration.
 
-After a verified release, deploy removes old releases. It keeps the newest `ORBIT_GATEWAY_RELEASES_KEEP` releases (default 5), and always the current and the previous one.
+After a verified release, deploy removes old releases. It keeps at most `ORBIT_GATEWAY_RELEASES_KEEP` releases, 3 by default and at least 2: the current one and the previous one, whatever their age, and then the newest others. After a rollback to an older release, the previous release takes the place of the oldest of the newest others, so the count never grows.
 
 It also removes each release directory without `REVISION` that is more than 1 hour old, with its web build. Such a directory is left by a prepare that stopped, for example an adoption that lacked a GitHub App permission, and no later prepare of another commit removes it. Every prepare holds the release lock, and so does deploy while it prunes, so no prepare is writing to the directory. The age is a margin on top.
 
@@ -424,7 +424,7 @@ php /home/orbit/orbit/apps/gateway/artisan gateway:release:rollback <id>
 php /home/orbit/orbit/apps/gateway/artisan gateway:release:rollback <id> --force
 ```
 
-`<id>` is the first 12 hex digits of a retained release. Rollback switches to it and runs the same handoff, verify, web switch, and smoke as a deploy. It refuses when the database has applied a migration the target does not ship. `--force` switches the code anyway and names the newest pre-migration snapshot. It does not migrate backwards. A failed verification switches back to the release that was current, because rollback itself does not migrate.
+`<id>` is the first 12 hex digits of a retained release. With the default of 3, a rollback can reach the previous release and one other retained release. Rollback switches to it and runs the same handoff, verify, web switch, and smoke as a deploy. It refuses when the database has applied a migration the target does not ship. `--force` switches the code anyway and names the newest pre-migration snapshot. It does not migrate backwards. A failed verification switches back to the release that was current, because rollback itself does not migrate.
 
 Rollback switches the web app to the target's build. Pruning a Gateway release removes its web build too, so every retained release keeps its own, and a manual `bin/web-deploy` never prunes it. When the build is gone anyway, rollback installs it from the commit's CI artifact, which exists for 14 days. When the artifact has expired too, a rollback does not block the code on assets: it leaves `web/current` as it is, records the web step as `kept` with a warning, and smoke skips its `web` check. A deploy always fails without its web build.
 

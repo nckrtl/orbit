@@ -162,7 +162,7 @@ Closed transfer records stay after removal, with their Instance references clear
 
 ### Production content
 
-Production removal deletes the `current` link, the dedicated PHP-FPM service, pool, and socket, and the Caddy and certificate projections. It keeps `releases/`, `.env`, `env/`, `database.sqlite`, the production user, and `/etc/orbit/php-fpm/<production-user>/local.conf`. It leaves every other PHP-FPM service and cache alone. See [Production release layout](/reference/deployments#retained-content).
+Production removal deletes the `current` link, the dedicated PHP-FPM service, pool, and socket, and the Caddy and certificate projections. It keeps `releases/`, `.env`, `env/`, `database.sqlite`, the production user, and `/etc/orbit/php-fpm/<production-user>/local.conf`. It leaves every other PHP-FPM service and cache alone. See [Production release layout](/reference/deployments#retained-releases).
 
 ## Progress and retry
 
