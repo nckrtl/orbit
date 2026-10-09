@@ -17,6 +17,7 @@ final class UpdateTeardownStepCommand extends UpdateSetupStepCommand
         {--timeout= : Timeout in seconds}
         {--before= : Place before this step}
         {--after= : Place after this step}
+        {--rebalance=* : Set another step timeout in the same write, as NAME=SECONDS; repeat as needed}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
