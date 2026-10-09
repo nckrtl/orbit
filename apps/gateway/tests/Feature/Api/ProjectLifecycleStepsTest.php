@@ -145,3 +145,121 @@ it('keeps a list over the total limit editable after the migration, as long as a
     $this->postJson($this->url, ['name' => 'extra', 'command' => 'true', 'timeout_seconds' => 80])->assertCreated();
     $this->postJson($this->url, ['name' => 'too-much', 'command' => 'true', 'timeout_seconds' => 1])->assertUnprocessable();
 });
+
+describe('lifecycle list timeout rebalance', function (): void {
+    beforeEach(function (): void {
+        // A list stored before the 540-second total: 3 x 540 = 1,620 seconds.
+        foreach (['install-php', 'install-js', 'build-assets'] as $position => $name) {
+            ProjectLifecycleStep::query()->create([
+                'project_id' => $this->project->id,
+                'phase' => 'setup',
+                'name' => $name,
+                'command' => 'true',
+                'timeout_seconds' => 540,
+                'position' => $position,
+            ]);
+        }
+
+        $this->timeouts = fn (): array => ProjectLifecycleStep::query()
+            ->where('project_id', $this->project->id)
+            ->orderBy('position')
+            ->pluck('timeout_seconds', 'name')
+            ->all();
+    });
+
+    it('adds a step to a list over the limit when the same write lowers another step', function (): void {
+        $this->postJson($this->url, ['name' => 'browsers', 'command' => 'npx playwright install', 'timeout_seconds' => 180])
+            ->assertUnprocessable()
+            ->assertJsonPath('error.details.body.0', 'The lifecycle list timeout total is too large.');
+
+        $this->postJson($this->url, [
+            'name' => 'browsers',
+            'command' => 'npx playwright install',
+            'timeout_seconds' => 180,
+            'after' => 'install-js',
+            'rebalance' => [['name' => 'build-assets', 'timeout_seconds' => 360]],
+        ])->assertCreated()->assertJsonPath('data.timeout_seconds', 180);
+
+        expect(($this->timeouts)())->toBe(['install-php' => 540, 'install-js' => 540, 'browsers' => 180, 'build-assets' => 360]);
+    });
+
+    it('restores a lowered step in the same write that adds a step or moves time', function (): void {
+        $this->patchJson($this->url.'/build-assets', ['timeout_seconds' => 360])->assertOk();
+
+        // Lowered to 1,440 seconds: raising the step back alone stays refused.
+        $this->patchJson($this->url.'/build-assets', ['timeout_seconds' => 540])
+            ->assertUnprocessable()
+            ->assertJsonPath('error.details.body.0', 'The lifecycle list timeout total is too large.');
+
+        $this->postJson($this->url, [
+            'name' => 'browsers',
+            'command' => 'npx playwright install',
+            'timeout_seconds' => 180,
+            'rebalance' => [
+                ['name' => 'build-assets', 'timeout_seconds' => 540],
+                ['name' => 'install-js', 'timeout_seconds' => 180],
+            ],
+        ])->assertCreated();
+
+        $this->patchJson($this->url.'/install-js', [
+            'timeout_seconds' => 360,
+            'rebalance' => [['name' => 'browsers', 'timeout_seconds' => 1]],
+        ])->assertUnprocessable();
+
+        $this->patchJson($this->url.'/install-js', [
+            'timeout_seconds' => 300,
+            'rebalance' => [['name' => 'install-php', 'timeout_seconds' => 420]],
+        ])->assertOk()->assertJsonPath('data.timeout_seconds', 300);
+
+        expect(($this->timeouts)())->toBe(['install-php' => 420, 'install-js' => 300, 'build-assets' => 540, 'browsers' => 180])
+            ->and(array_sum(($this->timeouts)()))->toBe(1_440);
+    });
+
+    it('keeps the 540-second total for a list inside the limit', function (): void {
+        ProjectLifecycleStep::query()->where('project_id', $this->project->id)->delete();
+        $this->postJson($this->url, ['name' => 'install', 'command' => 'true', 'timeout_seconds' => 540])->assertCreated();
+
+        $this->postJson($this->url, ['name' => 'migrate', 'command' => 'true', 'timeout_seconds' => 60])->assertUnprocessable();
+        $this->postJson($this->url, [
+            'name' => 'migrate',
+            'command' => 'true',
+            'timeout_seconds' => 60,
+            'rebalance' => [['name' => 'install', 'timeout_seconds' => 500]],
+        ])->assertUnprocessable();
+        $this->postJson($this->url, [
+            'name' => 'migrate',
+            'command' => 'true',
+            'timeout_seconds' => 60,
+            'rebalance' => [['name' => 'install', 'timeout_seconds' => 480]],
+        ])->assertCreated();
+
+        expect(($this->timeouts)())->toBe(['install' => 480, 'migrate' => 60]);
+    });
+
+    it('refuses an invalid rebalance without storing a change', function (array $rebalance, string $message): void {
+        $this->postJson($this->url, [
+            'name' => 'browsers',
+            'command' => 'true',
+            'timeout_seconds' => 60,
+            'rebalance' => $rebalance,
+        ])->assertUnprocessable()->assertJsonPath('error.details.body.0', $message);
+
+        expect(($this->timeouts)())->toBe(['install-php' => 540, 'install-js' => 540, 'build-assets' => 540]);
+    })->with([
+        'unknown step' => [[['name' => 'missing', 'timeout_seconds' => 60]], 'The rebalanced step is unknown.'],
+        'the step itself' => [[['name' => 'browsers', 'timeout_seconds' => 60]], 'Each rebalanced step must be another step in the list, named once.'],
+        'a step twice' => [[['name' => 'install-js', 'timeout_seconds' => 60], ['name' => 'install-js', 'timeout_seconds' => 30]], 'Each rebalanced step must be another step in the list, named once.'],
+        'a timeout above the cap' => [[['name' => 'install-js', 'timeout_seconds' => 541]], 'A lifecycle step is invalid.'],
+    ]);
+
+    it('refuses a rebalance entry with fields other than name and timeout_seconds', function (): void {
+        $this->postJson($this->url, [
+            'name' => 'browsers',
+            'command' => 'true',
+            'timeout_seconds' => 60,
+            'rebalance' => [['name' => 'install-js', 'timeout_seconds' => 60, 'command' => 'false']],
+        ])->assertUnprocessable();
+
+        expect(ProjectLifecycleStep::query()->where('project_id', $this->project->id)->count())->toBe(3);
+    });
+});
