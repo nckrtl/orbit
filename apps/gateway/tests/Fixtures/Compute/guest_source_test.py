@@ -39,7 +39,7 @@ class GuestSource(unittest.TestCase):
 
     def imported(self):
         self.call('initialize')
-        # The production broker imports this ref through a verified bundle; no checkout operation fetches a URL.
+        # Production fetches this ref separately from GitHub; no checkout operation fetches a URL.
         self.git(self.target, 'fetch', '-q', str(self.source), 'main:refs/remotes/origin/main')
 
     def test_default_branch_and_retry_preserve_dirty_files_and_local_commits(self):
