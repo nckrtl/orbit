@@ -46,6 +46,27 @@ final readonly class GitHubTaskPullRequestMerger implements TaskPullRequestMerge
         }
     }
 
+    public function baseTipGreenAhead(Task $group, string $base, string $headSha, string $checkName): bool
+    {
+        $repository = $this->repository($group->project);
+        if (! $repository instanceof GitHubRepository) {
+            return false;
+        }
+
+        try {
+            $token = $this->access->readToken($repository);
+            $tip = array_first($this->github->branchCommits($token, $repository, $base))?->sha;
+            // The merge base is the tip itself when the head already contains it.
+            if (! is_string($tip) || $this->github->compareCommits($token, $repository, $headSha, $tip)->mergeBaseSha === $tip) {
+                return false;
+            }
+        } catch (GitHubApiException) {
+            return false;
+        }
+
+        return $this->requiredCheck($group, $tip, $checkName) === RequiredCheckState::Passed;
+    }
+
     public function merge(Task $group, string $sha): GitHubMergeResult
     {
         [$repository, $number] = $this->pullRequest($group);

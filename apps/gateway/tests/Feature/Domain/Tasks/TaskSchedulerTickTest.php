@@ -1461,6 +1461,58 @@ it('appends one check fixup naming the failed check and its url', function (Task
         ->and($agents->spawned)->toBe([$fixup->id]);
 })->with([TaskGroupStatus::Settling, TaskGroupStatus::WaitingForReview]);
 
+/** The base tip as GitHub reports it: its merge base with the head, and its `Required checks` result. */
+function tick_base_tip(string $head, string $tip, string $mergeBase, string $conclusion): void
+{
+    Http::fake([
+        'https://api.github.com/repos/acme/orbit/commits?*' => Http::response([['sha' => $tip, 'parents' => [['sha' => $mergeBase]]]]),
+        'https://api.github.com/repos/acme/orbit/compare/'.$head.'...'.$tip.'*' => Http::response([
+            'status' => $mergeBase === $tip ? 'ahead' : 'diverged',
+            'base_commit' => ['sha' => $head],
+            'merge_base_commit' => ['sha' => $mergeBase],
+        ]),
+        'https://api.github.com/repos/acme/orbit/commits/'.$tip.'/check-runs*' => Http::response(['total_count' => 1, 'check_runs' => [[
+            'id' => 7, 'name' => 'Required checks', 'head_sha' => $tip, 'status' => 'completed', 'conclusion' => $conclusion,
+            'html_url' => 'https://github.com/acme/orbit/runs/7', 'app' => ['slug' => 'github-actions'],
+        ]]]),
+    ]);
+}
+
+it('puts merge-first in the Fix brief when the base tip is green and ahead of the merge-base', function (): void {
+    tick_settling_group();
+    $agents = tick_running_agents();
+    $head = str_repeat('a', 40);
+    tick_watch_pulls([tick_open_pull(['head' => ['sha' => $head]])], [$head => [[
+        'name' => 'CLI', 'status' => 'completed', 'conclusion' => 'failure', 'html_url' => 'https://github.com/acme/orbit/runs/9',
+    ]]]);
+    tick_base_tip($head, str_repeat('e', 40), str_repeat('b', 40), 'success');
+
+    app(TaskScheduler::class)->tick();
+
+    $fixup = Task::query()->where('fixup_problem', 'check:CLI')->sole();
+    expect($fixup->title)->toBe('Fix CLI')
+        ->and($fixup->brief)->toBe('Merge origin/main first; base may already fix this. Check CLI failed: https://github.com/acme/orbit/runs/9. Do not rebase and do not force-push.')
+        ->and($agents->spawned)->toBe([$fixup->id]);
+});
+
+it('keeps the Fix brief when the base tip is not green and ahead', function (string $mergeBase, string $conclusion): void {
+    tick_settling_group();
+    tick_running_agents();
+    $head = str_repeat('a', 40);
+    tick_watch_pulls([tick_open_pull(['head' => ['sha' => $head]])], [$head => [[
+        'name' => 'CLI', 'status' => 'completed', 'conclusion' => 'failure', 'html_url' => 'https://github.com/acme/orbit/runs/9',
+    ]]]);
+    tick_base_tip($head, str_repeat('e', 40), $mergeBase, $conclusion);
+
+    app(TaskScheduler::class)->tick();
+
+    expect(Task::query()->where('fixup_problem', 'check:CLI')->sole()->brief)
+        ->toBe('Check CLI failed: https://github.com/acme/orbit/runs/9. Do not rebase and do not force-push.');
+})->with([
+    'head already contains the green tip' => [str_repeat('e', 40), 'success'],
+    'red tip ahead' => [str_repeat('b', 40), 'failure'],
+]);
+
 it('runs make check for a fixup on a non-Orbit Project and on orbit', function (string $slug): void {
     $group = tick_settling_group();
     $group->project->update(['slug' => $slug, 'task_check' => 'make check']);

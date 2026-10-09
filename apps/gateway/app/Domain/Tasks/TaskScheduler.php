@@ -3902,9 +3902,27 @@ final readonly class TaskScheduler
             return;
         }
 
-        if ($this->appendFixup($group, $plan, $health->headSha) instanceof Task) {
+        if ($this->appendFixup($group, $this->mergeBaseFirstWhenGreenAhead($group, $health, $plan), $health->headSha) instanceof Task) {
             $this->resumeWaitingSubtask($group);
         }
+    }
+
+    /**
+     * A failed check may already be fixed on the base. When the base tip passed the merge check, or
+     * `Required checks` without one, and is strictly ahead of the head's merge base, the fixup merges the base first.
+     * The GitHub reads run before appendFixup takes its lock.
+     */
+    private function mergeBaseFirstWhenGreenAhead(Task $group, TaskPullRequestHealth $health, TaskSettlingFixup $plan): TaskSettlingFixup
+    {
+        if (! str_starts_with($plan->identity, 'check:') || ! is_string($health->baseRef) || $health->baseRef === ''
+            || ! is_string($health->headSha) || $health->headSha === '') {
+            return $plan;
+        }
+        $check = $group->project->mergeCheckName() ?? TaskPullRequestCheck::ROLLUP_NAMES[0];
+
+        return $this->merger->baseTipGreenAhead($group, $health->baseRef, $health->headSha, $check)
+            ? $plan->mergingBaseFirst($health->baseRef)
+            : $plan;
     }
 
     private static function isReviewFeedbackReason(?string $reason): bool
