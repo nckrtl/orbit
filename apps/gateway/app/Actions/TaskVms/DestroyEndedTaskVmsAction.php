@@ -8,20 +8,31 @@ use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Jobs\TaskVms\DestroyTaskVm;
 use App\Models\TaskVm;
+use Illuminate\Database\Eloquent\Builder;
 
 /**
- * Queues `DestroyTaskVm` for every task VM that is not destroyed once its group has ended, no claim of the
- * group is in flight, and its workspace is gone. A queued job for the same VM absorbs a repeat.
+ * Queues `DestroyTaskVm` for every task VM that is not destroyed and whose group no live claim holds:
+ * - once its group has ended and its workspace is gone;
+ * - or once removal of its workspace failed, because the VM may be gone. The job checks the VM.
+ * The job's unique lock absorbs a repeat while one is queued or runs.
  */
 final readonly class DestroyEndedTaskVmsAction
 {
     public function execute(): int
     {
+        $workspace = static fn (Builder $instances): Builder => $instances->from('instances')->whereColumn('instances.node_id', 'task_vms.node_id');
         $vms = TaskVm::query()->live()
             ->whereHas('group', static fn ($group) => $group
-                ->whereIn('status', [TaskGroupStatus::Completed, TaskGroupStatus::Cancelled])
                 ->where(static fn ($claim) => $claim->whereNull('reserved_at')->orWhere('reserved_at', '<=', RemoveTaskWorkspaceAction::reservationCutoff())))
-            ->whereNotExists(static fn ($instances) => $instances->from('instances')->whereColumn('instances.node_id', 'task_vms.node_id'))
+            ->where(static fn ($query) => $query
+                ->where(static fn ($ended) => $ended
+                    ->whereHas('group', static fn ($group) => $group->whereIn('status', [TaskGroupStatus::Completed, TaskGroupStatus::Cancelled]))
+                    ->whereNotExists($workspace))
+                ->orWhere(static fn ($stranded) => $stranded
+                    ->whereHas('group', static fn ($group) => $group->where(static fn ($reason) => $reason
+                        ->where('assistance_reason', 'like', RemoveTaskWorkspaceAction::RemovalFailedPrefix.'%')
+                        ->orWhere('assistance_reason', 'like', RemoveTaskWorkspaceAction::MergeCleanupFailedPrefix.'%')))
+                    ->whereExists($workspace)))
             ->get(['id']);
 
         foreach ($vms as $vm) {

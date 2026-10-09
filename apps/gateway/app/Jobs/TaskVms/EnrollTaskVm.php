@@ -25,8 +25,8 @@ final class EnrollTaskVm implements ShouldBeUnique, ShouldQueue
 {
     use ProvisionsTaskVm;
 
-    /** Polls release the job, so only errors count: `maxExceptions` bounds them. */
-    public int $tries = 0;
+    /** Each poll releases the job and counts as a try. 60 tries cover the boot window many times over; they also bound a job that a worker stop keeps cutting off. */
+    public int $tries = 60;
 
     public int $maxExceptions = 3;
 
@@ -40,6 +40,12 @@ final class EnrollTaskVm implements ShouldBeUnique, ShouldQueue
 
     /** Failures that a retry cannot fix. */
     private const array Permanent = ['task_vm.bootstrap_failed', 'task_vm.bootstrap_timeout', 'task_vm.vm_not_running'];
+
+    /** @param  int  $launchedAt  when `ProvisionTaskVm` launched the VM: the boot limit counts from then, not from the row, because jobs run one at a time */
+    public function __construct(public int $taskVmId, public int $launchedAt)
+    {
+        $this->onConnection('task-vms')->onQueue('task-vms');
+    }
 
     public function handle(TaskVmProvider $provider, ProvisionNodeAction $nodes, TaskVmSettings $settings): void
     {
@@ -106,8 +112,8 @@ final class EnrollTaskVm implements ShouldBeUnique, ShouldQueue
         if ($observation->address !== null && $provider->bootstrapReady($vm)) {
             return $observation->address;
         }
-        if ($vm->created_at?->lessThan(now()->subMinutes(self::BootstrapMinutes)) === true) {
-            throw new TaskVmException('task_vm.bootstrap_timeout', "Cloud-init on task VM [{$vm->name}] was not done after ".self::BootstrapMinutes.' minutes.', 504);
+        if (now()->getTimestamp() - $this->launchedAt > self::BootstrapMinutes * 60) {
+            throw new TaskVmException('task_vm.bootstrap_timeout', "Cloud-init on task VM [{$vm->name}] was not done ".self::BootstrapMinutes.' minutes after launch.', 504);
         }
 
         return null;

@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace App\Jobs\TaskVms;
 
+use App\Domain\Tasks\AssistanceKind;
+use App\Domain\Tasks\TaskAssistance;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmState;
+use App\Models\Task;
 use App\Models\TaskVm;
 use Illuminate\Foundation\Queue\Queueable;
 use Throwable;
@@ -19,8 +22,13 @@ trait ProvisionsTaskVm
 {
     use Queueable;
 
+    public const string FailedReasonPrefix = 'Task VM failed: ';
+
     /** A lost unique lock expires, so a crashed worker never blocks the row for good. */
     public int $uniqueFor = 3600;
+
+    /** A job that outlives its timeout fails the row instead of running again after `retry_after`. */
+    public bool $failOnTimeout = true;
 
     public function __construct(public int $taskVmId)
     {
@@ -32,13 +40,20 @@ trait ProvisionsTaskVm
         return (string) $this->taskVmId;
     }
 
+    /** The row becomes `failed`, and its group asks for assistance, so the failure shows in `tasks:status`. */
     public function failed(Throwable $exception): void
     {
-        TaskVm::query()->whereKey($this->taskVmId)->where('state', TaskVmState::Provisioning)->update([
+        $code = TaskVmException::codeOf($exception);
+        $message = mb_substr($exception->getMessage(), 0, 2000);
+        $failed = TaskVm::query()->whereKey($this->taskVmId)->where('state', TaskVmState::Provisioning)->update([
             'state' => TaskVmState::Failed,
-            'error_code' => TaskVmException::codeOf($exception),
-            'error_message' => mb_substr($exception->getMessage(), 0, 2000),
+            'error_code' => $code,
+            'error_message' => $message,
         ]);
+        $group = TaskVm::query()->find($this->taskVmId)?->group;
+        if ($failed === 1 && $group instanceof Task) {
+            TaskAssistance::apply($group, AssistanceKind::Failure, null, self::FailedReasonPrefix."{$code}: {$message} Cancel the group to destroy the VM.", replaceFailure: true);
+        }
     }
 
     /** The row while it is still `provisioning`, else null. */

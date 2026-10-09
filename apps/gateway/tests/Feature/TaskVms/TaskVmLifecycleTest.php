@@ -2,10 +2,14 @@
 
 declare(strict_types=1);
 
+use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Actions\TaskVms\AllocateTaskVmAction;
 use App\Actions\TaskVms\DestroyEndedTaskVmsAction;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Clusters\ClusterState;
+use App\Domain\Instances\InstanceRemovalStatus;
+use App\Domain\Instances\InstanceState;
+use App\Domain\Instances\Removal\InstanceRemovalProjector;
 use App\Domain\Metrics\ExporterDegradationReason;
 use App\Domain\Metrics\MetricsAccessRevoker;
 use App\Domain\Metrics\MetricsFleetReconciler;
@@ -18,7 +22,10 @@ use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\ProxyCli\ProxyCliState;
+use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Tasks\AssistanceKind;
+use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskGroupStatus;
@@ -38,9 +45,13 @@ use App\Jobs\TaskVms\PrepareTaskVmRuntime;
 use App\Jobs\TaskVms\ProvisionTaskVm;
 use App\Models\Cluster;
 use App\Models\Instance;
+use App\Models\InstanceRemovalMember;
 use App\Models\Node;
 use App\Models\NodeRole;
+use App\Models\Process;
 use App\Models\Project;
+use App\Models\Route;
+use App\Models\RouteTarget;
 use App\Models\Task;
 use App\Models\TaskVm;
 use Illuminate\Console\Scheduling\Event;
@@ -111,6 +122,62 @@ final class TaskVmLifecycleProvider implements TaskVmProvider
             ($this->onDestroy)($vm);
         }
     }
+}
+
+/** Clears a Route target in the database as the projector does; the remote steps belong to the projector's own tests. */
+final class TaskVmLifecycleProjector implements InstanceRemovalProjector
+{
+    /** @var list<int> */
+    public array $cleared = [];
+
+    public function clearRouteTarget(InstanceRemovalMember $member): string
+    {
+        $this->cleared[] = (int) $member->route_id;
+        DB::transaction(static function () use ($member): void {
+            RouteTarget::query()->where('route_id', $member->route_id)->where('instance_id', $member->instance_id)->delete();
+            Route::query()->whereKey($member->route_id)->delete();
+        });
+
+        return 'deleted';
+    }
+
+    public function withdrawPhpPool(InstanceRemovalMember $member): void {}
+
+    public function cleanupRuntime(InstanceRemovalMember $member): void {}
+}
+
+/**
+ * A cancelled group whose workspace stayed on its ready task VM, with a pending Route and a Process.
+ *
+ * @return array{0: TaskVm, 1: Instance, 2: Route, 3: Task}
+ */
+function tvm_life_stranded_workspace(bool $removalFailed): array
+{
+    $node = tvm_life_node('tvm-node', '10.44.0.129', role: RoleName::AppDev);
+    $group = tvm_life_group(TaskGroupStatus::Cancelled);
+    $vm = tvm_life_vm($group, TaskVmState::Ready, $node);
+    $instance = Instance::query()->create([
+        'project_id' => test()->project->id, 'node_id' => $node->id, 'name' => 'task-'.$group->id, 'branch_override' => 'task-'.$group->id,
+        'source_layout' => 'checkout', 'checkout_path' => '/home/orbit/apps/dlf/task-'.$group->id, 'root' => 'public',
+        'branch' => 'task-'.$group->id, 'starting_commit' => str_repeat('a', 40), 'task_workspace_routed' => true,
+        'status' => InstanceState::SourceResolved,
+    ]);
+    $route = Route::query()->create([
+        'project_id' => test()->project->id, 'node_id' => $node->id, 'domain' => 'task-'.$group->id.'.dlf.test',
+        'provenance' => 'explicit', 'publication' => 'private', 'status' => RouteStatus::Pending,
+    ]);
+    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
+    $instance->processes()->create([
+        'name' => 'vite', 'runtime' => ProcessRuntime::Systemd, 'working_directory' => $instance->checkout_path,
+        'runtime_config' => ['command' => ['vp', 'dev']], 'restart_policy' => 'always', 'status' => LifecycleStatus::Active,
+    ]);
+    $group->taskable()->associate($instance);
+    $group->save();
+    if ($removalFailed) {
+        TaskAssistance::apply($group, AssistanceKind::Failure, null, RemoveTaskWorkspaceAction::RemovalFailedPrefix.'The Node is unreachable.');
+    }
+
+    return [$vm, $instance, $route, $group->fresh() ?? $group];
 }
 
 function tvm_life_node(string $name, string $address, string $user = 'orbit', ?RoleName $role = null): Node
@@ -239,7 +306,7 @@ describe(ProvisionTaskVm::class, function (): void {
 
         expect($this->provider->calls)->toBe(['create'])
             ->and($this->provider->userData)->toStartWith("#cloud-config\n")->toContain('ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGatewayKey gateway');
-        Queue::assertPushedOn('task-vms', EnrollTaskVm::class, fn (EnrollTaskVm $job): bool => $job->taskVmId === $vm->id);
+        Queue::assertPushedOn('task-vms', EnrollTaskVm::class, fn (EnrollTaskVm $job): bool => $job->taskVmId === $vm->id && abs($job->launchedAt - now()->getTimestamp()) <= 5);
     });
 
     it('never creates an enrolled or settled VM again', function (TaskVmState $state, bool $enrolled): void {
@@ -257,26 +324,34 @@ describe(ProvisionTaskVm::class, function (): void {
         'destroying' => [TaskVmState::Destroying, false],
     ]);
 
-    it('marks only a provisioning row failed with the error code', function (): void {
-        $vm = tvm_life_vm(tvm_life_group());
+    it('marks only a provisioning row failed with the error code, and asks for assistance on its group', function (): void {
+        $vm = tvm_life_vm($group = tvm_life_group());
         $destroying = tvm_life_vm(tvm_life_group(), TaskVmState::Destroying, wireguardIp: '10.44.0.131');
         $failure = new TaskVmException('task_vm.host_command_failed', '`incus launch` failed.', 502);
 
         (new ProvisionTaskVm($vm->id))->failed($failure);
         (new ProvisionTaskVm($destroying->id))->failed($failure);
-        (new EnrollTaskVm($vm->id))->failed(new RuntimeException('boom'));
+        (new EnrollTaskVm($vm->id, now()->getTimestamp()))->failed(new RuntimeException('boom'));
 
         expect($vm->fresh()?->state)->toBe(TaskVmState::Failed)
             ->and($vm->fresh()?->error_code)->toBe('task_vm.host_command_failed')
             ->and($vm->fresh()?->error_message)->toBe('`incus launch` failed.')
             ->and($destroying->fresh()?->state)->toBe(TaskVmState::Destroying)
-            ->and($destroying->fresh()?->error_code)->toBeNull();
+            ->and($destroying->fresh()?->error_code)->toBeNull()
+            ->and($group->fresh()?->assistance_requested)->toBeTrue()
+            ->and($group->fresh()?->assistance_kind)->toBe(AssistanceKind::Failure)
+            ->and($group->fresh()?->assistance_reason)->toBe('Task VM failed: task_vm.host_command_failed: `incus launch` failed. Cancel the group to destroy the VM.')
+            ->and($destroying->group->fresh()?->assistance_requested)->toBeFalse();
     });
 
     it('retries a failed create once and is unique for its task VM', function (): void {
         $job = new ProvisionTaskVm(7);
 
-        expect($job->tries)->toBe(2)->and($job->uniqueId())->toBe('7')->and($job->queue)->toBe('task-vms');
+        expect($job->tries)->toBe(2)->and($job->uniqueId())->toBe('7')->and($job->queue)->toBe('task-vms')
+            ->and($job->failOnTimeout)->toBeTrue()
+            ->and((new EnrollTaskVm(7, 0))->tries)->toBe(60)
+            ->and((new EnrollTaskVm(7, 0))->failOnTimeout)->toBeTrue()
+            ->and((new PrepareTaskVmRuntime(7))->failOnTimeout)->toBeTrue();
     });
 });
 
@@ -316,10 +391,11 @@ describe(EnrollTaskVm::class, function (): void {
         tvm_life_settings(clusterId: $this->cluster->id);
     });
 
-    it('polls while cloud-init runs, without enrolling', function (): void {
+    it('polls while cloud-init runs, counting the boot limit from launch, not from the row', function (): void {
         $this->provider->ready = false;
         $vm = tvm_life_vm(tvm_life_group());
-        $job = (new EnrollTaskVm($vm->id))->withFakeQueueInteractions();
+        $vm->forceFill(['created_at' => now()->subMinutes(30)])->save();
+        $job = (new EnrollTaskVm($vm->id, now()->subMinutes(2)->getTimestamp()))->withFakeQueueInteractions();
 
         app()->call([$job, 'handle']);
 
@@ -330,7 +406,7 @@ describe(EnrollTaskVm::class, function (): void {
     it('enrolls the VM as its app-dev Node through the host, linked before any convergence', function (): void {
         $vm = tvm_life_vm(tvm_life_group());
 
-        app()->call([new EnrollTaskVm($vm->id), 'handle']);
+        app()->call([new EnrollTaskVm($vm->id, now()->getTimestamp()), 'handle']);
 
         $node = Node::query()->where('name', $vm->name)->sole();
         expect($this->converged)->toBe([[
@@ -351,7 +427,7 @@ describe(EnrollTaskVm::class, function (): void {
         $this->provider->observations = [new VmObservation(false, null), new VmObservation(true, '10.251.77.20')];
         $vm = tvm_life_vm(tvm_life_group());
 
-        app()->call([new EnrollTaskVm($vm->id), 'handle']);
+        app()->call([new EnrollTaskVm($vm->id, now()->getTimestamp()), 'handle']);
 
         Sleep::assertSleptTimes(1);
         expect($vm->fresh()?->node_id)->not->toBeNull();
@@ -359,8 +435,8 @@ describe(EnrollTaskVm::class, function (): void {
 
     it('fails at once for a missing or stopped VM, a cloud-init error, or a slow boot', function (Closure $arrange, string $code): void {
         $vm = tvm_life_vm(tvm_life_group());
-        $arrange($this->provider, $vm);
-        $job = (new EnrollTaskVm($vm->id))->withFakeQueueInteractions();
+        $launchedAt = $arrange($this->provider, $vm);
+        $job = (new EnrollTaskVm($vm->id, is_int($launchedAt) ? $launchedAt : now()->getTimestamp()))->withFakeQueueInteractions();
 
         app()->call([$job, 'handle']);
 
@@ -370,16 +446,17 @@ describe(EnrollTaskVm::class, function (): void {
         'absent' => [fn (TaskVmLifecycleProvider $provider) => $provider->observations = [null], 'task_vm.vm_not_running'],
         'stopped' => [fn (TaskVmLifecycleProvider $provider) => $provider->observations = [new VmObservation(false, null), new VmObservation(false, null)], 'task_vm.vm_not_running'],
         'cloud-init error' => [fn (TaskVmLifecycleProvider $provider) => $provider->ready = new TaskVmException('task_vm.bootstrap_failed', 'Cloud-init failed.', 502), 'task_vm.bootstrap_failed'],
-        'slow boot' => [function (TaskVmLifecycleProvider $provider, TaskVm $vm): void {
+        'slow boot' => [function (TaskVmLifecycleProvider $provider): int {
             $provider->ready = false;
-            $vm->forceFill(['created_at' => now()->subMinutes(11)])->save();
+
+            return now()->subMinutes(11)->getTimestamp();
         }, 'task_vm.bootstrap_timeout'],
     ]);
 
     it('only queues the runtime for a VM whose Node is already active', function (): void {
         $vm = tvm_life_vm(tvm_life_group(), node: tvm_life_node('tvm-node', '10.44.0.129', role: RoleName::AppDev));
 
-        app()->call([new EnrollTaskVm($vm->id), 'handle']);
+        app()->call([new EnrollTaskVm($vm->id, now()->getTimestamp()), 'handle']);
 
         expect($this->provider->calls)->toBe([])->and($this->converged)->toBe([]);
         Queue::assertPushed(PrepareTaskVmRuntime::class);
@@ -426,6 +503,8 @@ describe(DestroyTaskVm::class, function (): void {
                 $this->events->append('node removal: '.TaskVm::query()->sole()->state->value);
             }
         });
+        $this->projector = new TaskVmLifecycleProjector;
+        app()->instance(InstanceRemovalProjector::class, $this->projector);
         $this->provider->onDestroy = static function (TaskVm $vm) use ($events): void {
             $events->append('vm deletion: '.$vm->fresh()?->state->value);
         };
@@ -493,6 +572,47 @@ describe(DestroyTaskVm::class, function (): void {
         app()->call([new DestroyTaskVm($vm->id), 'handle']);
         expect($vm->fresh()?->state)->toBe(TaskVmState::Destroyed)->and($vm->fresh()?->error_code)->toBeNull();
     });
+
+    it('queues one destroy job at a time for a task VM', function (): void {
+        $vm = tvm_life_vm(tvm_life_group(TaskGroupStatus::Cancelled), TaskVmState::Failed);
+
+        DestroyTaskVm::dispatch($vm->id);
+        DestroyTaskVm::dispatch($vm->id);
+        app(DestroyEndedTaskVmsAction::class)->execute();
+
+        expect(DB::table('jobs')->count())->toBe(1);
+    });
+
+    it('leaves a workspace to normal removal while that removal has not failed, or while the VM runs', function (bool $removalFailed): void {
+        [$vm, $instance] = tvm_life_stranded_workspace($removalFailed);
+
+        app()->call([new DestroyTaskVm($vm->id), 'handle']);
+
+        expect($this->provider->calls)->toBe($removalFailed ? ['observe'] : [])
+            ->and($vm->fresh()?->state)->toBe(TaskVmState::Ready)
+            ->and($instance->fresh())->not->toBeNull();
+    })->with(['removal not failed' => false, 'VM still runs' => true]);
+
+    it('deletes a VM that died under its workspace, forgets the workspace offline, and frees the Node', function (): void {
+        [$vm, $instance, $route, $group] = tvm_life_stranded_workspace(true);
+        $this->provider->observations = [null];
+
+        app()->call([new DestroyTaskVm($vm->id), 'handle']);
+
+        $member = InstanceRemovalMember::query()->sole();
+        expect($this->provider->calls)->toBe(['observe', 'destroy'])
+            ->and($this->projector->cleared)->toBe([$route->id])
+            ->and(Instance::query()->find($instance->id))->toBeNull()
+            ->and(Route::query()->find($route->id))->toBeNull()
+            ->and(Process::query()->count())->toBe(0)
+            ->and($member->row_deleted_at)->not->toBeNull()
+            ->and($member->source_identity)->toBe('task-vm:'.$vm->name)
+            ->and($member->removal->status)->toBe(InstanceRemovalStatus::Completed)
+            ->and(Node::query()->find($vm->node_id ?? 0))->toBeNull()
+            ->and($vm->fresh()?->state)->toBe(TaskVmState::Destroyed)
+            ->and($group->fresh()?->taskable_id)->toBeNull()
+            ->and($group->fresh()?->assistance_requested)->toBeFalse();
+    });
 });
 
 describe(DestroyEndedTaskVmsAction::class, function (): void {
@@ -513,6 +633,16 @@ describe(DestroyEndedTaskVmsAction::class, function (): void {
         expect($queued)->toBe([$ended->id, $failed->id])
             ->and([$running->id, $withWorkspace->id, $claimed->id, $destroyed->id])->not->toContain(...$queued);
     });
+
+    it('queues destruction for a workspace whose removal failed, so the job can check the VM', function (bool $removalFailed): void {
+        Queue::fake();
+        [$vm] = tvm_life_stranded_workspace($removalFailed);
+
+        expect(app(DestroyEndedTaskVmsAction::class)->execute())->toBe($removalFailed ? 1 : 0);
+        if ($removalFailed) {
+            Queue::assertPushed(DestroyTaskVm::class, fn (DestroyTaskVm $job): bool => $job->taskVmId === $vm->id);
+        }
+    })->with(['removal failed' => true, 'removal pending' => false]);
 });
 
 describe('worker', function (): void {

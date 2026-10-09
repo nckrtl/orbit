@@ -29,9 +29,12 @@ use App\Domain\Tasks\TaskCeilings;
 use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskWorkspaceName;
 use App\Domain\Tasks\TaskWorkspaceTopology;
+use App\Domain\TaskVms\TaskVmException;
+use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\Tasks\TaskWorkspaceProvisioner;
 use App\Models\Instance;
@@ -838,6 +841,23 @@ it('keeps a full-node reserved workspace when it cannot prove the reservation is
 })->with(['source evidence' => true, 'checkout exists' => false]);
 
 describe('task VMs', function (): void {
+    it('keeps shared claims working while a task VM value is invalid, and makes vm groups wait', function (): void {
+        config(['task_vms.incus.hosts' => [['node_id' => 9, 'cidr' => '10.251.77.0/24', 'max_vms' => 2, 'image' => 'Bad_Image']]]);
+        app()->forgetInstance(TaskVmSettings::class);
+        expect(fn () => app(TaskVmSettings::class))->toThrow(TaskVmException::class);
+        $shared = provisioner_app('shared');
+        $node = provisioner_node('beast', '10.44.0.7');
+        bind_task_workspace_fakes();
+
+        expect(app(TaskScheduler::class))->toBeInstanceOf(TaskScheduler::class)
+            ->and(app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent(provisioner_group($shared), false))?->node_id)->toBe($node->id);
+
+        $vmGroup = provisioner_group(provisioner_app('dlf'));
+        $vmGroup->update(['task_compute' => TaskCompute::Vm]);
+        expect(fn () => app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($vmGroup->fresh() ?? $vmGroup, true)))
+            ->toThrow(TaskCapacityException::class, 'Task VM: task_vm.invalid_config: ');
+    });
+
     it('never places a shared group on a task VM Node', function (): void {
         $project = provisioner_app('shared');
         $vmNode = provisioner_node('tvm-1', '10.44.0.129');

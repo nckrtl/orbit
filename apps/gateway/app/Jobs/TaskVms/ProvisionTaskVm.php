@@ -34,6 +34,6 @@ final class ProvisionTaskVm implements ShouldBeUnique, ShouldQueue
         }
 
         $provider->create($vm, $cloudInit->render($keys->publicKey()));
-        EnrollTaskVm::dispatch($vm->id);
+        EnrollTaskVm::dispatch($vm->id, now()->getTimestamp());
     }
 }

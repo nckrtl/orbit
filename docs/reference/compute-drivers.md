@@ -48,7 +48,8 @@ Until the row is `ready`, the claim returns the group to `todo` with a reason, a
 | `Task VM: task VMs are not enabled on this Gateway.` | `task_vms.enabled` is false and the group has no task VM |
 | `Task VM: no host has room for another task VM.` | Every host is inactive or full |
 | `Task VM: provisioning.` | The jobs are still running |
-| `Task VM: failed: <code>: <message>` | A job failed. Cancel the group to destroy the VM |
+| `Task VM: failed: <code>: <message>` | A job failed. The group also asks for assistance. Cancel the group to destroy the VM |
+| `Task VM: task_vm.invalid_config: <message>` | A `task_vms` value is invalid. Shared groups keep working, because only `vm` claims read these settings |
 | `Task VM: destroying.` | Cleanup has started |
 
 The Node `tvm-<id>` has user `orbit`, role `app-dev`, the dev Cluster, and the reserved WireGuard address. Shared groups never get a workspace on a task VM Node: their Node selection leaves out every Node of a task VM that is not `destroyed`.
@@ -57,7 +58,7 @@ The Node `tvm-<id>` has user `orbit`, role `app-dev`, the dev Cluster, and the r
 
 When the group ends, Orbit removes its workspace Instance with force, as for a shared group. This withdraws the Route. A cancelled group first pushes its stored approval. Pushes, fetches, checks, and agent turns need the VM `ready`, so they finish before the VM is destroyed.
 
-Each `tasks:tick` queues `DestroyTaskVm` for every task VM that is not `destroyed` when its group is `completed` or `cancelled`, no claim of the group is in flight, and no Instance is left on its Node. `DestroyTaskVm` then runs these steps:
+Each `tasks:tick` queues `DestroyTaskVm` for every task VM that is not `destroyed` when its group is `completed` or `cancelled`, no claim of the group is in flight, and no Instance is left on its Node. Its unique lock has no expiry, so the tick never queues a second copy while one waits or runs. `DestroyTaskVm` then runs these steps:
 
 1. It sets the row to `destroying` and revokes the group's model key.
 2. It deletes the VM. A VM that is already gone counts as deleted.
@@ -68,6 +69,16 @@ The Node goes before the row becomes `destroyed`. A row that is not `destroyed` 
 
 Keep a host in `task_vms.incus.hosts` until it has no task VM that is not `destroyed`, because destroy needs the host's settings. Node removal refuses such a host with `node.has_task_vms`. When it removes a host, it also deletes the host's `destroyed` rows.
 
+#### A VM that dies before its group ends
+
+Workspace removal needs SSH to the VM. When the VM is gone, removal fails and the group asks for assistance with the reason `Workspace removal failed:` or `Merged pull request cleanup failed:`. Each tick then also queues `DestroyTaskVm` for that task VM. The job reads the VM on its host. While the VM runs, it leaves the workspace to the normal removal. When the VM is absent, or still stopped 5 seconds after a stopped reading, it deletes the VM and then removes the workspace offline:
+
+- It records the normal removal journal, with the source steps marked done, because the checkout is gone with the VM.
+- It clears the Route through the normal removal projector. The projector skips the VM's Node for a task VM that is `destroying`. The router withdraws the site.
+- It deletes the Instance's Process and Schedule records and the Instance row, and clears the group's removal reason.
+
+Then it removes the Node and marks the row `destroyed`, as above. A removal journal that a normal removal left open is finished the same way. A cancelled group's stored approval is lost with the VM.
+
 ### States
 
 The `TaskVmState` enum has five cases.
@@ -76,7 +87,7 @@ The `TaskVmState` enum has five cases.
 | --- | --- |
 | `provisioning` | Orbit is creating, enrolling, or preparing the VM |
 | `ready` | Pi runs, and Orbit can create the workspace |
-| `failed` | A job failed. The row keeps `error_code` and `error_message`, and the group shows the error as its reason |
+| `failed` | A job failed. The row keeps `error_code` and `error_message`. The group shows the error as its reason and asks for assistance |
 | `destroying` | Cleanup has started |
 | `destroyed` | The VM, the Node, and the model key are gone. The row stays for audit |
 
@@ -95,11 +106,11 @@ The worker stops when the queue is empty, or takes no new job after 50 seconds. 
 | Job | Retries |
 | --- | --- |
 | `ProvisionTaskVm` | Once after 30 seconds |
-| `EnrollTaskVm` | Fails at once on a cloud-init error, an absent or stopped VM, or a boot that takes over 10 minutes. Retries other errors twice, 30 seconds apart |
+| `EnrollTaskVm` | Fails at once on a cloud-init error, an absent or stopped VM, or a boot over 10 minutes. Retries other errors twice. Stops after 60 tries, polls included |
 | `PrepareTaskVmRuntime` | Twice, 30 seconds apart |
 | `DestroyTaskVm` | Until it succeeds |
 
-When a job of the first three has no retries left, the row becomes `failed` with the job's error code, or `task_vm.job_failed` when the error has none. `EnrollTaskVm` never creates the VM again.
+When a job of the first three has no retries left, or runs past its timeout, the row becomes `failed` with the job's error code, or `task_vm.job_failed` when the error has none. The group asks for assistance with the reason `Task VM failed: <code>: <message>`, so `tasks:status` lists it. `EnrollTaskVm` never creates the VM again. The jobs run one at a time, so the 10-minute boot limit counts from the moment `ProvisionTaskVm` launched the VM, not from the row.
 
 ### Incus provider
 
