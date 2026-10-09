@@ -42,30 +42,28 @@ final readonly class HttpT3ServerClient implements T3ServerClient
         return new T3EnvironmentDescriptor($environmentId, $label, $serverVersion);
     }
 
-    public function exchangePairingToken(string $baseUrl, #[SensitiveParameter] string $pairingToken, string $clientLabel): T3AdminSession
+    public function session(string $baseUrl, #[SensitiveParameter] string $adminSession): T3AdminSession
     {
-        $body = $this->json($baseUrl, 'token exchange', fn (): Response => $this->request()->asForm()->post($this->endpoint($baseUrl, '/oauth/token'), [
-            'grant_type' => 'urn:ietf:params:oauth:grant-type:token-exchange',
-            'subject_token' => $pairingToken,
-            'subject_token_type' => 'urn:t3:params:oauth:token-type:environment-bootstrap',
-            'requested_token_type' => 'urn:ietf:params:oauth:token-type:access_token',
-            'client_label' => $clientLabel,
-            'client_device_type' => 'bot',
-        ]));
+        $body = $this->json($baseUrl, 'session', fn (): Response => $this->request($adminSession)
+            ->get($this->endpoint($baseUrl, '/api/auth/session')));
 
-        $token = $body['access_token'] ?? null;
-        $tokenType = $body['token_type'] ?? null;
-        $expiresIn = $body['expires_in'] ?? null;
-        $scope = $body['scope'] ?? null;
+        $authenticated = $body['authenticated'] ?? null;
 
-        if (! is_string($token) || $token === '' || $tokenType !== 'Bearer' || ! is_numeric($expiresIn) || ! is_string($scope)) {
-            throw T3ServerException::malformed($baseUrl, 'token exchange');
+        if ($authenticated === false) {
+            throw T3ServerException::rejected($baseUrl, 'session');
+        }
+
+        $scopes = $body['scopes'] ?? null;
+        $expiresAt = $body['expiresAt'] ?? null;
+
+        if ($authenticated !== true || ! is_array($scopes) || ! array_is_list($scopes) || ! is_string($expiresAt)) {
+            throw T3ServerException::malformed($baseUrl, 'session');
         }
 
         return new T3AdminSession(
-            token: $token,
-            expiresAt: CarbonImmutable::now()->addSeconds((int) $expiresIn),
-            scopes: array_values(array_filter(explode(' ', $scope), static fn (string $value): bool => $value !== '')),
+            token: $adminSession,
+            expiresAt: $this->timestamp($baseUrl, 'session', $expiresAt),
+            scopes: array_values(array_filter($scopes, is_string(...))),
         );
     }
 
