@@ -31,7 +31,7 @@ One shared helper derives this directory. Source classification and every Larave
 
 The application directory owns `composer.json`, `artisan`, development `.env` and `.env.testing`, Laravel cached configuration and `storage/logs`. Laravel source inspection, the working directory for PHP-FPM, automatic APP_URL updates, default Instance systemd Process working directories, and Instance Schedule working directories use it. Explicit Process working directories still override the default. Production runtime paths use `<production-home>/current/<application-directory>`, with no suffix for a root-level application.
 
-Production keeps its durable environment at `<production-home>/.env`. Each release links `<release>/<application-directory>/.env` to that file, with a relative target computed from the link's actual depth. A nested application must not leave a spurious `.env` link at the release root. Development defaults keep environment files in the application directory of their stable checkout home and copy them to the same relative directory in each candidate release; they do not link them back to the live seed.
+Production keeps its durable environment at `<production-home>/.env`. Each release links `<release>/<application-directory>/.env` to that file, with a relative target computed from the link's actual depth. A nested application must not leave a spurious `.env` link at the release root. Another directory that a Route with a web root serves keeps its durable file at `<production-home>/env/<directory>/.env`, and each release links that directory's `.env` to it. Development defaults keep environment files in the application directory of their stable checkout home and copy them to the same relative directory in each candidate release; they do not link them back to the live seed.
 
 Setup, teardown, development deploy steps, production deploy steps, and task-check commands keep running at the repository root (the release's repository root for deploy steps). They are repository-owned commands, not implicit Artisan commands. A step for a nested application must say, for example, `cd apps/site && php artisan migrate --force`. Git operations, checkout identity, release layout, and task metadata remain rooted at the repository.
 
@@ -53,7 +53,7 @@ Task-workspace preparation and source inspection keep Git identity, metadata, ch
 
 This route-based model supersedes the earlier named-app target. The model is Project, then Instance, then one or more Routes. A Project owns one repository. An Instance is one copy of it. Each Route of the Instance serves one web root in that copy. There is no app record or app selector.
 
-A Route's `web_root` is repository-relative, such as `apps/docs/public`. Null means the Instance's effective root, so every existing Route keeps today's behavior. The same helper derives each Route's application directory. Each distinct directory gets one PHP-FPM pool; the default directory keeps its pool name. Its `.env` takes the URL of the Instance's own Route when that Route serves it, and otherwise of the oldest Route that serves it. Processes and Schedules keep their working directory. [Routes](/reference/routes#serve-several-web-roots) owns the rules. Production Instances refuse a web root until a follow-up group supports them.
+A Route's `web_root` is repository-relative, such as `apps/docs/public`. Null means the Instance's effective root, so every existing Route keeps today's behavior. The same helper derives each Route's application directory. Each distinct directory gets one PHP-FPM pool; the default directory keeps its pool name. Its `.env` takes the URL of the Instance's own Route when that Route serves it, and otherwise of the oldest Route that serves it. Processes and Schedules keep their working directory. [Routes](/reference/routes#serve-several-web-roots) owns the rules. Production Instances serve web roots from the selected release: each directory gets a pool under the Instance's dedicated master and a stable `.env` that each release links to.
 
 ## Rejected alternatives
 
@@ -68,7 +68,7 @@ A Route's `web_root` is repository-relative, such as `apps/docs/public`. Null me
 - A nested Laravel application gets the same environment and runtime behavior as a root-level one, without moving its repository.
 - Group #975 changes how paths resolve. It does not change Project identity, registration discovery, command scope, or public root fields.
 - Routes with a web root add sites without changing Project or Instance identity, and without a data conversion.
-- This ADR stays in progress until production Instances support a web root. That group absorbs it into Projects and the owning runtime references, adds the redirect and retired-decision row, and deletes the ADR.
+- Production Instances now support a web root. This ADR stays in progress until a follow-up absorbs it into Projects and the owning runtime references, adds the redirect and retired-decision row, and deletes the ADR.
 
 ## Affects
 

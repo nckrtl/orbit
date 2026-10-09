@@ -23,7 +23,7 @@ final readonly class SynchronizeRouteWebRootUrlsAction
     {
         $instance->refresh()->load(['project', 'node']);
 
-        if ($instance->placedOnAppProd() || $instance->selected_php_version === null) {
+        if ($instance->selected_php_version === null) {
             return;
         }
 

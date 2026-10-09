@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Infrastructure\Routes;
 
 use App\Domain\AppDev\AppDevPhpFpmManager;
+use App\Domain\Instances\InstanceState;
+use App\Domain\Instances\ProductionPhpRuntimeManager;
 use App\Domain\Routes\RouteRemovalNode;
 use App\Domain\Routes\RouteRemovalProjector;
 use App\Domain\Routes\RouteRemovalStep;
@@ -27,6 +29,7 @@ final readonly class NativeRouteRemovalProjector implements RouteRemovalProjecto
         private RemoteAppDevCaddyManager $caddy,
         private RemoteAppDevRouteFirewallManager $firewall,
         private ?AppDevPhpFpmManager $php = null,
+        private ?ProductionPhpRuntimeManager $productionPhp = null,
     ) {}
 
     public function nodes(Route $route): array
@@ -35,7 +38,7 @@ final readonly class NativeRouteRemovalProjector implements RouteRemovalProjecto
         $steps = [];
         $stepNodes = [
             [RouteRemovalStep::Caddy, $this->projectionNodes($route)],
-            [RouteRemovalStep::Php, $this->developmentTargetNodes($route)],
+            [RouteRemovalStep::Php, $this->developmentTargetNodes($route)->merge($this->productionPoolInstances($route)->map(static fn (Instance $instance): Node => $instance->node))->unique(static fn (Node $node): int => $node->id)->values()],
             [RouteRemovalStep::Certificates, $this->certificateNodes($route)],
             [RouteRemovalStep::Firewall, $this->workloadNodes($route)],
         ];
@@ -103,6 +106,35 @@ final readonly class NativeRouteRemovalProjector implements RouteRemovalProjecto
         foreach ($this->without($this->developmentTargetNodes($route), $skippedNodeIds) as $node) {
             $php->converge($node);
         }
+
+        // The Route already left the authoritative states, so its directory's pool is no longer rendered.
+        foreach ($this->productionPoolInstances($route) as $instance) {
+            if (! in_array($instance->node_id, $skippedNodeIds, true)) {
+                ($this->productionPhp ?? app(ProductionPhpRuntimeManager::class))->converge($instance);
+            }
+        }
+    }
+
+    /**
+     * A production target keeps its dedicated PHP-FPM service until Instance removal. A Route with a web
+     * root can add a pool to it, which its removal withdraws while the Instance is active.
+     *
+     * @return Collection<int, Instance>
+     */
+    private function productionPoolInstances(Route $route): Collection
+    {
+        if (! $route->hasWebRoot()) {
+            return collect();
+        }
+
+        $route->loadMissing('targets.instance.node');
+
+        return $this->targetInstances($route)
+            ->filter(static fn (Instance $instance): bool => $instance->placedOnAppProd()
+                && $instance->status === InstanceState::Active
+                && is_string($instance->production_php_service)
+                && $instance->production_php_service !== '')
+            ->values();
     }
 
     /**
