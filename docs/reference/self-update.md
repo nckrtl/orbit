@@ -86,7 +86,8 @@ The Gateway usually deploys a commit a minute after its checks pass, minutes bef
 
 | `cli.status` | `reason` | Meaning |
 | --- | --- | --- |
-| `available` | null | Every field is set. `cli.commit` is the Gateway's commit, or an ancestor's for a [fallback](#fallback-to-an-ancestor-release). |
+| `available` | null | Every field is set. `cli.commit` is the Gateway's commit. |
+| `available` | `release_missing`, `release_mismatch`, or `release_incomplete` | A [fallback](#fallback-to-an-ancestor-release): every field is set, `cli.commit` is an ancestor's, and `reason` says why the commit's own release was not used. |
 | `pending` | `release_missing` | The version, tag, and commit are set, but the release is not published yet. Check again in a few minutes. |
 | `unavailable` | `gateway_commit_unknown` | The Gateway version is not a commit its Git history knows. |
 | `unavailable` | `history_unavailable` | The Gateway checkout is shallow or Git failed, so the version is unknown. |
@@ -105,7 +106,7 @@ When the commit's release stays `release_missing`, `release_mismatch`, or `relea
 1. It takes the 50 newest commits before the Gateway's commit on the first-parent history of `main`, with `git rev-list --first-parent`. Only those commits have releases, so the commits of merged branches do not use up the 50.
 2. It keeps only the commits whose CLI build inputs match the Gateway's commit. The [build inputs](#cli-build-inputs) are listed below.
 3. It tries their releases from the highest release number down, and checks each one as it checks its own release. A release number whose tag points at another commit is skipped.
-4. The first available release becomes `cli`, with `status` `available` and that ancestor's `commit`.
+4. The first available release becomes `cli`, with `status` `available`, that ancestor's `commit`, and the `reason` of the commit's own release.
 
 #### CLI build inputs
 
@@ -117,7 +118,7 @@ The Gateway keeps a fallback for the commit. Every 5 minutes it asks GitHub for 
 
 When GitHub does not answer for an ancestor, the search stops and names nothing. When no ancestor qualifies, the state stays `pending` or `unavailable`, and the search runs again after 5 minutes.
 
-CI normally publishes a release within minutes, so the 30 minutes let the fleet wait for the commit's own release and roll out once. A release that takes longer makes the fleet roll out twice: first the fallback, then the commit's own release. The [fleet rollout](/reference/gateway-recovery#desired-state) raises `rollout_cli_fallback` once when it uses a fallback.
+CI normally publishes a release within minutes, so the 30 minutes let the fleet wait for the commit's own release and roll out once. A release that takes longer makes the fleet roll out twice: first the fallback, then the commit's own release. The [fleet rollout](/reference/gateway-recovery#desired-state) raises `rollout_cli_fallback` once when it uses a fallback. The alert names why the commit's own release was not used.
 
 The expected footprint digest per Node joins this state when the footprint re-apply ships. A Gateway release record can store the state as it is served.
 

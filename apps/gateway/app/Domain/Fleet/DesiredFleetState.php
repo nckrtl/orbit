@@ -175,7 +175,9 @@ final readonly class DesiredFleetState
             return [$commit, $kept, self::FallbackSeconds];
         }
 
-        if (! in_array($release->reason, self::FallbackReasons, true) || ! $this->missingLongEnough($revision)) {
+        $reason = $release->reason;
+
+        if (! $reason instanceof CliReleaseUnavailableReason || ! in_array($reason, self::FallbackReasons, true) || ! $this->missingLongEnough($revision)) {
             return [$commit, $release, self::UnavailableSeconds];
         }
 
@@ -186,6 +188,7 @@ final readonly class DesiredFleetState
             return [$commit, $release, $searched ? self::FallbackSeconds : self::UnavailableSeconds];
         }
 
+        $fallback = $fallback->fallbackFor($reason);
         $this->cache->put(self::FallbackKey.hash('sha256', $revision), $fallback->toArray(), self::AvailableSeconds);
 
         return [$commit, $fallback, self::FallbackSeconds];

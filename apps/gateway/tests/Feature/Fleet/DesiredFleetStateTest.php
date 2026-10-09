@@ -116,7 +116,7 @@ describe(DesiredFleetState::class, function (): void {
 
             expect($fallback->cliFallback())->toBeTrue()
                 ->and($fallback->commit)->toBe($this->commit)
-                ->and($fallback->cli->toArray())->toMatchArray(['status' => 'available', 'reason' => null, 'version' => '0.4681.0', 'commit' => CLI_RELEASE_FIXTURE_COMMIT])
+                ->and($fallback->cli->toArray())->toMatchArray(['status' => 'available', 'reason' => 'release_missing', 'version' => '0.4681.0', 'commit' => CLI_RELEASE_FIXTURE_COMMIT])
                 ->and($this->state->cached()?->cliFallback())->toBeTrue();
             // Two pending answers ask for the commit's own tag. The fallback asks for it again, for the parent's
             // missing tag, then for the fixture's tag, release, and SHA256SUMS.
@@ -158,7 +158,9 @@ describe(DesiredFleetState::class, function (): void {
 
             $this->travel(DesiredFleetState::FallbackAfterSeconds + 1)->seconds();
 
-            expect($this->state->current()->cli->toArray())->toMatchArray(['status' => 'available', 'version' => '0.4681.0']);
+            // The fallback names why the commit's own release was not used, also once read back from the cache.
+            expect($this->state->current()->cli->toArray())->toMatchArray(['status' => 'available', 'reason' => 'release_'.$problem, 'version' => '0.4681.0'])
+                ->and($this->state->cached()?->cli->reason?->value)->toBe('release_'.$problem);
         })->with(['mismatch', 'incomplete']);
 
         it('replaces the fallback with the commit\'s own release once it appears', function (): void {
@@ -173,7 +175,7 @@ describe(DesiredFleetState::class, function (): void {
             $own = $this->state->current();
 
             expect($own->cliFallback())->toBeFalse()
-                ->and($own->cli->toArray())->toMatchArray(['status' => 'available', 'version' => '0.4683.0', 'commit' => $this->commit]);
+                ->and($own->cli->toArray())->toMatchArray(['status' => 'available', 'reason' => null, 'version' => '0.4683.0', 'commit' => $this->commit]);
         });
 
         it('keeps the fallback while GitHub fails, without searching again', function (): void {
