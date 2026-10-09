@@ -179,7 +179,8 @@ Task VMs have these known limits.
 - Incus accepts DNS before the ACL, so a task VM can query port 53 on any host address. It can read instance names from the DNS of other bridges. This risk is accepted.
 - The first `app-dev` convergence on a new VM installs PHP, Caddy, Docker, and the agent. A job times out after 1500 seconds.
 - Doctor can report task VM Nodes while they exist.
-- The hub filter fails open in two cases, so that the fleet VPN stays up. When the table does not load at boot, the tunnel still starts. When `nftables.service` restarts later, its `flush ruleset` removes the table while the unit still shows active. Run `task-vms:prepare-hub` again to load it.
+- The hub filter fails open to keep the fleet VPN up. The tunnel starts even after a failed table load at boot.
+- A later restart of `nftables.service` removes the hub table, but its unit still shows active. Run `task-vms:prepare-hub` again to load the table.
 
 ### Why task VMs work this way
 
