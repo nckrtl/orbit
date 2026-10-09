@@ -289,7 +289,7 @@ the dedicated bridge. Host firewall access requires the opt-in policy below.
 
 ### Image test baselines
 
-Sandbox images need a test baseline from CI. Each successful project job on `main` publishes a `sandbox-tia-<index>-<commit>` artifact for 14 days. It contains the Pest graph and a manifest with the Project path, tested commit, CI run, graph checksum, and test configuration checksums.
+Sandbox images need a test baseline from CI. Each successful project job on `main` publishes a `sandbox-tia-<index>-<commit>` artifact for 14 days. It contains the Pest graph, the Pint and PHPStan caches, and a manifest with the Project path, tested commit, CI run, graph checksum, and test configuration checksums. [Feature delivery](/reference/implementation-loop#ci-artifacts) lists its files. The shared main cache store imports the same artifact.
 
 The graph records the tested commit and a result for every test file it links, whether the job ran the affected tests or the full suite. Image preparation must select a successful CI run and validate that manifest before importing the graph. Pull request runs do not publish these image inputs. A baseline accelerates local feedback; CI on the published task commit remains the merge gate.
 
