@@ -602,9 +602,12 @@ A claim takes the oldest `todo` task that fits and moves it to `reserved`. The p
 - an active Linux Node with an active `app-dev` role and a WireGuard address;
 - not excluded from the Project by a [development node exclusion](/reference/development-node-exclusions);
 - an active `pi-server` Process with desired state `running`;
+- not a [task VM](/reference/compute-drivers#task-vms) Node (not built yet);
 - with fewer than 10 active tasks. Active tasks are `reserved`, `running`, `reviewing`, and `settling`.
 
 Among the Nodes that fit, the one with the fewest active tasks wins. There is no per-Project limit, and the scheduler never polls Nodes for capacity.
+
+A group of a web Project with `task_compute: vm` skips this selection. It gets its own task VM, and its workspace goes on that VM's Node. See [Task VM workspace](#task-vm-workspace).
 
 When the workspace is ready, the task becomes `running`, and its first subtask starts. When a claim fails, the task returns to `todo`, and the claim continues with the next task. A tick tries each failing task once.
 
@@ -754,6 +757,16 @@ The approval of the subtask that opens the pull request also needs `--pr-summary
 
 When the acting thread stops, the tick reads `$(git rev-parse --git-path orbit)/receipt.json` over SSH. It applies the receipt only when its `thread` is the acting thread. It stores the receipt as a comment with its content hash, then removes the receipt file. It does not remove `"$(git rev-parse --git-path orbit)/turn"`. A receipt read again after a crash has the same hash and is stored once. The scheduler then acts on the stored comment, so a failed send or commit is retried without the file.
 
+### Task VM workspace
+
+Not built yet. This section describes the [task VM](/reference/compute-drivers#task-vms) lane that the Phase 1 slices of ADR 0200 build.
+
+A group of a Project other than `orbit`, with `task_compute: vm`, runs in its own [task VM](/reference/compute-drivers#task-vms). The claim creates the VM and waits until it is `ready`. Until then, the task returns to `todo` with the reason `Task VM: <state or error>`, and the next tick tries again. Then Orbit creates the workspace on the VM's Node, as for a shared group: the Instance `task-{id}`, and its private Route when the workspace is routed.
+
+Inside the VM, everything runs as the managed user `orbit`, which has passwordless sudo. There is no `orbit-worker`, so the workspace needs no ACLs and no `safe.directory` entry. Implementers and reviewers run on the VM's own [Pi server](/reference/pi-server#run-pi-on-a-task-vm). The baseline and handoff checks run over SSH as `orbit`. The Gateway fetches and pushes over SSH with the token on standard input, as for a shared group. No GitHub token enters the VM.
+
+When the task ends, Orbit removes the workspace and then destroys the VM. See [Destroy a task VM](/reference/compute-drivers#destroy-a-task-vm).
+
 ### Request a topology
 
 Orbit task workspaces have no Incus topology by default. Provisioning does not acquire one. A reviewer that needs discovery ends its review, consult, or relay turn through the existing receipt command:
@@ -762,7 +775,7 @@ Orbit task workspaces have no Incus topology by default. Provisioning does not a
 "$(git rev-parse --git-path orbit)/turn" --thread=ID --outcome=topology_requested --summary="Why this group needs a topology"
 ```
 
-Orbit VM groups start with an operator and a private test Gateway. Their initial source fetch uses [guest GitHub DNS bootstrap](/reference/compute-drivers#prepare-source-inside-the-guest) while the cloned private network waits for retargeting. A failed bootstrap leaves source unresolved and prevents agent admission. After retargeting, pair preparation refreshes both Agents and the private Gateway’s Caddy and DNS projections through native convergence. Failed preparation remains retryable, and fresh doctor health still gates dispatch.
+Orbit VM groups start with an operator and a private test Gateway. Their initial source fetch uses the template's [public DNS upstreams](/reference/compute-drivers#prepare-source-inside-the-guest) while the cloned private network waits for retargeting. A failed fetch leaves source unresolved and prevents agent admission. After retargeting, pair preparation refreshes both Agents and the private Gateway’s Caddy and DNS projections through native convergence. Failed preparation remains retryable, and fresh doctor health still gates dispatch.
 
 Their reviewer fallback adds `app-dev` and `app-prod` through the owned compute driver. It preserves declared workload nodes and waits for capacity, enrollment, and fresh doctor readiness before resuming the reviewer. See [Declared workload nodes](/reference/compute-drivers#declared-workload-nodes). Shared workspaces use the discovery topology below.
 
@@ -1575,8 +1588,6 @@ The base run is the exception that remains. It copies only installed `vendor` an
 
 New Projects have no task check until one is configured, regardless of type. Existing stored checks remain unchanged. Shared instructions, reminders, the check runner, and pull request descriptions name only an explicit Project check; none supplies a fallback. Without a check, Orbit still verifies the tree and deliverables and requires review.
 
-Local Project VM admission also requires a pinned guest SSH identity. The [host identity check](/reference/compute-drivers#local-project-ssh-identity) verifies the reserved placement before enrollment. This check alone does not enable local Project claims.
-
 ## Why it works this way
 
 These reasons explain the design. Check them before you propose a change.
@@ -1594,6 +1605,8 @@ Shared prompts stay free of Project policy. They do not name a feature contract 
 Task agents and task teardown run as `orbit-worker`, so a program an agent starts cannot read the managed user's home. The baseline and handoff checks are the exception: they run as the managed user, because host-dependent tests need its sudo, ACL, and `caddy` access. [The candidate gate runs as the managed user](/reference/pi-server#the-candidate-gate-runs-as-the-managed-user) records that choice and its cost.
 
 Teardown's command is the root-owned helper `/usr/local/lib/orbit/e2e-task-cleanup`, which `orbit-worker` can execute and cannot write. Privileged removal is separate: the managed user deletes the tree and does not run a checkout program. The Pi server runs as `orbit-worker`, and an agent can read the server token and the provider sign-in. [Pi server limits](/reference/pi-server#limits) records the root-equivalent `incus-admin` access.
+
+A [task VM](#task-vm-workspace) needs no `orbit-worker`. The VM edge is the boundary there, so agents and checks share `orbit` and see the same environment. [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm) records that choice.
 
 ### Backlog before Todo
 

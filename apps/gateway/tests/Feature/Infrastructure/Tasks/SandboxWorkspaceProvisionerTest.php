@@ -69,14 +69,13 @@ function sandbox_claim(): array
             isset($data['pi_token']) => 'pi',
             isset($data['address'], $data['gateway']) => 'pi-network',
             isset($data['phase']) => 'pair-'.$data['phase'],
-            $guest['role'] === 'gateway' && ($data['operation'] ?? null) === 'github_dns' => 'pair-github-dns',
             $guest['role'] === 'gateway' && ($data['operation'] ?? null) === 'pair_dns' => 'pair-public-dns',
             default => $data['operation'],
         };
         $state->calls[] = $phase;
         $body = match ($phase) {
             'initialize' => ['initialized' => true],
-            'github_dns', 'pair-github-dns', 'pair-public-dns' => ['ready' => true],
+            'pair-public-dns' => ['ready' => true],
             'identity' => ['operator' => '10.233.1.11:51820'],
             default => ['sandbox_id' => $request['sandbox_id'], 'head' => str_repeat('d', 40), 'starting_commit' => str_repeat('d', 40), 'ready' => true],
         };
@@ -97,7 +96,7 @@ it('attaches the owned workspace before guest preparation and returns only after
     expect($workspace)->toBeInstanceOf(Instance::class);
     expect($workspace->status)->toBe(InstanceState::SourceResolved)->and($workspace->task_workspace_routed)->toBeFalse();
     expect($group->fresh()->taskable_id)->toBe($workspace->id);
-    expect($state->calls)->toBe(['capacity', 'provision', 'initialize', 'github_dns', 'fetch', 'checkout', 'pair-inspect', 'pair-github-dns', 'pair-public-dns', 'identity', 'vpn', 'pair-gateway', 'pair-prerequisites', 'pair-operator', 'pi-network', 'pi']);
+    expect($state->calls)->toBe(['capacity', 'provision', 'initialize', 'fetch', 'checkout', 'pair-inspect', 'pair-public-dns', 'identity', 'vpn', 'pair-gateway', 'pair-prerequisites', 'pair-operator', 'pi-network', 'pi']);
     expect($workspace->taskSandbox->model_key_registered_at)->not->toBeNull();
 });
 
@@ -115,7 +114,7 @@ it('keeps failed preparation attached and retries the same source without a seco
     $retried = $provisioner->provision(InstanceProvisionIntent::for($group->fresh()));
 
     expect($retried->id)->toBe($workspace->id)->and(Instance::query()->count())->toBe(1)->and(TaskSandbox::query()->count())->toBe(1);
-    expect($state->calls)->not->toContain('initialize', 'github_dns', 'fetch', 'checkout')->toContain('inspect', 'pi');
+    expect($state->calls)->not->toContain('initialize', 'fetch', 'checkout')->toContain('inspect', 'pi');
 });
 
 it('never returns a claim after any failed guest step and redacts guest output', function (string $phase): void {
@@ -130,7 +129,7 @@ it('never returns a claim after any failed guest step and redacts guest output',
     }
     expect($state->calls[array_key_last($state->calls)])->toBe($phase);
     expect($group->fresh()->taskable_id)->not->toBeNull();
-})->with(['initialize', 'checkout', 'pair-inspect', 'pair-github-dns', 'pair-public-dns', 'identity', 'vpn', 'pair-gateway', 'pair-prerequisites', 'pair-operator', 'pi-network', 'pi']);
+})->with(['initialize', 'checkout', 'pair-inspect', 'pair-public-dns', 'identity', 'vpn', 'pair-gateway', 'pair-prerequisites', 'pair-operator', 'pi-network', 'pi']);
 
 it('waits without allocating for disabled or incomplete rollout prerequisites', function (string $key, mixed $value): void {
     [$group, $state] = sandbox_claim();

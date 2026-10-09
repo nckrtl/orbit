@@ -5,10 +5,10 @@ covers:
   - apps/gateway/app/Actions/Nodes/{ProvisionNodeAction,EnrollMacOsNodeAction,RemoveNodeAction,AddNodeRoleAction,RemoveNodeRoleAction,AssignRoleAction}.php
   - apps/gateway/app/Domain/Nodes/RoleRegistry.php
   - apps/gateway/app/Infrastructure/Nodes/{NativeNodeConverger,MacOsNodeConverger,NodeSshJump,NodeBootstrapCommandFactory,NodeBootstrapDnsProgram,NodeBootstrapPackageCatalog,CaddyPackageSourceProgram,RemotePhpPackageManager,NodeLocks,NodeLock}.php
-  - apps/gateway/app/Infrastructure/Firewall/NodeFirewallRuleCatalog.php
   - apps/gateway/app/Infrastructure/WireGuard/NativeGatewayPeerProjectionManager.php
   - apps/gateway/app/Console/Commands/ProvisionNodeCommand.php
-  - apps/gateway/{app/Infrastructure/Ssh/{NativeSshExecutor,SshConnection}.php,database/migrations/*add_ssh_jump_node_id_to_nodes.php}
+  - apps/gateway/app/Infrastructure/{Firewall/NodeFirewallRuleCatalog,Ssh/NativeSshExecutor,Ssh/SshConnection,Ssh/SshHostKeyScanner,Ssh/HostKeyScanner}.php
+  - apps/gateway/database/migrations/*_{create_nodes_table,add_ssh_jump_node_id_to_nodes}.php
   - apps/gateway/app/{Infrastructure/Nodes/*Cli*.php,Domain/Nodes/NodeCli*.php,Domain/Fleet/NodeFootprint*.php,Domain/Fleet/NodeCliConvergence.php,Infrastructure/Fleet/Footprint/**,Actions/Fleet/ConvergeNodeFootprintAction.php,Http/Controllers/Api/NodeFootprintsController.php}
 ---
 
@@ -171,6 +171,16 @@ On Ubuntu, `node:role:add` accepts the same roles as on any other Linux Node. Ad
 [Node retarget](/reference/node-retarget) keeps a Node without roles in operator DNS mode. The `DNS =` line stays, and the Node does not get an `orbit.dns-link`.
 
 Doctor checks a Node without roles like any other Node when the Gateway has a pinned SSH host key for it. The `role` family reports nothing. The `schedule` family skips its orphan scan unless the Node hosts a Schedule. A Node without roles and without a pinned SSH host key gets only the lifecycle check.
+
+## Enroll through a jump host
+
+The Gateway can enroll a Node that it reaches only through another Node. [Task VMs](/reference/compute-drivers#task-vms) use this: a task VM has only a private address on its Incus host's bridge. The jump is internal. `node:add` and the API have no field for it.
+
+The Node records the jump Node in `ssh_jump_node_id`. While the Node has no active role, SSH to its public address goes through an `ssh` hop to the jump Node, as `<managed user>@<WireGuard address>:22` of the jump Node. The hop uses the same key, pinned host keys, and strict options as the command. See [An explicit hop, not ProxyJump](#an-explicit-hop-not-proxyjump). The host key scan runs `ssh-keyscan` on the jump Node, and the scanned key must match the expected fingerprint. A task VM's fingerprint comes from its host, before any code in the VM runs.
+
+Connections through a jump Node are never shared, because Nodes behind different jump Nodes can have the same private address. A jump Node without a WireGuard address fails with `vpn.peer_address_missing` before SSH.
+
+The enrollment steps are the same as for any Node. When the first active role closes public SSH, the Gateway reaches the Node over WireGuard and ignores the jump. A Node without a jump Node connects directly, as [SSH connections](#ssh-connections) describes.
 
 ## Converge an existing Node
 
@@ -365,18 +375,7 @@ The sockets live in `ORBIT_HOME/ssh/mux`, and the directory has mode `0700`. Eve
 
 A reachability check always opens a new connection. Doctor's Node inspection, the `--offline` probe of role and Node removal, and the Node probe of task cancellation use it. File copies between Nodes for Instance transfer and clone use `scp` on their own connections.
 
-### Through a jump Node
-
-A Node can have a jump Node: another active Node that reaches its public SSH host when the Gateway cannot. The Gateway sets it only internally, for example for a task VM on a private bridge. No API or CLI field sets it.
-
-While the Node has no active role, the Gateway reaches its public SSH host through the jump Node:
-
-- It scans the host key with `ssh-keyscan` on the jump Node.
-- It runs each command through an `ssh` hop to the jump Node's WireGuard address.
-- The hop uses the same key, pinned host keys, and strict options as the command.
-- These connections are never shared, because private addresses can repeat behind different jump Nodes.
-
-SSH over WireGuard never uses the jump Node. After the first active role, the Gateway ignores it. A jump Node without a WireGuard address fails with `vpn.peer_address_missing` before SSH.
+A Node that the Gateway reaches through a [jump Node](#enroll-through-a-jump-host) does not share a connection.
 
 ## Public SSH
 
@@ -458,6 +457,10 @@ OpenSSH's `ProxyJump` does not pass the identity file, the known-hosts file, or 
 ### Public SSH before the peer goes
 
 Role convergence closes public SSH. Without the recovery rule, a removed machine is reachable only through its provider console. So the Gateway reopens public SSH while the tunnel still works, and then removes the peer.
+
+### A jump host for private Nodes
+
+A Node on a private bridge has no public SSH address. SSH through its host needs no proxy device or DNAT rule on the host, and the Node keeps SSH on port 22, as the firewall catalog expects. Reading the host key from the host, not from the new Node, keeps the trust anchor outside the machine being enrolled.
 
 ### The hub stays on the vpn Node
 
