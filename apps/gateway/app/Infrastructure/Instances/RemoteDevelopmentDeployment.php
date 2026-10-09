@@ -16,9 +16,11 @@ use App\Domain\Instances\InstanceSandboxGuard;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\Storage\CheckoutRemovalBoundary;
 use App\Domain\Projects\DevelopmentDeployStep;
+use App\Domain\Routes\RouteWebRoot;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\GitRepositoryOrigin;
+use App\Domain\SourceControl\RelativeWebRoot;
 use App\Infrastructure\AppDev\DevelopmentSite;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\GitHub\GitReadScript;
@@ -28,7 +30,9 @@ use App\Infrastructure\Processes\ProcessOutputStream;
 use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Instance;
+use App\Models\Route;
 use Closure;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Log;
 
 final readonly class RemoteDevelopmentDeployment implements DevelopmentDeployment
@@ -123,7 +127,7 @@ final readonly class RemoteDevelopmentDeployment implements DevelopmentDeploymen
             throw $this->invalidReceipt();
         }
         $this->assertCommit($commit);
-        $release = $this->receipt($instance, $this->run($instance, DevelopmentReleaseProgram::prepare(), 'prepare', [$name, $commit]));
+        $release = $this->receipt($instance, $this->run($instance, DevelopmentReleaseProgram::prepare(), 'prepare', [$name, $commit, ...$this->environmentDirectories($instance)]));
         if ($release->name !== $name || $release->commit !== $commit) {
             throw $this->invalidReceipt();
         }
@@ -215,6 +219,32 @@ final readonly class RemoteDevelopmentDeployment implements DevelopmentDeploymen
             $retained[] = $name;
         }
         $this->run($instance, DevelopmentReleaseProgram::prune(), 'prune', [(string) DeploymentRelease::RETAINED_PER_HOME, $selected->name, ...array_unique($retained)]);
+    }
+
+    /**
+     * The application directories below the checkout root whose environment files each candidate copies
+     * from the stable home: the default directory and every directory that a Route with a web root serves.
+     *
+     * @return list<string>
+     */
+    private function environmentDirectories(Instance $instance): array
+    {
+        $instance->loadMissing('project');
+        $webRoots = Route::query()
+            ->whereNotNull('web_root')
+            ->whereHas('targets', static fn (Builder $query): Builder => $query->where('instance_id', $instance->id))
+            ->orderBy('id')
+            ->pluck('web_root')
+            ->all();
+        $directories = [];
+        foreach ([$instance->root ?? $instance->project->root, ...$webRoots] as $webRoot) {
+            $directory = RouteWebRoot::relativeDirectory(is_string($webRoot) ? $webRoot : null);
+            if ($directory !== '') {
+                $directories[$directory] = RelativeWebRoot::validate($directory);
+            }
+        }
+
+        return array_values($directories);
     }
 
     /** @return non-empty-list<string> */

@@ -674,7 +674,7 @@ final class Orb214RemovalPhpRuntimeManager implements ProductionPhpRuntimeManage
     /** @var list<int> */
     public array $removed = [];
 
-    public function converge(Instance $instance): void {}
+    public function converge(Instance $instance, ?Route $activating = null): void {}
 
     public function convergeMonitoring(Instance $instance, bool $enabled): void {}
 

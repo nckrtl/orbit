@@ -386,17 +386,35 @@ final class DevelopmentReleaseProgram
             source="$releases/$source_name"
             test ! -e "$releases/$candidate" && test ! -L "$releases/$candidate" || exit 1
             test ! -e "$state/release-$candidate" && test ! -L "$state/release-$candidate" || exit 1
+            shift 2
             create_release "$candidate" "$(git -C "$source" rev-parse HEAD)"
             copy_tree "$source" "$releases/$candidate"
             git -C "$releases/$candidate" reset --hard "$commit" >/dev/null
-            # Explicit synchronization writes this Instance's stable environment files.
-            for environment in .env .env.testing; do
-                if [ -e "$home/$environment" ] || [ -L "$home/$environment" ]; then
-                    test -f "$home/$environment" && test ! -L "$home/$environment"
-                    test ! -d "$releases/$candidate/$environment"
-                    rm -f -- "$releases/$candidate/$environment"
-                    cp --reflink=always -a -- "$home/$environment" "$releases/$candidate/$environment"
-                fi
+            # Explicit synchronization and Route APP_URL writes target this Instance's stable environment
+            # files: at the checkout root, in the default application directory, and in each directory
+            # that a Route with a web root serves.
+            copy_environment() {
+                local from=$1 to=$2 environment
+                for environment in .env .env.testing; do
+                    if [ -e "$from/$environment" ] || [ -L "$from/$environment" ]; then
+                        test -f "$from/$environment" && test ! -L "$from/$environment" || exit 1
+                        test ! -d "$to/$environment" || exit 1
+                        rm -f -- "$to/$environment"
+                        cp --reflink=always -a -- "$from/$environment" "$to/$environment"
+                    fi
+                done
+            }
+            copy_environment "$home" "$releases/$candidate"
+            for directory in "$@"; do
+                printf '%s' "$directory" | grep -Eq '^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$'
+                case "/$directory/" in */./*|*/../*) exit 1 ;; esac
+                from="$home/$directory"
+                to="$releases/$candidate/$directory"
+                # A directory missing from the stable home or from the new commit has nothing to carry.
+                if [ ! -d "$from" ] || [ ! -d "$to" ]; then continue; fi
+                test "$(realpath -e -- "$from")" = "$from"
+                test "$(realpath -e -- "$to")" = "$to"
+                copy_environment "$from" "$to"
             done
             guard_release "$candidate"
             guard_links

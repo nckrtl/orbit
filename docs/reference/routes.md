@@ -104,7 +104,9 @@ The Gateway API accepts `POST /api/v1/routes` with an app Route body such as `{"
 | `route.target_inactive` | The Instance is not active. |
 | `route.target_web_root_unsupported` | The Instance has no supported relative web root, such as a package rooted at `.`. |
 | `route.target_conflict` | The target Instance already has a Route without a web root. |
-| `route.web_root_unsupported` | A `web_root` names a production Instance. |
+| `route.web_root_release_missing` | A `web_root` names a production Instance that has no selected release. |
+| `route.web_root_unsafe` | A production web root would serve an application `.env`, or sits in the default directory without being the Instance root. |
+| `app-prod.web_root_invalid` | The selected production release lacks the web root or its application directory, or the web root holds a link. |
 | `route.router_required` | The Cluster has no active Router. |
 | `route.node_inactive`, `route.cluster_inactive` | The Instance's Node or Cluster, or the custom proxy's Node, is not active. |
 | `route.upstream_invalid` | The upstream is not a loopback HTTP URL. |
@@ -153,6 +155,7 @@ The Gateway records the requested set before it starts. A failure before the ass
 | `route.target_disposition_required` | A detached active Instance has no disposition. |
 | `route.target_disposition_invalid` | A disposition names an invalid destination or both reassigns and removes. |
 | `route.target_set_conflict` | Another target-set change is recorded on the Route. |
+| `route.web_root_unsupported` | The Route has a web root. It keeps one target. |
 
 ### Serve a production pool
 
@@ -171,20 +174,20 @@ orbit route:create 12 docs.shop.test --web-root=apps/docs/public
 orbit route:update 14 --web-root=apps/admin/public
 ```
 
-The API takes `web_root` on `POST /api/v1/routes` and `PATCH /api/v1/routes/{route}`; `null` clears it. A web root follows the [Project root](/reference/projects#fields) rules: a normalized relative path, without `.` or `..` segments, and not absolute. A bad value fails with HTTP 422 `validation.failed` on `web_root`. Serving refuses a web root that is missing or holds a symlink, with `app-dev.source_access_failed`, as in [Node scope](#node-scope).
+The API takes `web_root` on `POST /api/v1/routes` and `PATCH /api/v1/routes/{route}`; `null` clears it. A web root follows the [Project root](/reference/projects#fields) rules: a normalized relative path, without `.` or `..` segments, and not absolute. A bad value fails with HTTP 422 `validation.failed` on `web_root`. Serving refuses a web root that is missing or holds a symlink, with `app-dev.source_access_failed` in development, as in [Node scope](#node-scope), and `app-prod.web_root_invalid` in production.
 
 | Rule | Result |
 | --- | --- |
 | Instance's own Route | Each Instance has at most one Route without a web root. A `laravel-app` or `symfony-app` Instance keeps it: a web root on it returns `route.web_root_conflict`. |
 | Site | Workload Caddy serves the Route's domain from its web root. The Route has its own leaf, `route-<id>`, so the Instance's leaf keeps naming its own Route. |
 | PHP-FPM | One pool for each application directory. Routes that serve one directory share its pool. |
-| `APP_URL` | The Instance's own Route keeps its directory. Another directory takes the domain of the oldest Route that serves it. |
+| `APP_URL` | The Instance's own Route keeps its directory. Another directory takes the domain of the oldest Route that serves it. A development `default` with releases copies each directory's `.env` into its next [release](/reference/deployments#development-defaults). |
 | Change | Creating, updating, or removing such a Route converges its site, pool, and `APP_URL`. A Project root change moves `APP_URL` to the new winner. |
 | Instance removal | Once every refusal check passes, removes the Instance's Routes with a web root, then the Instance. A refused removal keeps them. |
 | Transfer | The Routes move with the Instance and keep their IDs and domains. A public one cannot change Cluster. See [Instance transfer](/reference/instance-transfer#routes-with-a-web-root). |
 | Hibernation | A request to any Route of the Instance wakes it. Dependency pruning covers only the default directory. |
 | Processes and Schedules | Unchanged. They keep the default application directory or their explicit working directory. |
-| Production | Refused with `route.web_root_unsupported`. |
+| Production | Served from the selected release. See [Web roots on production](#web-roots-on-production). |
 
 The default directory keeps its pool, `orbit-app-instance-<id>`. Another directory gets `orbit-app-instance-<id>-<suffix>`, where the suffix is a stable hash of its relative path. When the last Route of a directory leaves, its pool retires and its `.env` stays. Orbit writes `APP_URL` only into a directory that holds `artisan`, and a new `.env` there gets its own key.
 
@@ -192,7 +195,24 @@ A Route with a web root keeps its domain, so a domain change returns `route.web_
 
 Once the Instance has a PHP runtime, Doctor checks `APP_URL` in each directory that a Route with a web root serves and that holds `artisan`. It compares the value with the domain of the Route that wins the directory, by the rule above. A difference gives `instance.laravel_url_mismatch`, and its summary names the directory. See [Check Routes with Doctor](#check-routes-with-doctor).
 
-Follow-ups: production Instances, the `.env` of other directories in the releases of a development `default`, and a transfer that moves a public Route with a web root to another Cluster.
+### Web roots on production
+
+A production Instance serves each web root from its selected release, `<home>/current/<web root>`. Deploy the Instance first. Before Orbit stores the Route, it checks the selected release: without `current`, creation fails with `route.web_root_release_missing`; a missing web root or application directory, or a link in the web root, fails with `app-prod.web_root_invalid`. Creation and a web-root change wait for a deployment or rollback of the Instance.
+
+| Part | Production behavior |
+| --- | --- |
+| PHP-FPM | One more pool under the Instance's dedicated master: `orbit-<production-user>-<suffix>`, with socket `/run/php/<production-user>.<suffix>.sock`. See [PHP runtimes](/reference/php-runtime#production-runtime). |
+| `.env` | A stable file, `<home>/env/<directory>/.env`. Each release links its `<directory>/.env` to that file. Orbit writes `APP_URL` there, and a new file gets its own key. |
+| Create or change | Orbit links the `.env` and grants Caddy access in the selected release before the pool starts. |
+| Deploy and roll back | A new release gets links before deploy steps, or fails preparation without the directory. Activation checks each web root, links, and grants Caddy access before the switch. See [releases](/reference/deployments#the-production-home). |
+| Failed creation | The Route becomes `failed`, and Orbit withdraws its pool and site. Deployments, pools, and Doctor count only active Routes. Remove it with `route:destroy`. |
+| Own Route | The only Route without a web root keeps it. A web root on it returns `route.web_root_conflict`, also for a `monorepo` Instance. |
+| Removal | The pool leaves with the Route. `<home>/env/` stays. Instance removal first removes these Routes, as in development. |
+| Target set | The Route keeps one target. A target-set change, or a move to a production Instance, returns `route.web_root_unsupported`. |
+
+A web root must not hold a link, the same rule as for the Instance root. So no web root of the Instance, its own root included, may contain the `.env` of a served directory. A web root that is its own application directory, such as `apps/docs`, or one inside the Instance root, such as `public/docs/public`, returns `route.web_root_unsafe`. A web root in the default directory must be the Instance root itself; `apps/site` on root `apps/site/public` returns `route.web_root_unsafe`. Doctor's `APP_URL` check of each directory skips production. A cached configuration in a release keeps its old `APP_URL` until the next deployment rebuilds it.
+
+Follow-up: a transfer that moves a public Route with a web root to another Cluster.
 
 ## Custom proxy Routes
 

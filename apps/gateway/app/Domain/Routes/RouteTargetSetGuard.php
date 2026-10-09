@@ -21,7 +21,7 @@ final readonly class RouteTargetSetGuard
     public function assertMutable(Route $route): void
     {
         if ($route->hasWebRoot()) {
-            $this->refuse('route.web_root_unsupported', 'A Route web root is supported only for development Instances.');
+            $this->refuse('route.web_root_unsupported', 'A Route with a web root cannot own a production target pool.');
         }
 
         if ($route->provenance !== RouteProvenance::Explicit) {

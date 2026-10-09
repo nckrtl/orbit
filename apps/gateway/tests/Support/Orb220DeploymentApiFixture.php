@@ -24,6 +24,7 @@ use App\Infrastructure\Processes\ProcessCancelledException;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
+use App\Models\Route;
 use Closure;
 
 final readonly class Orb220DeploymentApiFixture
@@ -260,7 +261,7 @@ final readonly class Orb220EnvironmentSynchronizer implements InstanceEnvironmen
 
 final readonly class Orb220PhpRuntimeManager implements ProductionPhpRuntimeManager
 {
-    public function converge(Instance $instance): void {}
+    public function converge(Instance $instance, ?Route $activating = null): void {}
 
     public function convergeMonitoring(Instance $instance, bool $enabled): void {}
 

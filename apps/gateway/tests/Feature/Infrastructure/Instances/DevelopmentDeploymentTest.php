@@ -314,6 +314,32 @@ it('grants Web access on activation only to the deployed release', function (): 
     expect(array_slice($access->arguments, 3))->toBe([$release->path, 'public', $release->path]);
 });
 
+/** @param list<string> $webRoots */
+function dev1080_web_root_routes(Instance $instance, array $webRoots): void
+{
+    foreach ($webRoots as $index => $webRoot) {
+        $route = Route::query()->create(['project_id' => $instance->project_id, 'node_id' => $instance->node_id, 'domain' => "site{$index}.dev935.test", 'web_root' => $webRoot, 'provenance' => 'explicit', 'publication' => 'private', 'status' => 'pending']);
+        $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
+        $route->publishSites();
+        $route->update(['status' => 'active']);
+    }
+}
+
+/** @param list<string> $directories */
+function dev1080_push_applications(DevelopmentDeploymentFixture $fixture, array $directories): string
+{
+    foreach ($directories as $directory) {
+        new Filesystem()->makeDirectory($fixture->source.'/'.$directory.'/public', 0o755, true, true);
+        file_put_contents($fixture->source.'/'.$directory.'/artisan', "<?php\n");
+        file_put_contents($fixture->source.'/'.$directory.'/public/index.php', '<?php echo "app";');
+    }
+    DevelopmentDeploymentFixture::command(['git', '-C', $fixture->source, 'add', '-A']);
+    DevelopmentDeploymentFixture::command(['git', '-C', $fixture->source, 'commit', '-m', 'applications']);
+    DevelopmentDeploymentFixture::command(['git', '-C', $fixture->source, 'push', 'origin', 'main']);
+
+    return trim(DevelopmentDeploymentFixture::command(['git', '-C', $fixture->source, 'rev-parse', 'HEAD']));
+}
+
 describe('real development release programs', function (): void {
     it('migrates without moving Git and keeps task bridges and registered T3 worktrees intact', function (): void {
         dev935_require_reflinks($this->fixture);
@@ -435,6 +461,57 @@ describe('real development release programs', function (): void {
         expect(file_get_contents($previous->path.'/.cache/warm'))->toBe('previous-cache');
         $deployment->activate($instance, $release);
         expect(readlink($this->fixture->home.'/current'))->toBe('releases/'.$release->name);
+    });
+
+    it('carries the stable environment of every application directory into a candidate', function (): void {
+        dev935_require_reflinks($this->fixture);
+        $deployment = $this->fixture->deployment;
+        $instance = $this->fixture->instance;
+        $home = $this->fixture->home;
+        $instance->update(['root' => 'apps/site/public']);
+        dev1080_web_root_routes($instance, ['apps/docs/public', 'apps/docs/public', 'apps/gone/public']);
+        foreach (['apps/site', 'apps/docs'] as $directory) {
+            mkdir($home.'/'.$directory, 0o755, true);
+            file_put_contents($home.'/'.$directory.'/.env', "APP_URL=https://old.dev935.test\n");
+        }
+        $deployment->initialize($instance);
+        $previous = $deployment->selected($instance);
+        $commit = dev1080_push_applications($this->fixture, ['apps/site', 'apps/docs']);
+        file_put_contents($home.'/apps/site/.env', "APP_URL=https://site.dev935.test\n");
+        file_put_contents($home.'/apps/docs/.env', "APP_URL=https://docs.dev935.test\n");
+        file_put_contents($home.'/apps/docs/.env.testing', "APP_ENV=testing\n");
+        expect($deployment->target($instance))->toBe($commit);
+        $release = $deployment->prepare($instance, $commit);
+
+        expect(file_get_contents($release->path.'/.env'))->toBe("APP_ENV=development\n")
+            ->and(file_get_contents($release->path.'/apps/site/.env'))->toBe("APP_URL=https://site.dev935.test\n")
+            ->and(file_get_contents($release->path.'/apps/docs/.env'))->toBe("APP_URL=https://docs.dev935.test\n")
+            ->and(file_get_contents($release->path.'/apps/docs/.env.testing'))->toBe("APP_ENV=testing\n")
+            ->and(fileinode($release->path.'/apps/docs/.env'))->not->toBe(fileinode($home.'/apps/docs/.env'))
+            ->and(file_get_contents($previous->path.'/apps/docs/.env'))->toBe("APP_URL=https://old.dev935.test\n")
+            ->and(file_exists($previous->path.'/apps/docs/.env.testing'))->toBeFalse()
+            ->and(file_exists($release->path.'/apps/gone'))->toBeFalse();
+        $deployment->activate($instance, $release);
+        expect(file_get_contents($home.'/current/apps/docs/.env'))->toBe("APP_URL=https://docs.dev935.test\n");
+    });
+
+    it('refuses a stable application directory that leaves the checkout through a link', function (): void {
+        dev935_require_reflinks($this->fixture);
+        $deployment = $this->fixture->deployment;
+        $instance = $this->fixture->instance;
+        $home = $this->fixture->home;
+        dev1080_web_root_routes($instance, ['apps/docs/public']);
+        $deployment->initialize($instance);
+        $commit = dev1080_push_applications($this->fixture, ['apps/docs']);
+        mkdir($this->fixture->sandbox.'/outside');
+        file_put_contents($this->fixture->sandbox.'/outside/.env', "SECRET=outside\n");
+        mkdir($home.'/apps/docs', 0o755, true);
+        rmdir($home.'/apps/docs');
+        symlink($this->fixture->sandbox.'/outside', $home.'/apps/docs');
+        $deployment->target($instance);
+
+        expect(fn () => $deployment->prepare($instance, $commit))->toThrow(RuntimeConvergenceException::class)
+            ->and(readlink($home.'/current'))->toBe('releases/initial');
     });
 
     it('keeps current after a required failure and removes the failed candidate', function (): void {

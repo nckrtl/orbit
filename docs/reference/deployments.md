@@ -2,9 +2,9 @@
 title: "Instance releases"
 description: "How development defaults and production Instances build releases, run deploy steps, and select current code."
 covers:
-  - apps/gateway/app/Domain/{Instances/Deployment/**,Projects/*DeployStep*.php}
+  - apps/gateway/app/Domain/{Instances/Deployment/**,Instances/ProductionWebRootManager.php,Projects/*DeployStep*.php}
   - apps/gateway/app/Actions/Instances/{DeployInstanceAction,DeployDefaultInstanceAction,RollbackInstanceAction,InstanceDeploymentConfigResolver,UpdateInstanceAction,ListInstanceReleasesAction,ListInstanceDeploymentsAction,*InstanceDeployStep*Action}.php
-  - apps/gateway/app/Infrastructure/Instances/{RemoteProductionDeployment,RemoteDevelopmentDeployment,DevelopmentReleaseProgram,ProductionApplicationPaths}.php
+  - apps/gateway/app/Infrastructure/Instances/{RemoteProductionDeployment,RemoteDevelopmentDeployment,DevelopmentReleaseProgram,ProductionApplicationPaths,ProductionWebRootProgram,RemoteProductionWebRootManager}.php
   - apps/gateway/app/Console/Commands/DeployDevelopmentDefaultsCommand.php
   - apps/gateway/app/Http/Streaming/**
   - apps/gateway/app/Http/{Controllers/Api/{InstanceDeploymentsController,InstanceDeployStepsController,InstanceReleasesController,InstanceRollbacksController,ProjectDevelopmentDeployStepsController},Requests/Projects/*ProjectDevelopmentDeployStepRequest}.php
@@ -26,6 +26,7 @@ Each production Instance has a home, `/home/<production-user>`, with these paths
 | --- | --- |
 | `releases/<name>/` | One retained release: a Git checkout of the deployed branch. |
 | `.env` | The durable environment file. Each release's application directory holds a `.env` link to it. |
+| `env/<directory>/.env` | The durable environment file of another application directory that a [Route with a web root](/reference/routes#web-roots-on-production) serves. Each release links that directory's `.env` to it. |
 | `database.sqlite` | An optional SQLite database. Orbit keeps the path but does not create the file. |
 | `current` | A link to the selected release. It is absent until the first deployment. |
 
@@ -36,6 +37,10 @@ The Gateway lists retained releases as the production user from a directory that
 The web root is the Instance root, or else the Project root, inside `current`. A root such as `public` serves `<home>/current/public`. A nested root such as `apps/site/public` serves `<home>/current/apps/site/public`; its [application directory](/reference/projects#application-directory) is `<home>/current/apps/site`. The release's `apps/site/.env` links to `<home>/.env`, with a relative target calculated from that depth (in this example, `../../../../.env`). Root `public` keeps the release-root `.env` link with target `../../.env`. Caddy resolves the `current` link before it passes a script path to PHP-FPM, so a request after a switch loads its PHP files from the new release.
 
 With root `server/web/public`, both the initial clone and later releases link `server/web/.env` with target `../../../../.env`. Orbit does not create a second link at the release root. Release selection, retained-release listing, rollback validation, and [Doctor](/cli/doctor) check the link in that same application directory. Source classification reads that directory's `composer.json` and `artisan`, while ownership and Git identity checks still cover the whole release.
+
+A [Route with a web root](/reference/routes#web-roots-on-production) adds a web root in `current`, such as `apps/docs/public`. Source preparation links the release's `apps/docs/.env` to `<home>/env/apps/docs/.env`, with target `../../../../env/apps/docs/.env`, before the deploy steps run. Activation, for a deployment and for a rollback, checks that each such web root exists without a link, adds a missing `.env` link, and grants Caddy access before it switches `current`. Only active Routes count. An Instance without such a Route sends the same commands as before, byte for byte.
+
+A new release without such a directory fails at source preparation. Like any other preparation failure, it keeps the earlier selection and leaves the release directory. A rollback to an older release without the directory fails at activation and keeps the earlier selection.
 
 ## Development defaults
 
@@ -67,7 +72,11 @@ An interrupted `git worktree add` or `git worktree remove` can leave a broken re
 
 Pruning removes a broken release that is not `current`, the previous selection, or a leased seed, when its ownership receipt proves that Orbit created it. It also removes a registration left behind. A broken folder without a receipt stays for operator inspection, with the same warning, and healthy releases continue through listing and deployment. Initialization removes a folder without `.git` whose creation intent it recovers. Listing still requires a valid `current`. Pruning also requires a valid previous selection and every leased seed before inspecting unused releases. Invalid ownership receipts, symlinks, and foreign or ambiguous Git metadata still fail validation.
 
-A failed candidate is removed without changing `current`. Cleanup never prunes the stable repository or other linked worktrees. Environment files and caches in development releases are copies, not links back into another Instance. The application-directory `.env` and any `.env.testing` are copied from the same relative directory in the default's stable home when a candidate is built, so explicit environment synchronization is picked up by the next deployment without writing into the live seed. Production environment and rollback rules below remain separate.
+A failed candidate is removed without changing `current`. Cleanup never prunes the stable repository or other linked worktrees.
+
+Environment files and caches in development releases are copies, not links back into another Instance. When Orbit builds a candidate, it copies `.env` and any `.env.testing` from the default's stable home into the same relative directory of the candidate. It does this at the checkout root, in the application directory, and in each directory that a [Route with a web root](/reference/routes#serve-several-web-roots) serves. So explicit environment synchronization and a Route's `APP_URL` reach the next deployment without a write into the live seed. Production environment and rollback rules below remain separate.
+
+Orbit skips a directory that is missing from the stable home or from the new commit. A stable directory that leaves the checkout through a link fails the preparation. The stable home keeps the commit of its migration. Orbit writes a Route's `APP_URL` only into a stable directory that holds `artisan`, so an application that a later commit adds gets no `APP_URL` from Orbit.
 
 ## Deploy steps
 
@@ -182,7 +191,7 @@ Deployment, rollback, deploy-step changes, and branch changes share the Instance
 
 ## Inspect release placement with Doctor
 
-[Doctor](/cli/doctor) checks each production Instance against its home. It reports a missing or wrongly owned home, a broken `current` link, a selected release outside `releases/`, and a web root that leaves the release. A home without `current` is healthy before the first deployment. Doctor accepts an older release after a rollback, and a release whose branch has moved on.
+[Doctor](/cli/doctor) checks each production Instance against its home. It reports a missing or wrongly owned home, a broken `current` link, a selected release outside `releases/`, and a web root that leaves the release. It checks the `.env` link of the default application directory only. A home without `current` is healthy before the first deployment. Doctor accepts an older release after a rollback, and a release whose branch has moved on.
 
 ## Retained releases
 
@@ -190,7 +199,7 @@ A successful production deployment keeps at most 3 releases in the home: the new
 
 Cleanup removes only folders that pass the release checks of the listing. It first renames a release to `releases/.pruned-<name>`, so the release leaves the list at once, and then deletes that folder. A folder that a stopped cleanup left is deleted by the next one. A partial folder that fails the release checks stays.
 
-[Instance removal](/reference/instance-removal) removes `current` and the serving setup, and keeps `releases/`, `.env`, `database.sqlite`, and the local PHP-FPM tuning for recovery.
+[Instance removal](/reference/instance-removal) removes `current` and the serving setup, and keeps `releases/`, `.env`, `env/`, `database.sqlite`, and the local PHP-FPM tuning for recovery.
 
 ## Why it works this way
 
