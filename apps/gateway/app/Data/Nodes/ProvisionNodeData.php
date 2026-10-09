@@ -12,6 +12,7 @@ final class ProvisionNodeData extends Data
     /**
      * @param  list<RoleName>  $roles
      * @param  int|null  $sshJumpNodeId  Internal: the Node that public SSH goes through until the Node has an active role. No API or CLI field sets it.
+     * @param  int|null  $taskVmId  Internal: the task VM row that the new Node serves. Provisioning links them when it saves the Node record, before any convergence. No API or CLI field sets it.
      */
     public function __construct(
         public string $name,
@@ -36,5 +37,6 @@ final class ProvisionNodeData extends Data
         public ?NodeSettingsData $settings = null,
         public bool $platformProvided = false,
         public ?int $sshJumpNodeId = null,
+        public ?int $taskVmId = null,
     ) {}
 }

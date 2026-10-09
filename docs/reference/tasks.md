@@ -602,7 +602,7 @@ A claim takes the oldest `todo` task that fits and moves it to `reserved`. The p
 - an active Linux Node with an active `app-dev` role and a WireGuard address;
 - not excluded from the Project by a [development node exclusion](/reference/development-node-exclusions);
 - an active `pi-server` Process with desired state `running`;
-- not a [task VM](/reference/compute-drivers#task-vms) Node (not built yet);
+- not the Node of a [task VM](/reference/compute-drivers#task-vms) that is not `destroyed`;
 - with fewer than 10 active tasks. Active tasks are `reserved`, `running`, `reviewing`, and `settling`.
 
 Among the Nodes that fit, the one with the fewest active tasks wins. There is no per-Project limit, and the scheduler never polls Nodes for capacity.
@@ -759,9 +759,7 @@ When the acting thread stops, the tick reads `$(git rev-parse --git-path orbit)/
 
 ### Task VM workspace
 
-Partly built. The agents, the checks, fetch, and push work on a task VM Node as `orbit`. The claim, the VM itself, and its workspace are not built yet. The Phase 1 slices of ADR 0200 build them.
-
-A group of a Project other than `orbit`, with `task_compute: vm`, runs in its own [task VM](/reference/compute-drivers#task-vms). The claim creates the VM and waits until it is `ready`. Until then, the task returns to `todo` with the reason `Task VM: <state or error>`, and the next tick tries again. Then Orbit creates the workspace on the VM's Node, as for a shared group: the Instance `task-{id}`, and its private Route when the workspace is routed.
+A group of a Project other than `orbit`, with `task_compute: vm`, runs in its own [task VM](/reference/compute-drivers#task-vms). The claim creates the VM and waits until it is `ready`. Until then, the task returns to `todo` with a [`Task VM:` reason](/reference/compute-drivers#from-claim-to-workspace), and the next tick tries again. Then Orbit creates the workspace on the VM's Node, as for a shared group: the Instance `task-{id}`, and its private Route when the workspace is routed.
 
 Inside the VM, everything runs as the managed user `orbit`, which has passwordless sudo. There is no `orbit-worker`, so the workspace needs no ACLs and no `safe.directory` entry. Implementers and reviewers run on the VM's own [Pi server](/reference/pi-server#run-pi-on-a-task-vm). The baseline and handoff checks run over SSH as `orbit`. The Gateway fetches and pushes over SSH with the token on standard input, as for a shared group. No GitHub token enters the VM.
 

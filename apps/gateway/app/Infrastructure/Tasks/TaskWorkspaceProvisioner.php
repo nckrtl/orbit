@@ -32,10 +32,13 @@ use App\Domain\Tasks\TaskCeilings;
 use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskConcurrencyGuard;
 use App\Domain\Tasks\TaskWorkspaceName;
+use App\Infrastructure\TaskVms\TaskVmWorkspace;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
+use App\Models\TaskVm;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -53,6 +56,7 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
         private TaskConcurrencyGuard $ceilings,
         private AgentDriverRegistry $drivers,
         private SandboxWorkspaceProvisioner $sandboxes,
+        private TaskVmWorkspace $taskVms,
     ) {}
 
     public function provision(InstanceProvisionIntent $intent): Instance|InstanceProvisionFailure
@@ -63,8 +67,12 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
     private function provisionWorkspace(InstanceProvisionIntent $intent): Instance|InstanceProvisionFailure
     {
         $group = $intent->group->loadMissing(['project', 'taskable']);
+        $taskVmNode = null;
         if (($group->task_compute ?? $group->project->task_compute) === TaskCompute::Vm) {
-            return $this->sandboxes->provision($group);
+            if ($group->project->slug === 'orbit') {
+                return $this->sandboxes->provision($group);
+            }
+            $taskVmNode = $this->taskVms->node($group);
         }
         $existing = $group->taskable;
 
@@ -87,7 +95,10 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
             return $sourceFailure;
         }
 
-        $node = $this->selectNode($group->project, [$intent->group->implementer_agent_driver, $intent->group->reviewer_agent_driver], $this->existingWorkspaceNodeId($workspace));
+        $drivers = [$intent->group->implementer_agent_driver, $intent->group->reviewer_agent_driver];
+        $node = $taskVmNode instanceof Node
+            ? $this->taskVmNode($taskVmNode, $drivers)
+            : $this->selectNode($group->project, $drivers, $this->existingWorkspaceNodeId($workspace));
 
         if ($node instanceof InstanceProvisionFailure) {
             return $node;
@@ -381,6 +392,20 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
     }
 
     /**
+     * A web-lane `vm` group works on its own task VM Node, when every driver of the group allows it.
+     *
+     * @param  list<string>  $drivers
+     */
+    private function taskVmNode(Node $node, array $drivers): Node|InstanceProvisionFailure
+    {
+        if (array_all($drivers, fn (string $driver): bool => $this->drivers->get($driver)->allows($node))) {
+            return $node;
+        }
+
+        return new InstanceProvisionFailure('No Node fits: driver(s) ['.implode(', ', array_unique($drivers)).'] not allowed on task VM Node ['.$node->name.'].');
+    }
+
+    /**
      * @param  list<string>  $drivers  Every driver the group uses must allow the Node.
      * @param  int|null  $pinnedNodeId  The Node of the group's existing workspace. Only that Node can then fit.
      */
@@ -389,6 +414,7 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
         $nodes = Node::query()
             ->where('status', LifecycleStatus::Active)
             ->where('platform', 'linux')
+            ->whereNotIn('id', self::taskVmNodeIds())
             ->whereHas(
                 'roles',
                 static fn ($query) => $query
@@ -439,6 +465,7 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
         return Node::query()
             ->where('status', LifecycleStatus::Active)
             ->where('platform', 'linux')
+            ->whereNotIn('id', self::taskVmNodeIds())
             ->whereHas(
                 'roles',
                 static fn ($query) => $query
@@ -447,5 +474,15 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
             )
             ->get()
             ->contains(fn (Node $node): bool => $this->hasCapacity($node));
+    }
+
+    /**
+     * Shared groups never use the Node of a task VM that is not destroyed.
+     *
+     * @return Builder<TaskVm>
+     */
+    private static function taskVmNodeIds(): Builder
+    {
+        return TaskVm::query()->live()->whereNotNull('node_id')->select('node_id');
     }
 }

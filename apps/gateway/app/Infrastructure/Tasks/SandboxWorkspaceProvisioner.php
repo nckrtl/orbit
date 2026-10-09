@@ -24,7 +24,7 @@ use App\Models\TaskSandbox;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
-/** Admit guest work only after an owned pair and its runtime are ready. */
+/** The Orbit lane: admit guest work only after an owned pair and its runtime are ready. Web Projects use task VMs. */
 final readonly class SandboxWorkspaceProvisioner
 {
     public function __construct(
@@ -34,7 +34,6 @@ final readonly class SandboxWorkspaceProvisioner
         private SandboxWorkspaceSource $source,
         private SandboxPairRuntime $pair,
         private SandboxPiRuntime $pi,
-        private ProjectSandboxWorkspaceProvisioner $projects,
     ) {}
 
     public function provision(Task $reserved): Instance|InstanceProvisionFailure
@@ -43,9 +42,6 @@ final readonly class SandboxWorkspaceProvisioner
             try {
                 $group = Task::topLevel()->with(['project', 'taskable'])->findOrFail($reserved->id);
                 $this->assertClaim($group, $reserved);
-                if ($group->project->slug !== 'orbit') {
-                    return $this->projects->provision($reserved);
-                }
                 if (! config('compute.orbit_claims_enabled', false)) {
                     throw new TaskCapacityException(false, 'Task sandbox compute is not configured on this Gateway.');
                 }

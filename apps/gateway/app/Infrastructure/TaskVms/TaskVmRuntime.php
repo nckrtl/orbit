@@ -78,6 +78,12 @@ final readonly class TaskVmRuntime
     {
         $node = $vm->node ?? throw new TaskVmException('task_vm.not_enrolled', "Task VM [{$vm->name}] has no Node yet.");
         $origin = $this->origin();
+        if (rtrim((string) $this->proxy->cliproxyUrl(), '/') !== $origin) {
+            throw $this->invalidConfig('model_proxy_origin must be the CLIProxyAPI URL of the proxycli extension.');
+        }
+        if ($vm->model_proxy_origin !== null && $vm->model_proxy_origin !== $origin) {
+            throw $this->invalidConfig("model_proxy_origin changed while task VM [{$vm->name}] holds a key at [{$vm->model_proxy_origin}].");
+        }
         $artifact = $this->settings->piArtifactPath;
         $digest = $this->settings->piArtifactSha256;
         if ($artifact === null || $digest === null || $this->settings->piModels === []) {
@@ -113,13 +119,13 @@ final readonly class TaskVmRuntime
         }
     }
 
-    /** Revokes the group's model key. A task VM without a key has nothing to revoke. */
+    /** Revokes the group's model key at the origin that holds it. A task VM without a key has nothing to revoke. */
     public function release(TaskVm $vm): void
     {
         if ($vm->model_key === null) {
             return;
         }
-        $origin = $this->origin();
+        $origin = $vm->model_proxy_origin ?? $this->origin();
         $this->withModelKeyLock(function () use ($vm, $origin): void {
             $vm->refresh();
             if ($vm->model_key !== null) {
@@ -129,13 +135,13 @@ final readonly class TaskVmRuntime
         });
     }
 
-    /** The key is stored before CLIProxyAPI learns it, so a retry registers the same key. */
+    /** The key and its origin are stored before CLIProxyAPI learns the key, so a retry registers the same key there. */
     private function ensureModelKey(TaskVm $vm, string $origin): string
     {
         return $this->withModelKeyLock(function () use ($vm, $origin): string {
             $vm->refresh();
             if ($vm->model_key === null) {
-                $vm->update(['model_key' => bin2hex(random_bytes(32))]);
+                $vm->update(['model_key' => bin2hex(random_bytes(32)), 'model_proxy_origin' => $origin]);
             }
             $key = (string) $vm->model_key;
             $this->keys->ensure($origin, $this->managementKey(), $this->anchor($origin), $key);
