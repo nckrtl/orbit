@@ -31,8 +31,11 @@ use Throwable;
  */
 final readonly class GatewayReleasePromoter
 {
-    /** The default number of prepared releases kept, newest first, besides the current and previous one. */
-    public const int KeptReleases = 5;
+    /**
+     * The default for the most releases kept, the current and the previous one included. The rest of the room goes to
+     * the newest other releases. It is at least 2, so the previous release stays as the way back.
+     */
+    public const int KeptReleases = 3;
 
     /**
      * Pruning removes a release directory without `REVISION` once it is this many seconds old. Every prepare runs
@@ -355,18 +358,17 @@ final readonly class GatewayReleasePromoter
     }
 
     /**
-     * Keeps the newest releases plus the current and the previous one, whatever their age, and removes the release
-     * directories that a stopped prepare left without `REVISION`.
+     * Keeps the current and the previous release, whatever their age, and fills the rest of the kept count with the
+     * newest other releases. It also removes the release directories that a stopped prepare left without `REVISION`.
      */
     private function prune(string $current, ?string $previous): void
     {
         $ids = $this->layout->retainedReleaseIds();
-        $keep = array_values(array_unique(array_filter([
-            ...array_slice($ids, 0, max(1, $this->keptReleases)),
-            $current,
-            $previous,
-            $this->layout->currentReleaseId(),
-        ])));
+        $protected = array_values(array_filter([$this->layout->currentReleaseId(), $current, $previous]));
+        $keep = [
+            ...$protected,
+            ...array_slice(array_values(array_unique([...array_intersect($protected, $ids), ...$ids])), 0, max(2, $this->keptReleases)),
+        ];
 
         foreach ($ids as $id) {
             if (in_array($id, $keep, true)) {
