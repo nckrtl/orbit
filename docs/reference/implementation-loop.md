@@ -322,9 +322,9 @@ The worker uses `git` and the GitHub CLI with the login of the user who runs it.
 2. reads the newest 30 finished `CI` runs on `main`: pushes, nightly runs, and manual runs;
 3. reads the conclusions of each project's jobs in those runs;
 4. finds the newest commit on which the project's jobs passed;
-5. downloads, checks, and publishes that commit's graph and quality caches, unless the store already holds them.
+5. downloads, checks, and publishes that commit's graph and quality caches.
 
-The worker ignores pull request runs and runs from forks. The Gateway has two jobs, `Gateway` and `Gateway privileged`. The other projects have one job each.
+The worker skips the download when the store already holds that commit. It ignores pull request runs and runs from forks. The Gateway has two jobs, `Gateway` and `Gateway privileged`. The other projects have one job each.
 
 Before it publishes, the worker checks that:
 
