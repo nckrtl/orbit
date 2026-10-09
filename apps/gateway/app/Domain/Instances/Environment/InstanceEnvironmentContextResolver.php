@@ -47,6 +47,7 @@ final readonly class InstanceEnvironmentContextResolver
         }
 
         $routeQuery = Route::query()
+            ->whereNull('web_root')
             ->whereHas('targets', static fn (Builder $query): Builder => $query
                 ->where('instance_id', $instance->id))
             ->orderBy('id')
@@ -123,6 +124,7 @@ final readonly class InstanceEnvironmentContextResolver
         }
 
         $routeQuery = Route::query()
+            ->whereNull('web_root')
             ->whereHas('targets', static fn (Builder $query): Builder => $query
                 ->where('instance_id', $instance->id))
             ->orderBy('id')
@@ -193,6 +195,7 @@ final readonly class InstanceEnvironmentContextResolver
         }
 
         $routeQuery = Route::query()
+            ->whereNull('web_root')
             ->whereHas('targets', static fn (Builder $query): Builder => $query
                 ->where('instance_id', $instance->id))
             ->orderBy('id')

@@ -17,6 +17,7 @@ final readonly class CreateRouteData
         public ?int $clusterId = null,
         public ?string $upstream = null,
         public ?int $processId = null,
+        public ?string $webRoot = null,
     ) {}
 
     public function isCustomProxy(): bool

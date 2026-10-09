@@ -39,7 +39,7 @@ final readonly class NativeNodeRoleFirewallManager implements NodeRoleFirewallMa
     {
         $this->convergeRules(
             $node,
-            [$this->publicSshRule($node), $this->wireguardSshRule($node)],
+            [$this->publicSshRule($node)],
             publicConnection: true,
             enable: true,
             managedUser: $managedUser,

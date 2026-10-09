@@ -11,14 +11,16 @@ use App\Domain\Instances\DevelopmentSourceProfile;
 use App\Domain\Instances\Environment\InstanceEnvironmentRenderer;
 use App\Domain\Instances\Environment\LaravelApplicationKey;
 use App\Domain\Instances\ProjectSandboxRuntimeGuard;
+use App\Domain\Instances\RouteApplicationUrlWriter;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Projects\ProjectType;
+use App\Domain\SourceControl\RelativeWebRoot;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Instance;
 
-final readonly class RemoteDevelopmentInstanceConfigurator implements DevelopmentInstanceConfigurator
+final readonly class RemoteDevelopmentInstanceConfigurator implements DevelopmentInstanceConfigurator, RouteApplicationUrlWriter
 {
     public function __construct(
         private DevelopmentSshExecutor $ssh,
@@ -80,10 +82,27 @@ final readonly class RemoteDevelopmentInstanceConfigurator implements Developmen
 
     public function configureLaravelUrl(Instance $instance, string $url): void
     {
+        $this->writeLaravelUrl($instance, $instance->applicationDirectory(), $url, otherApplication: false);
+    }
+
+    public function configureDirectoryUrl(Instance $instance, string $relativeDirectory, string $url): void
+    {
+        $directory = $relativeDirectory === ''
+            ? rtrim($instance->checkout_path, '/')
+            : rtrim($instance->checkout_path, '/').'/'.RelativeWebRoot::validate($relativeDirectory);
+        $this->writeLaravelUrl($instance, $directory, $url, otherApplication: true);
+    }
+
+    /**
+     * Another application in the checkout keeps its own key and name: a new `.env` takes a generated key,
+     * and the script skips a directory without `artisan`.
+     */
+    private function writeLaravelUrl(Instance $instance, string $directory, string $url, bool $otherApplication): void
+    {
         ProjectSandboxRuntimeGuard::assertRuntime($instance);
         $instance->loadMissing(['node', 'project']);
         $account = $this->accounts->resolve($instance->node);
-        $storedKey = LaravelApplicationKey::stored($instance);
+        $storedKey = $otherApplication ? null : LaravelApplicationKey::stored($instance);
         $storedName = $instance->environmentValues()->where('env_key', 'APP_NAME')->first()?->env_value;
         $storedName = is_string($storedName) && $storedName !== '' && ! str_contains($storedName, '{{') ? $storedName : null;
         $settings = json_encode([
@@ -92,6 +111,7 @@ final readonly class RemoteDevelopmentInstanceConfigurator implements Developmen
             'app_key_stored' => $storedKey !== null,
             'app_name' => 'APP_NAME='.InstanceEnvironmentRenderer::quote($storedName ?? $instance->project->name),
             'app_name_stored' => $storedName !== null,
+            'require_artisan' => $otherApplication,
         ], JSON_THROW_ON_ERROR);
         $this->ssh->execute(
             $instance->node,
@@ -105,6 +125,9 @@ final readonly class RemoteDevelopmentInstanceConfigurator implements Developmen
                         url = settings['url']
                         if root.resolve(strict=True) != root:
                             raise SystemExit(42)
+                        artisan = root / 'artisan'
+                        if settings['require_artisan'] and (artisan.is_symlink() or not artisan.is_file()):
+                            raise SystemExit(0)
 
                         def safe_regular(path, required=False):
                             if path.is_symlink() or (path.exists() and not path.is_file()):
@@ -202,7 +225,7 @@ final readonly class RemoteDevelopmentInstanceConfigurator implements Developmen
                             match = matches[0]
                             updated = original[:match.start()] + b"'" + escaped + b"'" + original[match.end():]
                             if updated != original: atomic(cache, updated, cache.stat().st_mode & 0o777)
-                        PYTHON, $instance->applicationDirectory(), $account->user],
+                        PYTHON, $directory, $account->user],
                 protectedInput: ProtectedInput::fromString($settings),
             ),
             step: 'laravel-url',

@@ -489,6 +489,7 @@ describe('instance:list', function (): void {
             'instances' => [[
                 ...instance_payload(),
                 'route' => [...instance_route_payload(), 'request_id' => instance_request_id()],
+                'routes' => [[...instance_route_payload(), 'request_id' => instance_request_id()]],
             ]],
             'request_id' => instance_request_id(),
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
@@ -642,6 +643,7 @@ describe('instance:show', function (): void {
         $expected = json_encode([
             ...$payload,
             'route' => [...instance_route_payload(), 'request_id' => instance_request_id()],
+            'routes' => [[...instance_route_payload(), 'request_id' => instance_request_id()]],
             'request_id' => instance_request_id(),
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
         $this
@@ -756,6 +758,24 @@ it('rejects invalid parent IDs before creating an Instance', function (
     'invalid app' => ['0', '2', 'Project ID must be a positive integer.'],
     'invalid node' => ['3', '-1', 'Node ID must be a positive integer.'],
 ]);
+
+describe('route web root', function (): void {
+    it('lists the Routes of an Instance with their web roots', function (): void {
+        $payload = instance_payload();
+        $payload['routes'][] = [...instance_route_payload(), 'id' => 12, 'domain' => 'docs.dev.orbit.test', 'provenance' => 'explicit', 'web_root' => 'apps/docs/public'];
+        MockClient::global([ShowInstanceRequest::class => instance_mock_response(payload: $payload), ListProcessesRequest::class => no_processes_response()]);
+
+        expect(Artisan::call('instance:show', ['instance' => '5']))->toBe(0);
+        expect(instance_source_text(Artisan::output()))->toContain(
+            'ROUTE',
+            'WEB ROOT',
+            'dev.orbit.test',
+            'Instance root',
+            'docs.dev.orbit.test',
+            'apps/docs/public',
+        );
+    });
+});
 
 function no_processes_response(): MockResponse
 {

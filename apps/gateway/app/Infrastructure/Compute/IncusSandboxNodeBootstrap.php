@@ -61,7 +61,6 @@ final readonly class IncusSandboxNodeBootstrap
             $result = $this->transport->executeGuest($host, $settings['project'], $sandbox->id, $settings['max_vms'],
                 new RemoteCommand(['sudo', '-n', 'python3', '-I', '-c', $program], input: json_encode([
                     'public_key' => $this->keys->publicKey(),
-                    'recovery_port' => $sandbox->enrolled_at === null ? $node->public_ssh_port : null,
                     'gateway_time' => now()->format('U.u'),
                 ], JSON_THROW_ON_ERROR), timeout: 30, maxOutputBytes: 1024));
             if (! $result->succeeded() || $result->truncated || json_decode($result->stdout, true) !== ['ready' => true]) {

@@ -1,11 +1,11 @@
 ---
 title: "Derive the application directory from the web root"
-description: "Separate a Laravel application's directory from its repository, and keep the path contract ready for several named apps per Project."
+description: "Separate a Laravel application's directory from its repository, and serve several web roots of one checkout through its Routes."
 ---
 
 # ADR 0196: Derive the application directory from the web root
 
-Orbit derives one Laravel application directory from the effective web root. Repository operations keep their repository scope. A follow-up group replaces the single root with named apps without creating another Project for the same repository.
+Orbit derives one Laravel application directory from the effective web root. Repository operations keep their repository scope. A follow-up group lets an Instance serve more web roots of the same checkout through its Routes, without another Project for the same repository.
 
 ## Status
 
@@ -17,11 +17,11 @@ Principle: [One way, one name and Deterministic first](/mission#principles). The
 
 A repository can contain a Laravel application in `apps/site` while its Git checkout starts two directories above it. Today, [Project root](/reference/projects#fields) names the web root, not the directory that holds `artisan`, `composer.json`, or `.env`. Treating the checkout as the application directory sends environment writes, source inspection, and runtime commands to the wrong place.
 
-This decision spans two groups. Group #975 serves one Laravel app from a subfolder using the existing Project and Instance root fields. The follow-up multi-app group serves several apps from the same repository. The first group does not add app records, app selectors, or several Routes per Instance.
+This decision spans two groups. Group #975 serves one Laravel app from a subfolder using the existing Project and Instance root fields. The follow-up group #982 serves several apps from the same checkout, one Route for each web root.
 
 ## Decision
 
-Orbit separates application paths from repository paths now and uses named apps to extend that boundary in the follow-up group.
+Orbit separates application paths from repository paths now, and Routes with a web root extend that boundary in the follow-up group.
 
 ### Application directory for the single-app group
 
@@ -51,32 +51,28 @@ Task-workspace preparation and source inspection keep Git identity, metadata, ch
 
 ### Target model for the follow-up multi-app group
 
-A Project still owns exactly one repository. It has one or more named apps. Each app has an application path relative to the repository and a web root relative to that path. For example, an app named `site` can have path `apps/site` and web root `public`; their composition is today's `apps/site/public`. A root-level app has path `.` and web root `public`.
+This route-based model supersedes the earlier named-app target. The model is Project, then Instance, then one or more Routes. A Project owns one repository. An Instance is one copy of it. Each Route of the Instance serves one web root in that copy. There is no app record or app selector.
 
-Each Instance is one copy of the whole Project and serves every app. Each app has its own Route for that Instance. An Instance is not split into one Instance per app, and an app does not become another Project. Source and release selection remain Instance-wide; app-specific environment and runtime consumers resolve the named app's path and Route rather than choosing the first Route or scanning the repository.
-
-Today's effective `root` becomes the Project's single app: the application-directory portion becomes its path and the trailing `public` becomes its web root for Laravel. The conversion must represent existing Instance root overrides; it must not discard them. The follow-up group defines the conversion for other supported web roots, app names, Route naming, app selection in public interfaces, environment ownership, and per-app PHP and Process configuration before implementing them. It removes the old root field; it does not retain that field as a permanent alias.
-
-The named-app target is a contract for the follow-up group, not an API introduced by group #975. Today's Project type and single-Route rules remain in effect until that group replaces them. [Projects](/reference/projects#application-directory) owns the single-app path contract.
+A Route's `web_root` is repository-relative, such as `apps/docs/public`. Null means the Instance's effective root, so every existing Route keeps today's behavior. The same helper derives each Route's application directory. Each distinct directory gets one PHP-FPM pool; the default directory keeps its pool name. Its `.env` takes the URL of the Instance's own Route when that Route serves it, and otherwise of the oldest Route that serves it. Processes and Schedules keep their working directory. [Routes](/reference/routes#serve-several-web-roots) owns the rules. Production Instances refuse a web root until a follow-up group supports them.
 
 ## Rejected alternatives
 
-- A second application-directory setting now: it duplicates the information in a Laravel web root and can disagree with it. Named app paths belong to the follow-up model.
+- A second application-directory setting: it duplicates the information in a Laravel web root and can disagree with it.
 - Searching for `artisan` during registration: a repository can contain several apps, so a scan cannot choose the operator's intended app.
 - Changing the working directory of every command: repository-wide installs and task checks must still see every subproject. Commands that need an app directory can explicitly change into it.
 - One Project or one Instance per app: it duplicates repository identity, source operations, and release selection instead of representing several apps in one copy.
-- Several apps served through one arbitrarily selected Route: APP_URL and app selection would depend on ordering instead of a named app's Route.
+- Named app records with their own paths: they add a second identity next to the Route that already serves each site.
 
 ## Consequences
 
 - A nested Laravel application gets the same environment and runtime behavior as a root-level one, without moving its repository.
 - Group #975 changes how paths resolve. It does not change Project identity, registration discovery, command scope, or public root fields.
-- The follow-up group must define app-specific configuration and conversion before it changes the single-app API.
-- This ADR stays in progress after group #975. The follow-up group that completes the named-app model absorbs it into Projects and the owning runtime references, adds the redirect and retired-decision row, and deletes the ADR.
+- Routes with a web root add sites without changing Project or Instance identity, and without a data conversion.
+- This ADR stays in progress until production Instances support a web root. That group absorbs it into Projects and the owning runtime references, adds the redirect and retired-decision row, and deletes the ADR.
 
 ## Affects
 
 - Components: apps/gateway, apps/cli, apps/e2e, packages/php-sdk, apps/web
 - ADRs: none.
 - Detail: [Projects: Application directory](/reference/projects#application-directory), [environment file placement](/reference/environment-variables#where-the-file-lives), [releases](/reference/deployments#the-production-home), [Processes](/reference/processes-and-schedules#runtimes), [Schedules](/reference/schedules#execution-context), [PHP runtimes](/reference/php-runtime), [Instance logs](/reference/instance-logs#know-which-file-the-gateway-reads), [dependency scope](/reference/instance-dependencies#what-the-inventory-holds), [dependency collection](/reference/instance-dependency-contracts#collection), [hibernation](/reference/app-dev-runtime-hibernation#dependency-prune), [transfer](/reference/instance-transfer), and [Doctor](/cli/doctor).
-- Verify: `composer docs-lint`; the docs impact report against group #975's start commit and all planned paths; Gateway tests for path resolution and runtimes during implementation, and independent Incus review of root-level and nested Laravel apps in development and production. The follow-up group verifies named apps and per-app Routes on one Instance.
+- Verify: `composer docs-lint`; the docs impact report against group #975's start commit and all planned paths; Gateway tests for path resolution and runtimes during implementation, and independent Incus review of root-level and nested Laravel apps in development and production. The follow-up group verifies several Routes with web roots on one Instance.

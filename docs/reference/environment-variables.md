@@ -103,7 +103,7 @@ Without `replace`, a file key that is already stored returns `env.import_conflic
 
 For a Laravel Instance, import stores `APP_URL` as `https://{{instance.domain}}`, so the URL follows the Route. It keeps a non-empty `APP_KEY` as the file has it. When the file contains `APP_KEY` with an empty value, import reuses the Instance's non-empty stored key, or generates a cryptographically random 32-byte key with the `base64:` prefix if no usable stored key exists. This also applies to the existing-file import during Instance creation. A missing `APP_KEY` stays missing; other values stay as the file has them. Non-Laravel imports do not generate keys.
 
-When a Route's domain changes, Orbit updates APP_URL in that application's `.env` and Laravel cached configuration, not in an unrelated file at the repository root.
+When a Route's domain changes, Orbit updates APP_URL in that application's `.env` and Laravel cached configuration, not in an unrelated file at the repository root. A [Route with a web root](/reference/routes#serve-several-web-roots) writes `APP_URL` into the `.env` of the directory it serves; the stored Instance environment belongs to the Instance's own Route.
 
 ## Update
 
