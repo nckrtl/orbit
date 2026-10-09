@@ -25004,7 +25004,7 @@
         "tags": [
           "T3 Code"
         ],
-        "description": "Called by a T3 server on startup. The Gateway checks that `url` serves `environment_id`, exchanges `pairing_url` for an admin session as a T3 client pairs, stores the session encrypted, and revokes its earlier sessions on that server. Returns `t3.environment_mismatch` or `t3.admin_scope_missing` (422), and `t3.server_unreachable`, `t3.session_rejected`, `t3.request_refused`, or `t3.response_invalid` (502).",
+        "description": "Called from a T3 server's host on startup with an admin session from `t3 auth session issue --label \"Orbit Gateway\"`. The Gateway checks that `url` serves `environment_id` and that T3 accepts `admin_session` with admin scopes, stores the session encrypted, and revokes its earlier sessions on that server. Returns `t3.environment_mismatch` or `t3.admin_scope_missing` (422), and `t3.server_unreachable`, `t3.session_rejected`, `t3.request_refused`, or `t3.response_invalid` (502).",
         "requestBody": {
           "required": true,
           "content": {
@@ -25026,9 +25026,9 @@
                     "format": "uri",
                     "maxLength": 2048
                   },
-                  "pairing_url": {
+                  "admin_session": {
                     "type": "string",
-                    "format": "uri",
+                    "pattern": "^\\S+$(?![\\s\\S])",
                     "maxLength": 4096
                   }
                 },
@@ -25036,7 +25036,7 @@
                   "environment_id",
                   "label",
                   "url",
-                  "pairing_url"
+                  "admin_session"
                 ],
                 "additionalProperties": false
               }
@@ -25101,7 +25101,7 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/t3/environments\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"environment_id\": \"example\", \"label\": \"example\", \"url\": \"example\", \"pairing_url\": \"example\"}'\n"
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/t3/environments\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"environment_id\": \"example\", \"label\": \"example\", \"url\": \"example\", \"admin_session\": \"example\"}'\n"
           }
         ]
       }

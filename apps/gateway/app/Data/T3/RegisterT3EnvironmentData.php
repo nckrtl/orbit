@@ -13,6 +13,6 @@ final class RegisterT3EnvironmentData extends Data
         public string $environmentId,
         public string $label,
         public string $url,
-        #[SensitiveParameter] public string $pairingToken,
+        #[SensitiveParameter] public string $adminSession,
     ) {}
 }

@@ -25,6 +25,13 @@ final class T3ServerException extends ResourceOperationException
         ]);
     }
 
+    public static function rejected(string $baseUrl, string $operation): self
+    {
+        return new self('t3.session_rejected', "The T3 server at {$baseUrl} does not accept the session.", 502, details: [
+            'operation' => $operation,
+        ]);
+    }
+
     public static function malformed(string $baseUrl, string $operation): self
     {
         return new self('t3.response_invalid', "The T3 server at {$baseUrl} sent an unexpected {$operation} response.", 502, details: [
