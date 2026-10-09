@@ -57,7 +57,7 @@ function runtime_pair(): array
                 expect($addresses['app-dev'])->toBe('10.233.7.12');
             }
         }
-        if (in_array($phase, ['github_dns', 'pair_dns'], true)) {
+        if ($phase === 'pair_dns') {
             $dnsRequest = json_decode(base64_decode($guest['stdin']), true, flags: JSON_THROW_ON_ERROR);
             expect($guest['role'])->toBe('gateway');
             expect($dnsRequest['source_template'])->toBe($sandbox->spec['source_template']);
@@ -82,7 +82,7 @@ function runtime_pair(): array
             'enroll' => ['enrolled_roles' => [$request['role']]],
             default => [],
         };
-        $body = in_array($phase, ['github_dns', 'pair_dns'], true) ? ['ready' => true] : ($phase === 'identity' ? array_fill_keys($peers, $state->endpoint) : ['sandbox_id' => $sandbox->id, 'head' => str_repeat($state->changedHead && $phase === 'gateway' ? 'b' : 'a', 40), 'ready' => true, ...$details]);
+        $body = $phase === 'pair_dns' ? ['ready' => true] : ($phase === 'identity' ? array_fill_keys($peers, $state->endpoint) : ['sandbox_id' => $sandbox->id, 'head' => str_repeat($state->changedHead && $phase === 'gateway' ? 'b' : 'a', 40), 'ready' => true, ...$details]);
 
         return new CommandResult(0, json_encode(['name' => $sandbox->name, 'role' => $guest['role'], 'exit_code' => $state->fail === $phase ? 1 : 0,
             'stdout' => base64_encode(json_encode($body)), 'stderr' => base64_encode($state->fail === $phase ? 'private-guest-key' : ''),
@@ -97,7 +97,7 @@ it('prepares only the recorded pair and verifies its branch through the operator
 
     app(SandboxPairRuntime::class)->prepare($workspace);
 
-    expect($state->calls)->toBe(['inspect:operator', 'github_dns:gateway', 'pair_dns:gateway', 'identity:gateway', 'vpn:operator', 'gateway:gateway', 'prerequisites:gateway', 'operator:operator']);
+    expect($state->calls)->toBe(['inspect:operator', 'pair_dns:gateway', 'identity:gateway', 'vpn:operator', 'gateway:gateway', 'prerequisites:gateway', 'operator:operator']);
 });
 
 it('stops pair preparation at a failed phase without retaining private guest output', function (string $phase): void {
@@ -110,14 +110,14 @@ it('stops pair preparation at a failed phase without retaining private guest out
         expect($exception->getMessage())->not->toContain('private-guest-key')->and($exception->getPrevious())->toBeNull();
     }
     expect(explode(':', $state->calls[array_key_last($state->calls)])[0])->toBe($phase);
-})->with(['inspect', 'github_dns', 'pair_dns', 'identity', 'vpn', 'gateway', 'prerequisites', 'operator']);
+})->with(['inspect', 'pair_dns', 'identity', 'vpn', 'gateway', 'prerequisites', 'operator']);
 
 it('refuses a foreign endpoint before changing operator WireGuard', function (): void {
     [$workspace, $state] = runtime_pair();
     $state->endpoint = '10.44.0.2:51820';
 
     expect(fn () => app(SandboxPairRuntime::class)->prepare($workspace))->toThrow(ComputeException::class);
-    expect($state->calls)->toBe(['inspect:operator', 'github_dns:gateway', 'pair_dns:gateway', 'identity:gateway']);
+    expect($state->calls)->toBe(['inspect:operator', 'pair_dns:gateway', 'identity:gateway']);
 });
 
 it('refuses a branch change before reporting CLI readiness', function (): void {
@@ -159,7 +159,7 @@ it('retargets every recorded workload peer before preparing the resumed branch',
 
     app(SandboxPairRuntime::class)->prepare($workspace);
 
-    expect($state->calls)->toBe(['inspect:operator', 'github_dns:gateway', 'pair_dns:gateway', 'gateway:gateway', 'gateway-identity:gateway',
+    expect($state->calls)->toBe(['inspect:operator', 'pair_dns:gateway', 'gateway:gateway', 'gateway-identity:gateway',
         ...array_map(fn (string $role): string => 'workload-identity:'.$role, $roles),
         ...array_fill(0, count($roles), 'enroll:gateway'), 'identity:gateway', 'vpn:operator',
         ...array_map(fn (string $role): string => 'vpn:'.$role, $roles), 'prerequisites:gateway', 'operator:operator']);
