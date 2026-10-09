@@ -294,7 +294,7 @@ final class Task extends Model
             $task->clearAssistanceWhenEnded();
         });
 
-        self::updated(static function (Task $task): void {
+        self::saved(static function (Task $task): void {
             $task->settleQuestionsWhenEnded();
         });
     }
