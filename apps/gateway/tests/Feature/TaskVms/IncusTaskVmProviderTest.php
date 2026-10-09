@@ -108,7 +108,7 @@ it('is the bound task VM provider', function (): void {
 it('launches an absent VM on the configured bridge with the user-data on stdin', function (): void {
     ($this->answer)(incusList(incusInstance('tvm-12')), incusResult());
 
-    $this->provider->create($this->vm, "#cloud-config\n{}\n");
+    $this->provider->create($this->vm, "#cloud-config\nshell: /bin/bash\n");
 
     [$connection, $launch] = $this->ssh->calls[1];
     expect(($this->argv)())->toBe([
@@ -116,7 +116,7 @@ it('launches an absent VM on the configured bridge with the user-data on stdin',
         [...INCUS_PREFIX, 'launch', 'ubuntu-26.04-vm', 'tvm-1', '--vm', '--config', 'limits.cpu=2', '--config', 'limits.memory=4GiB',
             '--device', 'root,size=20GiB', '--device', 'eth0,network=orbittask0'],
     ])
-        ->and($launch->input)->toBe('{"config":{"cloud-init.user-data":"#cloud-config\n{}\n"}}')
+        ->and($launch->input)->toBe('{"config":{"cloud-init.user-data":"#cloud-config\nshell: /bin/bash\n"}}')
         ->and([$connection->host, $connection->user, $connection->port, $connection->identityFile, $connection->knownHostsFile])
         ->toBe(['10.44.0.7', 'orbit', 22, '/keys/id_ed25519', '/keys/known_hosts']);
 });

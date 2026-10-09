@@ -42,12 +42,13 @@ final readonly class IncusTaskVmProvider implements TaskVmProvider
         }
 
         $host = $this->settings->host($vm->host_node_id);
-        // `incus launch` reads instance config as YAML from a stdin that is not a terminal. JSON is YAML.
+        // `incus launch` reads instance config as YAML from a stdin that is not a terminal. JSON is YAML,
+        // but YAML knows no `\/` escape.
         $result = $this->incus($vm, [
             'launch', $host->image, $vm->name, '--vm',
             '--config', "limits.cpu={$host->cpus}", '--config', "limits.memory={$host->memory}",
             '--device', "root,size={$host->disk}", '--device', "eth0,network={$host->network}",
-        ], json_encode(['config' => ['cloud-init.user-data' => $userData]], JSON_THROW_ON_ERROR));
+        ], json_encode(['config' => ['cloud-init.user-data' => $userData]], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
 
         // A launch whose answer was lost still created the VM.
         if (! $result->succeeded() && ! $this->observe($vm) instanceof VmObservation) {
@@ -55,6 +56,7 @@ final readonly class IncusTaskVmProvider implements TaskVmProvider
         }
     }
 
+    /** @phpstan-impure */
     public function observe(TaskVm $vm): ?VmObservation
     {
         $result = $this->incus($vm, ['list', $vm->name, '--format', 'json']);
@@ -78,7 +80,9 @@ final readonly class IncusTaskVmProvider implements TaskVmProvider
             throw $this->invalid($vm, 'the instance is not one virtual machine that is running or stopped');
         }
 
-        return new VmObservation($status === 'Running', $this->address($vm, $instance['state']['network'] ?? null));
+        $state = $instance['state'] ?? null;
+
+        return new VmObservation($status === 'Running', $this->address($vm, is_array($state) ? $state['network'] ?? null : null));
     }
 
     public function bootstrapReady(TaskVm $vm): bool
