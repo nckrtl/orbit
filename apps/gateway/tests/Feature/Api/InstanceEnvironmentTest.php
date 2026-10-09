@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Instances\Environment\InstanceEnvironmentContext;
+use App\Domain\Instances\Environment\InstanceEnvironmentContextResolver;
 use App\Domain\Instances\Environment\InstanceEnvironmentReader;
+use App\Domain\Instances\Environment\InstanceEnvironmentStore;
 use App\Domain\Instances\Environment\InstanceEnvironmentWriter;
 use App\Domain\Instances\Environment\InstanceEnvironmentWriteResult;
 use App\Domain\Instances\Environment\InstanceOperationPreflight;
@@ -402,6 +404,7 @@ it('returns 409 when a retained terminal step carries failed activation evidence
 });
 
 it('synchronizes a finished public Route while retaining its terminal replacement step', function (): void {
+    $this->access->contents = '';
     environment_api_make_public($this->route);
     $this->route->update(['replacement_step' => RouteReplacementStep::IngressFirewall]);
     $this->instance->environmentValues()->create(['env_key' => 'APP_KEY', 'env_value' => 'base64:stored-key']);
@@ -419,6 +422,7 @@ it('synchronizes a finished public Route while retaining its terminal replacemen
 });
 
 it('synchronizes by the existing selector with a narrow value-free result', function (): void {
+    $this->access->contents = '';
     $this->instance
         ->environmentValues()
         ->createMany([
@@ -462,6 +466,7 @@ it('synchronizes by the existing selector with a narrow value-free result', func
 });
 
 it('keeps a release-layout production environment at the persistent home', function (): void {
+    $this->access->contents = '';
     $home = '/home/orbit-app-216';
     $this->instance->node->roles()->where('role', RoleName::AppDev)->delete();
     $this->instance->node->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
@@ -564,6 +569,7 @@ it('preflights from encrypted-size metadata before decrypting or writing', funct
 });
 
 it('reports an unconfirmed synchronization without values or an unchanged claim', function (): void {
+    $this->access->contents = '';
     $sentinel = 'unconfirmed-secret-sentinel';
     $this->instance->environmentValues()->create(['env_key' => 'SECRET', 'env_value' => $sentinel]);
     $this->access->writeResult = InstanceEnvironmentWriteResult::unconfirmed();
@@ -581,6 +587,82 @@ it('reports an unconfirmed synchronization without values or an unchanged claim'
         ->assertJsonMissingPath('data.changed');
 
     expect($response->getContent())->not->toContain($sentinel);
+});
+
+it('refuses to drop workload keys that stored configuration lacks until they are imported', function (): void {
+    // instance:create leaves a generated `.env` and no stored configuration.
+    $this->access->contents = "APP_KEY=base64:generated\nAPP_URL=https://environment-api.test\nDB_DATABASE=app\nDB_HOST=127.0.0.1\n";
+    $server = ['REMOTE_ADDR' => $this->caller->wireguard_ip];
+
+    foreach (['FIRST' => 'one', 'SECOND' => 'two'] as $key => $value) {
+        $this->withServerVariables($server)
+            ->putJson("/api/v1/instances/{$this->instance->id}/environment/{$key}", ['value' => $value])
+            ->assertOk();
+    }
+
+    $sync = fn () => $this->withServerVariables($server)->call(
+        'POST',
+        "/api/v1/instances/{$this->instance->id}/environment/sync",
+        server: ['CONTENT_TYPE' => 'application/json'],
+        content: '{}',
+    );
+
+    $response = $sync()
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'env.sync_would_drop_keys')
+        ->assertJsonPath('error.details.keys', 'APP_KEY,APP_URL,DB_DATABASE,DB_HOST');
+
+    expect($response->json('error.message'))->toContain('env:import')
+        ->and($response->getContent())->not->toContain('base64:generated')
+        ->and($this->access->writes)->toBe([]);
+
+    $this->withServerVariables($server)
+        ->call('POST', "/api/v1/instances/{$this->instance->id}/environment/import", server: ['CONTENT_TYPE' => 'application/json'], content: '{}')
+        ->assertOk();
+    $sync()->assertOk()->assertJsonPath('data.key_count', 6);
+
+    expect($this->access->writes)->toBe([
+        "APP_KEY=\"base64:generated\"\nAPP_URL=\"https://environment-api.test\"\nDB_DATABASE=\"app\"\n"
+            ."DB_HOST=\"127.0.0.1\"\nFIRST=\"one\"\nSECOND=\"two\"\n",
+    ]);
+});
+
+it('removes keys Orbit wrote or detached but refuses a key added to the file by hand', function (): void {
+    $this->instance->environmentValues()->createMany([
+        ['env_key' => 'DB_HOST', 'env_value' => '127.0.0.1'],
+        ['env_key' => 'KEEP', 'env_value' => 'kept'],
+    ]);
+    $this->access->contents = '';
+    $url = "/api/v1/instances/{$this->instance->id}/environment/sync";
+    $sync = fn () => $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
+        ->call('POST', $url, server: ['CONTENT_TYPE' => 'application/json'], content: '{}');
+
+    $sync()->assertOk();
+    expect($this->instance->refresh()->environment_owned_keys)->toBe(['DB_HOST', 'KEEP']);
+
+    // A detach forgets its keys, and the next synchronization removes them from the file.
+    $store = app(InstanceEnvironmentStore::class);
+    $store->forget(app(InstanceEnvironmentContextResolver::class)->resolve($this->instance, false), ['DB_HOST'], 'detach');
+    $sync()->assertOk();
+    expect($this->access->contents)->toBe("KEEP=\"kept\"\n")
+        ->and($this->instance->refresh()->environment_owned_keys)->toBe(['KEEP']);
+
+    $this->access->contents .= "export MANUAL=edit\n";
+    $sync()
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'env.sync_would_drop_keys')
+        ->assertJsonPath('error.details.keys', 'MANUAL');
+});
+
+it('synchronizes when the workload file does not exist', function (): void {
+    $this->instance->environmentValues()->create(['env_key' => 'KEY', 'env_value' => 'value']);
+    $this->access->contents = null;
+
+    $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
+        ->call('POST', "/api/v1/instances/{$this->instance->id}/environment/sync", server: ['CONTENT_TYPE' => 'application/json'], content: '{}')
+        ->assertOk();
+
+    expect($this->access->writes)->toBe(["KEY=\"value\"\n"]);
 });
 
 function request_id_from_test_response(): string
@@ -750,7 +832,8 @@ final class EnvironmentApiAccess implements InstanceEnvironmentReader, InstanceE
 
     public InstanceEnvironmentWriteResult $writeResult;
 
-    public string $contents = "KEY=value\n";
+    /** The workload file, or null when it does not exist. */
+    public ?string $contents = "KEY=value\n";
 
     public function __construct()
     {
@@ -784,6 +867,14 @@ final class EnvironmentApiAccess implements InstanceEnvironmentReader, InstanceE
         $this->reads++;
         $this->readPaths[] = $context->path;
 
+        if ($this->contents === null) {
+            throw new ResourceOperationException(
+                errorCode: 'env.import_source_missing',
+                message: 'The recorded Instance environment file does not exist.',
+                status: 404,
+            );
+        }
+
         return $this->contents;
     }
 
@@ -794,6 +885,7 @@ final class EnvironmentApiAccess implements InstanceEnvironmentReader, InstanceE
     ): InstanceEnvironmentWriteResult {
         $this->writes[] = $contents;
         $this->writePaths[] = $context->path;
+        $this->contents = $contents;
 
         return $this->writeResult;
     }

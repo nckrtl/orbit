@@ -206,7 +206,7 @@ function caddy_failure_ssh(?string $fail = null): SshExecutor
 
             $ordering = ($command->arguments[4] ?? null) === 'caddy'
                 && str_contains($command->input ?? '', 'orbit-vpn.conf');
-            $source = in_array(CaddyPackageSourceProgram::SOURCE_URI, $command->arguments, true);
+            $source = in_array(CaddyPackageSourceProgram::RELEASE_URL, $command->arguments, true);
 
             if (($this->fail === 'ordering' && $ordering) || ($this->fail === 'source' && $source)) {
                 return new CommandResult(1, '', 'forced failure', 1, false);

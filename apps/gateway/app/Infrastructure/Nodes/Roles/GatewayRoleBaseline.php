@@ -50,9 +50,9 @@ final readonly class GatewayRoleBaseline implements GatewayPrivateDnsRoute, Role
      */
     public function converge(Node $node, NodeRole $assignment): void
     {
-        $caddySource = $this->commands->caddySource($node, RoleName::Gateway);
-        if ($caddySource instanceof RemoteCommand) {
-            $this->run($node, $caddySource, 'caddy-package-source', 'gateway.caddy_install_failed');
+        $caddyPackage = $this->commands->caddyPackage($node, RoleName::Gateway);
+        if ($caddyPackage instanceof RemoteCommand) {
+            $this->run($node, $caddyPackage, 'caddy-package-source', 'gateway.caddy_install_failed');
             $this->run(
                 $node,
                 new RemoteCommand($this->vpnOrdering->arguments('caddy'), $this->vpnOrdering->script()),

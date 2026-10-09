@@ -59,6 +59,7 @@ final class CaddyKernelSettingHarness
         $arguments[4] = $this->root.'/usr/share/keyrings/orbit-caddy.gpg';
         $arguments[5] = $this->root.'/etc/apt/sources.list.d/orbit-caddy.sources';
         $arguments[9] = $this->settingPath();
+        $arguments[11] = $this->root.'/usr/local/share/orbit/caddy-source';
 
         $process = new Process(['bash', '-seu', '--', ...$arguments], $this->root, [
             'PATH' => $this->root.'/bin:'.getenv('PATH'),

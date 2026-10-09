@@ -75,7 +75,7 @@ class ProjectImage(Publisher):
         return {'candidate': self.name, 'project_slug': self.build['project_slug'], 'base_image': self.build['base_image'],
                 'disk': '20GiB', 'network': False}
 
-    def audit(self):
+    def audit(self, prepare=False):
         values = self.candidates()
         if len(values) != 1:
             raise Refusal('Project image candidate is missing or ambiguous.')
@@ -89,9 +89,16 @@ if __name__ != '__main__':
     checkout = Path('/home/orbit/orbit')
     if account.pw_dir != '/home/orbit' or checkout.is_symlink() or (checkout.exists() and (not checkout.is_dir() or any(checkout.iterdir()))):
         raise ValueError('Project image checkout is not empty')
-    print(json.dumps(audit(role='app-dev')))
+    inherited_pi = None
+    if PREPARE_PROJECT_IMAGE:
+        audit(role='app-dev')
+        inherited_pi = remove_project_pi()
+    report = audit(role='app-dev', project_image=True)
+    if inherited_pi is not None:
+        report['inherited_pi_removed'] = inherited_pi
+    print(json.dumps(report))
 """
-        command = "__name__ = 'orbit_project_image_audit'\n" + script
+        command = "__name__ = 'orbit_project_image_audit'\nPREPARE_PROJECT_IMAGE = " + repr(prepare) + '\n' + script
         report = json.loads(self.run('exec', self.name, '--', 'python3', '-I', '-c', command, timeout=600))
         if report.get('ready') is not True or report.get('role') != 'app-dev':
             raise Refusal('Project image prerequisites are unavailable.')
@@ -115,7 +122,7 @@ if __name__ != '__main__':
                 time.sleep(1)
         else:
             raise Refusal('Project image guest agent is unavailable.')
-        report.update(prepared=True, audit=self.audit())
+        report.update(prepared=True, audit=self.audit(prepare=True))
         return report
 
     def output(self, image, inherited=False):

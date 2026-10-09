@@ -342,8 +342,14 @@ final readonly class RemotePhpPackageManager
                         apt_source_candidate=''
                     fi
 
+                    # Refresh only the Sury source. Another source that fails to fetch must not fail
+                    # the PHP step, and the other sources' lists stay in place for the candidate checks.
                     sudo env DEBIAN_FRONTEND=noninteractive \
-                        apt-get -o DPkg::Lock::Timeout=300 update
+                        apt-get -o DPkg::Lock::Timeout=300 \
+                        -o Dir::Etc::SourceList="$source_path" \
+                        -o Dir::Etc::SourceParts=- \
+                        -o APT::Get::List-Cleanup=0 \
+                        update
 
                     expected_origin="${expected_uri%/} $selected_codename/main"
                     package_architecture=$(dpkg --print-architecture)

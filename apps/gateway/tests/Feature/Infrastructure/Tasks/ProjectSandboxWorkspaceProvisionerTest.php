@@ -144,7 +144,8 @@ it('enrolls and prepares one owned workspace through initial admission or cloud 
         $configuration->shouldReceive('inspect')->once()->andReturn(new DevelopmentSourceProfile('8.5', true));
         $configuration->shouldReceive('configureLaravelUrl')->once();
         mock(DevelopmentRouteProjector::class)->shouldReceive('converge')->once();
-        mock(InstanceEnvironmentReader::class)->shouldReceive('read')->once()->andReturn("APP_KEY=\nAPP_URL=https://template.invalid\n");
+        // One import read, and one key check before each of the two synchronizations.
+        mock(InstanceEnvironmentReader::class)->shouldReceive('read')->times(3)->andReturn("APP_KEY=\nAPP_URL=https://template.invalid\n");
         $preflight = mock(InstanceOperationPreflight::class);
         $preflight->shouldReceive('assertEnvironmentWritable')->twice();
         mock(InstanceEnvironmentWriter::class)->shouldReceive('write')->twice()
@@ -318,7 +319,13 @@ it('refreshes local runtime through the same owned guest after park and preview 
             if ($request['operation'] === 'guest_command') {
                 expect($request['guest']['role'])->toBe('operator');
                 expect($request['guest']['argv'])->toBe(['sudo', '-n', 'python3', '-I', '-c', file_get_contents(resource_path('compute/guest-project-ssh.py'))]);
-                expect(json_decode(base64_decode($request['guest']['stdin']), true))->toBe(['public_key' => IncusRuntimeWorkspace::key()->type.' '.IncusRuntimeWorkspace::key()->value]);
+                $bootstrap = json_decode(base64_decode($request['guest']['stdin']), true);
+                expect($bootstrap['gateway_time'])->toMatch('/\A[0-9]{10}\.[0-9]{6}\z/D');
+                unset($bootstrap['gateway_time']);
+                expect($bootstrap)->toBe([
+                    'public_key' => IncusRuntimeWorkspace::key()->type.' '.IncusRuntimeWorkspace::key()->value,
+                    'recovery_port' => null,
+                ]);
                 $phases[] = 'bootstrap';
                 $result = ['name' => $workspace->taskSandbox->name, 'role' => 'operator', 'exit_code' => 0,
                     'stdout' => base64_encode(json_encode(['ready' => true])), 'stderr' => base64_encode(''), 'duration_ms' => 1, 'truncated' => false, 'timed_out' => false];

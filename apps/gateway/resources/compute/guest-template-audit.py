@@ -1,5 +1,6 @@
 """Read-only prerequisite and known-credential audit for an isolated image candidate."""
 import json
+import hashlib
 import os
 from pathlib import Path
 import pwd
@@ -13,6 +14,45 @@ SECRET_ENV = {b'GH_TOKEN', b'GITHUB_TOKEN', b'GH_ENTERPRISE_TOKEN', b'GITHUB_ENT
 
 
 WORKLOAD_ROLES = ('app-dev', 'app-prod', 'app-prod-2')
+
+
+def project_pi_prerequisites(system=Path('/'), allow_binary=False):
+    for relative in ('etc/orbit/sandbox-pi', 'home/orbit/.orbit-sandbox-pi',
+                     'etc/systemd/system/orbit-sandbox-pi.service',
+                     'etc/systemd/system/orbit-sandbox-model.socket',
+                     'etc/systemd/system/orbit-sandbox-model.service'):
+        path = system / relative
+        for parent in (path, *path.parents):
+            if parent.is_symlink():
+                raise ValueError('Project Pi state path is not local')
+            if parent == system:
+                break
+        if path.exists():
+            raise ValueError('Project image contains Pi runtime or artifact state')
+    binary = system / 'usr/local/bin/orbit-pi-server'
+    if not allow_binary and (binary.exists() or binary.is_symlink()):
+        raise ValueError('Project image must receive its pinned Pi artifact at runtime')
+
+
+def remove_project_pi(system=Path('/'), owner=0):
+    project_pi_prerequisites(system, allow_binary=True)
+    binary = system / 'usr/local/bin/orbit-pi-server'
+    details = binary.lstat()
+    if (not stat.S_ISREG(details.st_mode) or details.st_uid != owner or details.st_nlink != 1
+            or stat.S_IMODE(details.st_mode) != 0o755):
+        raise ValueError('Inherited Project Pi binary is unsafe')
+    for parent in binary.parents:
+        details = parent.lstat()
+        if not stat.S_ISDIR(details.st_mode) or details.st_uid != owner or details.st_mode & 0o022:
+            raise ValueError('Inherited Project Pi binary path is unsafe')
+        if parent == system:
+            break
+    with binary.open('rb') as stream:
+        digest = hashlib.file_digest(stream, 'sha256').hexdigest()
+    result = {'sha256': digest, 'size': binary.stat().st_size}
+    binary.unlink()
+    project_pi_prerequisites(system)
+    return result
 
 
 def tool_runtime_prerequisites(home=Path('/home/orbit'), system=Path('/')):
@@ -55,9 +95,13 @@ def workload_prerequisites(home=Path('/home/orbit'), system=Path('/')):
     subprocess.run(['systemctl', 'is-active', '--quiet', 'docker'], capture_output=True, check=True, timeout=15)
 
 
-def audit(roots=None, processes=Path('/proc'), prerequisites=True, role=None):
+def audit(roots=None, processes=Path('/proc'), prerequisites=True, role=None, project_image=False):
     if role is not None and role not in WORKLOAD_ROLES:
         raise ValueError('Invalid workload audit role')
+    if project_image:
+        if role != 'app-dev':
+            raise ValueError('Project image must be a blank app-dev workload')
+        project_pi_prerequisites()
     if roots is None:
         roots = [Path('/home/orbit'), Path('/root'), Path('/etc')]
     if prerequisites:
@@ -71,7 +115,7 @@ def audit(roots=None, processes=Path('/proc'), prerequisites=True, role=None):
             pass
         else:
             raise ValueError('Shared worker account is present')
-        for binary in ('orbit-agent', 'orbit-pi-server'):
+        for binary in (('orbit-agent',) if project_image else ('orbit-agent', 'orbit-pi-server')):
             path = Path('/usr/local/bin') / binary
             details = path.lstat()
             if not stat.S_ISREG(details.st_mode) or details.st_uid != 0 or details.st_mode & 0o022 or not os.access(path, os.X_OK):
