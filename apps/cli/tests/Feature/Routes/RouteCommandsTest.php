@@ -535,6 +535,34 @@ it('rejects an empty update and invalid IDs before transport', function (): void
     expect($mock->getLastPendingRequest())->toBeNull();
 });
 
+describe('route web root', function (): void {
+    it('creates a Route with a web root and shows it', function (): void {
+        $payload = [...route_payload(), 'web_root' => 'apps/docs/public'];
+        $mock = MockClient::global([CreateRouteRequest::class => MockResponse::make(['data' => $payload, 'meta' => ['request_id' => route_request_id()]], 201)]);
+
+        expect(Artisan::call('route:create', ['instance' => '7', 'domain' => 'docs.app.test', '--web-root' => 'apps/docs/public']))->toBe(0)
+            ->and(Artisan::output())->toContain('Web root')->toContain('apps/docs/public')
+            ->and($mock->getLastRequest()?->body()->all())->toBe([
+                'domain' => 'docs.app.test',
+                'publication' => 'private',
+                'instance_id' => 7,
+                'web_root' => 'apps/docs/public',
+            ]);
+        $this->artisan('route:create', ['instance' => 'docs.app.test', '--node' => 'beast', '--upstream' => 'http://127.0.0.1:4000', '--web-root' => 'public'])
+            ->assertExitCode(1);
+    });
+
+    it('sets and clears a web root through route update', function (): void {
+        $mock = MockClient::global([UpdateRouteRequest::class => route_mock_response()]);
+
+        $this->artisan('route:update', ['route' => '11', '--web-root' => 'apps/admin/public', '--json' => true])->assertExitCode(0);
+        expect($mock->getLastRequest()?->body()->all())->toBe(['web_root' => 'apps/admin/public']);
+
+        $this->artisan('route:update', ['route' => '11', '--web-root' => '', '--json' => true])->assertExitCode(0);
+        expect($mock->getLastRequest()?->body()->all())->toBe(['web_root' => null]);
+    });
+});
+
 function route_mock_response(int $status = 200): MockResponse
 {
     return MockResponse::make([

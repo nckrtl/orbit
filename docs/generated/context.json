@@ -505,6 +505,7 @@
             "kind": "product",
             "components": [
                 "apps/cli",
+                "apps/docs",
                 "packages/php-sdk"
             ],
             "concepts": [
@@ -728,6 +729,7 @@
             "kind": "decision",
             "components": [
                 "apps/cli",
+                "apps/docs",
                 "apps/e2e",
                 "apps/gateway",
                 "apps/web",
@@ -2026,9 +2028,7 @@
                 "Task workspace",
                 "Tool"
             ],
-            "governing_adrs": [
-                "0196"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/proxycli.md",
@@ -2054,6 +2054,7 @@
             "title": "Routes",
             "kind": "reference",
             "components": [
+                "apps/docs",
                 "apps/gateway"
             ],
             "concepts": [

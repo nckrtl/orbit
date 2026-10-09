@@ -24,7 +24,7 @@ A Route has one of three kinds. The kind never changes.
 | `custom_proxy` | The serving Node | A service on that Node's loopback or a Node Process. See [custom proxy Routes](#custom-proxy-routes). |
 | `analytics_tracking` | One Instance | Plausible's script and event paths. See [Analytics](/reference/analytics#publish-a-tracking-host). |
 
-Each active Instance of a web-serving Project has exactly one Route. An Instance can be without a Route only while Orbit creates it, after a failed activation, or while Orbit removes it.
+Each active Instance of a web-serving Project has exactly one Route without a web root: the Instance's own Route. An Instance can be without it only while Orbit creates it, after a failed activation, or while Orbit removes it. A development Instance can also have Routes with a web root, which [serve other directories](#serve-several-web-roots) of its checkout.
 
 A visitable development `default` serves its web root through `<checkout>/current` after release migration. Caddy resolves that link for PHP requests, so a deployment selects new code without changing the Route domain. Defaults without a Route are also kept current. [Development defaults](/reference/deployments#development-defaults) describes migration, atomic activation, and failure retention.
 
@@ -38,6 +38,7 @@ The Gateway stores these fields for each Route. `route:show` returns them.
 | `project_id` | The Project that owns an `app` Route and every one of its targets. Null for the other kinds. |
 | `node_id` or `cluster_id` | The routing scope: exactly one Node or one active Cluster. A custom proxy Route always has Node scope. |
 | `domain` | One normalized domain that no other Route owns. It never changes. A domain change creates a replacement Route. |
+| `web_root` | Null, or a repository-relative web root such as `apps/docs/public`. Null serves the Instance's effective root. See [Serve several web roots](#serve-several-web-roots). |
 | `provenance` | `generated` or `explicit`. It never changes, and Orbit does not infer it from the domain. |
 | `generation_basis_node_id` | For a generated Route, the Node whose TLD the domain uses: the current target's Node, or the last one after the target was cleared. |
 | `publication` | `private` or `public`. The Route keeps it even when it has no target. Public-edge readiness shows on `status`, `replacement_step`, `failed_step`, and Doctor. |
@@ -83,7 +84,7 @@ A Project slug update recomputes every generated development Route domain from t
 
 ## Create and change targets
 
-Create an explicit app Route for an Instance with `route:create <instance> <domain> [--publication=private|public]`. The Instance ID determines the owning Project and the Node or active Cluster scope. Publication defaults to `private`. The Route targets that Instance and becomes active; an identical retry for an existing active Route returns that Route.
+Create an explicit app Route for an Instance with `route:create <instance> <domain> [--publication=private|public] [--web-root=PATH]`. The Instance ID determines the owning Project and the Node or active Cluster scope. Publication defaults to `private`. The Route targets that Instance and becomes active; an identical retry for an existing active Route returns that Route.
 
 Creation keeps the Route `activating` until workload projection and any public edge activation finish. If either step fails, an identical retry resumes convergence, including rebuilding the public Ingress when its handler-build checkpoint may have been written before a crash. It does not adopt an older pending Route created by Instance provisioning. This form does not accept a Project argument, `--target`, `--node`, or `--cluster`. The custom proxy form is `route:create <domain> --node=NODE --upstream=URL` or `route:create <domain> --node=NODE --process=PROCESS`; it is private only.
 
@@ -92,7 +93,7 @@ orbit route:create 12 shop.example.test
 orbit route:create 12 shop.example.com --publication=public
 ```
 
-The Gateway API accepts `POST /api/v1/routes` with an app Route body such as `{"instance_id":12,"domain":"shop.example.test","publication":"private"}`. The Instance ID implies the Project and scope; the app Route request does not take `project_id`, `node_id`, or `cluster_id`. For a custom proxy Route, the request instead supplies `domain`, `node_id`, and exactly one of `upstream` or `process_id`. Custom proxy creation remains separate and converges its Node-local serving path.
+The Gateway API accepts `POST /api/v1/routes` with an app Route body such as `{"instance_id":12,"domain":"shop.example.test","publication":"private"}`, and an optional `web_root`. The Instance ID implies the Project and scope; the app Route request does not take `project_id`, `node_id`, or `cluster_id`. For a custom proxy Route, the request instead supplies `domain`, `node_id`, and exactly one of `upstream` or `process_id`. Custom proxy creation remains separate and converges its Node-local serving path.
 
 | Creation refusal | Meaning |
 | --- | --- |
@@ -102,7 +103,8 @@ The Gateway API accepts `POST /api/v1/routes` with an app Route body such as `{"
 | `route.scope_required` | A custom proxy Route needs a serving Node and uses the domain as its only positional argument. |
 | `route.target_inactive` | The Instance is not active. |
 | `route.target_web_root_unsupported` | The Instance has no supported relative web root, such as a package rooted at `.`. |
-| `route.target_conflict` | The target Instance already belongs to another Route. |
+| `route.target_conflict` | The target Instance already has a Route without a web root. |
+| `route.web_root_unsupported` | A `web_root` names a production Instance. |
 | `route.router_required` | The Cluster has no active Router. |
 | `route.node_inactive`, `route.cluster_inactive` | The Instance's Node or Cluster, or the custom proxy's Node, is not active. |
 | `route.upstream_invalid` | The upstream is not a loopback HTTP URL. |
@@ -159,6 +161,36 @@ Router Caddy publishes one site for the Route domain and spreads requests over t
 An empty pool answers HTTP 503 with `Orbit Route unavailable`. A failed connection to a target, which Caddy reports as 502, gets the same 503 answer. When every target is excluded, Caddy answers 503 with an empty body. No answer shows a backend address. A new request never goes to a removed target once the new pool is published. A request in progress does not delay target or Instance removal.
 
 Orbit does not change session, cookie, or encryption settings when it builds a pool. Shared sessions need the application to use one shared session store and compatible cookie settings. Round-robin does not pin a client to one target.
+
+## Serve several web roots
+
+A Project has one repository. An Instance is one checkout of it, and it can serve several sites: one Route for each web root. A Route's `web_root` names a directory relative to the repository, such as `apps/docs/public`. Null serves the Instance's effective root, as every Route did before.
+
+```bash
+orbit route:create 12 docs.shop.test --web-root=apps/docs/public
+orbit route:update 14 --web-root=apps/admin/public
+```
+
+The API takes `web_root` on `POST /api/v1/routes` and `PATCH /api/v1/routes/{route}`; `null` clears it. A web root follows the [Project root](/reference/projects#fields) rules: a normalized relative path, without `.` or `..` segments, and not absolute. A bad value fails with HTTP 422 `validation.failed` on `web_root`. Serving refuses a web root that is missing or holds a symlink, with `app-dev.source_access_failed`, as in [Node scope](#node-scope).
+
+| Rule | Result |
+| --- | --- |
+| Instance's own Route | Each Instance has at most one Route without a web root. A `laravel-app` or `symfony-app` Instance keeps it: a web root on it returns `route.web_root_conflict`. |
+| Site | Workload Caddy serves the Route's domain from its web root. The Route has its own leaf, `route-<id>`, so the Instance's leaf keeps naming its own Route. |
+| PHP-FPM | One pool for each application directory. Routes that serve one directory share its pool. |
+| `APP_URL` | The Instance's own Route keeps its directory. Another directory takes the domain of the oldest Route that serves it. |
+| Change | Creating, updating, or removing such a Route converges its site, pool, and `APP_URL`. |
+| Instance removal | Removes the Instance's Routes with a web root first, then the Instance. |
+| Transfer | Refused with `instance.transfer_web_root_routes`. Remove those Routes, transfer, and create them again. |
+| Hibernation | A request to any Route of the Instance wakes it. Dependency pruning covers only the default directory. |
+| Processes and Schedules | Unchanged. They keep the default application directory or their explicit working directory. |
+| Production | Refused with `route.web_root_unsupported`. |
+
+The default directory keeps its pool, `orbit-app-instance-<id>`. Another directory gets `orbit-app-instance-<id>-<suffix>`, where the suffix is a stable hash of its relative path. When the last Route of a directory leaves, its pool retires and its `.env` stays. Orbit writes `APP_URL` only into a directory that holds `artisan`, and a new `.env` there gets its own key.
+
+A Route with a web root keeps its domain, so a domain change returns `route.web_root_domain_immutable`. Send `web_root` on its own; combined with another field it returns `route.web_root_update_separate`.
+
+Follow-ups: production Instances, and the `.env` of other directories in the releases of a development `default`. Doctor checks `APP_URL` only for the Instance's own Route.
 
 ## Custom proxy Routes
 
@@ -482,7 +514,7 @@ Doctor skips an Instance in `removing`. A removal that lasts 10 minutes or more 
 | `instance.private_firewall_mismatch` | Role firewall rules differ from the Route's expected rules. |
 | `instance.laravel_url_mismatch` | A detected Laravel `APP_URL` differs from the Route domain. |
 | `instance.target_set_mismatch` | Router Caddy does not publish the Route's ordered target set. |
-| `instance.route_association_mismatch` | An Instance has no Route, or more than one. |
+| `instance.route_association_mismatch` | An Instance has no Route without a web root, or more than one. |
 | `instance.public_ingress_mismatch` | The Ingress Caddyfile lacks the public site that a build renders for it. |
 | `instance.public_tls_mismatch` | The public site pins an Orbit CA leaf, lacks `tls force_automate` while the Node disables certificate management, or its Let's Encrypt certificate is missing or expires within the renewal margin. |
 | `instance.private_forwarding_mismatch` | The Ingress cannot open a TCP connection to an address its public site forwards to. |
@@ -506,9 +538,9 @@ A Route keeps its domain with zero targets or with targets on several Nodes, so 
 
 A Route owns an application domain. A machine or network identity is a hostname. The two terms stay apart in the API, SDK, CLI, and stored data, so a placement change can show which name changes. The API has no `hostname` alias for a Route domain.
 
-### One Route per active Instance
+### One own Route per active Instance
 
-An application needs one canonical URL, and Laravel's `APP_URL` must agree with it. Several Routes per Instance, or a primary Route among several, would publish the application under more than one domain. An active Instance without a Route would break the promise that active means reachable.
+An application needs one canonical URL, and Laravel's `APP_URL` must agree with it. So each Instance has one Route without a web root, and an active Instance without it would break the promise that active means reachable. A Route with a web root serves another directory of the same checkout: it is another site, not a second URL for the same application. The oldest-Route rule keeps `APP_URL` deterministic when two such Routes serve one directory.
 
 ### Active Cluster TLD first
 

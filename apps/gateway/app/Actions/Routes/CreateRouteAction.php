@@ -26,6 +26,7 @@ use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStateResolver;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Routes\RouteTargetWebRoot;
+use App\Domain\Routes\RouteWebRoot;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
@@ -53,6 +54,7 @@ final readonly class CreateRouteAction
         private ?ProductionCloneRouteProjector $productionCloneRoutes = null,
         private ?DevelopmentProjectionOperationLock $projectionOwner = null,
         private ?PublishPublicRouteAction $publishPublic = null,
+        private ?SynchronizeRouteWebRootUrlsAction $webRootUrls = null,
     ) {}
 
     /** @return array{route: Route, created: bool} */
@@ -86,6 +88,7 @@ final readonly class CreateRouteAction
             publication: $data->publication,
             projectId: $instance->project_id,
             instanceId: $instance->id,
+            webRoot: $data->webRoot,
         ), activating: true);
 
         if (! $result['created']) {
@@ -115,6 +118,10 @@ final readonly class CreateRouteAction
             $steps->prepareDns($route);
         } else {
             ($this->developmentRoutes ?? app(DevelopmentRouteProjector::class))->converge($instance, $route);
+
+            if ($route->hasWebRoot()) {
+                ($this->webRootUrls ?? app(SynchronizeRouteWebRootUrlsAction::class))->execute($instance);
+            }
         }
         if ($data->publication === RoutePublication::Public) {
             $route = ($this->publishPublic ?? app(PublishPublicRouteAction::class))->execute($route, RoutePublication::Public);
@@ -172,6 +179,7 @@ final readonly class CreateRouteAction
         }
 
         $existing = Route::query()
+            ->whereNull('web_root')
             ->whereHas('targets', static fn ($query) => $query->where('instance_id', $instance->id))
             ->first();
 
@@ -377,7 +385,14 @@ final readonly class CreateRouteAction
 
         $target = Instance::query()->with('node')->findOrFail($data->instanceId);
         $this->assertTarget($target, $data->projectId);
-        RouteTargetWebRoot::assertSupported($target);
+        $webRoot = RouteWebRoot::normalize($data->webRoot);
+
+        if ($webRoot === null) {
+            RouteTargetWebRoot::assertSupported($target);
+        } else {
+            RouteWebRoot::assertSupportedTarget($target);
+        }
+
         $placement = $this->state->forNode($target->node);
         $nodeId = $placement->nodeId;
         $clusterId = $placement->clusterId;
@@ -405,6 +420,7 @@ final readonly class CreateRouteAction
                 generationBasisNodeId: null,
                 instance: $target,
                 initialStatus: $activating ? RouteStatus::Activating : RouteStatus::Pending,
+                webRoot: $webRoot,
             ),
             'created' => true,
         ];
@@ -420,8 +436,11 @@ final readonly class CreateRouteAction
         ?int $generationBasisNodeId,
         Instance $instance,
         RouteStatus $initialStatus = RouteStatus::Pending,
+        ?string $webRoot = null,
     ): Route {
-        RouteTargetWebRoot::assertSupported($instance);
+        if ($webRoot === null) {
+            RouteTargetWebRoot::assertSupported($instance);
+        }
 
         try {
             $route = DB::transaction(function () use (
@@ -434,8 +453,13 @@ final readonly class CreateRouteAction
                 $generationBasisNodeId,
                 $instance,
                 $initialStatus,
+                $webRoot,
             ): Route {
-                $this->associations->assertTargetUnassociated($instance);
+                // A Route with a web root is an additional site of the Instance; only the Instance's own
+                // Route is unique.
+                if ($webRoot === null) {
+                    $this->associations->assertTargetUnassociated($instance);
+                }
 
                 $route = Route::query()->create([
                     'kind' => RouteKind::App,
@@ -444,6 +468,7 @@ final readonly class CreateRouteAction
                     'cluster_id' => $clusterId,
                     'generation_basis_node_id' => $generationBasisNodeId,
                     'domain' => $domain,
+                    'web_root' => $webRoot,
                     'provenance' => $provenance,
                     'publication' => $publication,
                     'status' => RouteStatus::Pending,
@@ -515,6 +540,7 @@ final readonly class CreateRouteAction
             || $existing->node_id !== $nodeId
             || $existing->cluster_id !== $clusterId
             || $existingTargetId !== $target?->id
+            || $existing->web_root !== $data->webRoot
         ) {
             throw new ResourceOperationException(
                 errorCode: 'route.retry_conflict',

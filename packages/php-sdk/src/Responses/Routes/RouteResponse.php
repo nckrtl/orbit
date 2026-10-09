@@ -32,6 +32,7 @@ final readonly class RouteResponse
         public ?int $processId,
         public ?string $upstream,
         public string $requestId,
+        public ?string $webRoot = null,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -70,6 +71,7 @@ final readonly class RouteResponse
             processId: is_int($data['process_id'] ?? null) ? $data['process_id'] : null,
             upstream: is_string($data['upstream'] ?? null) ? $data['upstream'] : null,
             requestId: $requestId,
+            webRoot: is_string($data['web_root'] ?? null) ? $data['web_root'] : null,
         );
     }
 
@@ -100,6 +102,7 @@ final readonly class RouteResponse
             ),
             'process_id' => $this->processId,
             'upstream' => $this->upstream,
+            'web_root' => $this->webRoot,
             'request_id' => $this->requestId,
         ];
     }

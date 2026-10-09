@@ -66,6 +66,12 @@ final readonly class NativeRouteRemovalProjector implements RouteRemovalProjecto
             $this->certificates->removeCustomProxy($route, $route->node);
         }
 
+        if ($route->hasWebRoot()) {
+            foreach ($this->without($this->targetNodes($route), $skippedNodeIds) as $node) {
+                $this->certificates->removeRouteLeaf($route, $node);
+            }
+        }
+
         $router = $this->router($route);
 
         if (! $router instanceof Node || in_array($router->id, $skippedNodeIds, true)) {
@@ -125,6 +131,7 @@ final readonly class NativeRouteRemovalProjector implements RouteRemovalProjecto
         $route->loadMissing('node');
 
         return collect([$route->isCustomProxy() ? $route->node : null, $this->router($route)])
+            ->merge($route->hasWebRoot() ? $this->targetNodes($route) : [])
             ->filter(static fn (mixed $node): bool => $node instanceof Node)
             ->unique(static fn (Node $node): int => $node->id)
             ->values();
@@ -163,6 +170,17 @@ final readonly class NativeRouteRemovalProjector implements RouteRemovalProjecto
 
         return $this->targetInstances($route)
             ->reject(static fn (Instance $instance): bool => $instance->placedOnAppProd())
+            ->map(static fn (Instance $instance): Node => $instance->node)
+            ->unique(static fn (Node $node): int => $node->id)
+            ->values();
+    }
+
+    /** @return Collection<int, Node> */
+    private function targetNodes(Route $route): Collection
+    {
+        $route->loadMissing('targets.instance.node');
+
+        return $this->targetInstances($route)
             ->map(static fn (Instance $instance): Node => $instance->node)
             ->unique(static fn (Node $node): int => $node->id)
             ->values();

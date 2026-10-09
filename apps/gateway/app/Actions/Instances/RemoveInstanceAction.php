@@ -7,6 +7,7 @@ namespace App\Actions\Instances;
 use App\Actions\Annotations\CancelInstanceAnnotationTasksAction;
 use App\Actions\DatabaseConnections\DropOwnedDatabasesAction;
 use App\Actions\Processes\CascadeInstanceProcessesAction;
+use App\Actions\Routes\RemoveRouteAction;
 use App\Actions\Schedules\CascadeInstanceSchedulesAction;
 use App\Data\Instances\InstanceData;
 use App\Domain\AppDev\AppDevSourceOperationLock;
@@ -132,6 +133,10 @@ final readonly class RemoveInstanceAction implements InstanceRemover
 
     private function executeOwned(Instance $instance, bool $force, bool $runTeardown, bool $allowCascade, bool $requirePreActivation): InstanceRemoval
     {
+        if ($instance->refresh()->status === InstanceState::Active) {
+            $this->removeWebRootRoutes($allowCascade ? $this->removalEnvironmentOwnerIds($instance, $force) : [$instance->id]);
+        }
+
         $snapshot = $instance->refresh()->load($this->removalRelations());
         if ($requirePreActivation && $snapshot->status === InstanceState::Active) {
             throw new ResourceOperationException('instance.remove_refused', 'Failed-create cleanup cannot remove an activated Instance.', 409);
@@ -142,6 +147,25 @@ final readonly class RemoveInstanceAction implements InstanceRemover
         }
 
         return $this->advance($this->accept($snapshot, $force, $runTeardown, $allowCascade));
+    }
+
+    /**
+     * Routes with a web root are additional sites. They leave first, with their pools, leaves, and
+     * Caddy sites, so the removal itself handles only each Instance's own Route.
+     *
+     * @param  list<int>  $instanceIds
+     */
+    private function removeWebRootRoutes(array $instanceIds): void
+    {
+        $routes = Route::query()
+            ->whereNotNull('web_root')
+            ->whereHas('targets', static fn ($query) => $query->whereIn('instance_id', $instanceIds))
+            ->orderBy('id')
+            ->get();
+
+        foreach ($routes as $route) {
+            app(RemoveRouteAction::class)->execute($route);
+        }
     }
 
     /** @return list<int> */
