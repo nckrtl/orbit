@@ -2096,7 +2096,8 @@
                 "Process",
                 "Project",
                 "Project Documents",
-                "Schedule"
+                "Schedule",
+                "Task"
             ],
             "governing_adrs": []
         },
