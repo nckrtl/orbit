@@ -32,6 +32,10 @@ return [
         'max_vms' => max(0, (int) env('ORBIT_UPCLOUD_MAX_VMS', 0)),
         'zone' => env('ORBIT_UPCLOUD_ZONE', 'nl-ams1'),
         'base_image' => env('ORBIT_UPCLOUD_BASE_IMAGE'),
+        'image_build' => [
+            'enabled' => (bool) env('ORBIT_UPCLOUD_IMAGE_BUILD_ENABLED', false),
+            'time' => env('ORBIT_UPCLOUD_IMAGE_BUILD_AT', '03:00'),
+        ],
         'gateway_address' => env('ORBIT_UPCLOUD_GATEWAY_ADDRESS'),
         'wireguard_address' => env('ORBIT_UPCLOUD_WIREGUARD_ADDRESS'),
         'wireguard_port' => (int) env('ORBIT_UPCLOUD_WIREGUARD_PORT', 51820),

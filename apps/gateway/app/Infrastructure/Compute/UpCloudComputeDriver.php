@@ -337,37 +337,14 @@ final readonly class UpCloudComputeDriver implements ComputeDriver
         $expected = $this->bootstrap->firewall(SandboxSpec::fromArray($sandbox->spec), $sandbox->network_policy === 'sealed');
         $path = 'server/'.$sandbox->server_id.'/firewall_rule';
         $rules = data_get($this->request($sandbox, 'GET', $path), 'firewall_rules.firewall_rule');
-        if (! $this->sameFirewall($rules, $expected)) {
+        if (! $this->bootstrap->sameFirewall($rules, $expected)) {
             $this->request($sandbox, 'PUT', $path, ['firewall_rules' => ['firewall_rule' => $expected]]);
             $rules = data_get($this->request($sandbox, 'GET', $path), 'firewall_rules.firewall_rule');
-            if (! $this->sameFirewall($rules, $expected)) {
+            if (! $this->bootstrap->sameFirewall($rules, $expected)) {
                 throw new ComputeException('compute.firewall_failed', 'The UpCloud sandbox firewall did not converge.');
             }
         }
         $sandbox->update(['firewall_configured_at' => now()]);
-    }
-
-    /**
-     * @param  list<array<string, string>>  $expected
-     */
-    private function sameFirewall(mixed $actual, array $expected): bool
-    {
-        if (! is_array($actual) || count($actual) !== count($expected)) {
-            return false;
-        }
-        foreach ($expected as $index => $rule) {
-            if (! is_array($actual[$index] ?? null)) {
-                return false;
-            }
-            $normalized = array_filter($actual[$index], fn (mixed $value, string $key): bool => ! in_array($key, ['position', 'comment'], true) && $value !== '', ARRAY_FILTER_USE_BOTH);
-            ksort($normalized);
-            ksort($rule);
-            if ($normalized !== $rule) {
-                return false;
-            }
-        }
-
-        return true;
     }
 
     private function destroyed(TaskSandbox $sandbox): TaskSandbox

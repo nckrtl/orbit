@@ -17,7 +17,7 @@ The UpCloud compute driver provides the VM lifecycle for a task sandbox. It is a
 
 ## Provision a VM
 
-`ProvisionTaskSandboxAction` reserves one sandbox for a managed task group and takes the network from Gateway configuration. New reservations use the size `starter-2x2`: the `STARTER-2xCPU-2GB` plan with two CPUs, 2 GB memory, its included 30 GB disk, and 1 GB swap. The image is the [base template](#build-the-base-template) named by `ORBIT_UPCLOUD_BASE_IMAGE`. Without that setting, it is the pinned public Ubuntu Resolute template. Reservations recorded with the earlier size `starter-small` (`STARTER-1xCPU-1GB` with a 20 GB disk) keep it. A provider power state does not prove that a project fits or that bootstrap has finished.
+`ProvisionTaskSandboxAction` reserves one sandbox for a managed task group and takes the network from Gateway configuration. New reservations use the size `starter-2x2`: the `STARTER-2xCPU-2GB` plan with two CPUs, 2 GB memory, its included 30 GB disk, and 1 GB swap. The image is the newest [base template](#build-the-base-template) the nightly build published. Without one, it is the template named by `ORBIT_UPCLOUD_BASE_IMAGE`, and without that setting, the pinned public Ubuntu Resolute template. Reservations recorded with the earlier size `starter-small` (`STARTER-1xCPU-1GB` with a 20 GB disk) keep it. A provider power state does not prove that a project fits or that bootstrap has finished.
 
 The reservation records its UUID and immutable image, plan, network, and Gateway public SSH key before any provider mutation. A lock for the provider serializes claims against the configured VM budget. Reserved, uncertain, stopping, and deleting VMs all consume capacity. A task group reuses its current reservation. A destroyed reservation stays in history; a later claim gets a new identity.
 
@@ -27,16 +27,55 @@ On the public Ubuntu template, cloud-init also installs the base prerequisites a
 
 ## Build the base template
 
-[ADR 0204](/decisions/0204-build-the-upcloud-sandbox-base-image-every-night) defines one shared base template. `resources/compute/upcloud-base-image.sh` prepares it. The script installs the sandbox cloud-init prerequisites, every Node's bootstrap packages, the `app-dev` role packages, ZFS, `gdisk`, and `parted`. It caps the ZFS cache at 128 MB and adds the swapfile. It then removes the SSH host keys, `machine-id`, `hostid`, authorized keys, shell history, and cloud-init state. PHP versions and the Pi executable are not included; enrollment and Pi preparation install them for each claim, because a Project selects its PHP version and the Pi install records its owning sandbox.
+[ADR 0204](/decisions/0204-build-the-upcloud-sandbox-base-image-every-night) defines one shared base template. `resources/compute/upcloud-base-image.sh` prepares it in two phases. `install` installs the sandbox cloud-init prerequisites, every Node's bootstrap packages, the `app-dev` role packages, ZFS, `gdisk`, and `parted`. It caps the ZFS cache at 128 MB and adds the swapfile. `clean` removes the SSH host keys, `machine-id`, `hostid`, authorized keys, shell history, the build's own files, and cloud-init state, then checks that they are gone. Without an argument the script runs both. PHP versions and the Pi executable are not included; enrollment and Pi preparation install them for each claim, because a Project selects its PHP version and the Pi install records its owning sandbox.
 
-Until the nightly build is in place, an operator builds the template:
+### Nightly build
+
+The Gateway scheduler runs `orbit:sandbox-image-build` every minute. With `ORBIT_UPCLOUD_IMAGE_BUILD_ENABLED`, it starts one build a night, at the first tick after `ORBIT_UPCLOUD_IMAGE_BUILD_AT` in the Gateway time zone. `orbit:sandbox-image-build --now` starts one at once when none is running. Each tick advances the running build by at most one step and returns; nothing waits in a loop.
+
+A build is a `sandbox_images` record, reserved with its UUID, zone, setup script checksum, and credential fingerprint before any provider call. It runs these steps:
+
+1. Create the build VM.
+2. Wait for cloud-init.
+3. Install the packages.
+4. Warm the Composer and npm caches.
+5. Clean the VM's identity.
+6. Stop the VM, templatize its disk, and delete the VM.
+7. Smoke-test the template.
+8. Publish the template.
+
+The build VM is `orbit-image-build-<id>`, with the label `orbit-image-build=<id>`. It starts from the pinned public Ubuntu template on `STARTER-2xCPU-2GB` with a 20 GB disk. Its cloud-init only creates the `orbit` user with the Gateway key. Its firewall admits SSH from the Gateway and nothing else. Outgoing traffic follows the sandbox policy without the WireGuard hub. The Gateway records the VM's SSH host key on first contact and pins it afterwards.
+
+The script's `install` phase runs as the systemd unit `orbit-image-install`.
+
+To warm the caches, the Gateway reads `composer.lock`, `package.json`, and `package-lock.json` for each Project with VM task compute, except Orbit itself. It reads them at the default branch, in the Project's application directory. A repository that the GitHub App covers is read with a one-hour `contents: read` token; others are read without one. Composer keeps only packages published on packagist.org and gets a manifest of its own with no requirements. npm is skipped for a Project with a package from anywhere other than registry.npmjs.org. The Gateway uploads only these files.
+
+The unit `orbit-image-warm` then runs `resources/compute/upcloud-warm-caches.sh`. As `orbit`, it runs `composer install --no-scripts --no-plugins` and `npm ci --ignore-scripts` in temporary directories. npm comes from the official Node 22 build, checked against its published checksum and removed afterwards. A failed install is recorded on the build and does not stop the others.
+
+The `clean` phase runs in one SSH command. It removes the Gateway key, so it is never retried: a clean that did not confirm fails the build. The Gateway then stops the VM and templatizes its disk as `orbit-sandbox-base-<id>`. When the template is online, it deletes the build VM with its disk.
+
+The smoke VM `orbit-image-smoke-<id>` starts from the template exactly as a claim would. It uses `STARTER-2xCPU-2GB`, 30 GB, the sandbox firewall, and the sandbox cloud-init. It passes when cloud-init finished without errors and `orbit/checkout` is mounted at `/home/orbit/orbit`, owned by `orbit` with mode `0700`. The Gateway deletes it and publishes the template.
+
+Creating a VM and templatizing a disk follow the [lost-response rules](#recover-a-lost-response): the attempt is recorded first, a lost response is recovered by the unique name, label, or template title, and the request is never sent twice. Provider and SSH errors are retried on the next tick until the step's deadline: 20 minutes for each VM to become ready, 30 for the install, 90 for the caches, 60 for the template, and 15 for the other steps. An ownership mismatch, a failed unit, a failed smoke test, or a changed credential fails at once.
+
+A failed build keeps the previous template in use. It records the failed step and error, writes a failed Activity entry `compute.image_build_failed` that the problem collector picks up, and logs an error. Then cleanup deletes the smoke VM, the build VM, and the unpublished template, retrying each tick until all are gone. The build VM and the smoke VM do not count against `ORBIT_UPCLOUD_MAX_VMS`.
+
+### Use and retention
+
+A new reservation pins the newest template published in its zone. Without one, it uses `ORBIT_UPCLOUD_BASE_IMAGE`, and without that the public Ubuntu template. Existing reservations keep their recorded image.
+
+Each tick keeps the two newest published templates. It deletes an older one once no reservation that is not destroyed records it, after checking its title. Retention runs under the provider lock that reservations take, so a template cannot be deleted while a reservation picks it. A template is never changed in place; each build publishes a new UUID. Retention does not touch a template set by hand in `ORBIT_UPCLOUD_BASE_IMAGE`.
+
+### Build a template by hand
+
+Before the nightly build is enabled, an operator can build a template:
 
 1. Create a VM in the sandbox zone from the public Ubuntu template, with a 20 GB disk and a firewall that admits SSH only from the operator's address.
-2. Copy the script to the VM and run it as root.
+2. Copy the script to the VM and run it as root without an argument.
 3. Stop the VM, templatize its disk, and delete the VM.
 4. Set `ORBIT_UPCLOUD_BASE_IMAGE` to the template UUID.
 
-A test checks that the script lists every package in the Node package catalog for `app-dev`. A template is never changed in place; a rebuild publishes a new UUID. Existing reservations keep their recorded image, so delete an old template only after no reservation that is not destroyed records it.
+A test checks that the script lists every package in the Node package catalog for `app-dev`.
 
 ## Credentials and network
 
@@ -58,7 +97,9 @@ Set these values in the Gateway environment before provisioning a sandbox.
 | `ORBIT_UPCLOUD_TOKEN_FILE` | Absolute path to the protected provider credential file | Unset |
 | `ORBIT_UPCLOUD_MAX_VMS` | Maximum outstanding sandbox reservations | `0` |
 | `ORBIT_UPCLOUD_ZONE` | UpCloud zone for new reservations | `nl-ams1` |
-| `ORBIT_UPCLOUD_BASE_IMAGE` | UUID of the published base template in that zone | Unset: the public Ubuntu template |
+| `ORBIT_UPCLOUD_BASE_IMAGE` | UUID of a base template built by hand, used until the nightly build publishes one | Unset: the public Ubuntu template |
+| `ORBIT_UPCLOUD_IMAGE_BUILD_ENABLED` | Build and publish a base template every night | `false` |
+| `ORBIT_UPCLOUD_IMAGE_BUILD_AT` | Time of the nightly build, `HH:MM` in the Gateway time zone | `03:00` |
 | `ORBIT_UPCLOUD_GATEWAY_ADDRESS` | Public IPv4 address allowed to SSH into the VM | Unset |
 | `ORBIT_UPCLOUD_WIREGUARD_ADDRESS` | Public IPv4 address of the WireGuard hub | Unset |
 | `ORBIT_UPCLOUD_WIREGUARD_PORT` | WireGuard UDP port | `51820` |

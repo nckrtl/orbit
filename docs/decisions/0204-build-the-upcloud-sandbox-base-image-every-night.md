@@ -54,7 +54,7 @@ A Gateway schedule runs one build each night:
 
 1. Reserve a build record with a unique identity before any provider call. Create the build VM from the pinned public Ubuntu template, with an `orbit-image-build` ownership label and a firewall that admits SSH only from the Gateway. Creation follows the driver's at-most-once and recovery rules.
 2. Run the versioned setup script from `resources/compute`.
-3. Warm the caches. The Gateway reads `composer.lock` and `package-lock.json` from each Project's default branch with GitHub App read access, and sends only those files to the VM. The VM runs `composer install --no-scripts --no-plugins` and `npm ci --ignore-scripts` in temporary directories, then deletes those directories. No Project code runs during the build.
+3. Warm the caches. The Gateway reads `composer.lock`, `package.json`, and `package-lock.json` from each Project's default branch with GitHub App read access, and sends only those files to the VM. It keeps only packages that need no credential: Composer packages from packagist.org, and npm only when every package comes from registry.npmjs.org. The VM runs `composer install --no-scripts --no-plugins` and `npm ci --ignore-scripts` in temporary directories, then deletes those directories. No Project code runs during the build.
 4. Audit and clean the VM: remove SSH host keys, `machine-id`, the build key, shell history, and any credentials. Run `cloud-init clean`. Stop the VM.
 5. Templatize its disk. Delete the build server. Record the template UUID, build date, and setup script checksum.
 6. Smoke-test the template: create one VM from it, confirm cloud-init finishes and the pool mounts at the checkout path, then destroy it.
@@ -68,7 +68,9 @@ Orbit keeps the newest published template and the one before it, for rollback. I
 
 ### Delivery
 
-The driver changes and the setup script ship first. Until the nightly build ships, an operator builds the template with the script and sets its UUID in Gateway configuration. The nightly build, cache warming, smoke test, and retention follow in a separate pull request.
+The driver changes and the setup script shipped first. An operator can build a template by hand with the script and set its UUID in Gateway configuration. The nightly build, cache warming, smoke test, and retention followed in a second pull request. The build is off until `ORBIT_UPCLOUD_IMAGE_BUILD_ENABLED` is set. A published template then takes precedence over the configured one.
+
+Each scheduler tick advances a build by at most one step. Long work on the build VM runs in a systemd unit, and the next ticks read its state, so no tick waits. The npm used for warming comes from the official Node 22 build and is removed before cleanup.
 
 ### Driver changes
 

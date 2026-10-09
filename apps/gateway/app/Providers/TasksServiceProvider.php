@@ -6,6 +6,8 @@ namespace App\Providers;
 
 use App\Domain\Compute\ComputeDriver;
 use App\Domain\Compute\SandboxFleetRemover;
+use App\Domain\Compute\SandboxImageCacheSources;
+use App\Domain\Compute\SandboxImageGuest;
 use App\Domain\Compute\SandboxNetworkPolicy;
 use App\Domain\Compute\SandboxNodeBootstrap;
 use App\Domain\Tasks\AgentDriverRegistry;
@@ -38,8 +40,10 @@ use App\Domain\Tasks\TaskWorkspaceMcp;
 use App\Domain\Tasks\TaskWorkspaceSigner;
 use App\Domain\Tasks\TaskWorkspaceStateReader;
 use App\Domain\Tasks\TaskWorkspaceTopology;
+use App\Infrastructure\Compute\GitHubSandboxImageCacheSources;
 use App\Infrastructure\Compute\ProjectSandboxFleetRemoval;
 use App\Infrastructure\Compute\SandboxHubNetwork;
+use App\Infrastructure\Compute\SshSandboxImageGuest;
 use App\Infrastructure\Compute\UpCloudComputeDriver;
 use App\Infrastructure\Compute\UpCloudSandboxNodeBootstrap;
 use App\Infrastructure\Tasks\AgentViewTaskWorkspaceDiffReader;
@@ -80,6 +84,8 @@ final class TasksServiceProvider extends ServiceProvider
         ComputeDriver::class => UpCloudComputeDriver::class,
         SandboxFleetRemover::class => ProjectSandboxFleetRemoval::class,
         SandboxNodeBootstrap::class => UpCloudSandboxNodeBootstrap::class,
+        SandboxImageGuest::class => SshSandboxImageGuest::class,
+        SandboxImageCacheSources::class => GitHubSandboxImageCacheSources::class,
         SandboxNetworkPolicy::class => SandboxHubNetwork::class,
         InstanceProvisioning::class => TaskWorkspaceProvisioner::class,
         TaskWorkspaceTopology::class => RemoteTaskWorkspaceTopology::class,

@@ -12,6 +12,7 @@ use App\Domain\Tasks\TaskGroupStatus;
 use App\Infrastructure\Compute\ComputeLocks;
 use App\Infrastructure\Compute\TaskSandboxLifecycle;
 use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Models\SandboxImage;
 use App\Models\Task;
 use App\Models\TaskSandbox;
 use Illuminate\Support\Str;
@@ -52,8 +53,12 @@ final readonly class ProvisionTaskSandboxAction
             if ($this->driver->capacity() < 1) {
                 throw new ComputeException('compute.capacity', 'The UpCloud VM budget is full.');
             }
+            $zone = config('compute.upcloud.zone');
+            // The newest template the nightly build published wins over the operator-set one.
+            $image = (is_string($zone) ? SandboxImage::newestPublished($zone)?->template_id : null)
+                ?? (config('compute.upcloud.base_image') ?: SandboxSpec::Image);
             $spec = SandboxSpec::fromArray([
-                'image' => config('compute.upcloud.base_image') ?: SandboxSpec::Image, 'size' => SandboxSpec::DefaultSize,
+                'image' => $image, 'size' => SandboxSpec::DefaultSize,
                 'zone' => config('compute.upcloud.zone'), 'gateway_address' => config('compute.upcloud.gateway_address'),
                 'wireguard_address' => config('compute.upcloud.wireguard_address'), 'wireguard_port' => config('compute.upcloud.wireguard_port'),
                 'public_key' => trim($this->keys->publicKey()),

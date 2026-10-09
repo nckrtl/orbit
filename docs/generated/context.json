@@ -1214,6 +1214,7 @@
                 "apps/gateway"
             ],
             "concepts": [
+                "Activity",
                 "Cluster",
                 "Deployment",
                 "Doctor",
