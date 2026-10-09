@@ -73,6 +73,19 @@ final class RouteWebRoot
     }
 
     /**
+     * The Routes that decide `APP_URL`: the active and activating Routes that target the Instance.
+     *
+     * @return Collection<int, Route>
+     */
+    public static function applicationUrlCandidates(Instance $instance): Collection
+    {
+        return Route::query()
+            ->whereIn('status', [RouteStatus::Active->value, RouteStatus::Activating->value])
+            ->whereHas('targets', static fn ($query) => $query->where('instance_id', $instance->id))
+            ->get();
+    }
+
+    /**
      * The Route whose domain each directory's `APP_URL` names, for every directory that a Route with a
      * web root serves and the Instance's own Route does not. The Instance's own Route keeps its
      * directory; otherwise the oldest Route serving a directory wins.
