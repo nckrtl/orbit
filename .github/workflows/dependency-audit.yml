@@ -1,0 +1,36 @@
+name: Dependency audit
+
+# Advisories are published upstream at any time. This audit runs apart from CI and is not a Required check,
+# so a new advisory does not block unrelated pull requests. See docs/contributor-guide.md#dependencies.
+on:
+  schedule:
+    - cron: '41 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          coverage: none
+          tools: composer:v2
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Audit Composer and Bun lockfiles
+        run: bin/dependency-audit
