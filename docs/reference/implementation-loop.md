@@ -314,7 +314,7 @@ The registration is a link at `$XDG_STATE_HOME/orbit/main-cache-stores/<key>`, a
 
 When `ORBIT_MAIN_CACHE_STORE` is unset and the store has publications that lag the checkout's fetched `main`, seeding queues a background refresh for the lagging projects. It does not queue a project whose last refresh failed at that commit or at a later one.
 
-Orbit task workspaces are linked worktrees of Orbit's `default` repository, starting at its current release commit. They share its main cache store but keep private tool caches. `bin/bootstrap` and `bin/review-check` seed those private caches from the publications. A Project setup step reflinks each dependency tree and private cache from `ORBIT_SEED_PATH` first.
+Orbit task workspaces are linked worktrees of Orbit's `default` repository, starting at the last commit that [deployed](/reference/deployments#development-defaults) there. They share its main cache store but keep private tool caches. `bin/bootstrap` and `bin/review-check` seed those private caches from the publications. A Project setup step reflinks each dependency tree and private cache from `ORBIT_SEED_PATH` first.
 
 ### Refresh from CI
 

@@ -7,7 +7,6 @@ use App\Actions\Instances\SynchronizeInstanceEnvironmentAction;
 use App\Domain\DatabaseServers\DatabaseServerAdmin;
 use App\Domain\Instances\DatabaseClone\InstanceDatabaseClonePlanner;
 use App\Domain\Instances\DatabaseClone\InstanceSqliteCloner;
-use App\Domain\Instances\Deployment\DevelopmentDeployment;
 use App\Domain\Instances\DevelopmentInstanceConfigurator;
 use App\Domain\Instances\DevelopmentInstanceSourceLifecycle;
 use App\Domain\Instances\DevelopmentRouteProjector;
@@ -883,32 +882,6 @@ describe('instance:destroy owned databases', function (): void {
                 'DROP DATABASE IF EXISTS `acme_feature_x_test`;',
                 "DROP USER IF EXISTS 'acme_feature_x'@'%';",
             ])."\n");
-    });
-
-    it('removes a release-layout default Instance whose active release is broken and tears down in the checkout', function (): void {
-        $this->default->update(['development_release_layout' => true]);
-        $route = Route::query()->create([
-            'project_id' => $this->project->id,
-            'node_id' => $this->node->id,
-            'domain' => 'default.acme.test',
-            'provenance' => 'explicit',
-            'publication' => 'private',
-            'status' => 'pending',
-        ]);
-        $route->targets()->create(['instance_id' => $this->default->id, 'position' => 0]);
-        $route->update(['status' => 'active']);
-        ProjectLifecycleStep::query()->create(['project_id' => $this->project->id, 'phase' => 'teardown', 'name' => 'cleanup', 'command' => 'php artisan cleanup', 'timeout_seconds' => 30, 'position' => 0]);
-        // `current` selects a release that lost its worktree entry.
-        $deployment = Mockery::mock(DevelopmentDeployment::class);
-        $deployment->shouldReceive('selected')->andThrow(new ResourceOperationException('deployment.prepare_failed', 'The development release program failed.', 502));
-        $transport = new LifecycleSshExecutor;
-        app()->instance(ProjectLifecycleRunner::class, $transport->runner(deployment: $deployment));
-
-        $this->call('DELETE', "/api/v1/instances/{$this->default->id}", server: ['CONTENT_TYPE' => 'application/json'], content: '{"force":true}')->assertOk();
-
-        expect(Instance::query()->whereKey($this->default->id)->exists())->toBeFalse()
-            ->and($transport->inputs)->toHaveCount(1)
-            ->and($transport->inputs[0]['directory'])->toBe('/srv/orbit/apps/acme/default');
     });
 
     it('keeps the member in runtime cleanup when a drop fails and finishes on retry', function (): void {

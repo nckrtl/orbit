@@ -49,6 +49,7 @@ final readonly class DevelopmentCaddyAccessCommand
                     relative_root=$2
                     application=$3
                     shift 3
+                    # A development default in the old release layout serves through `current` until it converts.
                     if [ -L "$checkout" ]; then
                         test "${checkout##*/}" = current
                         home=$(dirname -- "$checkout")

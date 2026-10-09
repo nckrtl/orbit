@@ -803,13 +803,15 @@ it('reports an unreachable workspace when the review tree cannot be read', funct
     'invalid output' => [new CommandResult(0, 'not json', '', 1, false), 'The workspace tree could not be read.'],
 ]);
 
-it('passes the persisted seed decision to asynchronous baseline setup', function (bool $seeded): void {
+it('passes the seed stored when the check starts to asynchronous baseline setup', function (bool $seeded): void {
     config()->set('orbit.tasks.worker_user', null);
     $checkout = check_runner_checkout('true');
     $instance = check_runner_instance($checkout);
+    $instance->update(['seed_selected' => true, 'seed_path' => $this->directory.'/releases/old', 'seed_commit' => str_repeat('f', 40)]);
     $path = $seeded ? $this->directory."/seed with 'quote" : null;
     $commit = $seeded ? str_repeat('a', 40) : null;
-    $instance->update(['seed_selected' => true, 'seed_path' => $path, 'seed_commit' => $commit]);
+    // A default's conversion moves the stored seed after the scheduler loaded the workspace.
+    Instance::query()->whereKey($instance->id)->update(['seed_path' => $path, 'seed_commit' => $commit]);
     $runner = check_runner(new class implements SshExecutor
     {
         public function execute(SshConnection $connection, RemoteCommand $command): CommandResult

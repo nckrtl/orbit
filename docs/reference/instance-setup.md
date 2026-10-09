@@ -90,7 +90,16 @@ The ACL is not applied to the apps root or to either home. New files in the chec
 
 A create that fails before activation cleans up its owned resources without running setup or teardown, and keeps the original failure code. If cleanup cannot finish or the process is interrupted, removal accepts the pre-activation states `reserved`, `checkout_prepared`, and `source_resolved` and skips teardown. See [pre-activation removal](/reference/instance-removal#pre-activation-removal).
 
-`instance:create` runs the setup list after the Instance and its Route are active, and after the [database clone](/domains/applications#database-clone) or the [database on a server](/domains/applications#database-on-a-server) when it applies. Setup steps receive `ORBIT_SEED_PATH` and `ORBIT_SEED_COMMIT`, naming the successful default release selected on the same Node. Project steps own the [dependency copy](/domains/applications#dependency-copy), including nested monorepo folders. When the Project has no release at source preparation, Orbit records an empty seed decision and setup installs from lock files. Retries keep that decision. Registration records a seed only when the adopted source commit matches the selected default release; it never pairs an older source with newer seed dependencies.
+`instance:create` runs the setup list after the Instance and its Route are active, and after the [database clone](/domains/applications#database-clone) or the [database on a server](/domains/applications#database-on-a-server) when it applies. Setup steps receive two variables:
+
+| Variable | Value |
+| --- | --- |
+| `ORBIT_SEED_PATH` | The checkout of `default` on the same Node. |
+| `ORBIT_SEED_COMMIT` | The last commit that [deployed](/reference/deployments#development-defaults) in that checkout. |
+
+Orbit reads them again before each step. Project steps own the [dependency copy](/domains/applications#dependency-copy), including nested monorepo folders.
+
+When the default has not deployed at source preparation, Orbit records an empty seed decision and setup installs from lock files. Retries keep that decision. When Orbit registers an Instance, it records a seed only if the adopted source commit matches the default's deployed commit. It never pairs an older source with newer seed dependencies.
 
 A routed Laravel Instance has its `.env` before setup runs. When Orbit creates that file, it already holds `APP_URL`, a usable `APP_KEY`, and the Project's `APP_NAME`, so setup does not need `key:generate`. See [Laravel application URL](/domains/applications#laravel-application-url).
 
@@ -100,15 +109,7 @@ Activation records `failed_step: setup` in the same transaction, so a Gateway in
 
 Each command runs with `bash -eu` at the repository root of the code the Instance serves, even when the Laravel [application directory](/reference/projects#application-directory) is nested. For example, a setup command for root `apps/site/public` must use `cd apps/site && composer install` to install that application's dependencies. Teardown and task-check commands also keep their repository-root scope. Each setup command runs on the Instance's Node, as the Node's managed user. This is the `instance:create` and `instance:setup` path. A task workspace does not use it. The task baseline runs the same commands, also as the managed user, inside the task check. [Project check](/reference/tasks#project-check) describes that run.
 
-That root is the checkout for most Instances. A `default` Instance with the [development release layout](/reference/deployments#development-defaults) serves the release that `current` selects, and its checkout stays at the commit it was cloned at. Setup and teardown run in that release, so a migration sees the code that runs.
-
-The Instance's seed is its own release, so setup in a release always gets empty seed variables, even when the stored seed names an older release. Orbit reads the selection on the Node before the first step. When it cannot read it, no setup step starts and the request returns `instance.active_release_unavailable`. Teardown runs in the checkout instead, as [removal](#run-teardown) describes. The lifecycle lock stays on the checkout.
-
-[Synchronization](/reference/environment-variables) writes `.env` and `.env.testing` in the checkout's application directory, and a deploy copies them into its new release. So `database:create --instance` followed by `instance:setup` would migrate with the release's older `.env`.
-
-Before each setup step in a release, Orbit copies those two files from the checkout into the same directory of the release, as a deploy does: `cp -a` keeps the mode and makes the managed user the owner. Each file replaces the release's copy in one rename, so the served application never reads a partial file.
-
-A file that the checkout lacks stays as it is in the release. A link in place of the checkout's file, or a directory in place of the release's file, stops setup before its first step. A link in place of the release's file is replaced by a regular file, as a deploy does.
+That root is the checkout. A `default` Instance deploys in its checkout too, so setup sees the code that runs. Its seed is its own checkout, so its setup gets empty seed variables. Setup, teardown, and a [development deployment](/reference/deployments#development-defaults) of the default share the lifecycle lock on the checkout, so they never run at the same time.
 
 Setup and teardown export `VP_HOME` to the Node's [resolved Vite+ store](/reference/tools#tool-managers). Project-local `vp` processes inherit that value even in these non-login shells, rather than using the default `~/.vite-plus`.
 
@@ -164,8 +165,6 @@ A step that the request deadline stops, or that has no time left to start, is no
 
 Teardown may delete ignored files. It must keep the checkout, its Git identity, and its worktrees. When teardown changes tracked files, normal removal refuses. Retry with `--force` to discard them.
 
-A `default` Instance with the release layout runs teardown in its active release. When Orbit cannot read that release, for example because `current` names a release whose worktree entry is gone, teardown runs in the checkout, as it did before releases existed. The Gateway logs a warning with the Instance and the error code, and the removal goes on. Setup never falls back this way.
-
 The first teardown command that exits non-zero or times out stops the removal. The Route, source, and record stay, and the command returns `instance.teardown_step_failed` with the step name. A missing or non-executable command (exit 127 or 126) returns `instance.teardown_step_unavailable` instead, with `outcome: missing`. The message names the step and its Node and says the command was not found or is not executable. Setup uses the same distinction with `instance.setup_step_unavailable`. Orbit retains a bounded stderr tail internally, without including command output in the public error. Fix or destroy the step, then run `instance:destroy` again.
 
 ## Bootstrap the Orbit repository
@@ -203,6 +202,26 @@ Create a disposable new Instance to check nested dependency copies. Test the emp
 Stop the old ext4 cache worker before retiring `/home/nckrtl/orbit/.git/orbit-tia/v1/checkout` and its separate `repository`. Preserve unresolved failure logs. Do not remove the old main repository or any unrelated linked worktree.
 
 A setup copy step must be retryable: keep an existing destination, stage a missing directory, then rename it into place only when `cp` succeeds. A copy failure fails that step rather than leaving a partial dependency tree. On ZFS, `--reflink=always` can enforce shared blocks; `--reflink=auto` provides the ordinary-copy fallback. Verify shared blocks on beast and write isolation by changing a copied dependency or cache in a disposable Instance and checking that the selected seed stays unchanged. Remove only that disposable Instance after the check.
+
+### Convert the development defaults
+
+The first deployment tick after the Gateway serves plain-checkout defaults [converts](/reference/deployments#converting-the-old-release-layout) the three release layouts on beast: Instance 386 (`php-data-bridge-demo`, Project 50), Instance 4 (`orbit-website`, Project 33), and Instance 315 (`orbit`, Project 46).
+
+Before the change merges, check each home under `/fast/apps/<project>/default`:
+
+- `git status --porcelain --untracked-files=no` prints nothing. A tracked change refuses the conversion.
+- `git rev-list main --not origin/main` prints nothing. A local commit refuses it too.
+- No setup step runs in an Instance seeded from it, such as a T3 Code worktree. Release removal waits for one.
+- No task group on Projects 33, 46, or 50 is `running` or `reviewing`. Release removal waits for a running baseline, so a long group only delays it.
+
+After the first tick:
+
+1. `orbit instance:show` for 4, 315, and 386: `seed_path` is the checkout, and `seed_commit` is a commit on `main`.
+2. Each home has no `releases` and no `current`. `git status --untracked-files=no` is clean.
+3. The deployment output names any release folder that Orbit kept. Delete such a folder by hand.
+4. `/fast/apps/orbit/default/packages/agent-annotation` is gone. Its `node_modules` would break Project 46's `seed-dependencies` setup step. Then create a disposable Project 46 Instance on beast. Its setup must pass. Remove it afterward.
+5. `https://php-data-bridge-demo.test` and `https://orbit-website.test` answer, and their Caddy root is the checkout's `public`, not `current/public`.
+6. Instance 315 has no Route. `orbit instance:show 315` still lists none, and no Route of Project 46 points at `/fast/apps/orbit/default/current`.
 
 ## Configure Orbit's task policy
 
@@ -389,7 +408,6 @@ These codes name the step that failed. The sections above say whether the Instan
 | `instance.setup_step_unavailable` | A setup command was not found or is not executable on the Node; `outcome: missing`. |
 | `instance.teardown_step_unavailable` | A teardown command was not found or is not executable on the Node; `outcome: missing`. |
 | `instance.setup_unavailable` | `instance:setup` targets an Instance that is not an active development Instance. |
-| `instance.active_release_unavailable` | Orbit could not read the active release of a `default` Instance with the release layout. No setup step ran. Teardown does not return it. |
 | `command.deadline_exceeded` | The request deadline stopped a step. |
 
 ## Why it works this way
