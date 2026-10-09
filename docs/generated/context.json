@@ -1926,6 +1926,7 @@
                 "apps/gateway"
             ],
             "concepts": [
+                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",

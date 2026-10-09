@@ -52,6 +52,28 @@ final class TaskVmPlacement
         }
     }
 
+    /** Whether `assertWorkspace` accepts the workspace. */
+    public static function allowsWorkspace(Task $group, Instance $workspace): bool
+    {
+        try {
+            self::assertWorkspace($group, $workspace);
+
+            return true;
+        } catch (TaskVmException) {
+            return false;
+        }
+    }
+
+    /** When a `vm` group owns this workspace, the workspace must be on that group's ready task VM. */
+    public static function assertOwnedWorkspace(Instance $workspace): void
+    {
+        $group = Task::topLevel()->where('taskable_type', $workspace->getMorphClass())->where('taskable_id', $workspace->id)
+            ->where('task_compute', TaskCompute::Vm->value)->first();
+        if ($group instanceof Task) {
+            self::assertWorkspace($group, $workspace);
+        }
+    }
+
     /** An Instance on a task VM Node must be that group's `task-<group id>` workspace in the group's Project. */
     public static function assertInstance(Instance $instance): void
     {

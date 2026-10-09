@@ -20,7 +20,7 @@ Both lanes are off by default. [ADR 0200](/decisions/0200-run-each-task-group-in
 
 ## Task VMs
 
-Partly built. The [settings](#configure-task-vms), the `task_vms` table and its [states](#states), the cloud-init user-data, the [placement invariant](#placement-invariant), the commands that [prepare an Incus host](#prepare-an-incus-host) and [limit fleet traffic on the hub](#limit-fleet-traffic-on-the-hub), the address allocator's reserved range, and the [Incus provider](#incus-provider) exist. The invariant checks every saved Instance and access grant, and the fleet rollout skips task VM Nodes. Orbit creates no task VM yet: the jobs are not built yet. The Phase 1 slices of [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm) build them.
+Partly built. The [settings](#configure-task-vms), the `task_vms` table and its [states](#states), the cloud-init user-data, the [placement invariant](#placement-invariant), the commands that [prepare an Incus host](#prepare-an-incus-host) and [limit fleet traffic on the hub](#limit-fleet-traffic-on-the-hub), the address allocator's reserved range, and the [Incus provider](#incus-provider) exist. So do the [Pi runtime](/reference/pi-server#run-pi-on-a-task-vm) and the task code that runs agents, checks, fetch, and push on a task VM Node. The invariant checks every saved Instance and access grant, and the fleet rollout skips task VM Nodes. Orbit creates no task VM yet: the jobs are not built yet. The Phase 1 slices of [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm) build them.
 
 A task VM is a stock Ubuntu 26.04 cloud VM on an Incus host. The Gateway creates it for one group, enrolls it as an `app-dev` Node, and destroys it when the group ends. After enrollment, the group uses the same code as a shared group, pinned to that Node.
 
@@ -41,7 +41,7 @@ The Node `tvm-<id>` has user `orbit`, role `app-dev`, the dev Cluster, and the r
 
 ### Destroy a task VM
 
-When the group ends, Orbit removes its workspace Instance, which also withdraws the Route. Then `DestroyTaskVm` runs:
+When the group ends, Orbit removes its workspace Instance, which also withdraws the Route. Pushes, fetches, checks, and agent turns need the VM `ready`, so they finish before this starts. Then `DestroyTaskVm` runs:
 
 1. It sets the row to `destroying` and revokes the group's model key.
 2. It deletes the VM. A VM that is already gone counts as deleted.
@@ -181,6 +181,9 @@ The reserved range must always be a private network. As soon as task VMs are ena
 | `task_vm.invalid_host_output` | 502 | Incus returned output that fails these checks |
 | `task_vm.host_command_failed` | 502 | An `incus` command on the host failed |
 | `task_vm.bootstrap_failed` | 502 | Cloud-init in the VM reports `error` |
+| `task_vm.not_enrolled` | 409 | The task VM has no Node yet, so Pi cannot be prepared |
+| `task_vm.model_key_failed` | 409 or 502 | CLIProxyAPI did not confirm the group's model key, the proxycli extension holds no management key, or another key operation runs |
+| `task_vm.runtime_failed` | 502 | A Pi step failed on the VM: the executable, its digest, `models.json`, the token, or the `pi-server` Process |
 
 ### Limits
 
@@ -479,7 +482,7 @@ The saved Orbit pair needs its network identity updated after cloning. The guest
 
 ## Sandbox power
 
-Task group responses report `sandbox_power` separately from task status. It is `running`, `stopped`, or `destroyed` only when the owned reservation confirms that state. Shared groups, missing ownership, and transitions return `null`. Destroyed reservations remain visible after workspace cleanup. The CLI shows this value as **Sandbox power** for VM groups.
+Task group responses report `sandbox_power` separately from task status. It is `running`, `stopped`, or `destroyed` only when the owned reservation confirms that state. Shared groups, missing ownership, and transitions return `null`. For a [task VM](#task-vms), it is `running` while the VM is `ready` and `destroyed` once it is `destroyed`. In the other states it is `null`, and the group's wait reason names the state. Destroyed reservations remain visible after workspace cleanup. The CLI shows this value as **Sandbox power** for VM groups.
 
 ## Request a preview
 
