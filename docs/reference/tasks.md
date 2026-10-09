@@ -602,7 +602,7 @@ A claim takes the oldest `todo` task that fits and moves it to `reserved`. The p
 - an active Linux Node with an active `app-dev` role and a WireGuard address;
 - not excluded from the Project by a [development node exclusion](/reference/development-node-exclusions);
 - an active `pi-server` Process with desired state `running`;
-- not a [task VM](/reference/compute-drivers#task-vms) Node;
+- not a [task VM](/reference/compute-drivers#task-vms) Node (not built yet);
 - with fewer than 10 active tasks. Active tasks are `reserved`, `running`, `reviewing`, and `settling`.
 
 Among the Nodes that fit, the one with the fewest active tasks wins. There is no per-Project limit, and the scheduler never polls Nodes for capacity.
@@ -758,6 +758,8 @@ The approval of the subtask that opens the pull request also needs `--pr-summary
 When the acting thread stops, the tick reads `$(git rev-parse --git-path orbit)/receipt.json` over SSH. It applies the receipt only when its `thread` is the acting thread. It stores the receipt as a comment with its content hash, then removes the receipt file. It does not remove `"$(git rev-parse --git-path orbit)/turn"`. A receipt read again after a crash has the same hash and is stored once. The scheduler then acts on the stored comment, so a failed send or commit is retried without the file.
 
 ### Task VM workspace
+
+Not built yet. This section describes the [task VM](/reference/compute-drivers#task-vms) lane that the Phase 1 slices of ADR 0200 build.
 
 A group of a Project other than `orbit`, with `task_compute: vm`, runs in its own [task VM](/reference/compute-drivers#task-vms). The claim creates the VM and waits until it is `ready`. Until then, the task returns to `todo` with the reason `Task VM: <state or error>`, and the next tick tries again. Then Orbit creates the workspace on the VM's Node, as for a shared group: the Instance `task-{id}`, and its private Route when the workspace is routed.
 

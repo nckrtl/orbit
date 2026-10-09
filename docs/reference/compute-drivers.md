@@ -20,6 +20,8 @@ Both lanes are off by default. [ADR 0200](/decisions/0200-run-each-task-group-in
 
 ## Task VMs
 
+Not built yet. The Phase 1 slices of [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm) build this section. Until they merge, no task VM code, command, or setting exists.
+
 A task VM is a stock Ubuntu 26.04 cloud VM on an Incus host. The Gateway creates it for one group, enrolls it as an `app-dev` Node, and destroys it when the group ends. After enrollment, the group uses the same code as a shared group, pinned to that Node.
 
 ### From claim to workspace
@@ -46,7 +48,7 @@ When the group ends, Orbit removes its workspace Instance, which also withdraws 
 3. It removes the Node offline, with force. This removes its WireGuard peer, roles, and Process rows.
 4. It sets the row to `destroyed`.
 
-Each `tasks:tick` queues `DestroyTaskVm` for every task VM that is not `destroyed` and whose group has ended. Task VMs are never parked.
+Each `tasks:tick` queues `DestroyTaskVm` for every task VM that is not `destroyed` and whose group has ended. Phase 1 does not park task VMs. Phase 2 adds parking.
 
 ### States
 
@@ -146,7 +148,7 @@ These alternatives were rejected:
 
 ## UpCloud driver
 
-The UpCloud driver creates, observes, parks, resumes, and destroys VMs at UpCloud through its HTTPS API. Task claims do not use it. UpCloud task VMs use the [task VM](#task-vms) path in a later phase of [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm).
+The UpCloud driver creates, observes, parks, resumes, and destroys VMs at UpCloud through its HTTPS API. Task claims use it only through the [first-build project lane](#project-lane-being-removed), which is off and is being removed. UpCloud task VMs move to the [task VM](#task-vms) path in Phase 3 of [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm).
 
 `ProvisionTaskSandboxAction` reserves one VM with the pinned Ubuntu image and the `starter-small` size. The reservation records its UUID, image, plan, network, and the Gateway's public SSH key before the request. Cloud-init creates the `orbit` user with only the Gateway's key. It carries no provider, GitHub, Pi, or model credential.
 
@@ -175,6 +177,20 @@ The token goes only to `https://api.upcloud.com/1.3`. Changed settings apply to 
 ### Why the UpCloud driver works this way
 
 A started cloud server does not prove that a task can run, so provider state and task state stay separate. Ownership recorded before each request lets cleanup find the VM after a Gateway restart. Refusing a second create when a response is lost prevents duplicate billed VMs.
+
+## Project lane (being removed)
+
+The first build of the web lane is still in the code. The Phase 1 slices of [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm) delete it. Keep it off. These Gateway settings still exist, with their required values:
+
+| Setting | Required value |
+| --- | --- |
+| `ORBIT_SANDBOX_PROJECT_CLAIMS_ENABLED` | `false` |
+| `ORBIT_INCUS_ENROLLMENT_ENABLED` | `false` |
+| `ORBIT_INCUS_PROJECT_WORKSPACES_ENABLED` | `false` |
+| `ORBIT_INCUS_DEV_CLUSTER_ID`, `ORBIT_INCUS_MODEL_ADDRESS`, `ORBIT_INCUS_MODEL_PORT` | Unset |
+| `ORBIT_SANDBOX_PI_ARTIFACT_PATH`, `ORBIT_SANDBOX_PI_ARTIFACT_SHA256` | Unset |
+
+Generic Instance operations on a sandbox workspace still fail with HTTP 409 `instance.sandbox_managed`. Manage such a workspace through its task group. `bin/sandbox-project-image` still builds Project images for this lane; do not use it. The optional `project_bootstrap` object in `/etc/orbit/sandbox-network.json`, and the helper's `project_enabled` operation, serve only this lane. Leave `project_bootstrap` out.
 
 ## Local Incus control
 
@@ -406,7 +422,7 @@ Task group responses report `sandbox_power` separately from task status. It is `
 
 ## Request a preview
 
-Set `preview: true` when creating or updating a task group to keep its VM running during review. The default is `false`. Preview intent can change while a group is in backlog, waiting, or active; ended groups refuse it. Title, brief, and status updates keep their existing restrictions. Shared groups store the intent without changing shared-host power. A task VM is never parked, so preview does not change it.
+Set `preview: true` when creating or updating a task group to keep its VM running during review. The default is `false`. Preview intent can change while a group is in backlog, waiting, or active; ended groups refuse it. Title, brief, and status updates keep their existing restrictions. Shared groups store the intent without changing shared-host power. Phase 1 does not park task VMs, so preview does not change them.
 
 Use `orbit tasks:create --preview` or `orbit tasks:update <group> --preview`. Use `--no-preview` on update to release the preview. The two update flags are mutually exclusive. The API accepts JSON booleans; omitted updates preserve the current intent. A successful update stores intent. The next scheduler reconciliation changes compute, and `sandbox_power` reports the confirmed observation. Capacity and restore failures remain visible.
 

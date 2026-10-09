@@ -102,6 +102,8 @@ orbit process:create pi-server \
 
 ## Run Pi on a task VM
 
+Not built yet. The Phase 1 slices of [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm) build this install path.
+
 On a [task VM](/reference/compute-drivers#task-vms), the Gateway installs and starts Pi itself, in the `PrepareTaskVmRuntime` job. There is no `orbit-worker` and no manual install. Pi runs as the VM's managed user `orbit`, which has passwordless sudo.
 
 1. The Gateway creates a CLIProxyAPI key for the group.

@@ -174,6 +174,8 @@ Doctor checks a Node without roles like any other Node when the Gateway has a pi
 
 ## Enroll through a jump host
 
+Not built yet. The Phase 1 slices of [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm) add `ssh_jump_node_id`.
+
 The Gateway can enroll a Node that it reaches only through another Node. [Task VMs](/reference/compute-drivers#task-vms) use this: a task VM has only a private address on its Incus host's bridge. The jump is internal. `node:add` and the API have no field for it.
 
 The Node records the jump Node in `ssh_jump_node_id`. While the Node has no active role, SSH goes through the jump Node with OpenSSH `ProxyJump`, as `<managed user>@<WireGuard address>:22` of the jump Node. The host key scan runs `ssh-keyscan` on the jump Node, and the scanned key must match the expected fingerprint. A task VM's fingerprint comes from its host, before any code in the VM runs.

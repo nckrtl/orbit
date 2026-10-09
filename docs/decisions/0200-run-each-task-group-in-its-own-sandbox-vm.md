@@ -46,7 +46,7 @@ Orbit assigns each task group its own VM through the lane of its Project. This a
 6. **Pi.** The Gateway installs a pinned Pi artifact. Pi runs as a normal `pi-server` Process under `orbit`, with a token for each VM and a CLIProxyAPI key for each group.
 7. **State.** The `task_vms` table holds one row for each VM. `TaskVmState` has five cases: `provisioning`, `ready`, `destroying`, `destroyed`, and `failed`. There are no marker timestamps. `IncusTaskVmProvider` validates host and guest output once. The Gateway trusts its own rows.
 8. **Jobs.** `ProvisionTaskVm`, `EnrollTaskVm`, `PrepareTaskVmRuntime`, and `DestroyTaskVm` are queued jobs on the `task-vms` database queue. The Gateway scheduler starts the worker every minute.
-9. **Lifecycle.** The VM is destroyed when the group ends: Instance removal, VM deletion, offline Node removal, and key revocation. Park and resume move to Phase 2, using the spike measurements: park in 2.5 seconds, resume in 14 seconds.
+9. **Lifecycle.** The VM is destroyed when the group ends, in this order: Instance removal, the `destroying` state, model key revocation, VM deletion, offline Node removal, and the `destroyed` state. Park and resume move to Phase 2, using the spike measurements: park in 2.5 seconds, resume in 14 seconds.
 10. **No guard.** Generic Instance operations need no sandbox guard. One placement invariant protects task VM Nodes. Task VM Nodes are left out of the fleet rollout and of shared-group placement.
 11. **Public egress.** Task VMs reach public addresses on every port. The VM edge and the hub filter are the boundary, and CI on the pushed commit is the gate.
 12. **Accepted risk.** A VM can query port 53 on any host address, because Incus accepts DNS before the ACL. It can read instance names from the DNS of other bridges on that host. Phase 1 accepts this. Phase 2 decides on a host rule that drops it.
@@ -126,4 +126,5 @@ This decision changes [Shared Instance](/reference/tasks#shared-instance) and [O
   - A task VM reaches public addresses, and cannot reach private, link-local, CGNAT, or multicast addresses, another task VM, or the fleet outside the hub filter.
   - A local check run by an agent and Orbit's handoff check give the same verdict on the same tree.
   - A one-subtask Orbit group runs end to end in an operator VM.
+  - An Orbit group runs to PR, then parks, resumes, merges, and nothing is left behind.
   - No App private key or provider credential enters a sandbox. No GitHub token enters a web-lane VM. GitHub tokens never appear in argv, logs, stored origins, or Git configuration.

@@ -1854,7 +1854,9 @@
                 "Task",
                 "Tool"
             ],
-            "governing_adrs": []
+            "governing_adrs": [
+                "0200"
+            ]
         },
         {
             "path": "docs/reference/node-retarget.md",
@@ -1935,7 +1937,9 @@
                 "Tool",
                 "Turn receipt"
             ],
-            "governing_adrs": []
+            "governing_adrs": [
+                "0200"
+            ]
         },
         {
             "path": "docs/reference/private-dns.md",
