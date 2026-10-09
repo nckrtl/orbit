@@ -47,6 +47,8 @@ final readonly class DevelopmentSite
          */
         public bool $upstreamSystemRoots = false,
         public ?int $annotatorPort = null,
+        /** A Route with a web root that serves another application directory gets its own pool. */
+        public ?string $poolSuffix = null,
     ) {}
 
     public function asSecondary(): self
@@ -73,7 +75,7 @@ final readonly class DevelopmentSite
 
     public function poolName(): string
     {
-        return "orbit-{$this->scope}";
+        return $this->poolSuffix === null ? "orbit-{$this->scope}" : "orbit-{$this->scope}-{$this->poolSuffix}";
     }
 
     public function socketPath(): string

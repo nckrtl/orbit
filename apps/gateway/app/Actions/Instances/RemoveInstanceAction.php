@@ -7,6 +7,7 @@ namespace App\Actions\Instances;
 use App\Actions\Annotations\CancelInstanceAnnotationTasksAction;
 use App\Actions\DatabaseConnections\DropOwnedDatabasesAction;
 use App\Actions\Processes\CascadeInstanceProcessesAction;
+use App\Actions\Routes\RemoveRouteAction;
 use App\Actions\Schedules\CascadeInstanceSchedulesAction;
 use App\Data\Instances\InstanceData;
 use App\Domain\AppDev\AppDevSourceOperationLock;
@@ -144,6 +145,30 @@ final readonly class RemoveInstanceAction implements InstanceRemover
         return $this->advance($this->accept($snapshot, $force, $runTeardown, $allowCascade));
     }
 
+    /**
+     * Routes with a web root are additional sites. Once every refusal check has passed, they leave
+     * with their pools, leaves, and Caddy sites, so the recorded removal handles only each Instance's
+     * own Route. A refused removal keeps them.
+     *
+     * @param  Collection<int, Instance>  $members
+     */
+    private function removeWebRootRoutes(Collection $members): void
+    {
+        $routes = Route::query()
+            ->whereNotNull('web_root')
+            ->whereHas('targets', static fn ($query) => $query->whereIn('instance_id', $members->pluck('id')))
+            ->orderBy('id')
+            ->get();
+
+        foreach ($routes as $route) {
+            app(RemoveRouteAction::class)->execute($route);
+        }
+
+        if ($routes->isNotEmpty()) {
+            $members->each(static fn (Instance $member): Instance => $member->unsetRelation('routes')->load('routes.targets'));
+        }
+    }
+
     /** @return list<int> */
     private function removalEnvironmentOwnerIds(Instance $requested, bool $force): array
     {
@@ -274,6 +299,7 @@ final readonly class RemoveInstanceAction implements InstanceRemover
             }
         }
 
+        $this->removeWebRootRoutes($members);
         $digest = $this->inventoryDigest($snapshot->id, $force, $inventories);
 
         $operation = $this->processAdmissions->run(
@@ -316,6 +342,10 @@ final readonly class RemoveInstanceAction implements InstanceRemover
                         || $lockedMember->checkout_path !== $member->checkout_path
                         || $lockedMember->source_layout !== $member->source_layout
                     ) {
+                        $this->conflict($snapshot);
+                    }
+
+                    if (Route::query()->whereNotNull('web_root')->whereHas('targets', static fn ($query) => $query->where('instance_id', $member->id))->exists()) {
                         $this->conflict($snapshot);
                     }
 
@@ -673,7 +703,9 @@ final readonly class RemoveInstanceAction implements InstanceRemover
             return null;
         }
 
-        if ($instance->routes->count() !== 1) {
+        $routes = $this->ownRoutes($instance);
+
+        if ($routes->count() !== 1) {
             throw new ResourceOperationException(
                 errorCode: 'instance.remove_refused',
                 message: "Instance [{$instance->name}] does not have one removable Route.",
@@ -681,7 +713,7 @@ final readonly class RemoveInstanceAction implements InstanceRemover
             );
         }
 
-        $route = $instance->routes->sole();
+        $route = $routes->sole();
 
         if (
             ! $this->removableRouteState($route, $instance)
@@ -726,9 +758,20 @@ final readonly class RemoveInstanceAction implements InstanceRemover
         return $route;
     }
 
+    /**
+     * The Instance's own Routes. Routes with a web root are additional sites that an accepted removal
+     * removes first.
+     *
+     * @return \Illuminate\Database\Eloquent\Collection<int, Route>
+     */
+    private function ownRoutes(Instance $instance): \Illuminate\Database\Eloquent\Collection
+    {
+        return $instance->routes->reject(static fn (Route $route): bool => $route->hasWebRoot())->values();
+    }
+
     private function withoutRoute(Instance $instance): bool
     {
-        return $instance->routes->isEmpty()
+        return $this->ownRoutes($instance)->isEmpty()
             && (! $instance->requiresRoute() || $instance->status === InstanceState::SourceResolved || $this->failedCreation($instance));
     }
 

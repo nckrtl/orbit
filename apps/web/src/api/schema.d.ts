@@ -4032,6 +4032,7 @@ export interface components {
             seed_commit?: string | null;
             annotator_port?: number | null;
             annotator_url?: string | null;
+            routes?: components["schemas"]["Route"][];
         };
         ProjectIdentity: {
             id?: number;
@@ -4066,6 +4067,7 @@ export interface components {
             process_id?: number | null;
             upstream?: string | null;
             analytics_instance_id?: number | null;
+            web_root?: string | null;
         };
         RouteTarget: {
             id?: number;
@@ -17094,6 +17096,7 @@ export interface operations {
                     /** @enum {string} */
                     publication?: "private" | "public";
                     instance_id: number;
+                    web_root?: string | null;
                 } | ({
                     domain: string;
                     /** @enum {string} */
@@ -17291,6 +17294,8 @@ export interface operations {
                      * @enum {string}
                      */
                     publication?: "private" | "public";
+                    /** @description New web root inside the Instance checkout; empty to serve the Instance root */
+                    web_root?: string | null;
                 };
             };
         };
