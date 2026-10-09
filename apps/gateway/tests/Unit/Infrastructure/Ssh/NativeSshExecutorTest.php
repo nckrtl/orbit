@@ -233,3 +233,128 @@ it('opens a new connection when the caller does not share one', function (): voi
         @rmdir($sshDirectory);
     }
 });
+
+it('keeps the shared-connection argv unchanged for a connection without a jump host', function (): void {
+    $sshDirectory = '/tmp/omx-'.bin2hex(random_bytes(3));
+    mkdir($sshDirectory, 0700);
+    $runner = ssh_executor_recording_runner();
+
+    try {
+        new NativeSshExecutor($runner)->execute(
+            ssh_executor_connection($sshDirectory),
+            new RemoteCommand(['uname', '-m']),
+        );
+
+        expect($runner->invocation?->arguments)->toBe([
+            'ssh',
+            '-i',
+            "{$sshDirectory}/id_ed25519",
+            '-p',
+            '22',
+            '-o',
+            'BatchMode=yes',
+            '-o',
+            'StrictHostKeyChecking=yes',
+            '-o',
+            "UserKnownHostsFile={$sshDirectory}/known_hosts",
+            '-o',
+            'ConnectTimeout=10',
+            '-o',
+            'ServerAliveInterval=5',
+            '-o',
+            'ServerAliveCountMax=2',
+            '-o',
+            'ControlMaster=auto',
+            '-o',
+            "ControlPath={$sshDirectory}/mux/%C",
+            '-o',
+            'ControlPersist=60s',
+            '--',
+            'orbit@10.44.0.3',
+            "'uname' '-m'",
+        ]);
+    } finally {
+        @rmdir("{$sshDirectory}/mux");
+        @rmdir($sshDirectory);
+    }
+});
+
+it('reaches a host through its jump host with the same strict options on both hops', function (): void {
+    $sshDirectory = '/tmp/omx-'.bin2hex(random_bytes(3));
+    mkdir($sshDirectory, 0700);
+    $runner = ssh_executor_recording_runner();
+    $connection = new SshConnection(
+        host: '10.251.77.32',
+        user: 'orbit',
+        port: 22,
+        identityFile: "{$sshDirectory}/id_ed25519",
+        knownHostsFile: "{$sshDirectory}/known_hosts",
+        proxyJump: new SshConnection(
+            host: '10.44.0.7',
+            user: 'nckrtl',
+            port: 22,
+            identityFile: "{$sshDirectory}/id_ed25519",
+            knownHostsFile: "{$sshDirectory}/known_hosts",
+        ),
+    );
+
+    try {
+        new NativeSshExecutor($runner)->execute($connection, new RemoteCommand(['true']));
+
+        expect($runner->invocation?->arguments)->toBe([
+            'ssh',
+            '-i',
+            "{$sshDirectory}/id_ed25519",
+            '-p',
+            '22',
+            '-o',
+            'BatchMode=yes',
+            '-o',
+            'StrictHostKeyChecking=yes',
+            '-o',
+            "UserKnownHostsFile={$sshDirectory}/known_hosts",
+            '-o',
+            'ConnectTimeout=10',
+            '-o',
+            'ServerAliveInterval=5',
+            '-o',
+            'ServerAliveCountMax=2',
+            '-o',
+            "ProxyCommand='ssh' '-i' '{$sshDirectory}/id_ed25519' '-p' '22' '-o' 'BatchMode=yes'"
+                ." '-o' 'StrictHostKeyChecking=yes' '-o' 'UserKnownHostsFile={$sshDirectory}/known_hosts'"
+                ." '-o' 'ConnectTimeout=10' '-o' 'ServerAliveInterval=5' '-o' 'ServerAliveCountMax=2'"
+                ." '-W' '[%h]:%p' '--' 'nckrtl@10.44.0.7'",
+            '--',
+            'orbit@10.251.77.32',
+            "'true'",
+        ])->and(is_dir("{$sshDirectory}/mux"))->toBeFalse();
+    } finally {
+        rmdir($sshDirectory);
+    }
+});
+
+it('keeps jump host arguments literal inside the proxy command', function (): void {
+    $runner = ssh_executor_recording_runner();
+    $connection = new SshConnection(
+        host: '10.251.77.32',
+        user: 'orbit',
+        port: 22,
+        identityFile: '/srv/orbit 100%/ssh/id_ed25519',
+        knownHostsFile: '/srv/orbit 100%/ssh/known_hosts',
+        proxyJump: new SshConnection(
+            host: '10.44.0.7',
+            user: 'nckrtl',
+            port: 2222,
+            identityFile: "/srv/orbit 100%/ssh/it's",
+            knownHostsFile: '/srv/orbit 100%/ssh/known_hosts',
+        ),
+    );
+
+    new NativeSshExecutor($runner)->execute($connection, new RemoteCommand(['true']));
+
+    $proxyCommand = $runner->invocation?->arguments[18] ?? '';
+
+    expect($proxyCommand)
+        ->toStartWith("ProxyCommand='ssh' '-i' '/srv/orbit 100%%/ssh/it'\\''s' '-p' '2222'")
+        ->toContain("'UserKnownHostsFile=/srv/orbit 100%%/ssh/known_hosts'", "'-W' '[%h]:%p' '--' 'nckrtl@10.44.0.7'");
+});

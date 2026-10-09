@@ -1856,9 +1856,7 @@
                 "Task",
                 "Tool"
             ],
-            "governing_adrs": [
-                "0200"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/node-retarget.md",

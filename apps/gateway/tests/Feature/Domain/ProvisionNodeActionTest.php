@@ -83,6 +83,53 @@ describe(ProvisionNodeAction::class, function (): void {
         expect($node->status)->toBe(LifecycleStatus::Active);
     });
 
+    it('stores the internal jump node before converging and keeps it when a later request omits it', function (): void {
+        $converger = new class implements NodeConverger
+        {
+            /** @var list<int|null> */
+            public array $jumpNodeIds = [];
+
+            public function converge(
+                Node $node,
+                NodeProvisioningIdentity $identity,
+                ?string $expectedSshHostFingerprint = null,
+                bool $rolelessOperator = false,
+            ): NodeObservation {
+                $this->jumpNodeIds[] = $node->ssh_jump_node_id;
+
+                return new NodeObservation('x86_64');
+            }
+        };
+        app()->instance(NodeConverger::class, $converger);
+        app()->instance(MetricsFleetReconciler::class, Mockery::mock(MetricsFleetReconciler::class)->shouldReceive('reconcile')->getMock());
+        $jump = Node::query()->create([
+            'name' => 'jump-host',
+            'status' => LifecycleStatus::Active,
+            'platform' => 'linux',
+            'public_ssh_host' => '192.0.2.7',
+            'user' => 'nckrtl',
+            'wireguard_ip' => '10.44.0.7',
+        ]);
+
+        app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
+            name: 'jumped-node',
+            publicSshHost: '10.251.77.32',
+            architecture: 'x86_64',
+            expectedSshHostFingerprint: 'SHA256:pinned',
+            sshJumpNodeId: $jump->id,
+        ));
+        $node = app(ProvisionNodeAction::class)->execute(new ProvisionNodeData(
+            name: 'jumped-node',
+            publicSshHost: '10.251.77.32',
+            expectedSshHostFingerprint: 'SHA256:pinned',
+        ));
+
+        expect($converger->jumpNodeIds)
+            ->toBe([$jump->id, $jump->id])
+            ->and($node->refresh()->ssh_jump_node_id)
+            ->toBe($jump->id);
+    });
+
     it('reconciles a role-bearing provisioned node after activation', function (): void {
         app()->instance(NodeConverger::class, new class implements NodeConverger
         {

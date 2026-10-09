@@ -32,6 +32,7 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
  * @property array<string, mixed>|null $settings
  * @property string|null $agent_secret_hash
  * @property string|null $compute_sandbox_id
+ * @property int|null $ssh_jump_node_id
  * @property-read Collection<int, NodeRole> $roles
  * @property-read Collection<int, ProjectNodeExclusion> $projectNodeExclusions
  * @property-read Collection<int, ToolManagerRecord> $toolManagers
@@ -39,6 +40,7 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
  * @property-read Collection<int, Node> $accessibleNodes
  * @property-read Collection<int, Node> $accessingNodes
  * @property-read Cluster|null $cluster
+ * @property-read Node|null $sshJumpNode
  * @property-read Collection<int, Process> $processes
  * @property-read Collection<int, Schedule> $schedules
  * @property-read Collection<int, Schedule> $hostedSchedules
@@ -81,7 +83,18 @@ final class Node extends Model
         'failed_step',
         'error_code',
         'settings',
+        'ssh_jump_node_id',
     ];
+
+    /**
+     * The Node that public SSH goes through until this Node has an active role.
+     *
+     * @return BelongsTo<Node, $this>
+     */
+    public function sshJumpNode(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'ssh_jump_node_id');
+    }
 
     /** @return HasMany<NodeRole, $this> */
     public function roles(): HasMany
