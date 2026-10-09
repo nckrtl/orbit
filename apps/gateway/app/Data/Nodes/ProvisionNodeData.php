@@ -9,7 +9,10 @@ use Spatie\LaravelData\Data;
 
 final class ProvisionNodeData extends Data
 {
-    /** @param list<RoleName> $roles */
+    /**
+     * @param  list<RoleName>  $roles
+     * @param  int|null  $sshJumpNodeId  Internal: the Node that public SSH goes through until the Node has an active role. No API or CLI field sets it.
+     */
     public function __construct(
         public string $name,
         public string $publicSshHost,
@@ -32,5 +35,6 @@ final class ProvisionNodeData extends Data
         public bool $settingsProvided = false,
         public ?NodeSettingsData $settings = null,
         public bool $platformProvided = false,
+        public ?int $sshJumpNodeId = null,
     ) {}
 }

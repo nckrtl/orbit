@@ -8,15 +8,17 @@ use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\TaskVms\TaskVmPlacement;
 use App\Models\Node;
 use App\Models\NodeRole;
+use App\Models\TaskVm;
 
 /**
  * Which Nodes the fleet rollout visits, and in which order (ADR 0202).
  *
  * A Node is in the rollout when all of these hold:
  *
- * - it is not a disposable task sandbox: it has no `compute_sandbox_id` (ADR 0200);
+ * - it is not a disposable task sandbox: it has no `compute_sandbox_id` and is not a live task VM (ADR 0200);
  * - it is `active` and runs Linux;
  * - the Gateway manages it over SSH: it has a WireGuard address and a pinned SSH host key;
  * - it holds at least one active role other than `gateway`;
@@ -109,7 +111,7 @@ final readonly class FleetRolloutMembership
      */
     public function exclusion(Node $node): ?string
     {
-        if ($node->compute_sandbox_id !== null) {
+        if ($node->compute_sandbox_id !== null || TaskVmPlacement::forNode($node) instanceof TaskVm) {
             return 'sandbox';
         }
 

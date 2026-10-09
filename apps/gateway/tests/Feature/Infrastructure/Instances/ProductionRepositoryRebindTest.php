@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\GitHub\RepositoryReadAccess;
+use App\Domain\Instances\Deployment\DeploymentRelease;
 use App\Domain\Instances\ProductionRepositoryRecord;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppProd\ProductionSshExecutor;
@@ -22,6 +23,7 @@ use App\Models\Project;
 use Illuminate\Filesystem\Filesystem;
 use Symfony\Component\Process\Process;
 use Tests\Support\AppDevFakeSshExecutor;
+use Tests\Support\LinuxHost;
 
 const REBIND_SSH_URL = 'git@github.com:acme/site.git';
 const REBIND_HTTPS_URL = 'https://github.com/acme/site.git';
@@ -89,6 +91,54 @@ describe('RemoteProductionRepositoryBinding', function (): void {
         }
     });
 
+    it('re-binds the releases that pruning keeps, and pruning then accepts them', function (): void {
+        if (LinuxHost::delegate($this)) {
+            return;
+        }
+
+        $sandbox = rebind_sandbox(['initial', '20261001000000-a', '20261002000000-b', '20261003000000-c']);
+        $executor = rebind_local_executor($sandbox);
+        [$instance, $deployment, $binding] = rebind_instance($executor, REBIND_SSH_URL, "{$sandbox}/home");
+        $selected = new DeploymentRelease('initial', "{$sandbox}/home/releases/initial", str_repeat('a', 40));
+        // A running Process works in a release beyond the retention limit, so pruning keeps it.
+        $worker = new Process(['sleep', '60'], "{$sandbox}/home/releases/20261001000000-a/public");
+
+        try {
+            $worker->start();
+            for ($attempt = 0; $attempt < 100 && @readlink('/proc/'.$worker->getPid().'/cwd') !== "{$sandbox}/home/releases/20261001000000-a/public"; $attempt++) {
+                usleep(10_000);
+            }
+
+            expect($deployment->prune($instance, $selected, null))
+                ->toBe(['removed' => [], 'in_use' => ['20261001000000-a']]);
+
+            $record = $binding->inspect($instance);
+
+            expect(array_keys($record->releases))->toBe(['20261001000000-a', '20261002000000-b', '20261003000000-c', 'initial']);
+
+            $binding->rebind($instance, $record, $record->withRepository(REBIND_HTTPS_URL));
+            $instance->project->update(['repository_url' => REBIND_HTTPS_URL]);
+            $instance->refresh();
+
+            expect($binding->inspect($instance)->boundTo(REBIND_HTTPS_URL))->toBeTrue()
+                ->and($deployment->prune($instance, $selected, null))
+                ->toBe(['removed' => [], 'in_use' => ['20261001000000-a']]);
+
+            $worker->stop(0);
+
+            expect($deployment->prune($instance, $selected, null))
+                ->toBe(['removed' => ['20261001000000-a'], 'in_use' => []])
+                ->and($binding->inspect($instance))->toEqual(new ProductionRepositoryRecord(
+                    REBIND_HTTPS_URL,
+                    REBIND_HTTPS_URL,
+                    ['20261002000000-b' => REBIND_HTTPS_URL, '20261003000000-c' => REBIND_HTTPS_URL, 'initial' => REBIND_HTTPS_URL],
+                ));
+        } finally {
+            $worker->stop(0);
+            new Filesystem()->deleteDirectory($sandbox);
+        }
+    });
+
     it('refuses to rewrite a value that is neither the expected nor the target URL', function (): void {
         $sandbox = rebind_sandbox();
         $executor = rebind_local_executor($sandbox);
@@ -136,7 +186,8 @@ describe('RemoteProductionRepositoryBinding', function (): void {
     });
 });
 
-function rebind_sandbox(): string
+/** @param list<string> $names */
+function rebind_sandbox(array $names = ['initial', '20261001000000-a']): string
 {
     $sandbox = sys_get_temp_dir().'/orbit-production-rebind-'.bin2hex(random_bytes(6));
     $home = "{$sandbox}/home";
@@ -155,7 +206,7 @@ function rebind_sandbox(): string
     mkdir("{$home}/releases", 0o700, true);
     file_put_contents("{$home}/.env", "APP_ENV=production\n");
 
-    foreach (['initial', '20261001000000-a'] as $name) {
+    foreach ($names as $name) {
         $release = "{$home}/releases/{$name}";
         mkdir("{$release}/public", 0o700, true);
         file_put_contents("{$release}/public/index.php", "<?php\n");
@@ -208,6 +259,8 @@ function rebind_local_executor(string $sandbox): ProductionSshExecutor
                     'sudo chown root:root -- "$temporary"',
                     '! -user "$user"',
                     '! -group "$user"',
+                    // The test's own child processes stand in for the production user's.
+                    'pgrep -u "$user"',
                 ],
                 [
                     'state_directory="'.$this->sandbox.'/state"',
@@ -217,6 +270,7 @@ function rebind_local_executor(string $sandbox): ProductionSshExecutor
                     ':',
                     '! -uid "$(id -u)"',
                     '! -gid "$(id -g)"',
+                    'pgrep -P "$PPID"',
                 ],
                 $input,
             );

@@ -24,5 +24,9 @@ interface DevelopmentDeployment
 
     public function activate(Instance $instance, DeploymentRelease $release): DeploymentRelease;
 
+    /**
+     * Keeps the selected release and every seed another Instance leases, then the previous selection while the home
+     * holds fewer than DeploymentRelease::RETAINED_PER_HOME. It removes the other releases.
+     */
     public function prune(Instance $instance, DeploymentRelease $selected): void;
 }

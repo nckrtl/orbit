@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Domain\Processes;
 
 use App\Domain\Hibernation\DevelopmentHibernationPolicy;
-use App\Domain\Instances\InstanceSandboxGuard;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
@@ -34,7 +33,6 @@ final readonly class ProcessTargetResolver
 
     public function forAdmission(Instance $instance): ProcessTarget
     {
-        InstanceSandboxGuard::assertHostOperation($instance);
         $instance->loadMissing('node');
         $this->ensureActiveInstance($instance);
 
@@ -74,7 +72,6 @@ final readonly class ProcessTargetResolver
 
     public function forPreparation(Instance $instance): ProcessTarget
     {
-        InstanceSandboxGuard::assertHostOperation($instance);
         $instance->loadMissing('node');
         $this->ensureLinux($instance->node);
 
@@ -185,7 +182,6 @@ final readonly class ProcessTargetResolver
 
     private function instanceContext(Instance $instance, bool $allowRemovingRole = false): ProcessTarget
     {
-        InstanceSandboxGuard::assertHostOperation($instance);
         $this->ensureLinux($instance->node);
 
         $appDevPlacement = $instance->placedOnAppDev()

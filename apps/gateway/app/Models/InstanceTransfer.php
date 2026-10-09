@@ -36,6 +36,7 @@ use Illuminate\Support\Str;
  * @property string|null $error_code
  * @property array<string, mixed>|null $recovery_evidence
  * @property list<string>|null $imported_environment_keys
+ * @property list<int>|null $web_root_route_ids
  * @property Carbon|null $cutover_at
  * @property Carbon|null $completed_at
  * @property-read Instance $instance
@@ -77,6 +78,7 @@ final class InstanceTransfer extends Model
         'error_code',
         'recovery_evidence',
         'imported_environment_keys',
+        'web_root_route_ids',
         'cutover_at',
         'completed_at',
     ];
@@ -141,6 +143,7 @@ final class InstanceTransfer extends Model
             'failed_step' => InstanceTransferStep::class,
             'recovery_evidence' => 'array',
             'imported_environment_keys' => 'array',
+            'web_root_route_ids' => 'array',
             'cutover_at' => 'immutable_datetime',
             'completed_at' => 'immutable_datetime',
         ];

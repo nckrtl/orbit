@@ -91,7 +91,7 @@ final readonly class DeployDefaultInstanceAction
                         if ($triggeredBy !== null) {
                             $record = $this->recorder->start($instance, $triggeredBy);
                         }
-                        // Remove interrupted candidates before building another; preserve the last two selections.
+                        // Remove interrupted candidates and releases beyond the limit before building another.
                         $this->deployment->prune($instance, $selected);
                         $release = $this->deployment->prepare($instance, $commit);
                         $boundary = DeploymentFailureBoundary::BeforeActivation;

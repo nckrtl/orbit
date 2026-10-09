@@ -84,7 +84,6 @@ describe('footprint digests', function (): void {
             ->and($artifact->digest($dev))->toBe(SourceDigest::of([
                 'app/Infrastructure/Nodes/CaddyPackageSourceProgram.php',
                 'app/Domain/Nodes/CaddyRelease.php',
-                'resources/compute/caddy-source-snapshot.py',
             ]));
 
         $ssh->on('/'.preg_quote(CaddyPackageSourceProgram::RELEASE_URL, '/').'/', new CommandResult(0, "orbit-caddy-package-result=unchanged\n", '', 1, false));

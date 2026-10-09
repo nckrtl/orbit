@@ -57,14 +57,15 @@ function rename_migration_rows(): object
     $project->offsetUnset('task_compute');
     $project->offsetUnset('review_and_merge');
     $project->save();
-    $instance = Instance::query()->create([
+    // The task VM placement check reads a table that this older schema does not have yet.
+    $instance = Instance::withoutEvents(static fn (): Instance => Instance::query()->create([
         'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'dev',
         'source_layout' => 'checkout',
         'checkout_path' => '/srv/rename',
         'status' => 'active',
-    ]);
+    ]));
     InstanceDeployment::query()->create([
         'instance_id' => $instance->id,
         'started_at' => now(),

@@ -1,4 +1,4 @@
-"""Initialize only an owned task checkout. Remote objects arrive through the bundle broker."""
+"""Initialize only an owned task checkout. Remote refs arrive through a separate GitHub fetch."""
 import json
 import os
 from pathlib import Path

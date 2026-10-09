@@ -51,7 +51,7 @@ Dedicated production pools have no slowlog threshold by default. So a zero slow-
 
 Each production master has its own OPcache. Deployment and rollback reset that cache through the master's application socket. Monitoring never resets the cache.
 
-A nested Laravel [application directory](/reference/projects#application-directory) changes the PHP-FPM working directory, not the Instance's pool identity, sockets, or exporter selection. Metrics still belong to that production Instance.
+A nested Laravel [application directory](/reference/projects#application-directory) changes the PHP-FPM working directory, not the Instance's pool identity, sockets, or exporter selection. Metrics still belong to that production Instance. A [Route with a web root](/reference/routes#web-roots-on-production) adds a pool under the same master, without status lines. Metrics cover the default pool, and the OPcache series cover the whole master.
 
 Status monitoring uses a separate local socket, `<socket>.status`. So busy application workers do not block status collection. Cbox's OPcache helpers run through that socket, outside the web root.
 

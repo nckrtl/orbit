@@ -6,7 +6,6 @@ namespace App\Infrastructure\Instances;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Instances\Deployment\DeploymentRelease;
-use App\Domain\Instances\InstanceSandboxGuard;
 use App\Domain\Instances\ProductionRepositoryBinding;
 use App\Domain\Instances\ProductionRepositoryRecord;
 use App\Domain\Shared\ResourceOperationException;
@@ -23,7 +22,6 @@ final readonly class RemoteProductionRepositoryBinding implements ProductionRepo
 
     public function inspect(Instance $instance): ProductionRepositoryRecord
     {
-        InstanceSandboxGuard::assertHostOperation($instance);
         [$user, $home] = $this->identity($instance);
         $result = $this->execute(
             $instance,
@@ -77,7 +75,6 @@ final readonly class RemoteProductionRepositoryBinding implements ProductionRepo
 
     public function rebind(Instance $instance, ProductionRepositoryRecord $expected, ProductionRepositoryRecord $target): void
     {
-        InstanceSandboxGuard::assertHostOperation($instance);
         [$user, $home] = $this->identity($instance);
         $changes = [];
 

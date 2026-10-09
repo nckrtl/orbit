@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\AppDev;
 
+use App\Domain\Instances\ProductionPhpRuntimeIdentity;
 use App\Domain\SourceControl\ApplicationDirectory;
 
 final readonly class DevelopmentSite
@@ -47,6 +48,8 @@ final readonly class DevelopmentSite
          */
         public bool $upstreamSystemRoots = false,
         public ?int $annotatorPort = null,
+        /** A Route with a web root that serves another application directory gets its own pool. */
+        public ?string $poolSuffix = null,
     ) {}
 
     public function asSecondary(): self
@@ -73,12 +76,18 @@ final readonly class DevelopmentSite
 
     public function poolName(): string
     {
-        return "orbit-{$this->scope}";
+        return $this->poolSuffix === null ? "orbit-{$this->scope}" : "orbit-{$this->scope}-{$this->poolSuffix}";
     }
 
     public function socketPath(): string
     {
-        return $this->productionPhpSocket ?? "/run/php/{$this->poolName()}.sock";
+        if ($this->productionPhpSocket !== null) {
+            return $this->poolSuffix === null
+                ? $this->productionPhpSocket
+                : ProductionPhpRuntimeIdentity::applicationSocketFor($this->productionPhpSocket, $this->poolSuffix);
+        }
+
+        return "/run/php/{$this->poolName()}.sock";
     }
 
     public function usesDedicatedPhpRuntime(): bool

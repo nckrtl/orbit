@@ -40,7 +40,7 @@ it('fails closed before SSH when no host adapter supports the node platform', fu
             private int &$scans,
         ) {}
 
-        public function scan(string $host, int $port): HostKey
+        public function scan(string $host, int $port, ?SshConnection $via = null): HostKey
         {
             $this->scans++;
 
@@ -348,7 +348,7 @@ it('reprovisions active role-bearing nodes only through WireGuard', function ():
             private array &$scans,
         ) {}
 
-        public function scan(string $host, int $port): HostKey
+        public function scan(string $host, int $port, ?SshConnection $via = null): HostKey
         {
             $this->scans[] = "{$host}:{$port}";
 
@@ -874,7 +874,7 @@ it('guards first-contact and stored SSH fingerprints before remote effects', fun
             private string $observed,
         ) {}
 
-        public function scan(string $host, int $port): HostKey
+        public function scan(string $host, int $port, ?SshConnection $via = null): HostKey
         {
             return new HostKey('ssh-ed25519', 'PUBLICKEY', $this->observed);
         }
@@ -914,7 +914,7 @@ function base_test_scanner(): HostKeyScanner
 {
     return new class implements HostKeyScanner
     {
-        public function scan(string $host, int $port): HostKey
+        public function scan(string $host, int $port, ?SshConnection $via = null): HostKey
         {
             return new HostKey('ssh-ed25519', 'PUBLICKEY', 'SHA256:pinned');
         }
@@ -1145,4 +1145,169 @@ function base_firewall_spy(?array &$baseNodes = null, ?array &$roles = null, ?ar
         });
 
     return $firewall;
+}
+
+describe('jump nodes', function (): void {
+    it('keeps every connection and the host key scan direct for a Node without a jump node', function (): void {
+        $node = base_provisionable_node();
+        $node->roles()->delete();
+        $scanner = new JumpRecordingScanner;
+        $ssh = new BaseNodeSshExecutor;
+        $wireGuard = new JumpRecordingWireGuard;
+
+        jump_node_converger($ssh, $scanner, $wireGuard)->converge($node, base_identity(), 'SHA256:pinned');
+
+        expect($scanner->scans)
+            ->toBe([['target' => '192.0.2.10:22', 'via' => null]])
+            ->and(array_map(static fn (array $call): array => [
+                "{$call['connection']->host}:{$call['connection']->port}",
+                $call['connection']->proxyJump,
+                $call['connection']->shareConnection,
+            ], $ssh->calls))
+            ->toBe([
+                ['192.0.2.10:22', null, true],
+                ['192.0.2.10:22', null, true],
+                ['192.0.2.10:22', null, true],
+                ['10.44.0.2:22', null, true],
+            ])
+            ->and($wireGuard->connections[0]->proxyJump)
+            ->toBeNull();
+    });
+
+    it('bootstraps a Node through its jump node and verifies WireGuard directly', function (): void {
+        $jump = jump_host_node();
+        $node = base_provisionable_node();
+        $node->roles()->delete();
+        $node->update(['public_ssh_host' => '10.251.77.32', 'ssh_jump_node_id' => $jump->id]);
+        $scanner = new JumpRecordingScanner;
+        $ssh = new BaseNodeSshExecutor;
+        $wireGuard = new JumpRecordingWireGuard;
+
+        jump_node_converger($ssh, $scanner, $wireGuard)->converge($node, base_identity(), 'SHA256:pinned');
+
+        $viaJumpHost = static fn (?SshConnection $connection): ?string => $connection === null
+            ? null
+            : "{$connection->user}@{$connection->host}:{$connection->port}";
+
+        expect($scanner->scans)
+            ->toBe([['target' => '10.251.77.32:22', 'via' => 'nckrtl@10.44.0.7:22']])
+            ->and($scanner->via?->identityFile)
+            ->toBe('/tmp/orbit-key')
+            ->and($scanner->via?->knownHostsFile)
+            ->toBe('/tmp/orbit-known-hosts')
+            ->and(array_map(static fn (array $call): array => [
+                "{$call['connection']->user}@{$call['connection']->host}:{$call['connection']->port}",
+                $viaJumpHost($call['connection']->proxyJump),
+            ], $ssh->calls))
+            ->toBe([
+                ['root@10.251.77.32:22', 'nckrtl@10.44.0.7:22'],
+                ['orbit@10.251.77.32:22', 'nckrtl@10.44.0.7:22'],
+                ['orbit@10.251.77.32:22', 'nckrtl@10.44.0.7:22'],
+                ['orbit@10.44.0.2:22', null],
+            ])
+            ->and($viaJumpHost($wireGuard->connections[0]->proxyJump))
+            ->toBe('nckrtl@10.44.0.7:22');
+    });
+
+    it('ignores the jump node once the Node has an active role', function (): void {
+        $jump = jump_host_node();
+        $node = base_provisionable_node();
+        $node->roles()->update(['status' => LifecycleStatus::Active]);
+        $node->update([
+            'status' => LifecycleStatus::Active,
+            'ssh_host_fingerprint' => 'SHA256:pinned',
+            'ssh_jump_node_id' => $jump->id,
+        ]);
+        $scanner = new JumpRecordingScanner;
+        $ssh = new BaseNodeSshExecutor;
+
+        jump_node_converger($ssh, $scanner, new JumpRecordingWireGuard)->convergeRecoverably(
+            $node,
+            base_identity(),
+            null,
+            static function (): void {},
+        );
+
+        expect($scanner->scans)
+            ->toBe([['target' => '10.44.0.2:22', 'via' => null]])
+            ->and($ssh->calls)
+            ->not->toBeEmpty()
+            ->and(array_map(static fn (array $call): ?SshConnection => $call['connection']->proxyJump, $ssh->calls))
+            ->each->toBeNull();
+    });
+
+    it('fails before SSH when the jump node has no WireGuard address', function (): void {
+        $jump = jump_host_node();
+        $jump->update(['wireguard_ip' => null]);
+        $node = base_provisionable_node();
+        $node->roles()->delete();
+        $node->update(['public_ssh_host' => '10.251.77.32', 'ssh_jump_node_id' => $jump->id]);
+        $scanner = new JumpRecordingScanner;
+        $ssh = new BaseNodeSshExecutor;
+
+        expect(fn () => jump_node_converger($ssh, $scanner, new JumpRecordingWireGuard)->converge(
+            $node,
+            base_identity(),
+            'SHA256:pinned',
+        ))->toThrow(function (NodeProvisioningException $exception): void {
+            expect($exception->errorCode)->toBe('vpn.peer_address_missing');
+        });
+        expect($scanner->scans)->toBe([])->and($ssh->calls)->toBe([]);
+    });
+});
+
+function jump_host_node(): Node
+{
+    return Node::query()->create([
+        'name' => 'jump-host',
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'public_ssh_host' => '192.0.2.7',
+        'public_ssh_port' => 22,
+        'user' => 'nckrtl',
+        'wireguard_ip' => '10.44.0.7',
+    ]);
+}
+
+function jump_node_converger(SshExecutor $ssh, HostKeyScanner $scanner, WireGuardPeerConverger $wireGuard): NativeNodeConverger
+{
+    return new NativeNodeConverger(
+        hostKeys: $scanner,
+        knownHosts: base_test_known_hosts(),
+        sshKeys: base_test_keys(),
+        ssh: $ssh,
+        bootstrapCommand: new NodeBootstrapCommandFactory(base_test_keys()),
+        wireGuard: $wireGuard,
+        firewall: base_firewall_spy(),
+    );
+}
+
+final class JumpRecordingScanner implements HostKeyScanner
+{
+    /** @var list<array{target: string, via: string|null}> */
+    public array $scans = [];
+
+    public ?SshConnection $via = null;
+
+    public function scan(string $host, int $port, ?SshConnection $via = null): HostKey
+    {
+        $this->via = $via;
+        $this->scans[] = [
+            'target' => "{$host}:{$port}",
+            'via' => $via === null ? null : "{$via->user}@{$via->host}:{$via->port}",
+        ];
+
+        return new HostKey('ssh-ed25519', 'PUBLICKEY', 'SHA256:pinned');
+    }
+}
+
+final class JumpRecordingWireGuard implements WireGuardPeerConverger
+{
+    /** @var list<SshConnection> */
+    public array $connections = [];
+
+    public function converge(Node $node, SshConnection $connection, bool $rolelessOperator = false): void
+    {
+        $this->connections[] = $connection;
+    }
 }

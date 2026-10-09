@@ -42,7 +42,7 @@ The Gateway checks everything before it changes anything. A failed check changes
 
 The Instance must be `active`, a development `source_resolved` workspace with no Route or exactly one pending or failed Route targeting only that Instance, or an [interrupted or failed development create](#pre-activation-removal) that never became active. A healthy `source_resolved` workspace cannot remove an active or shared Route. Its pending or failed Route, including a generated Cluster Route, is removed with its target in the same resumable operation. Production Instances do not qualify for this workspace rule, and normal dirty and unpublished-source checks still apply.
 
-An Instance already `removing` resumes its recorded removal. An active `laravel-app` or `symfony-app` Instance must have exactly one Route. A pre-activation Instance can have no Route or its own pending or failed Route. A development Instance must be the only target of its Route. A production Instance may share a Cluster Route with production Instances on other Nodes.
+An Instance already `removing` resumes its recorded removal. An active Instance first removes its [Routes with a web root](/reference/routes#serve-several-web-roots), each like `route:destroy`; a failure there stops before the Instance changes. An active `laravel-app` or `symfony-app` Instance must then have exactly one Route. A pre-activation Instance can have no Route or its own pending or failed Route. A development Instance must be the only target of its Route. A production Instance may share a Cluster Route with production Instances on other Nodes.
 
 The Gateway also refuses these Instances:
 
@@ -162,7 +162,7 @@ Closed transfer records stay after removal, with their Instance references clear
 
 ### Production content
 
-Production removal deletes the `current` link, the dedicated PHP-FPM service, pool, and socket, and the Caddy and certificate projections. It keeps `releases/`, `.env`, `database.sqlite`, the production user, and `/etc/orbit/php-fpm/<production-user>/local.conf`. It leaves every other PHP-FPM service and cache alone. See [Production release layout](/reference/deployments#retained-content).
+Production removal deletes the `current` link, the dedicated PHP-FPM service, pool, and socket, and the Caddy and certificate projections. It keeps `releases/`, `.env`, `env/`, `database.sqlite`, the production user, and `/etc/orbit/php-fpm/<production-user>/local.conf`. It leaves every other PHP-FPM service and cache alone. See [Production release layout](/reference/deployments#retained-releases).
 
 ## Progress and retry
 

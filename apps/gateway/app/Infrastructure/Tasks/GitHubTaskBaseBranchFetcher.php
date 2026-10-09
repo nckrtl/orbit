@@ -14,9 +14,9 @@ use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\Tasks\TaskBaseBranchFetcher;
-use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskRemoteBranch;
+use App\Domain\TaskVms\TaskVmPlacement;
 use App\Infrastructure\GitHub\GitReadScript;
 use App\Infrastructure\SourceControl\WorkspaceGit;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -53,7 +53,7 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
         if (! $repository instanceof GitHubRepository || ! $instance instanceof Instance || $instance->checkout_path === ''
             || $instance->project_id !== $group->project_id
             || ($instance->task_sandbox_id !== null && $instance->taskSandbox?->group_id !== $group->id)
-            || ($group->task_compute === TaskCompute::Vm && $instance->task_sandbox_id === null)) {
+            || ($instance->task_sandbox_id === null && ! TaskVmPlacement::allowsWorkspace($group, $instance))) {
             throw new TaskPullRequestException('The base branch could not be fetched.');
         }
 
@@ -245,7 +245,7 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
         if (! $repository instanceof GitHubRepository || ! $instance instanceof Instance || $instance->checkout_path === ''
             || $instance->project_id !== $group->project_id
             || ($instance->task_sandbox_id !== null && $instance->taskSandbox?->group_id !== $group->id)
-            || ($group->task_compute === TaskCompute::Vm && $instance->task_sandbox_id === null)
+            || ($instance->task_sandbox_id === null && ! TaskVmPlacement::allowsWorkspace($group, $instance))
             || ! is_string($default) || ! GitBranchName::isValid($default)) {
             throw new TaskPullRequestException('The workspace refs could not be fetched.');
         }

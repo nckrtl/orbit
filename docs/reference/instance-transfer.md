@@ -35,6 +35,8 @@ The request accepts no path, Cluster, Route, or Process input. The caller needs 
 
 Both Nodes must be active Linux Nodes with an active `app-dev` role, and each must belong to an active Cluster. The two Clusters may differ. The Instance must be an active development Instance with one authoritative Route, and not in removal. The destination must be another Node that the Project does not [exclude](/reference/development-node-exclusions). No Schedule may target the Instance. Orbit checks before reserving and again under the Process admission lock immediately before cutover, so a Schedule created during a transfer also prevents cutover.
 
+Each other [Route with a web root](/reference/routes#serve-several-web-roots) of the Instance must be active and must not be in a domain or placement change; otherwise transfer returns `instance.lifecycle_conflict`. A public Route with a web root cannot move to another Cluster and returns `instance.transfer_public_web_root_route`.
+
 The Gateway reserves `<destination-apps-root>/<project-slug>/<name>`. It refuses an occupied or unsafe path with `instance.destination_exists`. Retry with another `--name`. A name that another Instance of the Project uses returns `instance.identity_conflict`.
 
 ## What moves
@@ -67,13 +69,25 @@ An assigned annotator port is reassigned under the destination Node lock at cuto
 
 An explicit domain keeps its Route. The Route moves to the destination Node and Cluster.
 
-A generated domain uses the destination Cluster TLD: `<project-slug>.<tld>` for `default`, and `<name>.<project-slug>.<tld>` otherwise. When that domain is the same, the Route keeps its ID. When it changes, Orbit creates a replacement Route and releases the old domain after cleanup. A domain that another Route owns returns `route.domain_conflict`.
+A generated domain uses the destination Cluster TLD: `<project-slug>.<tld>` for `default`, and `<name>.<project-slug>.<tld>` otherwise. When that domain is the same, the Route keeps its ID. When it changes, Orbit creates a replacement Route and releases the old domain after cleanup. The replacement keeps the web root of the Route it replaces. A domain that another Route owns returns `route.domain_conflict`.
+
+### Routes with a web root
+
+The Instance's other sites move with it. Each [Route with a web root](/reference/routes#serve-several-web-roots) has an explicit domain, so it keeps its ID and domain and moves to the destination Node and Cluster at cutover. Transfer records these Route IDs.
+
+After cutover, Orbit first issues the destination workload and Router leaves of each such Route. Then it builds the Instance's own Route and each other site: Caddy sites, PHP-FPM pools, LAN firewall rules, and DNS. Next it synchronizes `APP_URL` in the `.env` of each other application directory on the destination. The checkout copy already holds those files. Only then does it start the destination Processes.
+
+Cleanup removes each recorded Route's workload leaf and firewall rule from the old workload, and its Router leaf from the old Router. A leaf that a site on that Node still loads stays, such as the Router leaf when the transfer kept the Cluster. A Route removed after cutover is still cleaned from the source.
+
+Before cutover, transfer changes nothing for these Routes. Orbit checks them again under the cutover locks, so a site that became public or stopped being active during the transfer prevents cutover and rolls the transfer back.
+
+A public Route with a web root cannot change Cluster, because transfer does not move a public edge. Make the Route private, transfer, and publish it again. Within one Cluster, the public edge stays where it is.
 
 ## Failure and retry
 
 Cutover is the moment the destination becomes authoritative.
 
-- A failure before cutover restarts the source Processes and keeps the source Route.
+- A failure before cutover restarts the source Processes and keeps the source Route and every Route with a web root on the source.
 - It also deletes the destination checkout, the destination Vite port, and a replacement Route that is not active yet.
 - Keys imported into the stored environment are removed; keys that were already stored before the transfer remain.
 - After cutover, recovery only goes forward. Orbit never restarts the source. It finishes the Route, runtime, and cleanup without copying the source again.
@@ -90,7 +104,7 @@ If a Schedule targets the Instance before reservation or is added before cutover
 
 Orbit records the source Cluster's Router on the transfer before cutover, and cleanup uses that record.
 
-Cleanup deletes the old checkout or worktree and its runtime files, certificates, and firewall rules on the old workload and Router. The result reports the destination Node, path, domain, and whether cleanup finished. It does not depend on an HTTP response from the application.
+Cleanup deletes the old checkout or worktree and its runtime files, certificates, and firewall rules on the old workload and Router, including those of the recorded Routes with a web root. The result reports the destination Node, path, domain, and whether cleanup finished. It does not depend on an HTTP response from the application.
 
 ## Failure codes
 
@@ -99,7 +113,8 @@ The Gateway returns these codes before or during a transfer.
 | Code | Cause |
 | --- | --- |
 | `instance.confirmation_required` | The call has no consent. |
-| `instance.lifecycle_conflict` | The Instance is not active, or its Route is not ready. |
+| `instance.lifecycle_conflict` | The Instance is not active, or its Route or a Route with a web root is not ready. |
+| `instance.transfer_public_web_root_route` | A public Route with a web root would move to another Cluster. |
 | `schedule.target_in_use` | A Schedule targets the Instance. Remove it or retarget it away from the Instance before trying the transfer again. |
 | `instance.production_refused` | The Instance is a production Instance. |
 | `instance.removal_conflict` | The Instance is being removed. |

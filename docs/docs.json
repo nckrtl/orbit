@@ -942,7 +942,7 @@
     },
     {
       "source": "/decisions/0100-install-caddy-from-the-pinned-caddy-apt-source",
-      "destination": "/reference/node-provisioning#package-sources"
+      "destination": "/reference/node-provisioning#caddy-from-its-github-release-not-its-apt-source"
     },
     {
       "source": "/decisions/0101-simplify-route-publication-and-use-lets-encrypt-on-public-ingress",

@@ -37,6 +37,7 @@ final class RouteData extends Data
         public ?int $processId = null,
         public ?string $upstream = null,
         public ?int $analyticsInstanceId = null,
+        public ?string $webRoot = null,
     ) {}
 
     public static function fromModel(Route $route): self
@@ -69,6 +70,7 @@ final class RouteData extends Data
             processId: $proxy instanceof RouteCustomProxy ? $proxy->process_id : null,
             upstream: $proxy instanceof RouteCustomProxy ? $proxy->upstream : null,
             analyticsInstanceId: $route->analyticsTracking?->instance_id,
+            webRoot: $route->web_root,
         );
     }
 }
