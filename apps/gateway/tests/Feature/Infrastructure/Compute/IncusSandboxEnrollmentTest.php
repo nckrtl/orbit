@@ -8,7 +8,6 @@ use App\Data\Nodes\ProvisionNodeData;
 use App\Domain\Compute\ComputeException;
 use App\Domain\Compute\SandboxNetworkPolicy;
 use App\Domain\Compute\SandboxState;
-use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Nodes\NodeConverger;
 use App\Domain\Nodes\NodeObservation;
@@ -21,8 +20,6 @@ use App\Domain\Tools\ToolManagerMaterializer;
 use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\Compute\IncusSandboxNodeBootstrap;
 use App\Infrastructure\Compute\SandboxFleetIdentity;
-use App\Infrastructure\Firewall\NativeUfwFirewallManager;
-use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -32,7 +29,6 @@ use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Tasks\IncusSandboxHost;
 use App\Models\Cluster;
-use App\Models\FirewallRule;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
@@ -101,7 +97,6 @@ function incus_fleet_transport(TaskSandbox $sandbox, array &$operations, ?string
             unset($request['gateway_time']);
             expect($request)->toBe([
                 'public_key' => 'ssh-ed25519 '.incus_fleet_key()->value,
-                'recovery_port' => $sandbox->fresh()->enrolled_at === null ? 24201 : null,
             ]);
         }
         $result = match ($input['operation']) {
@@ -222,42 +217,6 @@ it('keeps initial admission separate from a reserved fleet retry', function (): 
     expect(fn () => app(IncusSandboxHost::class)->projectIdentity($host, $sandbox, 9))->toThrow(ResourceOperationException::class);
     app(IncusSandboxNodeBootstrap::class)->prepare($sandbox, $node);
     expect($steps)->toBe(['project_fleet_identity', 'guest_command']);
-});
-
-it('opens only guest SSH from the bridge during local bootstrap and protects its guest port', function (): void {
-    $sandbox = incus_fleet_sandbox();
-    $node = app(SandboxFleetIdentity::class)->reserve($sandbox, incus_fleet_key());
-
-    $recovery = app(NodeFirewallRuleCatalog::class)->publicSshRecovery($node);
-
-    expect($recovery->arguments)->toBe(['sudo', 'ufw', 'allow', 'in', 'proto', 'tcp', 'from', '10.233.201.1',
-        'to', '10.233.201.10', 'port', '22', 'comment', 'orbit:public-ssh-recovery']);
-    expect($node->public_ssh_port)->toBe(24201);
-    $rule = new FirewallRule(['action' => 'deny', 'port' => '22', 'protocol' => 'tcp', 'source' => 'any']);
-    $rule->setRelation('node', $node);
-    mock(SshExecutor::class)->shouldNotReceive('execute');
-
-    expect(fn () => app(NativeUfwFirewallManager::class)->converge($rule))->toThrow(FirewallOperationException::class, 'would deny');
-});
-
-it('does not reopen guest recovery after completed local enrollment', function (): void {
-    $sandbox = incus_fleet_sandbox();
-    $node = app(SandboxFleetIdentity::class)->reserve($sandbox, incus_fleet_key());
-    $sandbox->update(['enrolled_at' => now()]);
-    $steps = [];
-    incus_fleet_transport($sandbox, $steps);
-
-    app(IncusSandboxNodeBootstrap::class)->prepare($sandbox, $node);
-
-    expect($steps)->toBe(['project_fleet_identity', 'guest_command']);
-});
-
-it('refuses a local recovery rule when the recorded fleet identity changed', function (): void {
-    $sandbox = incus_fleet_sandbox();
-    $node = app(SandboxFleetIdentity::class)->reserve($sandbox, incus_fleet_key());
-    $node->public_ssh_port = 22;
-
-    expect(fn () => app(NodeFirewallRuleCatalog::class)->publicSshRecovery($node))->toThrow(ComputeException::class);
 });
 
 it('refuses SSH bootstrap failure before publishing the hub policy or peer', function (): void {
