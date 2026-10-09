@@ -56,6 +56,7 @@ use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Route;
 use App\Models\TaskSandbox;
+use App\Models\TaskVm;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Throwable;
@@ -356,7 +357,7 @@ final readonly class ProvisionNodeAction
         ]);
 
         try {
-            DB::transaction(function () use ($node, $tld, $clusterId, $previousTld, $previousClusterId): void {
+            DB::transaction(function () use ($node, $tld, $clusterId, $previousTld, $previousClusterId, $data): void {
                 $this->tldScope->assertNodeTldAvailable($node, $tld, $clusterId);
                 if ($node->exists) {
                     $this->routeReconciler()->reconcile(
@@ -367,6 +368,10 @@ final readonly class ProvisionNodeAction
                     );
                 }
                 $node->save();
+                if ($data->taskVmId !== null) {
+                    // Before any convergence, so the rollout and the CLI install already see a task VM Node.
+                    TaskVm::query()->whereKey($data->taskVmId)->update(['node_id' => $node->id]);
+                }
             });
         } catch (QueryException $exception) {
             throw new ResourceOperationException(

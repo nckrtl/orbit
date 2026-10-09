@@ -202,6 +202,29 @@ describe('prepare', function (): void {
     });
 });
 
+describe('model proxy origin', function (): void {
+    it('refuses an origin that is not the proxycli CLIProxyAPI', function (): void {
+        Http::fake();
+        app(ProxyCliState::class)->enable(1, 'cache', 'http://10.44.0.9:8317', 'management-key', 'read-token', 'control-token');
+        $vm = tvm_runtime_vm();
+
+        expect(fn () => app(TaskVmRuntime::class)->prepare($vm))
+            ->toThrow(fn (TaskVmException $exception) => expect($exception->errorCode)->toBe('task_vm.invalid_config'));
+        expect($vm->fresh()?->model_key)->toBeNull()->and($this->transport->commands)->toBe([]);
+        Http::assertNothingSent();
+    });
+
+    it('refuses to prepare again after the origin changed under a stored key', function (): void {
+        Http::fake();
+        $vm = tvm_runtime_vm();
+        $vm->update(['model_key' => str_repeat('k', 64), 'model_proxy_origin' => 'http://10.44.0.9:8317']);
+
+        expect(fn () => app(TaskVmRuntime::class)->prepare($vm->fresh()))
+            ->toThrow(TaskVmException::class, 'model_proxy_origin changed while task VM [tvm-1] holds a key at [http://10.44.0.9:8317].');
+        Http::assertNothingSent();
+    });
+});
+
 describe('release', function (): void {
     it('revokes the group key and keeps the anchor', function (): void {
         $keys = tvm_runtime_cliproxy();
@@ -213,6 +236,21 @@ describe('release', function (): void {
 
         expect($vm->fresh()?->model_key)->toBeNull()
             ->and($keys->getArrayCopy())->toHaveCount(1)->not->toContain($key);
+    });
+
+    it('revokes the key at the origin stored with it, after the setting changed', function (): void {
+        $keys = tvm_runtime_cliproxy();
+        $vm = tvm_runtime_vm();
+        app(TaskVmRuntime::class)->prepare($vm);
+        expect($vm->fresh()?->model_proxy_origin)->toBe(TVM_RUNTIME_ORIGIN);
+        app()->instance(TaskVmSettings::class, new TaskVmSettings(
+            enabled: true, devClusterId: 4, wireguardRange: '10.44.0.128/25', hosts: [], modelProxyOrigin: 'http://10.44.0.9:8317',
+            piArtifactPath: null, piArtifactSha256: null, piModels: [],
+        ));
+
+        app(TaskVmRuntime::class)->release($vm->fresh());
+
+        expect($vm->fresh()?->model_key)->toBeNull()->and($keys->getArrayCopy())->toHaveCount(1);
     });
 
     it('does nothing without a key', function (): void {

@@ -39,6 +39,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Middleware\ValidatePostSize;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Middleware\SubstituteBindings;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\ErrorHandler\Error\FatalError;
 use Symfony\Component\HttpKernel\Exception\HttpException;
@@ -69,6 +70,10 @@ return Application::configure(basePath: dirname(__DIR__))
         $schedule->command('orbit:activity-finalize-interrupted')->everyFiveMinutes()->withoutOverlapping(10);
         $schedule->command('project-documents:probes:reconcile')->everyMinute()->withoutOverlapping(10);
         $schedule->command('project-documents:cleanup:work')->everyFiveMinutes()->withoutOverlapping(60);
+        // Task VM jobs (ADR 0200). In the foreground and last, so a release drain lets a running job finish.
+        $schedule->command('queue:work task-vms --queue=task-vms --stop-when-empty --max-time=50 --timeout=1500')
+            ->everyMinute()->withoutOverlapping(30)
+            ->when(static fn (): bool => DB::table('jobs')->where('queue', 'task-vms')->exists());
     })
     ->withCommands()
     ->withMiddleware(function (Middleware $middleware): void {

@@ -102,11 +102,11 @@ orbit process:create pi-server \
 
 ## Run Pi on a task VM
 
-Partly built. The install steps below exist. The `PrepareTaskVmRuntime` job that runs them is not built yet. The Phase 1 slices of [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm) build it.
-
 On a [task VM](/reference/compute-drivers#task-vms), the Gateway installs and starts Pi itself, in the `PrepareTaskVmRuntime` job. There is no `orbit-worker` and no manual install. Pi runs as the VM's managed user `orbit`, which has passwordless sudo.
 
-1. The Gateway creates a CLIProxyAPI key for the group. It stores the key on the task VM row first, then registers it with the management key of the [proxycli extension](/reference/proxycli). That CLIProxyAPI must serve `task_vms.model_proxy_origin`.
+The proxycli CLIProxyAPI URL must be `task_vms.model_proxy_origin`. Otherwise the job fails with `task_vm.invalid_config` before it creates a key.
+
+1. The Gateway creates a CLIProxyAPI key for the group. It stores the key and the origin on the task VM row first. Then it registers the key with the management key of the [proxycli extension](/reference/proxycli).
 2. It sends the pinned Pi executable from `task_vms.pi.artifact_path` over the Node's normal SSH connection, on standard input.
 3. The VM checks the SHA-256 digest against `task_vms.pi.artifact_sha256` and installs the executable as `~orbit/.local/bin/pi-server`.
 4. It writes `~orbit/.pi/agent/models.json` with the origin in `task_vms.model_proxy_origin`, the models in `task_vms.pi.models`, and the group's key.
@@ -115,7 +115,7 @@ On a [task VM](/reference/compute-drivers#task-vms), the Gateway installs and st
 
 Each step is idempotent, so a retried job repeats it and keeps the key. `models.json` has one provider, `orbit-task-vm`, with the API `openai-responses` and the base URL `<origin>/v1`. Each model has `reasoning: true`. Pi's defaults apply to the rest, such as a context window of 128,000 tokens. The `pi` driver sends every model on a task VM to `orbit-task-vm`, whatever `ORBIT_PI_PROVIDER` says.
 
-The Gateway connects to this server with the task VM's token, not `ORBIT_PI_TOKEN`, and removes the group's model key from transcripts as it does the token. CLIProxyAPI is the only model route, and no subscription sign-in enters the VM. Destroying the VM revokes the group's key.
+The Gateway connects to this server with the task VM's token, not `ORBIT_PI_TOKEN`, and removes the group's model key from transcripts as it does the token. CLIProxyAPI is the only model route, and no subscription sign-in enters the VM. Destroying the VM revokes the group's key at the origin stored on the row.
 
 ## Limits
 

@@ -6,6 +6,7 @@ namespace App\Infrastructure\Instances;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Instances\InstanceSandboxGuard;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\ProductionPhpRuntimeIdentity;
 use App\Domain\Instances\ProductionPhpRuntimeManager;
 use App\Domain\Instances\Removal\InstanceRemovalProjector;
@@ -14,6 +15,7 @@ use App\Domain\Routes\PublicRouteEdgeProjector;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
 use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
@@ -24,6 +26,7 @@ use App\Models\Instance;
 use App\Models\InstanceRemovalMember;
 use App\Models\Node;
 use App\Models\Route;
+use App\Models\TaskVm;
 use Illuminate\Support\Facades\DB;
 
 final readonly class NativeInstanceRemovalProjector implements InstanceRemovalProjector
@@ -272,10 +275,15 @@ final readonly class NativeInstanceRemovalProjector implements InstanceRemovalPr
         $this->refreshIngress($route);
     }
 
+    /**
+     * Whether the Instance's own Node must be left alone: an owned sandbox, or a workspace on a task VM
+     * that is being destroyed, whose VM is already gone.
+     */
     private function sandboxRemoval(Instance $instance): bool
     {
         if (! InstanceSandboxGuard::isSandbox($instance)) {
-            return false;
+            return $instance->status === InstanceState::Removing
+                && TaskVm::query()->where('node_id', $instance->node_id)->where('state', TaskVmState::Destroying)->exists();
         }
         $member = $instance->removalMember()->first();
         if ($member === null) {

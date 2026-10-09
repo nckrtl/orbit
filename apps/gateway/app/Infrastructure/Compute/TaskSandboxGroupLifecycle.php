@@ -29,7 +29,7 @@ final readonly class TaskSandboxGroupLifecycle
 
     public function review(Task $group): void
     {
-        if ($group->task_compute !== TaskCompute::Vm) {
+        if (! self::orbitLane($group)) {
             return;
         }
         $this->execution->synchronized($group->id, function () use ($group): void {
@@ -58,7 +58,7 @@ final readonly class TaskSandboxGroupLifecycle
     /** A failed restore never admits a fetch, an implementer, or a reviewer. */
     public function resume(Task $group): bool
     {
-        if ($group->task_compute !== TaskCompute::Vm) {
+        if (! self::orbitLane($group)) {
             return true;
         }
 
@@ -103,6 +103,12 @@ final readonly class TaskSandboxGroupLifecycle
                 return false;
             }
         });
+    }
+
+    /** Only Orbit-lane sandboxes park and resume. A task VM stays up until its group ends. */
+    private static function orbitLane(Task $group): bool
+    {
+        return $group->task_compute === TaskCompute::Vm && $group->project->slug === 'orbit';
     }
 
     private function sandbox(Task $group): TaskSandbox

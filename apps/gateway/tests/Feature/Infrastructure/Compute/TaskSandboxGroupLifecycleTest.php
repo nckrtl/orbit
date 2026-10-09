@@ -22,7 +22,6 @@ use App\Models\Task;
 use App\Models\TaskSandbox;
 use Illuminate\Support\Str;
 use Tests\Support\FakeSandboxModelProxy;
-use Tests\Support\UpCloudRuntimeWorkspace;
 
 use function Pest\Laravel\mock;
 
@@ -139,15 +138,6 @@ it('does not resume a group after completion has been authorized', function (): 
     expect($host->calls)->toBe([])->and($sandbox->fresh()->review_started_at)->toBeNull();
 });
 
-it('requires a cloud rebuild instead of starting the old stopped server', function (): void {
-    [$group, $sandbox, $host] = review_sandbox_group();
-    $group->project->update(['slug' => 'dlf']);
-    $sandbox->update(['provider' => 'upcloud', 'node_id' => $group->taskable->node_id, 'state' => SandboxState::Stopped, 'desired_power' => 'stopped']);
-    expect(app(TaskSandboxGroupLifecycle::class)->resume($group))->toBeFalse();
-
-    expect($host->calls)->toBe([])->and($group->fresh()->capacity_wait_reason)->toContain('rebuilt from its published branch');
-});
-
 it('attempts a waiting VM resume before provisioning a new todo group', function (): void {
     [$waiting, $sandbox, $host] = review_sandbox_group();
     Task::query()->create(['parent_id' => $waiting->id, 'title' => 'Fixup', 'brief' => 'Work', 'position' => 1, 'status' => TaskStatus::Todo]);
@@ -183,40 +173,4 @@ it('reconciles requester preview intent through park and resume without resettin
     $lifecycle->review($group);
     expect($host->calls)->toBe(['park', 'resume'])->and($sandbox->fresh()->state)->toBe(SandboxState::Running)
         ->and($sandbox->fresh()->review_started_at->equalTo($started))->toBeTrue();
-});
-
-it('keeps cloud preview waiting for a branch rebuild without starting the old server', function (SandboxState $state, string $power): void {
-    [$group, $sandbox, $host] = review_sandbox_group();
-    $group->project->update(['slug' => 'dlf']);
-    $group->update(['preview' => true]);
-    $sandbox->update(['provider' => 'upcloud', 'node_id' => $group->taskable->node_id, 'state' => $state, 'desired_power' => $power]);
-
-    app(TaskSandboxGroupLifecycle::class)->review($group);
-
-    expect($host->calls)->toBe([])
-        ->and($group->fresh()->preview)->toBeTrue()
-        ->and($group->fresh()->capacity_wait_reason)->toContain('rebuilt from its published branch')
-        ->and($sandbox->fresh()->state)->toBe($state)
-        ->and($sandbox->fresh()->desired_power)->toBe($power);
-})->with([
-    'parked' => [SandboxState::Stopped, 'stopped'],
-    'park pending' => [SandboxState::Running, 'stopped'],
-    'restore pending' => [SandboxState::Stopped, 'running'],
-    'expired' => [SandboxState::Destroyed, 'destroyed'],
-]);
-
-it('retains the cloud reservation after workspace cleanup and blocks recovery while rollout is disabled', function (): void {
-    $workspace = UpCloudRuntimeWorkspace::create();
-    $sandbox = $workspace->taskSandbox;
-    $group = $sandbox->group;
-    $group->taskable()->dissociate();
-    $group->update(['status' => TaskGroupStatus::WaitingForReview, 'pr_url' => 'https://github.com/acme/dlf/pull/42']);
-    $workspace->delete();
-    $sandbox->update(['state' => SandboxState::Destroyed, 'desired_power' => 'destroyed']);
-    $lifecycle = app(TaskSandboxGroupLifecycle::class);
-    $lifecycle->review($group);
-    expect($group->fresh()->capacity_wait_reason)->toBeNull();
-
-    expect($lifecycle->resume($group->fresh()))->toBeFalse();
-    expect($group->fresh()->capacity_wait_reason)->toContain('Project sandbox compute is disabled');
 });
