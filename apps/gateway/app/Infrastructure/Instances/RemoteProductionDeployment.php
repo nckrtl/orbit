@@ -440,7 +440,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
                     $root,
                     (string) DeploymentRelease::RETAINED_PER_HOME,
                     $selected->name,
-                    $previous?->name ?? '',
+                    $previous->name ?? '',
                 ],
                 input: ProductionApplicationPaths::render($this->inventoryScript().<<<'BASH'
 
