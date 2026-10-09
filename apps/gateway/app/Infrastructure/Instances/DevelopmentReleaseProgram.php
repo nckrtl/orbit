@@ -57,42 +57,6 @@ final class DevelopmentReleaseProgram
                 test "$(realpath -e -- "$releases")" = "$releases"
                 test "$(stat -c %u -- "$releases")" = "$(id -u)"
             }
-            recover_cache_branch() {
-                local journal="$state/cache-branch-$name" value cached_commit cached_branch cache_fd actual_ref ref
-                if [ ! -e "$journal" ] && [ ! -L "$journal" ]; then return; fi
-                guard_file "$marker"
-                test "$(cat -- "$marker")" = "$identity"
-                guard_file "$state/release-$name"
-                test "$(cat -- "$state/release-$name")" = "$identity:$name"
-                guard_file "$journal"
-                exec {cache_fd}< "$journal"
-                test "$(stat -c '%d:%i' -- "$journal")" = "$(stat -L -c '%d:%i' -- "/proc/self/fd/$cache_fd")"
-                # A surviving cache command owns this transition. Never detach its live checkout.
-                flock -n -x "$cache_fd" || exit 1
-                value=$(cat -- "$journal")
-                case "$value" in "$identity:$name:"*) ;; *) exit 1 ;; esac
-                value=${value#"$identity:$name:"}
-                cached_commit=${value%%:*}
-                cached_branch=${value#*:}
-                printf '%s' "$cached_commit" | grep -Eq '^([0-9a-f]{40}|[0-9a-f]{64})$'
-                test "$cached_branch" = "orbit-cache-$name"
-                test -L "$current"
-                test "$(realpath -e -- "$current")" != "$release"
-                test "$(git -C "$release" rev-parse HEAD)" = "$cached_commit"
-                ref="refs/heads/$cached_branch"
-                actual_ref=$(git -C "$release" symbolic-ref -q HEAD) || actual_ref=
-                test -z "$actual_ref" || test "$actual_ref" = "$ref"
-                if git -C "$home" show-ref --verify --quiet "$ref"; then
-                    test "$(git -C "$home" rev-parse "$ref")" = "$cached_commit"
-                    test "$(git -C "$home" reflog show -1 --format=%gs "$ref")" = "orbit cache $identity:$name:$cached_commit"
-                    git -C "$release" checkout --quiet --detach --force "$cached_commit"
-                    git -C "$home" branch -D -- "$cached_branch" >/dev/null
-                else
-                    test -z "$actual_ref"
-                fi
-                rm -f -- "$journal"
-                exec {cache_fd}<&-
-            }
             guard_worktree() {
                 name=$1
                 printf '%s' "$name" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'
@@ -110,7 +74,6 @@ final class DevelopmentReleaseProgram
                 guard_file "$git_directory/gitdir"
                 test "$(cat -- "$git_directory/gitdir")" = "$release/.git"
                 test "$(git -C "$release" rev-parse --show-toplevel)" = "$release"
-                recover_cache_branch
                 if git -C "$release" symbolic-ref -q HEAD >/dev/null; then exit 1; fi
             }
             guard_release() {

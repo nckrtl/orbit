@@ -23,7 +23,7 @@ Follow the guides in this order. Record the source commit on each machine.
 
 A documentation build or an automated test does not prove that this path works on a fresh machine. Only a run on fresh machines proves it.
 
-Run `bin/bootstrap` only in a source checkout. In a Gateway [release](/reference/gateway-recovery#release-layout) it refuses, because a release is immutable; deploy another commit instead.
+Run `bin/bootstrap` only in a source checkout. In a Gateway [release](/reference/gateway-recovery#release-layout) it refuses, because a release is immutable; deploy another commit instead. Bootstrap seeds its test and quality caches from the [main caches](/reference/implementation-loop#main-caches) when they exist. It never publishes caches; only main CI does.
 
 ## Limits
 
