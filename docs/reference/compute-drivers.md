@@ -127,6 +127,8 @@ The reservation pins both sides of Node ownership, the complete Incus placement,
 
 The hub confirms the sandbox's fleet limits before native provisioning publishes its peer. Its configured public UDP endpoint must match the recorded bootstrap endpoint, including on retries. After verifying the owned guest's SSH identity, the Gateway installs its public SSH key through the Incus control channel. A clean Project image contains no fleet keys. The bootstrap key file accepts only that key and refuses unsafe paths or foreign keys.
 
+The same authenticated bootstrap aligns the guest's UTC clock with the Gateway once per guest boot. It repeats alignment after a stopped VM boots again, before runtime admission. A protected receipt prevents same-boot retries from changing the clock or a running check's process identity. Clock alignment uses the existing Incus control channel and adds no network grant.
+
 Bootstrap uses the recorded private host address and reserved SSH port; enrolled traffic uses the VM's own WireGuard address. The Node joins only as `app-dev`, uses the managed `orbit` account, and has no grants to other Nodes. Local Project workspace admission has a separate disabled-by-default `ORBIT_INCUS_PROJECT_WORKSPACES_ENABLED` gate. Enable it only after local enrollment, runtime, and cleanup acceptance.
 
 ### Local Project SSH identity

@@ -1,5 +1,6 @@
 """Install only the Gateway public bootstrap key in an owned Project guest."""
 import base64
+import fcntl
 import json
 import os
 from pathlib import Path
@@ -10,6 +11,62 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
+import uuid
+
+
+def align_clock(epoch, started, state=Path('/run/orbit-project-clock'),
+                boot=Path('/proc/sys/kernel/random/boot_id'), clock=Path('/usr/bin/date'), owner=0):
+    parent = state.parent
+    details = parent.lstat()
+    if (parent.resolve() != parent or not stat.S_ISDIR(details.st_mode)
+            or details.st_uid != owner or details.st_mode & 0o022):
+        raise ValueError('Unsafe clock receipt directory')
+    descriptor = os.open(parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        identity = boot.read_text().strip()
+        if str(uuid.UUID(identity)) != identity:
+            raise ValueError('Invalid guest boot identity')
+        if os.path.lexists(state):
+            details = state.lstat()
+            if (not stat.S_ISREG(details.st_mode) or details.st_uid != owner or details.st_nlink != 1
+                    or stat.S_IMODE(details.st_mode) != 0o600 or details.st_size != 37):
+                raise ValueError('Unsafe clock receipt')
+            previous = state.read_text()
+            if previous != str(uuid.UUID(previous.strip())) + '\n':
+                raise ValueError('Invalid clock receipt')
+            if previous == identity + '\n':
+                return
+        link = clock.lstat()
+        if link.st_uid != 0:
+            raise ValueError('Unsafe clock program path')
+        executable = clock.resolve(strict=True)
+        details = executable.lstat()
+        if (not stat.S_ISREG(details.st_mode) or details.st_uid != 0
+                or details.st_mode & 0o022 or not os.access(clock, os.X_OK)):
+            raise ValueError('Unsafe clock program')
+        for clock_parent in {*clock.parents, *executable.parents}:
+            details = clock_parent.lstat()
+            if not stat.S_ISDIR(details.st_mode) or details.st_uid != 0 or details.st_mode & 0o022:
+                raise ValueError('Unsafe clock program directory')
+        elapsed = time.monotonic() - started
+        if not 0 <= elapsed <= 60:
+            raise ValueError('Clock request has expired')
+        subprocess.run([str(clock), '--utc', '--set', '@' + format(epoch + elapsed, '.6f')],
+                       stdin=subprocess.DEVNULL, capture_output=True, check=True, timeout=10)
+        handle, candidate = tempfile.mkstemp(dir=parent, prefix='.orbit-project-clock-')
+        try:
+            with os.fdopen(handle, 'w') as output:
+                output.write(identity + '\n')
+                output.flush()
+                os.fsync(output.fileno())
+            os.replace(candidate, state)
+        finally:
+            if os.path.lexists(candidate):
+                os.unlink(candidate)
+    finally:
+        os.close(descriptor)
 
 
 def restore_recovery(port, ufw=Path('/usr/sbin/ufw')):
@@ -46,14 +103,20 @@ def restore_recovery(port, ufw=Path('/usr/sbin/ufw')):
 
 
 def bootstrap(request, home, uid, gid):
-    if not isinstance(request, dict) or set(request) != {'public_key', 'recovery_port'}:
+    started = time.monotonic()
+    if not isinstance(request, dict) or set(request) != {'public_key', 'recovery_port', 'gateway_time'}:
         raise ValueError('Invalid Project SSH request')
+    timestamp = request['gateway_time']
+    if (not isinstance(timestamp, str) or not re.fullmatch(r'[0-9]{10}\.[0-9]{6}', timestamp)
+            or not 1262304000 <= float(timestamp) <= 4102444800):
+        raise ValueError('Invalid Gateway UTC time')
     port = request['recovery_port']
     if port is not None and (type(port) is not int or not 24001 <= port <= 24254):
         raise ValueError('Invalid Project SSH proxy port')
     result = prepare({'public_key': request['public_key']}, home, uid, gid)
     if port is not None:
         restore_recovery(port)
+    align_clock(float(timestamp), started)
     return result
 
 

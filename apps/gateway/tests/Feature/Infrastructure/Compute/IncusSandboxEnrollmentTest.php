@@ -96,7 +96,10 @@ function incus_fleet_transport(TaskSandbox $sandbox, array &$operations, ?string
         if ($input['operation'] === 'guest_command') {
             expect($input['guest']['role'])->toBe('operator');
             expect($input['guest']['argv'])->toBe(['sudo', '-n', 'python3', '-I', '-c', file_get_contents(resource_path('compute/guest-project-ssh.py'))]);
-            expect(json_decode(base64_decode($input['guest']['stdin']), true))->toBe([
+            $request = json_decode(base64_decode($input['guest']['stdin']), true);
+            expect($request['gateway_time'])->toMatch('/\A[0-9]{10}\.[0-9]{6}\z/D');
+            unset($request['gateway_time']);
+            expect($request)->toBe([
                 'public_key' => 'ssh-ed25519 '.incus_fleet_key()->value,
                 'recovery_port' => $sandbox->fresh()->enrolled_at === null ? 24201 : null,
             ]);
