@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Read-only check that a pull request head is reviewed and clean to merge.
 
-Pass only when one review has commit_id equal to the current pull request head,
-Required checks are success with that same head_sha, and the diff has no leftover
+Pass only when an APPROVED review has commit_id equal to the current pull request
+head, Required checks are success with that same head_sha, those checks ran on a
+ref that contains the current base branch tip, and the diff has no leftover
 already named by .agents/skills/merging-pull-requests/SKILL.md. Print one JSON
 object. Do not merge.
 """
@@ -129,9 +130,7 @@ def kept_reviews(reviews, head):
             raise RuntimeError('The review list was unparsable.')
         state = review.get('state')
         commit = review.get('commit_id')
-        if state in ('DISMISSED', 'PENDING'):
-            continue
-        if commit == head:
+        if state == 'APPROVED' and commit == head:
             kept.append(review)
     return kept
 
@@ -141,6 +140,31 @@ def required_check(runs, head):
     if not matches:
         return None
     return matches[-1]
+
+
+def base_position(pull, compare):
+    """Return the base ref, the pull's recorded base SHA, the base tip, and how far the head is behind it."""
+    if not isinstance(compare, dict):
+        raise RuntimeError('The compare record was unparsable.')
+    base_commit = compare.get('base_commit')
+    tip = base_commit.get('sha') if isinstance(base_commit, dict) else None
+    behind_by = compare.get('behind_by')
+    if not isinstance(tip, str) or tip == '' or not isinstance(behind_by, int) or isinstance(behind_by, bool) or behind_by < 0:
+        raise RuntimeError('The compare record has no readable base tip or behind_by count.')
+    base = pull.get('base') if isinstance(pull.get('base'), dict) else {}
+    recorded = base.get('sha') if isinstance(base.get('sha'), str) else None
+    return {'ref': base_ref(pull), 'sha': recorded, 'tip': tip, 'behind_by': behind_by}
+
+
+def base_ref(pull):
+    base = pull.get('base')
+    ref = base.get('ref') if isinstance(base, dict) else None
+    return ref if isinstance(ref, str) and ref != '' else 'main'
+
+
+def checks_contain_base_tip(position):
+    # The head contains the tip, or the pull_request run merged the head into that same tip.
+    return position['behind_by'] == 0 or position['sha'] == position['tip']
 
 
 def leftover_scan_exempt(filename):
@@ -215,9 +239,14 @@ def build_parser():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         description='Read-only check that the current pull request head is reviewed and clean. Print one JSON object. Do not merge.',
         epilog="""
-Pass only when one review commit_id equals the current head, Required checks
-succeeded with that head_sha, and the diff has no leftover the merge skill names.
-COMMENTED on the current head is enough. Pass does not require APPROVED.
+Pass only when an APPROVED review commit_id equals the current head, Required
+checks succeeded with that head_sha, and the diff has no leftover the merge skill
+names. COMMENTED, CHANGES_REQUESTED, DISMISSED, and PENDING do not count.
+
+The head must contain the current base branch tip (main), or the pull request's
+recorded base SHA must equal that tip, so Required checks ran with it. Otherwise
+the result is base_behind: update the branch, wait for Required checks on the
+new head, and re-review it.
 
 Newer gh wraps paginated check-runs in a one-element array (--slurp). Older
 gh has no --slurp and returns the check-runs object. Both shapes are flattened.
@@ -236,6 +265,7 @@ Examples:
     parser.add_argument('--reviews-file', help='Recorded reviews JSON instead of gh api.')
     parser.add_argument('--checks-file', help='Recorded check-runs JSON instead of gh api.')
     parser.add_argument('--files-file', help='Recorded pull-request files JSON instead of gh api.')
+    parser.add_argument('--compare-file', help='Recorded base...head compare JSON instead of gh api.')
     parser.add_argument('--skill-file', default=str(SKILL), help=argparse.SUPPRESS)
     return parser
 
@@ -262,7 +292,13 @@ def load_records(args, owner, repo, number, head):
         files = flatten_pages(read_json(args.files_file))
     else:
         files = flatten_pages(gh_json(owner, repo, f'pulls/{number}/files', paginate=True))
-    return pull, current, reviews, checks, files
+    if pull.get('merged'):
+        compare = None
+    elif args.compare_file:
+        compare = read_json(args.compare_file)
+    else:
+        compare = gh_json(owner, repo, f'compare/{base_ref(pull)}...{current}?per_page=1')
+    return pull, current, reviews, checks, files, compare
 
 
 def main(argv=None):
@@ -279,13 +315,13 @@ def main(argv=None):
         }, 2)
     missing_names = skill_names_present(args.skill_file)
     try:
-        pull, head, reviews, checks, files = load_records(args, owner, repo, number, None)
+        pull, head, reviews, checks, files, compare = load_records(args, owner, repo, number, None)
     except (OSError, RuntimeError, json.JSONDecodeError) as error:
         return fail({
             'passed': False,
             'error': 'review_unreadable',
             'message': str(error),
-            'next': 'Re-read the pull request, reviews, and checks until the lists are complete. Do not merge.',
+            'next': 'Re-read the pull request, reviews, checks, and base comparison until they are complete. Do not merge.',
         })
     payload = {
         'pull_request': f'{owner}/{repo}#{number}',
@@ -296,14 +332,17 @@ def main(argv=None):
         kept = kept_reviews(reviews, head)
         check = required_check(checks, head)
         leftovers = leftovers_in_files(files)
+        position = base_position(pull, compare) if compare is not None else None
     except RuntimeError as error:
         return fail({
             **payload,
             'passed': False,
             'error': 'review_unreadable',
             'message': str(error),
-            'next': 'Re-read the reviews and checks until the lists are complete. Do not merge.',
+            'next': 'Re-read the reviews, checks, and base comparison until they are complete. Do not merge.',
         })
+    if position is not None:
+        payload['base'] = position
 
     if missing_names:
         return fail({
@@ -314,12 +353,24 @@ def main(argv=None):
             'next': 'Restore the named leftovers in the merge skill. Do not merge.',
             'missing_skill_names': missing_names,
         })
+    if position is not None and not checks_contain_base_tip(position):
+        ref = position['ref']
+        return fail({
+            **payload,
+            'passed': False,
+            'error': 'base_behind',
+            'message': (
+                f'The base is behind the current {ref} tip {position["tip"]}: the head is {position["behind_by"]} '
+                f'commits behind it, and Required checks did not run on a ref that contains it.'
+            ),
+            'next': f'Update the branch with {ref}, wait for Required checks to pass on the new head, and re-review the new head. Do not merge.',
+        })
     if not reviews:
         return fail({
             **payload,
             'passed': False,
             'error': 'review_missing',
-            'message': 'The review list is empty. No review has commit_id equal to the current head.',
+            'message': 'The review list is empty. No APPROVED review matches the current head.',
             'next': 'Review the current head. Do not merge.',
             'reviews': 0,
             'kept_reviews': 0,
@@ -329,8 +380,8 @@ def main(argv=None):
             **payload,
             'passed': False,
             'error': 'head_mismatch',
-            'message': 'No review has commit_id equal to the current pull request head.',
-            'next': 'Review the new head. Do not merge.',
+            'message': 'No APPROVED review has commit_id equal to the current pull request head.',
+            'next': 'Obtain an APPROVED review of the current head. Do not merge.',
             'reviews': len(reviews),
             'kept_reviews': 0,
         })

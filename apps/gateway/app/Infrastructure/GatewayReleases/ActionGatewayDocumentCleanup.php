@@ -27,12 +27,15 @@ final readonly class ActionGatewayDocumentCleanup implements GatewayDocumentClea
     public function status(): array
     {
         $status = $this->control->handle(false, false);
-
-        return array_filter([
+        $result = [
             'cleanup_state' => is_string($status['cleanup_state'] ?? null) ? $status['cleanup_state'] : 'paused',
             'cleanup_generation' => is_string($status['cleanup_generation'] ?? null) ? $status['cleanup_generation'] : null,
-            'error_code' => is_string($status['error_code'] ?? null) ? $status['error_code'] : null,
-        ], static fn (mixed $value, string $key): bool => $value !== null || $key === 'cleanup_generation', ARRAY_FILTER_USE_BOTH);
+        ];
+        if (is_string($status['error_code'] ?? null)) {
+            $result['error_code'] = $status['error_code'];
+        }
+
+        return $result;
     }
 
     public function reconcile(): array

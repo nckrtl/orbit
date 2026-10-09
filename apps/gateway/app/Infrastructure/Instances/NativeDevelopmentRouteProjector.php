@@ -8,6 +8,7 @@ use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\AppDev\ViteEnvironmentProjection;
 use App\Domain\Instances\DevelopmentRouteProjector;
+use App\Domain\Instances\DevelopmentSourceAccess;
 use App\Domain\Instances\InstanceSandboxGuard;
 use App\Domain\Instances\Transfer\InstanceTransferRouteProjector;
 use App\Domain\Processes\ProcessEnvironmentProjection;
@@ -28,7 +29,6 @@ use App\Models\InstanceTransfer;
 use App\Models\Node;
 use App\Models\Route;
 use App\Models\RouteTarget;
-use Illuminate\Support\Collection;
 
 final readonly class NativeDevelopmentRouteProjector implements DevelopmentRouteProjector, InstanceTransferRouteProjector, RouteDomainProjector
 {
@@ -38,6 +38,7 @@ final readonly class NativeDevelopmentRouteProjector implements DevelopmentRoute
         private RemoteAppDevCaddyManager $caddy,
         private DnsmasqPrivateDnsManager $dns,
         private DevelopmentSshExecutor $ssh,
+        private DevelopmentSourceAccess $sourceAccess,
         private ?PublicRouteEdgeProjector $publicEdge = null,
     ) {}
 
@@ -52,12 +53,7 @@ final readonly class NativeDevelopmentRouteProjector implements DevelopmentRoute
         $this->certificates->convergeInstance($instance, $route);
         $route->publishSites();
 
-        $this->ssh->execute(
-            $instance->node,
-            new DevelopmentCaddyAccessCommand()->command($this->sourceAccessSites($instance)),
-            step: 'source-access',
-            errorCode: 'app-dev.source_access_failed',
-        );
+        $this->sourceAccess->grant($instance);
         $this->php->converge($instance->node);
         $this->caddy->build($instance->node);
         $app = $instance->appConfiguration($route->app)['name'];
@@ -94,28 +90,6 @@ final readonly class NativeDevelopmentRouteProjector implements DevelopmentRoute
         // DNS is deliberately last. A failed earlier projection is never reachable by name.
         $this->dns->converge();
         $instance->recordAppRuntime($app, ['app_identity_ready' => true]);
-    }
-
-    /**
-     * The access walk covers the converging Instance's checkout and any served checkout nested in
-     * it, because the recursive deny on the Instance's tree would otherwise revoke a nested
-     * worktree's Web root. Every other checkout on the Node keeps the access its own convergence
-     * granted, so the walk does not grow with the Node's other Instances.
-     *
-     * @return Collection<int, DevelopmentSite>
-     */
-    private function sourceAccessSites(Instance $instance): Collection
-    {
-        $checkout = rtrim($instance->checkout_path, '/');
-
-        if ($checkout === '') {
-            return collect();
-        }
-
-        return new AppProjectionServingAccess($this->ssh)->forNode($instance->node)
-            ->filter(static fn (DevelopmentSite $site): bool => $site->checkoutPath === $checkout
-                || str_starts_with($site->checkoutPath, $checkout.'/'))
-            ->values();
     }
 
     public function prepareWorkloadCertificate(Instance $instance, Route $current, Route $candidate): void

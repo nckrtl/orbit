@@ -507,7 +507,7 @@ describe('app projection native environment adapter', function (): void {
             $database->targets()->create(['instance_id' => $instance->id, 'prefix' => 'DB']);
             $context = app(InstanceEnvironmentContextResolver::class)->resolveForProjection($instance, $step->instance_app_projection_id, 'web');
             $values = app(InstanceEnvironmentStore::class)->projectionSnapshot($context, $step)->values();
-            $testing = [...$values, 'APP_ENV' => 'testing', ...app(InstanceTestEnvironment::class)->plan($instance->id)->values];
+            $testing = app(InstanceTestEnvironment::class)->plan($instance->id, $values)?->values;
             $expected = app(InstanceEnvironmentRenderer::class)->render($context, $testing);
             foreach (['checkout', 'release-a'] as $checkout) {
                 file_put_contents($root.'/'.$checkout.'/old/.env.testing', $expected);

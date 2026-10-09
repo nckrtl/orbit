@@ -25,6 +25,7 @@ use Illuminate\Support\Carbon;
  * @property int $id
  * @property int $project_id
  * @property int|null $vite_port
+ * @property int|null $ssr_port
  * @property int|null $annotator_port
  * @property int|null $agentation_port
  * @property string|null $task_sandbox_id
@@ -81,6 +82,7 @@ use Illuminate\Support\Carbon;
  * @property bool|null $source_is_laravel
  * @property string|null $provisioning_step
  * @property string|null $failed_step
+ * @property bool $first_setup_pending
  * @property string|null $error_code
  * @property Carbon|null $runtime_definitions_captured_at
  * @property bool $development_release_layout
@@ -123,6 +125,7 @@ final class Instance extends Model
         'node_id',
         'task_sandbox_id',
         'vite_port',
+        'ssr_port',
         'agentation_port',
         'annotator_port',
         'name',
@@ -176,6 +179,7 @@ final class Instance extends Model
         'source_is_laravel',
         'provisioning_step',
         'failed_step',
+        'first_setup_pending',
         'runtime_definitions_captured_at',
         'status',
         'error_code',
@@ -610,6 +614,7 @@ final class Instance extends Model
             'app_overrides' => 'array',
             'app_runtime' => 'array',
             'vite_port' => 'integer',
+            'ssr_port' => 'integer',
             'agentation_port' => 'integer',
             'annotator_port' => 'integer',
             'clone_candidate_id' => 'integer',
@@ -627,6 +632,7 @@ final class Instance extends Model
             'development_release_layout' => 'boolean',
             'development_projection_pending' => 'boolean',
             'seed_selected' => 'boolean',
+            'first_setup_pending' => 'boolean',
             'status' => InstanceState::class,
         ];
     }

@@ -7,6 +7,7 @@ namespace App\Infrastructure\Processes;
 use App\Domain\AppDev\AgentationEndpoint;
 use App\Domain\AppDev\AnnotatorEndpoint;
 use App\Domain\AppDev\DevelopmentServerEndpoint;
+use App\Domain\AppDev\SsrEndpoint;
 use App\Domain\Nodes\LinuxUserName;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Processes\AgentationMcpPreset;
@@ -97,7 +98,7 @@ final readonly class SystemdProcessRenderer
             'Environment=PATH=/usr/local/bin:/opt/orbit/composer/vendor/bin:/usr/bin:/bin',
             'Environment=NODE_USE_SYSTEM_CA=1',
             ...$environmentFileLine,
-            ...$this->managedEnvironmentDirectives($process),
+            ...$this->managedEnvironmentDirectives($process, is_int($target->instance?->ssr_port)),
             ...$environmentProjection['directives'],
             ...($process->isVpDev() ? ['EnvironmentFile='.self::viteEnvironmentPath((int) $target->instance?->id, $target->app !== null && $target->instance?->usesAppViteIdentity($target->app) ? $target->app : null), 'UnsetEnvironment=VITE_DEV_SERVER_CERT VITE_DEV_SERVER_KEY'] : []),
             'ExecStart='
@@ -123,7 +124,7 @@ final readonly class SystemdProcessRenderer
     /**
      * @return list<string>
      */
-    private function managedEnvironmentDirectives(#[SensitiveParameter] Process $process): array
+    private function managedEnvironmentDirectives(#[SensitiveParameter] Process $process, bool $ssr): array
     {
         if (! array_key_exists('environment', $process->runtime_config)) {
             return [];
@@ -132,7 +133,7 @@ final readonly class SystemdProcessRenderer
         $directives = [];
 
         foreach ($this->stringMap($process->runtime_config['environment']) as $name => $value) {
-            if ($this->isReservedEnvironmentName($name)) {
+            if ($this->isReservedEnvironmentName($name) || ($ssr && in_array($name, [SsrEndpoint::PORT_KEY, SsrEndpoint::URL_KEY], true))) {
                 continue;
             }
 
@@ -226,6 +227,13 @@ final readonly class SystemdProcessRenderer
                 $directives[] = 'Environment='.AgentationEndpoint::PORT_KEY.'='.(string) $target->port('agentation_port');
                 $commandValues[] = AgentationEndpoint::URL_KEY.'='.$agentationOrigin;
                 $commandValues[] = AgentationEndpoint::PORT_KEY.'='.(string) $target->port('agentation_port');
+            }
+        }
+
+        if (is_int($target->instance?->ssr_port)) {
+            foreach (SsrEndpoint::environment($target->instance->ssr_port) as $name => $value) {
+                $directives[] = "Environment={$name}={$value}";
+                $commandValues[] = "{$name}={$value}";
             }
         }
 

@@ -54,7 +54,7 @@ it('detects PHP and configures the Laravel URL in the application directory', fu
         expect($profile->phpVersion)->toBe('8.4')->and($profile->laravel)->toBeTrue();
 
         $configurator->configureLaravelUrl($instance, 'https://nested.test');
-        expect(file_get_contents($application.'/.env'))->toBe("APP_NAME=Nested\nAPP_URL=https://nested.test\n")
+        expect(file_get_contents($application.'/.env'))->toMatch('#^APP_NAME=Nested\nAPP_URL=https://nested\.test\nAPP_KEY="base64:[A-Za-z0-9+/]{43}="\n$#')
             ->and(file_get_contents($application.'/bootstrap/cache/config.php'))->toBe("<?php return ['app' => ['url' => 'https://nested.test']];")
             ->and(fileperms($application.'/.env') & 0777)->toBe(0640);
         if ($relative !== '') {

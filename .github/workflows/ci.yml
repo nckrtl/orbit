@@ -12,10 +12,12 @@ on:
 permissions:
   contents: read
 
-# A pull request keeps only its newest run. Each main commit gets its own group, so a newer push neither
-# cancels a running main run nor replaces a pending one, and every main commit gets a complete result.
+# A pull request keeps only its newest run. Pushes to main share one group: a running main run always
+# finishes, and a newer push replaces only the waiting one, so after a burst of merges the newest commit
+# is tested next. Its affected tests cover every change since the last tested main commit. Scheduled and
+# manual runs get a group per commit, so a push never cancels a full run.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  group: ci-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.event_name == 'push' && 'main-push' || format('{0}-{1}', github.event_name, github.sha) }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -59,8 +61,8 @@ jobs:
           ref: ${{ github.head_ref || github.ref_name }}
           repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
 
-      # The checkout above names the branch, and a later push can move it before this job starts. Main runs are not
-      # cancelled, so each one must test exactly its own commit: its Required checks result releases that commit.
+      # The checkout above names the branch, and a later push can move it before this job starts. A running main run
+      # is never cancelled, so it must test exactly its own commit: its Required checks result releases that commit.
       - name: Pin the run's commit
         if: github.event_name != 'pull_request'
         working-directory: .

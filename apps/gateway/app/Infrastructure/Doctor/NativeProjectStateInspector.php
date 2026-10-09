@@ -14,9 +14,11 @@ use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Nodes\Storage\StorageRootResolver;
+use App\Domain\SourceControl\GitRepositoryIdentity;
 use App\Domain\SourceControl\GitRepositoryOrigin;
 use App\Domain\Tasks\TaskWorkspaceLifecycle;
 use App\Infrastructure\Processes\CommandDeadline;
+use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
@@ -48,6 +50,7 @@ final readonly class NativeProjectStateInspector implements ProjectStateInspecto
         try {
             $account = null;
             $repository = GitRepositoryOrigin::validate($project->repository_url);
+            $identity = GitRepositoryIdentity::derive($repository);
         } catch (\Throwable) {
             throw new DoctorInspectionException;
         }
@@ -151,7 +154,9 @@ final readonly class NativeProjectStateInspector implements ProjectStateInspecto
                         ."\n"
                         .'  case "$checkout" in "$expected_root"|"$expected_root"/*) ;; *) exit 1 ;; esac'
                         ."\n"
-                        .'  if test -d "$checkout" && test ! -L "$checkout" && test "$(git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" config --get remote.origin.url 2>/dev/null)" = "$repository"; then printf "1\\n"; else printf "0\\n"; fi'
+                        .'  if test -d "$checkout" && test ! -L "$checkout"; then'
+                        .' origin=$(git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" config --get remote.origin.url 2>/dev/null) || origin=;'
+                        .' printf "1 %s\\n" "$(printf %s "$origin" | base64 --wrap=0)"; else printf "0\\n"; fi'
                         ."\n"
                         .'  exit 0'
                         ."\n"
@@ -165,8 +170,9 @@ final readonly class NativeProjectStateInspector implements ProjectStateInspecto
                         .' && sudo -u "$user" -H -- test ! -L "$checkout"'
                         .' && test "$(sudo -u "$user" -H -- realpath -e "$checkout")" = "$checkout"'
                         .' && test "$(sudo -u "$user" -H -- stat -c %U "$checkout")" = "$user"'
-                        .' && test "$(sudo -u "$user" -H -- git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" rev-parse --show-toplevel 2>/dev/null)" = "$checkout"'
-                        .' && test "$(sudo -u "$user" -H -- git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" config --get remote.origin.url 2>/dev/null)" = "$repository"; then printf "1\\n"; else printf "0\\n"; fi'
+                        .' && test "$(sudo -u "$user" -H -- git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" rev-parse --show-toplevel 2>/dev/null)" = "$checkout"; then'
+                        .' origin=$(sudo -u "$user" -H -- git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" config --get remote.origin.url 2>/dev/null) || origin=;'
+                        .' printf "1 %s\\n" "$(printf %s "$origin" | base64 --wrap=0)"; else printf "0\\n"; fi'
                         ."\n",
                     ),
                 );
@@ -176,23 +182,47 @@ final readonly class NativeProjectStateInspector implements ProjectStateInspecto
                 continue;
             }
 
-            if (
-                ! $result->succeeded()
-                || $result->truncated
-                || ! in_array(needle: $result->stdout, haystack: ["1\n", "0\n"], strict: true)
-            ) {
+            $originMatches = $this->originMatches($result, $identity);
+            if ($originMatches === null) {
                 $failedInstanceIds[] = (int) $checkout['instance_id'];
 
                 continue;
             }
 
-            if ($result->stdout !== "1\n") {
+            if (! $originMatches) {
                 $mismatchingInstanceIds[] = (int) $checkout['instance_id'];
                 $match = false;
             }
         }
 
         return new ProjectInspectionData(count($checkouts), $match, $mismatchingInstanceIds, $failedInstanceIds);
+    }
+
+    /**
+     * Compares the observed checkout origin by repository identity, so equivalent
+     * SSH and HTTPS URLs match. Returns null when the observation is unusable.
+     */
+    private function originMatches(CommandResult $result, string $identity): ?bool
+    {
+        if (! $result->succeeded() || $result->truncated) {
+            return null;
+        }
+
+        if ($result->stdout === "0\n") {
+            return false;
+        }
+
+        $matches = [];
+        if (preg_match('/\A1 ([A-Za-z0-9+\/]*={0,2})\n\z/', $result->stdout, $matches) !== 1) {
+            return null;
+        }
+
+        $origin = base64_decode($matches[1], true);
+        if (! is_string($origin) || ! GitRepositoryOrigin::isValid($origin)) {
+            return false;
+        }
+
+        return GitRepositoryIdentity::derive($origin) === $identity;
     }
 
     /** Resolves the single managed apps root for development checkouts. */

@@ -114,10 +114,8 @@ final readonly class NativeAppProjectionEnvironment implements AppProjectionEnvi
             $payload['source_binding'] = $this->binding($source);
         } elseif (! $recover || $preFile) {
             $values = $this->store->projectionSnapshot($this->published, $step)->values();
-            // A moved app directory gets a full .env.testing: the stored values in testing mode with the
-            // owned test database connection keys, as SynchronizeInstanceEnvironmentAction merges them.
-            $plan = $values === [] ? null : $this->testing->plan($this->published->instanceId);
-            $testing = $plan === null ? null : [...$values, 'APP_ENV' => 'testing', ...$plan->values];
+            // A moved app directory gets the full seed of a missing .env.testing.
+            $testing = $values === [] ? null : $this->testing->plan($this->published->instanceId, $values)?->values;
             $payload['contexts'] = [];
             $payload['files'] = [];
             foreach ($this->targets as $target) {

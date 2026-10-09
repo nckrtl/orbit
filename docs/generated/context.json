@@ -869,6 +869,7 @@
                 "apps/gateway"
             ],
             "concepts": [
+                "Access grant",
                 "Cluster",
                 "Deployment",
                 "Doctor",
@@ -1051,6 +1052,23 @@
                 "Role",
                 "Task",
                 "Task workspace"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/assigned-ssr-ports.md",
+            "title": "Assigned SSR ports",
+            "kind": "reference",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Project",
+                "Task"
             ],
             "governing_adrs": []
         },

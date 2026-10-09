@@ -9,6 +9,7 @@ use App\Actions\Routes\UpdateRouteAction;
 use App\Data\Routes\UpdateRouteData;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\AppDev\SsrPortAllocator;
 use App\Domain\AppDev\VitePortAllocator;
 use App\Domain\Instances\DevelopmentInstanceConfigurator;
 use App\Domain\Instances\DevelopmentInstanceProvisioner;
@@ -36,6 +37,7 @@ final readonly class NativeDevelopmentInstanceProvisioner implements Development
     public function reserve(Instance $instance, ?string $domain): void
     {
         InstanceSandboxGuard::assertHostOperation($instance);
+        app(SsrPortAllocator::class)->assign($instance);
         if ($domain !== null) {
             $instance->appConfiguration();
         }

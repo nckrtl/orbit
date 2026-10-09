@@ -451,3 +451,23 @@ it('projects AGENTATION_URL onto the Antigravity watcher unit', function (): voi
         ->toContain('"Call agentation_watch_annotations in a loop. For each annotation: acknowledge it, apply the requested UI/frontend change only (do not run Pest, artisan test, or other test commands), then call agentation_resolve with a summary. Continue watching until this process is stopped."')
         ->toContain('Restart=always');
 });
+
+it('projects the assigned ssr port as ORBIT_SSR_PORT and INERTIA_SSR_URL and adds nothing without one', function (?string $routeDomain): void {
+    $instance = new Instance(['ssr_port' => 13721]);
+    $instance->id = 7;
+    $target = new ProcessTarget(node: new Node, user: 'orbit', checkoutPath: '/apps/recall/task-a', instance: $instance, routeDomain: $routeDomain);
+    $process = new Process(['name' => 'ssr', 'working_directory' => '/apps/recall/task-a', 'runtime_config' => ['command' => ['/usr/bin/php', 'artisan', 'inertia:start-ssr'], 'environment' => ['INERTIA_SSR_URL' => 'http://127.0.0.1:13719', 'ORBIT_SSR_PORT' => '13719']], 'restart_policy' => 'on-failure']);
+    $process->id = 21;
+
+    expect(new SystemdProcessRenderer()->render($process, $target))
+        ->toContain('Environment=ORBIT_SSR_PORT=13721')
+        ->toContain('Environment=INERTIA_SSR_URL=http://127.0.0.1:13721')
+        ->toContain('"ORBIT_SSR_PORT=13721" "INERTIA_SSR_URL=http://127.0.0.1:13721"')
+        ->not->toContain('13719');
+
+    $instance->ssr_port = null;
+    expect(new SystemdProcessRenderer()->render($process, $target))
+        ->toContain('Environment=INERTIA_SSR_URL=http://127.0.0.1:13719')
+        ->toContain('Environment=ORBIT_SSR_PORT=13719')
+        ->not->toContain('13721');
+})->with(['with a Route' => ['recall-task-a.test'], 'without a Route' => [null]]);

@@ -24,6 +24,7 @@ use App\Models\InstanceTransfer;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
+use App\Models\RouteTarget;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
@@ -217,11 +218,10 @@ final readonly class DevelopmentSiteRepository
         $sites = [];
         $targets = $route
             ->targets
-            ->map(static fn ($targetRow) => $targetRow->instance)
+            ->map(static fn (RouteTarget $targetRow): Instance => $targetRow->instance)
             ->filter(
-                fn ($target): bool => (
-                    $target instanceof Instance
-                    && new CommittedAppServingView()->app($target, $route->app) !== null
+                fn (Instance $target): bool => (
+                    new CommittedAppServingView()->app($target, $route->app) !== null
                     && is_string($target->node->wireguard_ip)
                     && in_array(
                         $target->status,

@@ -106,6 +106,31 @@ describe('instance:create production refusal', function (): void {
     });
 });
 
+describe('instance:create database server', function (): void {
+    it('sends --database-server as database_server', function (): void {
+        $mock = MockClient::global([
+            CreateInstanceRequest::class => instance_mock_response(201),
+        ]);
+
+        $exitCode = Artisan::call('instance:create', [
+            'project' => '3',
+            'node' => '4',
+            'name' => 'default',
+            '--database-server' => 'beast-mysql',
+            '--json' => true,
+            '--no-interaction' => true,
+        ]);
+
+        expect($exitCode)->toBe(0);
+        $mock->assertSent(static fn (CreateInstanceRequest $request): bool => $request->body()->all() === [
+            'project_id' => 3,
+            'node_id' => 4,
+            'name' => 'default',
+            'database_server' => 'beast-mysql',
+        ]);
+    });
+});
+
 describe('instance registration project options', function (): void {
     it('rejects the removed Project creation options and the app name option', function (): void {
         app()->instance(GitRegistrationDiscovery::class, new class implements GitRegistrationDiscovery

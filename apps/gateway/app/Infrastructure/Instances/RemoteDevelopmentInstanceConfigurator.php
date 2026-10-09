@@ -8,6 +8,8 @@ use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Instances\ComposerSourceClassifier;
 use App\Domain\Instances\DevelopmentInstanceConfigurator;
 use App\Domain\Instances\DevelopmentSourceProfile;
+use App\Domain\Instances\Environment\InstanceEnvironmentRenderer;
+use App\Domain\Instances\Environment\LaravelApplicationKey;
 use App\Domain\Instances\InstanceSandboxGuard;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Projects\ProjectType;
@@ -92,17 +94,29 @@ final readonly class RemoteDevelopmentInstanceConfigurator implements Developmen
     public function configureLaravelUrl(Instance $instance, string $url, ?string $app = null): void
     {
         InstanceSandboxGuard::assertHostOperation($instance);
-        $instance->loadMissing('node');
+        $instance->loadMissing(['node', 'project']);
         $account = $this->accounts->resolve($instance->node);
+        $appName = $instance->appConfiguration($app)['name'];
+        $storedKey = LaravelApplicationKey::stored($instance, $appName);
+        $storedName = $instance->environmentValues()->where('app', $appName)->where('env_key', 'APP_NAME')->first()?->env_value;
+        $storedName = is_string($storedName) && $storedName !== '' && ! str_contains($storedName, '{{') ? $storedName : null;
+        $settings = json_encode([
+            'url' => $url,
+            'app_key' => 'APP_KEY='.InstanceEnvironmentRenderer::quote($storedKey ?? LaravelApplicationKey::generate()),
+            'app_key_stored' => $storedKey !== null,
+            'app_name' => 'APP_NAME='.InstanceEnvironmentRenderer::quote($storedName ?? $instance->project->name),
+            'app_name_stored' => $storedName !== null,
+        ], JSON_THROW_ON_ERROR);
         $this->ssh->execute(
             $instance->node,
             new RemoteCommand(
                 arguments: ['python3', '-c', <<<'PYTHON'
-                        import os, pathlib, re, sys, tempfile
+                        import json, os, pathlib, re, sys, tempfile
 
                         root = pathlib.Path(sys.argv[1])
                         owner = sys.argv[2]
-                        url = sys.stdin.read()
+                        settings = json.load(sys.stdin)
+                        url = settings['url']
                         if root.resolve(strict=True) != root:
                             raise SystemExit(42)
 
@@ -125,9 +139,23 @@ final readonly class RemoteDevelopmentInstanceConfigurator implements Developmen
                             finally:
                                 if os.path.exists(candidate): os.unlink(candidate)
 
+                        def entries(text, key):
+                            return list(re.finditer(rb'(?m)^' + key + rb'=([^\r\n]*)', text))
+
+                        def plain(found):
+                            value = found[0].group(1).strip() if found else b''
+                            if len(value) >= 2 and value[:1] == value[-1:] and value[:1] in (b'"', b"'"): value = value[1:-1]
+                            return value
+
+                        def put(text, found, line):
+                            if found: return text[:found[0].start()] + line + text[found[0].end():]
+                            separator = b'' if text == b'' or text.endswith(b'\n') else b'\n'
+                            return text + separator + line + b'\n'
+
                         env = root / '.env'
                         safe_regular(env)
                         template = root / '.env.example'
+                        created = not env.exists()
                         if env.exists():
                             original = env.read_bytes()
                             mode = env.stat().st_mode & 0o777
@@ -135,15 +163,20 @@ final readonly class RemoteDevelopmentInstanceConfigurator implements Developmen
                             safe_regular(template)
                             original = template.read_bytes() if template.exists() else b''
                             mode = template.stat().st_mode & 0o777 if template.exists() else 0o600
-                        replacement = ('APP_URL=' + url).encode()
-                        matches = list(re.finditer(rb'(?m)^APP_URL=.*$', original))
-                        if len(matches) > 1: raise SystemExit(42)
-                        if len(matches) == 1:
-                            match = matches[0]
-                            updated = original[:match.start()] + replacement + original[match.end():]
-                        else:
-                            separator = b'' if original == b'' or original.endswith(b'\n') else b'\n'
-                            updated = original + separator + replacement + b'\n'
+                        found = entries(original, b'APP_URL')
+                        if len(found) > 1: raise SystemExit(42)
+                        updated = put(original, found, ('APP_URL=' + url).encode())
+                        # Laravel cannot boot with an empty key. A new file takes the stored key, the
+                        # template's own key, or a generated one; an existing file only fills an empty key.
+                        # Duplicate key or name lines stay as they are.
+                        found = entries(updated, b'APP_KEY')
+                        empty = plain(found) == b''
+                        if len(found) < 2 and ((created and (empty or settings['app_key_stored'])) or (found and empty)):
+                            updated = put(updated, found, settings['app_key'].encode())
+                        # A new file takes the stored name, or the Project name over the framework default.
+                        found = entries(updated, b'APP_NAME')
+                        if created and len(found) < 2 and (settings['app_name_stored'] or plain(found) in (b'', b'Laravel')):
+                            updated = put(updated, found, settings['app_name'].encode())
                         # Other local users, the Node agent included, never read an Instance's environment.
                         mode &= 0o770
                         if updated != original or not env.exists(): atomic(env, updated, mode)
@@ -197,7 +230,7 @@ final readonly class RemoteDevelopmentInstanceConfigurator implements Developmen
                             updated = original[:match.start()] + b"'" + escaped + b"'" + original[match.end():]
                             if updated != original: atomic(cache, updated, cache.stat().st_mode & 0o777)
                         PYTHON, $instance->applicationDirectory($app), $account->user],
-                protectedInput: ProtectedInput::fromString($url),
+                protectedInput: ProtectedInput::fromString($settings),
             ),
             step: 'laravel-url',
             errorCode: 'app-dev.laravel_url_configuration_failed',

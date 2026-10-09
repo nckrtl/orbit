@@ -7,7 +7,7 @@ covers:
   - apps/gateway/app/Infrastructure/{*/RecordedProduction*ContentRetention,Instances/NativeInstanceRemovalProjector,Instances/RemoteDevelopmentInstanceSourceRemoval}.php
   - apps/gateway/app/Http/Requests/Instances/RemoveInstanceRequest.php
   - apps/gateway/app/Models/{InstanceRemoval,InstanceRemovalMember}.php
-  - apps/gateway/database/migrations/*_{allow_failed_creation_removal,allow_pre_activation_instance_removal,add_instance_source_prepare_id,allow_owned_interrupted_creation_removal,allow_force_takeover_of_failed_instance_removal,allow_reserved_task_worktree_removal,allow_reserved_worktree_null_prepare_removal}.php
+  - apps/gateway/database/migrations/*_{allow_failed_creation_removal,allow_pre_activation_instance_removal,add_instance_source_prepare_id,allow_owned_interrupted_creation_removal,allow_force_takeover_of_failed_instance_removal,allow_reserved_task_worktree_removal,allow_reserved_worktree_null_prepare_removal,allow_source_resolved_workspace_route_removal}.php
   - apps/cli/app/Commands/Instances/DestroyInstanceCommand.php
 ---
 
@@ -40,7 +40,9 @@ Orbit never deletes a remote branch. Removing a worktree keeps its local branch,
 
 The Gateway checks everything before it changes anything. A failed check changes nothing.
 
-The Instance must be `active`, `source_resolved` with no Route (such as a task workspace), or an [interrupted or failed development create](#pre-activation-removal) that never became active. An Instance already `removing` resumes its recorded removal. An active development Instance must have one authoritative Route for each serving app. A pre-activation Instance can have no Routes or its own pending or failed app Routes. A development Instance must be the only target of each of its Routes. A production Instance may share a Cluster Route with production Instances on other Nodes.
+The Instance must be `active`, a development `source_resolved` workspace with no Route or only pending or failed Routes targeting only that Instance, or an [interrupted or failed development create](#pre-activation-removal) that never became active. A healthy `source_resolved` workspace cannot remove an active or shared Route. Its pending or failed Routes, including generated Cluster Routes, are removed with their target in the same resumable operation. Production Instances do not qualify for this workspace rule, and normal dirty and unpublished-source checks still apply.
+
+An Instance already `removing` resumes its recorded removal. An active development Instance must have one authoritative Route for each serving app. A pre-activation Instance can have no Routes or its own pending or failed app Routes. A development Instance must be the only target of each of its Routes. A production Instance may share a Cluster Route with production Instances on other Nodes.
 
 The Gateway also refuses these Instances:
 
@@ -112,7 +114,7 @@ A checkout with registered worktrees needs `--force`. Then Orbit removes every w
 
 ### Teardown
 
-Before it accepts removal of an active development Instance, the Gateway runs the Project [teardown steps](/reference/instance-setup#run-teardown). A failed step stops the removal and keeps the Instance. Then the Gateway checks the source again. A teardown that changed the source identity returns `instance.remove_refused`. Production removal runs no teardown.
+Before it accepts removal of an active development Instance, the Gateway runs the Project [teardown steps](/reference/instance-setup#run-teardown). A failed step stops the removal and keeps the Instance. A `default` Instance with the release layout tears down in its active release, or in its checkout when Orbit cannot read that release, so a broken `current` does not block removal. Then the Gateway checks the source again. A teardown that changed the source identity returns `instance.remove_refused`. Production removal runs no teardown.
 
 ## Removal steps
 

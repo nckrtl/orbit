@@ -660,6 +660,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
                 'root' => null,
                 'domain' => null,
                 'branch' => null,
+                'database-server' => null,
                 'json' => false,
             ],
         ],
@@ -725,6 +726,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
                 'timeout' => null,
                 'before' => null,
                 'after' => null,
+                'rebalance' => [],
                 'json' => false,
             ],
         ],
@@ -738,6 +740,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
                 'timeout' => null,
                 'before' => null,
                 'after' => null,
+                'rebalance' => [],
                 'json' => false,
             ],
         ],
@@ -749,6 +752,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
                 'timeout' => null,
                 'before' => null,
                 'after' => null,
+                'rebalance' => [],
                 'json' => false,
             ],
         ],
@@ -762,6 +766,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
                 'timeout' => null,
                 'before' => null,
                 'after' => null,
+                'rebalance' => [],
                 'json' => false,
             ],
         ],
@@ -1436,3 +1441,10 @@ it('refuses a malformed lifecycle timeout before contacting the Gateway', functi
         ->expectsOutputToContain('lifecycle_step.timeout_invalid')
         ->assertFailed();
 })->with(['instance:setup-step:create', 'instance:setup-step:update', 'instance:teardown-step:create', 'instance:teardown-step:update']);
+
+it('refuses a malformed lifecycle rebalance before contacting the Gateway', function (string $command, string $rebalance): void {
+    MockClient::destroyGlobal();
+    $this->artisan($command, ['name' => 'install', '--project' => '1', '--command' => 'true', '--rebalance' => [$rebalance], '--json' => true])
+        ->expectsOutputToContain('lifecycle_step.rebalance_invalid')
+        ->assertFailed();
+})->with(['instance:setup-step:create', 'instance:teardown-step:update'])->with(['build-assets', 'build-assets=slow', '=360']);

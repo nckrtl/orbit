@@ -1012,6 +1012,7 @@ export interface paths {
          * @description Create a development Instance on an app-dev Node.
          *
          *     Creates a development Instance. New production Instances require a candidate. Use instance:clone.
+         *     With a Database server, Orbit creates the Instance's database there before the setup steps run.
          */
         post: operations["instance-create"];
         delete?: never;
@@ -3412,7 +3413,7 @@ export interface paths {
         put?: never;
         /**
          * Cancel a Task group
-         * @description Cancels a backlog, todo, reserved, running, reviewing, or failed Task group, or a settling group without a pull request, and clears its shared Instance. For a settling group with an approved subtask, the Gateway first pushes the workspace HEAD to `task-{group}` on origin; a failed push returns `tasks.push_failed` (502) and keeps the group and Instance. Idempotent for cancelled groups. Route-free source_resolved Instances use database-only cleanup and retain their checkout; other Instances use the forced Instance remover. Requires Gateway access. Returns extension.disabled while the extension is off and tasks.not_cancellable for completed groups and groups in settling or waiting_for_review with a pull request.
+         * @description Cancels a backlog, todo, reserved, running, reviewing, or failed Task group, or a settling group without a pull request, and clears its shared Instance. For a settling group with an approved subtask, the Gateway first pushes the workspace HEAD to `task-{group}` on origin; a failed push returns `tasks.push_failed` (502) and keeps the group and Instance. Idempotent for cancelled groups. Workspace cleanup uses forced Instance removal, including Project teardown and checkout deletion. A development source_resolved workspace with no Route or one pending or failed exclusive Route is removed with its Route and target; active or shared Routes still refuse removal. Re-cancelling also removes an unattached leftover matched by Project, task-{group} name, and branch, unless a live claim owns it. Requires Gateway access. Returns extension.disabled while the extension is off and tasks.not_cancellable for completed groups and groups in settling or waiting_for_review with a pull request.
          */
         post: operations["tasks-cancel"];
         delete?: never;
@@ -4007,6 +4008,7 @@ export interface components {
             transfer?: components["schemas"]["InstanceTransfer"] | null;
             deploy_steps?: components["schemas"]["DeploymentStep"][];
             vite_port?: number | null;
+            ssr_port?: number | null;
             seed_path?: string | null;
             seed_commit?: string | null;
             annotator_port?: number | null;
@@ -7883,6 +7885,8 @@ export interface operations {
                     domain?: string;
                     /** @description Optional explicit source branch */
                     branch?: string;
+                    /** @description Database server that gets the new Instance database before setup */
+                    database_server?: string;
                 };
             };
         };
@@ -15781,6 +15785,11 @@ export interface operations {
                     before?: string;
                     /** @description Place after this step */
                     after?: string;
+                    /** @description Set another step timeout in the same write, as NAME=SECONDS; repeat as needed */
+                    rebalance?: {
+                        name: string;
+                        timeout_seconds: number;
+                    }[];
                 };
             };
         };
@@ -15912,6 +15921,11 @@ export interface operations {
                     before?: string;
                     /** @description Place after this step */
                     after?: string;
+                    /** @description Set another step timeout in the same write, as NAME=SECONDS; repeat as needed */
+                    rebalance?: {
+                        name: string;
+                        timeout_seconds: number;
+                    }[];
                 };
             };
         };
@@ -16428,6 +16442,11 @@ export interface operations {
                     before?: string;
                     /** @description Place after this step */
                     after?: string;
+                    /** @description Set another step timeout in the same write, as NAME=SECONDS; repeat as needed */
+                    rebalance?: {
+                        name: string;
+                        timeout_seconds: number;
+                    }[];
                 };
             };
         };
@@ -16559,6 +16578,11 @@ export interface operations {
                     before?: string;
                     /** @description Place after this step */
                     after?: string;
+                    /** @description Set another step timeout in the same write, as NAME=SECONDS; repeat as needed */
+                    rebalance?: {
+                        name: string;
+                        timeout_seconds: number;
+                    }[];
                 };
             };
         };

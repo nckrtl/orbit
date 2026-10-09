@@ -52,7 +52,7 @@ it('checks only selected-node app projections through the fixed SSH boundary', f
     $node = application_inspector_node();
     $instance = application_app_instance($project, $node);
     application_app_instance($project, application_inspector_node(), 'other-node');
-    $ssh = new AppDevFakeSshExecutor([app_inspector_result("1\n")]);
+    $ssh = new AppDevFakeSshExecutor([app_origin_result($project->repository_url)]);
 
     $inspection = application_app_inspector($ssh)->inspect($project, $node);
 
@@ -94,7 +94,7 @@ it('excludes removing Instances from App checkout inspection', function (): void
     application_app_instance($project, $node, 'active');
     $removing = application_app_instance($project, $node, 'removing');
     application_mark_removing($removing);
-    $ssh = new AppDevFakeSshExecutor([app_inspector_result("1\n")]);
+    $ssh = new AppDevFakeSshExecutor([app_origin_result($project->repository_url)]);
 
     $inspection = application_app_inspector($ssh)->inspect($project, $node);
 
@@ -133,7 +133,7 @@ it('keeps per-checkout app failures bounded and continues inspecting other Insta
     application_app_instance($project, $node, 'healthy');
     $ssh = new AppDevFakeSshExecutor([
         app_inspector_result('', exitCode: 1),
-        app_inspector_result("1\n"),
+        app_origin_result($project->repository_url),
     ]);
 
     $inspection = application_app_inspector($ssh)->inspect($project, $node);
@@ -148,7 +148,7 @@ it('checks app-production origins as the app owner within its production root', 
     $project = application_inspector_app();
     $node = application_inspector_node();
     $instance = application_production_app_instance($project, $node, 'base64:'.str_repeat('A', 44));
-    $ssh = new AppDevFakeSshExecutor([app_inspector_result("1\n")]);
+    $ssh = new AppDevFakeSshExecutor([app_origin_result($project->repository_url)]);
 
     $inspection = application_app_inspector($ssh)->inspect($project, $node);
 
@@ -1179,7 +1179,7 @@ it('checks a development checkout under the Node apps root', function (): void {
     $node->update(['settings' => ['apps' => ['path' => '/fast/apps']]]);
     $instance = application_app_instance($project, $node);
     $instance->update(['checkout_path' => "/fast/apps/{$project->slug}/development"]);
-    $ssh = new AppDevFakeSshExecutor([app_inspector_result("1\n")]);
+    $ssh = new AppDevFakeSshExecutor([app_origin_result($project->repository_url)]);
 
     $inspection = application_app_inspector($ssh)->inspect($project, $node);
 
@@ -1208,13 +1208,13 @@ it('matches an app origin under the Node apps root despite an insteadOf rewrite'
     application_run(['git', '-C', $fixture['checkout'], 'config', 'url.git@git.example.test:.insteadOf', 'https://git.example.test/']);
     $node->update(['settings' => ['apps' => ['path' => $fixture['allowedRoot']]]]);
     application_app_instance($project, $node)->update(['checkout_path' => $fixture['checkout']]);
-    $ssh = new AppDevFakeSshExecutor([app_inspector_result("1\n")]);
-    application_app_inspector($ssh)->inspect($project, $node);
 
     try {
-        $result = application_run($ssh->commands[0]->arguments, $ssh->commands[0]->input);
+        $result = application_app_local_run($project, $node);
 
-        expect($result->stdout)->toBe("1\n");
+        expect($result->stdout)->toBe('1 '.base64_encode($project->repository_url)."\n")
+            ->and(application_app_inspector(new AppDevFakeSshExecutor([$result]))->inspect($project, $node))
+            ->toEqual(new ProjectInspectionData(1, true));
     } finally {
         new Filesystem()->deleteDirectory($fixture['sandbox']);
     }
@@ -1257,17 +1257,100 @@ it('still reports a truly different app origin despite an insteadOf rule', funct
     application_run(['git', '-C', $fixture['checkout'], 'config', 'url.git@git.example.test:.insteadOf', 'https://git.example.test/']);
     application_run(['git', '-C', $fixture['checkout'], 'remote', 'set-url', 'origin', 'https://git.example.test/acme/other.git']);
     $node->update(['settings' => ['apps' => ['path' => $fixture['allowedRoot']]]]);
-    application_app_instance($project, $node)->update(['checkout_path' => $fixture['checkout']]);
-    $ssh = new AppDevFakeSshExecutor([app_inspector_result("0\n")]);
-    application_app_inspector($ssh)->inspect($project, $node);
+    $instance = application_app_instance($project, $node);
+    $instance->update(['checkout_path' => $fixture['checkout']]);
 
     try {
-        $result = application_run($ssh->commands[0]->arguments, $ssh->commands[0]->input);
+        $result = application_app_local_run($project, $node);
 
-        expect($result->stdout)->toBe("0\n");
+        expect(application_app_inspector(new AppDevFakeSshExecutor([$result]))->inspect($project, $node))
+            ->toEqual(new ProjectInspectionData(1, false, [(int) $instance->id]));
     } finally {
         new Filesystem()->deleteDirectory($fixture['sandbox']);
     }
+});
+
+it('HTTPS project vs SSH origin of the same repository is not a mismatch', function (string $project, string $origin): void {
+    $app = application_inspector_app();
+    $app->update(['repository_url' => $project]);
+    $node = application_inspector_node();
+    $fixture = application_instance_repository_fixture($origin);
+    $node->update(['settings' => ['apps' => ['path' => $fixture['allowedRoot']]]]);
+    application_app_instance($app, $node)->update(['checkout_path' => $fixture['checkout']]);
+
+    try {
+        $result = application_app_local_run($app, $node);
+
+        expect(application_app_inspector(new AppDevFakeSshExecutor([$result]))->inspect($app, $node))
+            ->toEqual(new ProjectInspectionData(1, true));
+    } finally {
+        new Filesystem()->deleteDirectory($fixture['sandbox']);
+    }
+})->with([
+    'scp-style SSH origin' => ['https://github.com/acme/hauzer.git', 'git@github.com:acme/hauzer.git'],
+    'SSH URL origin' => ['https://github.com/acme/hauzer.git', 'ssh://git@github.com/acme/hauzer.git'],
+    'SSH origin without .git' => ['https://github.com/acme/hauzer.git', 'git@github.com:acme/hauzer'],
+    'SSH project and HTTPS origin' => ['git@github.com:acme/hauzer.git', 'https://github.com/acme/hauzer'],
+]);
+
+it('HTTPS project vs SSH origin of a different repository is still a mismatch', function (string $origin): void {
+    $app = application_inspector_app();
+    $app->update(['repository_url' => 'https://github.com/acme/hauzer.git']);
+    $node = application_inspector_node();
+    $fixture = application_instance_repository_fixture($origin);
+    $node->update(['settings' => ['apps' => ['path' => $fixture['allowedRoot']]]]);
+    $instance = application_app_instance($app, $node);
+    $instance->update(['checkout_path' => $fixture['checkout']]);
+
+    try {
+        $result = application_app_local_run($app, $node);
+
+        expect(application_app_inspector(new AppDevFakeSshExecutor([$result]))->inspect($app, $node))
+            ->toEqual(new ProjectInspectionData(1, false, [(int) $instance->id]));
+    } finally {
+        new Filesystem()->deleteDirectory($fixture['sandbox']);
+    }
+})->with([
+    'fork path' => ['git@github.com:fork/hauzer.git'],
+    'other repository' => ['git@github.com:acme/mealou.git'],
+    'other host' => ['git@gitlab.com:acme/hauzer.git'],
+]);
+
+it('HTTPS project vs SSH origin on app-production matches by repository identity', function (): void {
+    $project = application_inspector_app();
+    $project->update(['repository_url' => 'https://github.com/hardimpactdev/hauzer.git']);
+    $node = application_inspector_node();
+    $instance = application_production_app_instance($project, $node, 'base64:'.str_repeat('C', 44));
+
+    $same = application_app_inspector(new AppDevFakeSshExecutor([
+        app_origin_result('git@github.com:hardimpactdev/hauzer.git'),
+    ]))->inspect($project, $node);
+    $fork = application_app_inspector(new AppDevFakeSshExecutor([
+        app_origin_result('git@github.com:someone/hauzer.git'),
+    ]))->inspect($project, $node);
+
+    expect($same)
+        ->toEqual(new ProjectInspectionData(1, true))
+        ->and($fork)
+        ->toEqual(new ProjectInspectionData(1, false, [(int) $instance->id]));
+});
+
+it('treats a missing or unreadable app origin as a mismatch and malformed origin output as a failure', function (): void {
+    $project = application_inspector_app();
+    $node = application_inspector_node();
+    $instance = application_app_instance($project, $node);
+    $inspect = fn (CommandResult $result): ProjectInspectionData => application_app_inspector(
+        new AppDevFakeSshExecutor([$result]),
+    )->inspect($project, $node);
+
+    expect($inspect(app_inspector_result("1 \n")))
+        ->toEqual(new ProjectInspectionData(1, false, [(int) $instance->id]))
+        ->and($inspect(app_origin_result('not a repository')))
+        ->toEqual(new ProjectInspectionData(1, false, [(int) $instance->id]))
+        ->and($inspect(app_inspector_result("1 not-base64!\n")))
+        ->toEqual(new ProjectInspectionData(1, true, [], [(int) $instance->id]))
+        ->and($inspect(app_inspector_result("1\n")))
+        ->toEqual(new ProjectInspectionData(1, true, [], [(int) $instance->id]));
 });
 
 it('fails app inspection for a checkout outside the effective apps root', function (): void {
@@ -1276,7 +1359,7 @@ it('fails app inspection for a checkout outside the effective apps root', functi
     $fixture = application_instance_repository_fixture($project->repository_url);
     $node->update(['settings' => ['apps' => ['path' => "{$fixture['sandbox']}/configured"]]]);
     application_app_instance($project, $node)->update(['checkout_path' => $fixture['checkout']]);
-    $ssh = new AppDevFakeSshExecutor([app_inspector_result("1\n")]);
+    $ssh = new AppDevFakeSshExecutor([app_origin_result($project->repository_url)]);
     application_app_inspector($ssh)->inspect($project, $node);
 
     try {
@@ -1708,6 +1791,20 @@ function application_inspector_hosts(): KnownHostsStore
 
         public function put(string $host, int $port, HostKey $key): void {}
     };
+}
+
+function app_origin_result(string $origin): CommandResult
+{
+    return app_inspector_result('1 '.base64_encode($origin)."\n");
+}
+
+/** Runs the Project origin check for the Node's single checkout on this machine. */
+function application_app_local_run(Project $project, Node $node): CommandResult
+{
+    $ssh = new AppDevFakeSshExecutor([app_inspector_result("0\n")]);
+    application_app_inspector($ssh)->inspect($project, $node);
+
+    return application_run($ssh->commands[0]->arguments, $ssh->commands[0]->input);
 }
 
 function app_inspector_result(

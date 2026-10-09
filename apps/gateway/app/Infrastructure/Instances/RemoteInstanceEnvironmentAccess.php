@@ -47,6 +47,9 @@ final readonly class RemoteInstanceEnvironmentAccess implements InstanceEnvironm
         class MissingEnvironment(Exception):
             pass
 
+        class TrackingUnknown(Exception):
+            pass
+
         def open_base():
             opened = []
             current = os.open("/", os.O_RDONLY | os.O_DIRECTORY)
@@ -98,21 +101,27 @@ final readonly class RemoteInstanceEnvironmentAccess implements InstanceEnvironm
 
         def tracked():
             def git(*arguments):
-                return subprocess.run(
-                    ["git", "-C", base, *arguments],
-                    stdin=subprocess.DEVNULL,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.DEVNULL,
-                    env=dict(os.environ, GIT_OPTIONAL_LOCKS="0", LC_ALL="C"),
-                    timeout=30,
-                )
+                try:
+                    return subprocess.run(
+                        ["git", "-C", base, *arguments],
+                        stdin=subprocess.DEVNULL,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        env=dict(os.environ, GIT_OPTIONAL_LOCKS="0", LC_ALL="C"),
+                        timeout=30,
+                    )
+                except (OSError, subprocess.SubprocessError):
+                    raise TrackingUnknown
             inside = git("rev-parse", "--is-inside-work-tree")
-            if inside.returncode != 0 or inside.stdout != b"true\n":
+            reason = inside.stderr.splitlines()[0].lower() if inside.stderr else b""
+            if inside.returncode == 128 and reason.startswith(b"fatal: not a git repository (or any "):
                 return False
+            if inside.returncode != 0 or inside.stdout != b"true\n":
+                raise TrackingUnknown
             listed = git("ls-files", "--error-unmatch", "--", target_name)
             if listed.returncode in (0, 1):
                 return listed.returncode == 0
-            raise OSError
+            raise TrackingUnknown
 
         def existing_contents(descriptor, metadata, identity):
             if descriptor is None or metadata is None:
@@ -135,18 +144,24 @@ final readonly class RemoteInstanceEnvironmentAccess implements InstanceEnvironm
                     raise BoundaryError
             return b"".join(chunks)
 
-        def merged(existing, supplied):
-            updates = {}
+        def managed_lines(supplied):
+            managed, updates = {key.encode("ascii") for key in managed_keys}, {}
             for line in supplied.splitlines(keepends=True):
-                key = line.split(b"=", 1)[0].decode("ascii")
-                if key not in managed_keys or key in updates or not line.endswith(b"\n"):
+                key = line.split(b"=", 1)[0]
+                if not line.endswith(b"\n") or (key in managed and key in updates):
                     raise BoundaryError
-                updates[key] = line
+                if key in managed:
+                    updates[key] = line
+            if not updates:
+                raise BoundaryError
+            return managed, updates
+
+        def merged(existing, managed, updates):
             lines, written = [], set()
             for line in existing.splitlines(keepends=True):
                 match = assignment.match(line)
-                key = match.group(1).decode("ascii") if match else None
-                if key in managed_keys:
+                key = match.group(1) if match else None
+                if key in managed:
                     if key in updates and key not in written:
                         lines.append(updates[key])
                         written.add(key)
@@ -237,10 +252,14 @@ final readonly class RemoteInstanceEnvironmentAccess implements InstanceEnvironm
                         boundary_unchanged(current, directory_identity, destination_identity)
                         print("TRACKED")
                         raise SystemExit(0)
-                    payload = merged(
-                        existing_contents(metadata_descriptor, metadata, destination_identity),
-                        sys.stdin.buffer.read(maximum + 1),
-                    )
+                    payload = sys.stdin.buffer.read(maximum + 1)
+                    managed, updates = managed_lines(payload)
+                    if metadata is not None:
+                        payload = merged(
+                            existing_contents(metadata_descriptor, metadata, destination_identity),
+                            managed,
+                            updates,
+                        )
                     if len(payload) > maximum:
                         raise BoundaryError
                 for _ in range(8):
@@ -304,6 +323,9 @@ final readonly class RemoteInstanceEnvironmentAccess implements InstanceEnvironm
         except MissingEnvironment:
             print("MISSING")
             raise SystemExit(41)
+        except TrackingUnknown:
+            print("TRACKING_UNKNOWN")
+            raise SystemExit(45)
         except BoundaryError:
             if "current" in locals():
                 cleanup_candidate(current)
@@ -449,6 +471,14 @@ final readonly class RemoteInstanceEnvironmentAccess implements InstanceEnvironm
 
         if ($managedKeys !== null && $result->succeeded() && $result->stdout === "TRACKED\n") {
             return InstanceEnvironmentWriteResult::tracked();
+        }
+
+        if ($managedKeys !== null && $result->exitCode === 45 && $result->stdout === "TRACKING_UNKNOWN\n") {
+            throw new ResourceOperationException(
+                errorCode: 'env.testing_tracking_unknown',
+                message: 'Git cannot report whether the checkout tracks .env.testing, so the file was left unchanged.',
+                status: 409,
+            );
         }
 
         if ($result->exitCode === 42 && $result->stdout === "REFUSED\n") {

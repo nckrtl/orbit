@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Domain\AppDev\SsrPortAllocator;
+use App\Domain\AppDev\VitePortRuntime;
 use App\Domain\Projects\LifecycleStep;
 use App\Domain\Projects\TiaBaselineSetup;
 use App\Domain\Projects\TiaBaselineSource;
@@ -41,6 +43,7 @@ use Illuminate\Support\Facades\File;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Symfony\Component\Process\Process;
 use Tests\Support\AppDevFakeSshExecutor;
+use Tests\Support\FakeVitePortRuntime;
 use Tests\Support\LocalShellSshExecutor;
 use Tests\Support\TiaBaselineTestSource;
 
@@ -396,6 +399,41 @@ describe('TaskCheckWorkerUser', function (): void {
         expect(check_runner_as_worker($checkout, 'printf x >> .git/config'))->not->toBe(0);
     });
 
+    it('repairs zero ACL masks in worktree orbit-checks report directories for both users', function (): void {
+        config()->set('orbit.tasks.worker_user', 'nobody');
+        $main = check_runner_checkout('true');
+        $worktree = $this->directory.'/task-8';
+        (new Process(['git', '-C', $main, 'worktree', 'add', '--quiet', '-b', 'task-8', $worktree]))->mustRun();
+        (new Process(['setfacl', '-R', '-m', 'u:nobody:rwX,d:u:nobody:rwX,d:u:'.posix_geteuid().':rwX', $this->directory]))->mustRun();
+        // The linked worktree's reports live in the Git common dir, outside the checkout walk. Like mkdtemp,
+        // a private 0700 directory under the inherited sharing ACL gets mask::---, which disables the named entries.
+        $reports = $main.'/.git/orbit-checks/'.trim((new Process(['git', '-C', $worktree, 'rev-parse', 'HEAD']))->mustRun()->getOutput());
+        // Like Path.mkdir in bin/review-check, which keeps the inherited mask open.
+        File::ensureDirectoryExists($reports, 0777);
+        (new Process(['bash', '-c', 'install -d -m 0700 review-managed && printf "managed\n" > review-managed/check.log'], $reports))->mustRun();
+        expect(check_runner_as_worker($reports, 'install -d -m 0700 review-worker && printf "worker\n" > review-worker/check.log'))->toBe(0);
+        $mask = fn (string $path): string => (string) preg_replace('/.*^mask::(\S+).*/ms', '$1', (new Process(['getfacl', '-cp', $path]))->mustRun()->getOutput());
+        expect($mask($reports.'/review-managed'))->toBe('---')
+            ->and($mask($reports.'/review-worker'))->toBe('---')
+            ->and(check_runner_as_worker($reports, 'cat review-managed/check.log'))->not->toBe(0)
+            ->and(is_readable($reports.'/review-worker/check.log'))->toBeFalse();
+        $runner = check_runner(new LocalShellSshExecutor);
+        $instance = check_runner_instance($worktree);
+
+        try {
+            $reading = check_runner_wait($runner, $instance, $runner->start($instance, 'true'));
+
+            expect($reading->exitCode)->toBe(0)
+                ->and($reading->failedStep)->toBeNull()
+                ->and(check_runner_as_worker($reports, 'grep -qx managed review-managed/check.log'))->toBe(0)
+                ->and(file_get_contents($reports.'/review-worker/check.log'))->toBe("worker\n")
+                ->and($mask($reports.'/review-managed'))->not->toBe('---')
+                ->and($mask($reports.'/review-worker'))->not->toBe('---');
+        } finally {
+            check_runner_as_worker($reports, 'rm -rf review-worker');
+        }
+    });
+
     it('skips worker directories the managed user cannot enter and still shares the rest', function (): void {
         config()->set('orbit.tasks.worker_user', 'nobody');
         $checkout = check_runner_checkout('true');
@@ -632,6 +670,35 @@ it('reports the paths a check changed in the working tree, but not ignored files
 
     expect($reading->exitCode)->toBe(0)
         ->and($reading->changedPaths)->toBe(['written.txt']);
+});
+
+it('keeps an untracked directory symlink in snapshots and reports one created during the handoff check', function (): void {
+    $checkout = check_runner_checkout('true');
+    $target = $this->directory.'/target';
+    File::ensureDirectoryExists($target);
+    file_put_contents($target.'/not-in-checkout.txt', "outside\n");
+    symlink($target, $checkout.'/existing-link');
+    $instance = check_runner_instance($checkout);
+    $runner = check_runner(new LocalShellSshExecutor);
+    $index = file_get_contents($checkout.'/.git/index');
+    $snapshot = $runner->snapshot($instance);
+
+    $process = $runner->start($instance, 'ln -s '.escapeshellarg($target).' created-link');
+    $reading = check_runner_wait($runner, $instance, $process);
+
+    expect($process->tree)->toBe($snapshot->tree);
+    expect($reading->state)->toBe('finished')
+        ->and($reading->exitCode)->toBe(0)
+        ->and($reading->failedStep)->toBeNull()
+        ->and($reading->changedPaths)->toBe(['created-link'])
+        ->and($reading->treeAfter)->not->toBe($snapshot->tree);
+    expect((new Process(['git', 'ls-tree', $snapshot->tree, '--', 'existing-link'], $checkout))->mustRun()->getOutput())
+        ->toStartWith('120000 blob ')->toContain("\texisting-link\n");
+    expect((new Process(['git', 'ls-tree', $reading->treeAfter, '--', 'created-link'], $checkout))->mustRun()->getOutput())
+        ->toStartWith('120000 blob ')->toContain("\tcreated-link\n");
+    expect((new Process(['git', 'ls-files', '--others', '--exclude-standard', '-z'], $checkout))->mustRun()->getOutput())
+        ->toContain("existing-link\0", "created-link\0")->not->toContain('not-in-checkout.txt');
+    expect(file_get_contents($checkout.'/.git/index'))->toBe($index);
 });
 
 it('stops the check process group on cancel, which leaves the check without a result', function (): void {
@@ -1227,3 +1294,46 @@ it('selects shared feedback only when the check has a worker account', function 
 
     expect($reading->exitCode)->toBe(0);
 })->with([true, false]);
+
+describe('ssr port', function (): void {
+    it('starts the check of two workspaces on one Node with their own allocated ssr ports and never the held 13719', function (): void {
+        $node = Node::query()->create(['name' => 'shared-check-node', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'public_ssh_host' => '10.44.0.161', 'wireguard_ip' => '10.44.0.161', 'user' => 'orbit']);
+        orbit_test_set_app_placement_role($node, false);
+        $runtime = new FakeVitePortRuntime;
+        $runtime->occupied[$node->id] = range(SsrPortAllocator::FIRST_PORT, 13719);
+        app()->instance(VitePortRuntime::class, $runtime);
+        $project = Project::query()->create(['name' => 'Recall', 'slug' => 'recall', 'repository_url' => 'git@github.com:acme/recall.git', 'default_branch' => 'main']);
+        $started = '{"pid":4100,"started":"now","head":"abc","tree":"def"}';
+        $transport = new AppDevFakeSshExecutor([new CommandResult(0, $started, '', 1, false), new CommandResult(0, $started, '', 1, false)]);
+        $runner = check_runner($transport);
+        $ports = [];
+
+        foreach (['task-a', 'task-b'] as $name) {
+            $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => $name, 'checkout_path' => "/fast/apps/recall/{$name}", 'branch' => $name, 'status' => 'source_resolved']);
+            $ports[] = app(SsrPortAllocator::class)->assign($instance);
+            $runner->start($instance, 'composer check');
+        }
+
+        expect($ports)->toBe([13720, 13721])
+            ->and($transport->commands[0]->input)->toContain("export ORBIT_SSR_PORT='13720'\nexport INERTIA_SSR_URL='http://127.0.0.1:13720'\n")
+            ->and($transport->commands[1]->input)->toContain("export ORBIT_SSR_PORT='13721'\nexport INERTIA_SSR_URL='http://127.0.0.1:13721'\n")
+            ->and($transport->commands[0]->input.$transport->commands[1]->input)->not->toContain('13719');
+    });
+
+    it('hands the allocated ssr port to setup, the check, and deliverable commands', function (): void {
+        config()->set('orbit.tasks.worker_user', null);
+        $checkout = check_runner_checkout('printf "%s %s" "$ORBIT_SSR_PORT" "$INERTIA_SSR_URL" > check-ssr');
+        $instance = check_runner_instance($checkout);
+        $instance->forceFill(['ssr_port' => 13722])->save();
+        $runner = check_runner(new LocalShellSshExecutor);
+
+        $reading = check_runner_wait($runner, $instance, $runner->start($instance, 'composer check', [
+            ['name' => 'ssr setup', 'command' => 'printf "%s" "$INERTIA_SSR_URL" > setup-ssr', 'timeout_seconds' => 10],
+        ], ['commands' => [['id' => 'ssr', 'command' => 'printf "%s" "$ORBIT_SSR_PORT"', 'directory' => '.', 'fails_on_base' => false, 'paths' => []]]]));
+
+        expect($reading->exitCode)->toBe(0)
+            ->and(file_get_contents($checkout.'/setup-ssr'))->toBe('http://127.0.0.1:13722')
+            ->and(file_get_contents($checkout.'/check-ssr'))->toBe('13722 http://127.0.0.1:13722')
+            ->and($reading->deliverables['commands']['ssr']['output'] ?? null)->toBe('13722');
+    });
+});

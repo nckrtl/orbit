@@ -47,6 +47,7 @@ final class InstanceData extends Data
         /** @var list<DeploymentStepData> */
         public array $deploySteps = [],
         public ?int $vitePort = null,
+        public ?int $ssrPort = null,
         public ?string $seedPath = null,
         public ?string $seedCommit = null,
         public ?int $annotatorPort = null,
@@ -79,6 +80,7 @@ final class InstanceData extends Data
             project: ProjectIdentityData::fromModel($instance->project),
             node: NodeIdentityData::fromModel($instance->node),
             vitePort: $instance->vite_port,
+            ssrPort: $instance->ssr_port,
             seedPath: $instance->seed_path,
             seedCommit: $instance->seed_commit,
             annotatorPort: $instance->annotator_port,

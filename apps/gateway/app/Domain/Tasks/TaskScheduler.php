@@ -720,7 +720,7 @@ final readonly class TaskScheduler
                 $missing = $this->coverage->missing(
                     $group,
                     $pullRequest,
-                    $receipt instanceof TaskComment ? $receipt->id : null,
+                    $receipt->id,
                     $pullRequest->changes,
                 );
             } catch (TaskSessionClassificationException $exception) {

@@ -467,14 +467,16 @@ it('keeps privileged tests required in CI on trusted and fork branches', functio
     expect($workflow['jobs']['required']['steps'][0]['run'])->toContain('test "$PRIVILEGED_RESULT" = success');
 });
 
-it('lets every main push finish CI while a pull request keeps only its newest run', function (): void {
+it('keeps a running main push, only the newest waiting one, and every full run', function (): void {
     $workflow = Yaml::parseFile(base_path('../../.github/workflows/ci.yml'));
 
-    // A shared main group would still replace a pending main run, so each main commit needs its own group.
+    // Main pushes share one group without cancel-in-progress, so GitHub replaces only a waiting main run.
+    // Scheduled and manual full runs keep a group per commit, so a push never replaces one.
     expect($workflow['concurrency'])->toBe([
-        'group' => "ci-\${{ github.workflow }}-\${{ github.event_name == 'pull_request' && github.ref || github.sha }}",
+        'group' => "ci-\${{ github.workflow }}-\${{ github.event_name == 'pull_request' && github.ref || github.event_name == 'push' && 'main-push' || format('{0}-{1}', github.event_name, github.sha) }}",
         'cancel-in-progress' => "\${{ github.event_name == 'pull_request' }}",
     ]);
+    expect($workflow['on']['push']['branches'])->toBe(['main']);
 });
 
 it('tests exactly the run commit on main even when the branch moved before the job started', function (): void {

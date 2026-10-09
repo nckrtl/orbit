@@ -9,7 +9,8 @@ covers:
   - apps/gateway/app/Infrastructure/AppDev/{DevelopmentCaddyConfigRenderer,DevelopmentSiteRepository,NativeDevelopmentProjectionOperationLock}.php
   - apps/gateway/app/Domain/AppDev/{DevelopmentServerEndpoint,AgentationEndpoint,PrivateDnsAnswerExpiry}.php
   - apps/gateway/app/Infrastructure/Clusters/NativeClusterRouterOperationLock.php
-  - apps/gateway/app/Infrastructure/Instances/{NativeProductionRouteProjector,NativeDevelopmentRouteProjector}.php
+  - apps/gateway/app/Infrastructure/Instances/{NativeProductionRouteProjector,NativeDevelopmentRouteProjector,NativeDevelopmentSourceAccess}.php
+  - apps/gateway/app/Domain/Instances/DevelopmentSourceAccess.php
 ---
 
 # Routes
@@ -120,7 +121,7 @@ A Route target must have the Route's named app with a contained composed documen
 
 | Change | Result |
 | --- | --- |
-| Set the current target again | The unchanged Route. |
+| Set the current target again | The unchanged Route. On a Route that is not `active`, the Gateway grants the target's source access again. |
 | Clear an empty Route | The unchanged Route. |
 | Set an Instance/app pair that belongs to another Route | `route.target_conflict`. Both associations stay. |
 | Replace or clear a target, or remove the Route, when that detaches an active Instance | `route.target_conflict`. Nothing changes. |
@@ -128,8 +129,14 @@ A Route target must have the Route's named app with a contained composed documen
 | Set an Instance of another Project or without the same named app, or an inactive Instance | `route.target_app_conflict` or `route.target_inactive`. |
 | Set a generated target without an effective TLD | `route.tld_required`. |
 | Change a Route of another kind | `route.kind_unsupported`. |
+| Set a target while another operation holds the projection lock | `app-dev.projection_busy`. Nothing changes. |
+| Set a development target when the source access walk fails | `app-dev.source_access_failed` at step `source-access`. The target stays set, and the Gateway still broadcasts [`route.updated`](/reference/events). |
 
 Setting a target on a generated Route moves its generation basis, scope, and domain with the target. When the domain changes, a replacement Route takes the target.
+
+Setting a development target on a Route whose sites are published gives Caddy access to the target's web root, as in [Node scope](#node-scope). The walk covers only the target's checkout and checkouts nested in it. A Route whose sites are not published gets the access when it converges.
+
+The Gateway takes the [projection lock](#coordinate-publication) before it reads the Route, so `app-dev.projection_busy` returns before anything changes. The access walk runs after the target is stored. When the walk fails, the new target stays set, and the error message names the Route. Set the same target on that Route again. The retry walks the checkout again and repairs the access.
 
 ### Change a production target set
 
@@ -210,6 +217,8 @@ The Gateway prepares the runtime, certificates, Caddy sites, and firewall rules 
 Private DNS points the domain at the workload Node. Its Caddy terminates HTTPS with an Orbit certificate authority (CA) certificate and serves the selected app's effective web root.
 
 Before the Gateway publishes a development Route, it gives Caddy read access to the web root and traversal access to its parent directories. Caddy cannot read the other source files. The web root must be inside the checkout. Symlinks in the web root are refused, except Laravel's `public/storage` link to that app's `storage/app/public`. When this preparation fails, the Gateway restores the previous permissions and reports `app-dev.source_access_failed` at step `source-access`.
+
+This preparation walks only the Instance's checkout and served checkouts nested in it. Other checkouts on the Node keep the access their own Route granted.
 
 ### Cluster scope
 
