@@ -18,7 +18,9 @@ The Gateway owns the environment configuration of every Instance. It stores each
 
 `ORBIT_DOCUMENT_CLEANUP_RUNTIME` selects the private local directory for isolated Project Document cleanup-gate fixtures when `APP_ENV=testing`; other environments ignore this override. Its default is `/run/orbit/project-documents/`. Never point it into `ORBIT_HOME`, a checkout, a web directory, or a backup. Installed Gateway services use the default runtime directory. This setting is not an Instance environment value or deletion authorization. See [the restore-time cleanup gate](/reference/project-documents#restore-time-cleanup-gate).
 
-`ORBIT_INCUS_ENABLED` and `ORBIT_INCUS_HOSTS` configure [local sandbox placement](/reference/compute-drivers#configure-local-placement). They default to disabled with no hosts.
+`ORBIT_TASK_VMS_ENABLED` turns on [task VMs](/reference/compute-drivers#configure-task-vms). It defaults to `false`.
+
+`ORBIT_INCUS_ENABLED` and `ORBIT_INCUS_HOSTS` configure [Orbit-lane sandbox placement](/reference/compute-drivers#configure-local-placement). They default to disabled with no hosts.
 
 `ORBIT_UPCLOUD_ENABLED`, `ORBIT_UPCLOUD_TOKEN_FILE`, `ORBIT_UPCLOUD_MAX_VMS`, `ORBIT_UPCLOUD_ZONE`, `ORBIT_UPCLOUD_GATEWAY_ADDRESS`, `ORBIT_UPCLOUD_WIREGUARD_ADDRESS`, and `ORBIT_UPCLOUD_WIREGUARD_PORT` configure the Gateway's [compute driver](/reference/compute-drivers#gateway-configuration). They are not Instance keys. The provider token stays in its protected file on the Gateway. `ORBIT_UPCLOUD_ENROLLMENT_ENABLED`, `ORBIT_UPCLOUD_DEV_CLUSTER_ID`, `ORBIT_UPCLOUD_MODEL_ADDRESS`, and `ORBIT_UPCLOUD_MODEL_PORT` configure the separately gated [owned project VM enrollment](/reference/compute-drivers#enroll-an-owned-project-vm). Enrollment stays disabled by default.
 

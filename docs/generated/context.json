@@ -787,6 +787,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Process",
                 "Project",
                 "Route",
                 "Subtask",
@@ -1194,8 +1195,8 @@
                 "apps/gateway"
             ],
             "concepts": [
+                "Access grant",
                 "Cluster",
-                "Deployment",
                 "Doctor",
                 "Extension",
                 "Gateway",
@@ -2167,7 +2168,8 @@
                 "Turn receipt"
             ],
             "governing_adrs": [
-                "0182"
+                "0182",
+                "0200"
             ]
         },
         {
