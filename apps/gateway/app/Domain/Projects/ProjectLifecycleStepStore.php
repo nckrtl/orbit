@@ -25,17 +25,21 @@ final readonly class ProjectLifecycleStepStore
             ->all());
     }
 
+    /**
+     * @param  list<array{name: string, timeout_seconds: int}>  $rebalance  New timeouts for other steps, set in the same write.
+     */
     public function create(
         Project $project,
         LifecyclePhase $phase,
         LifecycleStep $step,
         ?string $before,
         ?string $after,
+        array $rebalance = [],
     ): LifecycleStep {
-        return DB::transaction(function () use ($project, $phase, $step, $before, $after): LifecycleStep {
+        return DB::transaction(function () use ($project, $phase, $step, $before, $after, $rebalance): LifecycleStep {
             Project::query()->lockForUpdate()->findOrFail($project->id);
             $existing = $this->ordered($project, $phase);
-            $placed = $this->insert($existing, $step, $before, $after);
+            $placed = $this->rebalance($this->insert($existing, $step, $before, $after), $step->name, $rebalance);
             $this->assertValid($placed, $existing);
             $this->persist($project, $phase, $placed);
 
@@ -43,6 +47,9 @@ final readonly class ProjectLifecycleStepStore
         }, 5);
     }
 
+    /**
+     * @param  list<array{name: string, timeout_seconds: int}>  $rebalance  New timeouts for other steps, set in the same write.
+     */
     public function update(
         Project $project,
         LifecyclePhase $phase,
@@ -53,8 +60,9 @@ final readonly class ProjectLifecycleStepStore
         ?string $after,
         bool $hasCommand,
         bool $hasTimeout,
+        array $rebalance = [],
     ): LifecycleStep {
-        return DB::transaction(function () use ($project, $phase, $name, $command, $timeoutSeconds, $before, $after, $hasCommand, $hasTimeout): LifecycleStep {
+        return DB::transaction(function () use ($project, $phase, $name, $command, $timeoutSeconds, $before, $after, $hasCommand, $hasTimeout, $rebalance): LifecycleStep {
             Project::query()->lockForUpdate()->findOrFail($project->id);
             $existing = $this->ordered($project, $phase);
             $previous = $existing;
@@ -75,6 +83,7 @@ final readonly class ProjectLifecycleStepStore
             $placed = $before === null && $after === null
                 ? $this->restore($existing, $index, $updated)
                 : $this->insert($existing, $updated, $before, $after);
+            $placed = $this->rebalance($placed, $updated->name, $rebalance);
             $this->assertValid($placed, $previous);
             $this->persist($project, $phase, $placed);
 
@@ -132,6 +141,42 @@ final readonly class ProjectLifecycleStepStore
     }
 
     /**
+     * Sets the timeouts of other steps in the same write. A full list can then make room for a step, or move
+     * time between steps, without first storing a lower total that a list over the limit could not raise again.
+     *
+     * @param  list<LifecycleStep>  $steps
+     * @param  list<array{name: string, timeout_seconds: int}>  $timeouts
+     * @return list<LifecycleStep>
+     */
+    private function rebalance(array $steps, string $target, array $timeouts): array
+    {
+        $changes = [];
+
+        foreach ($timeouts as $timeout) {
+            $name = $timeout['name'];
+
+            if ($name === $target || array_key_exists($name, $changes)) {
+                $this->invalid('Each rebalanced step must be another step in the list, named once.');
+            }
+
+            $this->indexOfPlacement($steps, $name, 'The rebalanced step is unknown.');
+            $changes[$name] = $timeout['timeout_seconds'];
+        }
+
+        return array_map(function (LifecycleStep $step) use ($changes): LifecycleStep {
+            if (! array_key_exists($step->name, $changes)) {
+                return $step;
+            }
+
+            try {
+                return new LifecycleStep($step->name, $step->command, $changes[$step->name]);
+            } catch (InvalidArgumentException) {
+                $this->invalid('A lifecycle step is invalid.');
+            }
+        }, $steps);
+    }
+
+    /**
      * @param  list<LifecycleStep>  $steps
      * @return list<LifecycleStep>
      */
@@ -143,7 +188,7 @@ final readonly class ProjectLifecycleStepStore
     }
 
     /** @param list<LifecycleStep> $steps */
-    private function indexOfPlacement(array $steps, string $name): int
+    private function indexOfPlacement(array $steps, string $name, string $unknown = 'The placement step is unknown.'): int
     {
         foreach ($steps as $index => $step) {
             if ($step->name === $name) {
@@ -151,7 +196,7 @@ final readonly class ProjectLifecycleStepStore
             }
         }
 
-        $this->invalid('The placement step is unknown.');
+        $this->invalid($unknown);
     }
 
     /**
@@ -175,7 +220,8 @@ final readonly class ProjectLifecycleStepStore
     /**
      * A list may total at most `LifecycleStep::MaxTotalTimeoutSeconds`. A list stored before that limit
      * can total more; it accepts any change that does not raise its total, so it can always be lowered
-     * or shortened. At run time the request deadline still ends such a list cleanly.
+     * or shortened, and a write that rebalances other steps can add a step or move time between steps.
+     * At run time the request deadline still ends such a list cleanly.
      *
      * @param  list<LifecycleStep>  $steps
      * @param  list<LifecycleStep>  $previous

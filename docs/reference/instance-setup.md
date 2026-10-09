@@ -34,7 +34,7 @@ orbit instance:teardown-step:create drop-sqlite --project=4 --command='rm -f dat
 | --- | --- |
 | `instance:setup-step:create NAME --project=ID --command=COMMAND` | Add a setup step at the end, or at `--before=NAME` or `--after=NAME`. |
 | `instance:setup-step:list --project=ID` | List the setup steps in order. |
-| `instance:setup-step:update NAME --project=ID` | Change `--command`, `--timeout`, or the position. |
+| `instance:setup-step:update NAME --project=ID` | Change `--command`, `--timeout`, or the position. `--rebalance` changes other steps in the same write. |
 | `instance:setup-step:destroy NAME --project=ID` | Remove a setup step. The others keep their order. |
 | `instance:teardown-step:*` | The same four commands for the teardown list. |
 
@@ -48,8 +48,23 @@ The Gateway checks each change against these limits and stores nothing when one 
 | `command` | Nonempty UTF-8, at most 16 KiB, no NUL byte. |
 | `timeout_seconds` | 1 to 540. The default is 240. |
 | `before`, `after` | The name of a step in the same list. Use at most one. |
+| `rebalance` | Other steps in the same list and their new timeouts, each as `name` and `timeout_seconds`. The Gateway sets them in the same write. |
 
 A list holds at most 32 steps. The timeouts of one list add up to at most 540 seconds, so a whole list fits in one API request. The Gateway stores a step only when its timeout is inside that limit, and a later read returns the stored timeout.
+
+A list stored before that limit can total more. The Gateway keeps it, and accepts a change only when the change does not raise the list's total. A lower total becomes the new ceiling, so do not lower a step on its own to make room.
+
+### Make room in a full list
+
+To add a step to a full list, or to move time from one step to another, change the other steps in the same write. Repeat `--rebalance=NAME=SECONDS` for each step whose timeout changes. The Gateway checks the whole list after the change, so the total must stay within 540 seconds, or within the stored total of an older list.
+
+```bash
+orbit instance:setup-step:create browsers --project=4 --command='npx playwright install' --timeout=180 \
+  --after=install-js --rebalance=build-assets=360
+orbit instance:setup-step:update build-assets --project=4 --timeout=540 --rebalance=install-js=360
+```
+
+The first command adds a 180-second step and lowers `build-assets` by 180 seconds. The second gives that time back to `build-assets` and takes it from `install-js`. A write that would raise the total stores nothing and fails with `The lifecycle list timeout total is too large.`
 
 Authorized reads return the commands. [Activity](/cli/activity) records no input for the step commands and `instance:setup`, so it never holds command text or command output.
 
@@ -194,7 +209,7 @@ orbit node:excluded-project:list --node=NODE --json
 
 Replace `NODE` with each candidate. An eligible Node is active, has the `app-dev` role, is not in the Project exclusion list, and does not exclude Project 46. Install the helper on every eligible Node, including one that has no task checkout yet. A later workspace can land there.
 
-Confirm `task_check` is `composer check`. Confirm each stored `timeout_seconds` is an integer from 1 to 540. A new list totals at most 540 seconds. A list stored before that cap may total more, and a later change may not raise its total.
+Confirm `task_check` is `composer check`. Confirm each stored `timeout_seconds` is an integer from 1 to 540. A new list totals at most 540 seconds. A list stored before that cap may total more, and a later change may not raise its total. To add a step to such a list, [rebalance the other steps in the same write](#make-room-in-a-full-list).
 
 The task baseline runs each setup step with that step's own timeout, outside the API request deadline. `instance:create`, `instance:setup`, and `instance:destroy` run one whole list inside one request. Remote work ends at 570 seconds, and forward work stops 20 seconds earlier. `instance:create` holds 150 seconds back: 60 for teardown and 90 for removal.
 
