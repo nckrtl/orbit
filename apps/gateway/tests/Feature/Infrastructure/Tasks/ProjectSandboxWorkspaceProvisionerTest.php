@@ -56,7 +56,9 @@ it('enrolls and prepares one owned workspace through initial admission or cloud 
     $sandbox->forceFill(['enrolled_at' => null, 'pi_ready_at' => null])->save();
     if ($restore) {
         $sandbox->forceFill(['state' => SandboxState::Destroyed, 'desired_power' => 'destroyed', 'node_id' => null,
-            'server_id' => null, 'disk_id' => null, 'pi_token' => null, 'model_key' => null])->save();
+            'destroyed_at' => now(), 'pi_token' => null, 'model_key' => null])->save();
+        $workspace->node->roles()->delete();
+        $workspace->node->delete();
         $group->update(['status' => 'running', 'pr_url' => 'https://github.com/acme/dlf/pull/42']);
         GitHubTestSupport::storeApp();
         $github = mock(GitHubApi::class);
@@ -190,6 +192,10 @@ it('enrolls and prepares one owned workspace through initial admission or cloud 
         if ($restore) {
             expect($first->task_sandbox_id)->not->toBe($sandbox->id);
             expect($first->taskSandbox->spec['restore_commit'])->toBe(str_repeat('d', 40));
+            expect($sandbox->fresh()->server_id)->toBe($sandbox->server_id);
+            expect($sandbox->fresh()->disk_id)->toBe($sandbox->disk_id);
+            expect($sandbox->server_id)->not->toBeNull();
+            expect($sandbox->disk_id)->not->toBeNull();
         }
         expect($second->id)->toBe($first->id);
         expect($second->status)->toBe($web ? InstanceState::Active : InstanceState::SourceResolved);
@@ -231,8 +237,14 @@ it('refuses recovery before allocation when publication or cleanup cannot be con
     $group->update(['status' => 'running', 'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
         'pr_url' => $fault === 'foreign' ? 'https://github.com/acme/foreign/pull/42' : 'https://github.com/acme/dlf/pull/42']);
     $workspace->delete();
-    $sandbox->update(['state' => SandboxState::Destroyed, 'desired_power' => 'destroyed', 'node_id' => null,
-        'server_id' => $fault === 'cleanup' ? $sandbox->server_id : null, 'disk_id' => null]);
+    $sandbox->forceFill(['state' => SandboxState::Destroyed, 'desired_power' => $fault === 'power' ? 'running' : 'destroyed',
+        'node_id' => null, 'destroyed_at' => $fault === 'cleanup' ? null : now(),
+        'model_key' => $fault === 'model key' ? $sandbox->model_key : null,
+        'pi_token' => $fault === 'pi token' ? $sandbox->pi_token : null])->save();
+    if ($fault !== 'peer') {
+        $workspace->node->roles()->delete();
+        $workspace->node->delete();
+    }
     if ($fault === 'held') {
         $group->update(['watched_pr_completion' => 'merged']);
     }
@@ -265,7 +277,7 @@ it('refuses recovery before allocation when publication or cleanup cannot be con
     } finally {
         fclose($file);
     }
-})->with(['foreign', 'closed', 'missing-commit', 'api', 'cleanup', 'held']);
+})->with(['foreign', 'closed', 'missing-commit', 'api', 'cleanup', 'power', 'model key', 'pi token', 'peer', 'held']);
 
 it('refreshes local runtime through the same owned guest after park and preview reactivation', function (): void {
     $workspace = IncusRuntimeWorkspace::create();

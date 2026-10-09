@@ -483,7 +483,9 @@ The claim reserves and starts one VM, enrolls its owned Node, attaches one priva
 
 Review expiry, merge, and cancellation use the owned cleanup path. A failed cleanup retains destruction intent and provider IDs. Review feedback can use the original running VM during retention.
 
-When review feedback resumes a group whose UpCloud VM was destroyed, Orbit first confirms an open pull request in the Project repository. It reserves a replacement VM only after the old reservation has finished cleanup. It restores `task-{group id}` at the confirmed pull request commit using temporary GitHub App access, prepares fresh Pi and model credentials, and reruns Project setup and baseline checks before starting the implementer. A missing branch or mismatched commit keeps the group waiting; recovery never starts from the default branch. Retries preserve the replacement reservation and local work.
+When review feedback resumes a group whose UpCloud VM was destroyed, Orbit first confirms an open pull request in the Project repository. It reserves a replacement VM only after the old reservation records confirmed destruction, revokes its model and Pi credentials, and releases its fleet Node. Provider server and disk IDs remain in that reservation as audit history; recovery does not require clearing them.
+
+It restores `task-{group id}` at the confirmed pull request commit using temporary GitHub App access, prepares fresh Pi and model credentials, and reruns Project setup and baseline checks before starting the implementer. A missing branch or mismatched commit keeps the group waiting; recovery never starts from the default branch. Retries preserve the replacement reservation and local work.
 
 A destroyed cloud VM must finish branch recovery before preview access resumes. Keep unattended claims disabled until the complete live UpCloud flow has passed acceptance.
 
