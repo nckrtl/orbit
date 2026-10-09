@@ -7,7 +7,8 @@ namespace App\Console\Commands;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\TaskVms\TaskVmNetworkConfig;
+use App\Domain\TaskVms\TaskVmException;
+use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\WireGuard\Ipv4Subnet;
 use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\TaskVms\TaskVmSetupScript;
@@ -15,12 +16,12 @@ use App\Models\Cluster;
 use App\Models\Node;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Builder;
-use InvalidArgumentException;
+use Illuminate\Support\Facades\Config;
 
 /**
  * Installs the static task VM filter on the `vpn` Node. Every argument comes from Gateway rows and
- * settings. The filter matches only the reserved range, so the command refuses a range that holds a
- * fleet Node or an endpoint, or that lies outside the WireGuard subnet.
+ * `TaskVmSettings`, which already holds the range inside the WireGuard subnet. The filter cuts off
+ * every address in the range, so the command refuses a range that holds a Node other than a task VM.
  */
 final class PrepareTaskVmHubCommand extends Command
 {
@@ -36,28 +37,26 @@ final class PrepareTaskVmHubCommand extends Command
     #[\Override]
     protected $description = 'Install the static task VM filter for the reserved WireGuard range on the vpn Node.';
 
-    public function handle(TaskVmNetworkConfig $config, VpnSettings $vpn, TaskVmSetupScript $script): int
+    public function handle(VpnSettings $vpn, TaskVmSetupScript $script): int
     {
         try {
-            $subnet = Ipv4Subnet::from($vpn->subnet());
-            $range = $config->wireguardRange();
+            $settings = resolve(TaskVmSettings::class);
+            $range = Ipv4Subnet::from($settings->wireguardRange);
+            $model = $this->modelProxy($settings->modelProxyOrigin, $range);
+            $clusterId = $settings->devClusterId ?? throw $this->invalid('dev_cluster_id is not set.');
             $hub = $this->roleNode(RoleName::Vpn);
-            $gateway = $this->address($this->roleNode(RoleName::Gateway));
-            $reverb = $this->address($this->roleNode(RoleName::WebSocket));
-            $model = $config->modelProxyEndpoint();
-            $router = $this->address($this->router($config->devClusterId()));
-            $this->guardRange($range, $subnet, [$gateway, $reverb, $model['host'], $router]);
-            $arguments = [
+            $this->guardRange($range);
+            $script->run($hub, TaskVmSetupScript::HubScript, [
                 $range->value(),
-                $gateway,
-                $reverb.':'.self::ReverbPort,
-                $model['host'].':'.$model['port'],
-                $router,
-            ];
-            $script->run($hub, TaskVmSetupScript::HubScript, $arguments);
-        } catch (ResourceOperationException|InvalidArgumentException $exception) {
-            $code = $exception instanceof ResourceOperationException ? $exception->errorCode : 'vpn.subnet_invalid';
-            $this->error("[{$code}] {$exception->getMessage()}");
+                $vpn->dnsServer() ?? $this->address($hub),
+                $this->address($this->roleNode(RoleName::Gateway)),
+                (string) Config::integer('orbit.pi.port'),
+                $this->address($this->roleNode(RoleName::WebSocket)).':'.self::ReverbPort,
+                $model,
+                $this->address($this->router($clusterId)),
+            ]);
+        } catch (ResourceOperationException $exception) {
+            $this->error("[{$exception->errorCode}] {$exception->getMessage()}");
 
             return self::FAILURE;
         }
@@ -67,29 +66,27 @@ final class PrepareTaskVmHubCommand extends Command
         return self::SUCCESS;
     }
 
-    /** @param  list<string>  $endpoints */
-    private function guardRange(Ipv4Subnet $range, Ipv4Subnet $subnet, array $endpoints): void
+    /** The `ip:port` of the normalized model proxy origin. The host must be an IPv4 address outside the range. */
+    private function modelProxy(?string $origin, Ipv4Subnet $range): string
     {
-        if ($range->prefixLength() < $subnet->prefixLength() || ! $subnet->contains($range->networkAddress())) {
-            throw new ResourceOperationException(
-                'task_vm.range_outside_vpn_subnet',
-                "Range [{$range->value()}] is not inside the WireGuard subnet [{$subnet->value()}].",
-                409,
-            );
+        $parts = parse_url($origin ?? throw $this->invalid('model_proxy_origin is not set.'));
+        $host = is_array($parts) ? ($parts['host'] ?? '') : '';
+
+        if (! is_array($parts) || filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false || $range->contains($host)) {
+            throw $this->invalid("model_proxy_origin [{$origin}] must name an IPv4 address outside [{$range->value()}].");
         }
 
-        foreach ($endpoints as $endpoint) {
-            if (! $subnet->containsUsableAddress($endpoint) || $range->contains($endpoint)) {
-                throw $this->rangeInUse("Endpoint [{$endpoint}] must be a fleet address outside [{$range->value()}].");
-            }
-        }
+        return $host.':'.($parts['port'] ?? (($parts['scheme'] ?? '') === 'https' ? 443 : 80));
+    }
 
+    private function guardRange(Ipv4Subnet $range): void
+    {
         $nodes = Node::query()->whereNotNull('wireguard_ip')->get(['name', 'wireguard_ip']);
 
         foreach ($nodes as $node) {
             if (is_string($node->wireguard_ip) && $range->contains($node->wireguard_ip)
                 && preg_match(self::TaskVmNodeName, $node->name) !== 1) {
-                throw $this->rangeInUse("Node [{$node->name}] holds [{$node->wireguard_ip}] inside [{$range->value()}].");
+                throw new TaskVmException('task_vm.range_in_use', "Node [{$node->name}] holds [{$node->wireguard_ip}] inside [{$range->value()}].");
             }
         }
     }
@@ -104,11 +101,7 @@ final class PrepareTaskVmHubCommand extends Command
             ->get();
 
         if ($nodes->count() !== 1) {
-            throw new ResourceOperationException(
-                'task_vm.fleet_unavailable',
-                "Expected exactly one active [{$role->value}] Node, found [{$nodes->count()}].",
-                409,
-            );
+            throw $this->unavailable("Expected exactly one active [{$role->value}] Node, found [{$nodes->count()}].");
         }
 
         return $nodes->firstOrFail();
@@ -119,11 +112,7 @@ final class PrepareTaskVmHubCommand extends Command
         $router = Cluster::query()->find($clusterId)?->routerAssignment?->node;
 
         if (! $router instanceof Node || $router->status !== LifecycleStatus::Active) {
-            throw new ResourceOperationException(
-                'task_vm.fleet_unavailable',
-                "Cluster [{$clusterId}] has no active router Node.",
-                409,
-            );
+            throw $this->unavailable("Cluster [{$clusterId}] has no active router Node.");
         }
 
         return $router;
@@ -132,18 +121,19 @@ final class PrepareTaskVmHubCommand extends Command
     private function address(Node $node): string
     {
         if (! is_string($node->wireguard_ip) || $node->wireguard_ip === '') {
-            throw new ResourceOperationException(
-                'task_vm.fleet_unavailable',
-                "Node [{$node->name}] has no WireGuard address.",
-                409,
-            );
+            throw $this->unavailable("Node [{$node->name}] has no WireGuard address.");
         }
 
         return $node->wireguard_ip;
     }
 
-    private function rangeInUse(string $message): ResourceOperationException
+    private function unavailable(string $message): TaskVmException
     {
-        return new ResourceOperationException('task_vm.range_in_use', $message, 409);
+        return new TaskVmException('task_vm.fleet_unavailable', $message);
+    }
+
+    private function invalid(string $reason): TaskVmException
+    {
+        return new TaskVmException('task_vm.invalid_config', "The task VM config is invalid: {$reason}", 500);
     }
 }

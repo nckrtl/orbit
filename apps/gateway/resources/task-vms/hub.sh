@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Installs the static task VM filter on the WireGuard hub. Idempotent. Runs as root.
-# Usage: hub.sh <range> <gateway-ip> <reverb-ip:port> <model-ip:port> <router-ip>...
-#   <range> is the reserved task VM WireGuard range.
+# Usage: hub.sh <range> <dns-ip> <gateway-ip> <pi-port> <reverb-ip:port> <model-ip:port> <router-ip>...
+#   <range> is the reserved task VM WireGuard range. <dns-ip> is the VPN DNS address on this hub.
 # Every rule that can end in `drop` matches a source or destination inside <range>.
 # A packet with neither address in <range> leaves the table at its first IPv4 rule. An `accept` in this
 # table only ends this table; ufw and every other table still see the packet, so the table can only
@@ -22,16 +22,18 @@ trap 'if [ -n "$candidate" ]; then rm -f -- "$candidate"; fi' EXIT
 main() {
     exec 3>&1 1>&2 </dev/null
 
-    [ "$#" -ge 5 ] || fail 'usage: hub.sh <range> <gateway-ip> <reverb-ip:port> <model-ip:port> <router-ip>...'
+    [ "$#" -ge 7 ] || fail 'usage: hub.sh <range> <dns-ip> <gateway-ip> <pi-port> <reverb-ip:port> <model-ip:port> <router-ip>...'
 
     local ipv4='(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}'
     local port='([1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])'
-    local range=$1 gateway=$2 reverb=$3 model=$4
-    shift 4
+    local range=$1 dns=$2 gateway=$3 pi_port=$4 reverb=$5 model=$6
+    shift 6
     local routers=("$@") router
 
     [[ $range =~ ^$ipv4/(1[6-9]|2[0-9]|30)$ ]] || fail "invalid range [$range]"
+    [[ $dns =~ ^$ipv4$ ]] || fail "invalid DNS address [$dns]"
     [[ $gateway =~ ^$ipv4$ ]] || fail "invalid gateway address [$gateway]"
+    [[ $pi_port =~ ^$port$ ]] || fail "invalid Pi port [$pi_port]"
     [[ $reverb =~ ^$ipv4:$port$ ]] || fail "invalid Reverb endpoint [$reverb]"
     [[ $model =~ ^$ipv4:$port$ ]] || fail "invalid model proxy endpoint [$model]"
     for router in "${routers[@]}"; do
@@ -74,7 +76,7 @@ table inet orbit_task_vms {
         ip saddr $range ip daddr $gateway tcp dport 443 accept
         ip saddr $range ip daddr ${reverb%:*} tcp dport ${reverb##*:} accept
         ip saddr $range ip daddr ${model%:*} tcp dport ${model##*:} accept
-        ip saddr $gateway ip daddr $range tcp dport { 22, 3774 } accept
+        ip saddr $gateway ip daddr $range tcp dport { 22, $pi_port } accept
         ip saddr { $router_set } ip daddr $range tcp dport { 80, 443, 5173 } accept
         ip saddr $range drop
         ip daddr $range drop
@@ -88,8 +90,8 @@ table inet orbit_task_vms {
         ip daddr $gateway tcp dport 443 accept
         ip daddr ${reverb%:*} tcp dport ${reverb##*:} accept
         ip daddr ${model%:*} tcp dport ${model##*:} accept
-        udp dport 53 accept
-        tcp dport 53 accept
+        ip daddr $dns udp dport 53 accept
+        ip daddr $dns tcp dport 53 accept
         drop
     }
 }
@@ -102,10 +104,11 @@ NFT
 
     # The unit loads the table before the tunnel starts, so the filter is in place whenever the hub
     # forwards. The tunnel pulls it in but does not require it, so a failed load never stops the fleet VPN.
+    # It loads after nftables.service, whose boot-time `flush ruleset` would otherwise remove the table.
     local unit_text="[Unit]
 Description=Orbit task VM filter on the WireGuard hub
 DefaultDependencies=no
-After=local-fs.target
+After=local-fs.target nftables.service
 Before=wg-quick@orbit.service
 
 [Service]
@@ -124,6 +127,7 @@ WantedBy=wg-quick@orbit.service multi-user.target"
     fi
     systemctl enable --quiet "$unit_name"
     systemctl restart "$unit_name"
+    "$nft" list table inet orbit_task_vms >/dev/null || fail 'table inet orbit_task_vms is not loaded'
 
     printf '{"ok":true}\n' >&3
 }

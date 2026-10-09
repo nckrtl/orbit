@@ -108,9 +108,19 @@ it('skips the reserved task VM range when it allocates a fleet address', functio
 
 it('allocates fleet addresses as before while the reserved range lies outside the subnet', function (): void {
     configure_wireguard_subnet('10.44.0.0/24');
-    config()->set('task_vms.wireguard_range', '10.44.64.0/20');
+    config()->set('task_vms.wireguard_range', '10.45.0.0/25');
 
     expect(app(WireGuardAddressAllocator::class)->next())->toBe('10.44.0.1');
+});
+
+it('fails closed when a task VM value is invalid', function (): void {
+    configure_wireguard_subnet('10.44.0.0/24');
+    config()->set('task_vms.incus.hosts', null);
+
+    expect(fn (): string => app(WireGuardAddressAllocator::class)->next())
+        ->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('task_vm.invalid_config');
+        });
 });
 
 it('allocates the next free address inside a range of the subnet', function (): void {
@@ -119,22 +129,12 @@ it('allocates the next free address inside a range of the subnet', function (): 
     $allocator = app(WireGuardAddressAllocator::class);
 
     expect($allocator->nextIn('10.44.0.128/25', []))->toBe('10.44.0.130')
-        ->and($allocator->nextIn('10.44.0.128/25', ['10.44.0.130', '10.44.0.131']))->toBe('10.44.0.132');
-});
-
-it('refuses a range outside the subnet, an invalid range and a full range', function (string $range, array $taken, string $code): void {
-    configure_wireguard_subnet('10.44.0.0/24');
-
-    expect(fn (): string => app(WireGuardAddressAllocator::class)->nextIn($range, $taken))
-        ->toThrow(function (ResourceOperationException $exception) use ($code): void {
-            expect($exception->errorCode)->toBe($code);
+        ->and($allocator->nextIn('10.44.0.128/25', ['10.44.0.130', '10.44.0.131']))->toBe('10.44.0.132')
+        ->and(fn (): string => $allocator->nextIn('10.44.0.252/30', ['10.44.0.253', '10.44.0.254']))
+        ->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('vpn.peer_address_exhausted');
         });
-})->with([
-    'outside' => ['10.44.64.0/20', [], 'vpn.peer_address_invalid'],
-    'wider than the subnet' => ['10.44.0.0/23', [], 'vpn.peer_address_invalid'],
-    'invalid' => ['10.44.0.129/25', [], 'vpn.subnet_invalid'],
-    'full' => ['10.44.0.252/30', ['10.44.0.253', '10.44.0.254'], 'vpn.peer_address_exhausted'],
-]);
+});
 
 function configure_wireguard_subnet(string $subnet): void
 {

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\TaskVms;
 
-use App\Domain\Shared\ResourceOperationException;
+use App\Domain\TaskVms\TaskVmException;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
@@ -36,7 +36,7 @@ final readonly class TaskVmSetupScript
         $source = file_get_contents(resource_path('task-vms/'.$script));
 
         if (! is_string($source) || ! is_string($node->wireguard_ip) || $node->wireguard_ip === '') {
-            throw new ResourceOperationException('task_vm.setup_unavailable', "Cannot run [{$script}] on Node [{$node->name}].", 409);
+            throw new TaskVmException('task_vm.setup_unavailable', "Cannot run [{$script}] on Node [{$node->name}].");
         }
 
         $result = $this->ssh->execute(
@@ -54,10 +54,9 @@ final readonly class TaskVmSetupScript
         if (! $result->succeeded() || trim($result->stdout) !== self::Confirmation) {
             $detail = implode("\n", array_slice(explode("\n", trim($result->stderr)), -10));
 
-            throw new ResourceOperationException(
+            throw new TaskVmException(
                 'task_vm.setup_failed',
                 "[{$script}] failed on Node [{$node->name}] with exit code [{$result->exitCode}].".($detail === '' ? '' : "\n{$detail}"),
-                409,
             );
         }
     }

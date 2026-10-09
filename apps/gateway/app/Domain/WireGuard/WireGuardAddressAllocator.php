@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\WireGuard;
 
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\TaskVms\TaskVmNetworkConfig;
+use App\Domain\TaskVms\TaskVmSettings;
 use App\Models\Node;
 use InvalidArgumentException;
 
@@ -13,14 +13,16 @@ final readonly class WireGuardAddressAllocator
 {
     public function __construct(
         private VpnSettings $settings,
-        private TaskVmNetworkConfig $taskVms,
     ) {}
 
-    /** The next free fleet address. It never lies in the range reserved for task VMs. */
+    /**
+     * The next free fleet address. It never lies in the range reserved for task VMs. It reads the
+     * range through `TaskVmSettings`, so an invalid task VM config fails with `task_vm.invalid_config`.
+     */
     public function next(): string
     {
         $subnet = $this->subnet();
-        $reserved = $this->taskVms->wireguardRange();
+        $reserved = Ipv4Subnet::from(resolve(TaskVmSettings::class)->wireguardRange);
         $used = $this->nodeAddresses();
 
         foreach ($subnet->usableAddresses() as $address) {
@@ -37,28 +39,14 @@ final readonly class WireGuardAddressAllocator
     }
 
     /**
-     * The next free address inside a range of the fleet subnet, such as the task VM range.
+     * The next free address inside a range of the fleet subnet, such as the task VM range that
+     * `TaskVmSettings` validated.
      *
      * @param  list<string>  $taken  addresses that are reserved but may not belong to a Node yet
      */
     public function nextIn(string $cidr, array $taken): string
     {
-        try {
-            $range = Ipv4Subnet::from($cidr);
-        } catch (InvalidArgumentException) {
-            throw $this->invalidSubnet($cidr);
-        }
-
-        $subnet = $this->subnet();
-
-        if ($range->prefixLength() < $subnet->prefixLength() || ! $subnet->contains($range->networkAddress())) {
-            throw new ResourceOperationException(
-                errorCode: 'vpn.peer_address_invalid',
-                message: "Range [{$range->value()}] is not inside the WireGuard subnet [{$subnet->value()}].",
-                status: 409,
-            );
-        }
-
+        $range = Ipv4Subnet::from($cidr);
         $used = [...$this->nodeAddresses(), ...$taken];
 
         foreach ($range->usableAddresses() as $address) {

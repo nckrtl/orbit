@@ -24,7 +24,7 @@ main() {
 
     local project=$1 network=$2 cidr=$3 pool=$4 image=$5
 
-    [[ $project =~ ^[a-z][a-z0-9-]{0,62}$ ]] || fail "invalid project [$project]"
+    [[ $project =~ ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$ ]] || fail "invalid project [$project]"
     [[ $network =~ ^orbittask[a-z0-9]{1,6}$ ]] || fail "invalid network [$network]"
     [[ $pool =~ ^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$ ]] || fail "invalid pool [$pool]"
     [[ $image =~ ^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$ ]] || fail "invalid image alias [$image]"
@@ -47,15 +47,15 @@ main() {
     command -v incus >/dev/null || fail 'incus is not installed'
     command -v ufw >/dev/null || fail 'ufw is not installed'
 
-    # Project: images and profiles are per project; networks and ACLs stay in `default`.
+    # Project: images and profiles are per project; networks and ACLs stay in `default`, named explicitly.
     if ! exists incus project show "$project"; then
         incus project create "$project" -c features.images=true -c features.profiles=true -c features.networks=false
     fi
     [ "$(incus project get "$project" features.networks)" != true ] || fail "project [$project] has its own networks"
 
     # Egress ACL. `edit` replaces the whole rule set, so repeated runs converge.
-    exists incus network acl show "$acl" || incus network acl create "$acl"
-    incus network acl edit "$acl" <<YAML
+    exists incus network acl show "$acl" --project default || incus network acl create "$acl" --project default
+    incus network acl edit "$acl" --project default <<YAML
 description: Orbit task VM boundary
 egress:
 - action: drop
@@ -72,16 +72,16 @@ ingress:
 YAML
 
     # Bridge with the ACL attached at creation, so no VM ever runs on it without the boundary.
-    if ! exists incus network show "$network"; then
-        incus network create "$network" --type=bridge \
+    if ! exists incus network show "$network" --project default; then
+        incus network create "$network" --project default --type=bridge \
             "ipv4.address=$bridge_ip/$prefix" ipv4.nat=true ipv6.address=none "security.acls=$acl" \
             security.acls.default.ingress.action=reject security.acls.default.egress.action=reject
     fi
     local current
-    current=$(incus network get "$network" ipv4.address)
+    current=$(incus network get "$network" ipv4.address --project default)
     [ "$current" = "$bridge_ip/$prefix" ] ||
         fail "network [$network] has address [$current], expected [$bridge_ip/$prefix]"
-    incus network set "$network" ipv4.nat=true ipv6.address=none "security.acls=$acl" \
+    incus network set "$network" --project default ipv4.nat=true ipv6.address=none "security.acls=$acl" \
         security.acls.default.ingress.action=reject security.acls.default.egress.action=reject
 
     # Default profile of the project: root on the pool, NIC on the bridge with L2 port isolation.
@@ -103,6 +103,7 @@ YAML
     fi
 
     # Routed traffic from every Orbit task bridge. Return traffic uses ufw's ESTABLISHED accept.
+    # The rule trusts the prefix: only this script creates `orbittask*` bridges, always with the ACL.
     ufw route allow in on 'orbittask+' comment 'orbit-task-vms'
 
     printf '{"ok":true}\n' >&3

@@ -16,12 +16,8 @@ use Tests\Support\AppDevFakeSshExecutor;
 
 beforeEach(function (): void {
     app(VpnSettings::class)->configure(subnet: '10.44.0.0/24');
-    config()->set('task_vms', [
-        'wireguard_range' => '10.44.0.128/25',
-        'dev_cluster_id' => null,
-        'model_proxy_origin' => 'http://10.44.0.3:8317',
-        'incus' => ['hosts' => []],
-    ]);
+    config()->set('task_vms.wireguard_range', '10.44.0.128/25');
+    config()->set('task_vms.model_proxy_origin', 'http://10.44.0.3:8317');
     $this->ssh = new AppDevFakeSshExecutor([new CommandResult(0, "{\"ok\":true}\n", 'Rule added', 1, false)]);
     app()->instance(SshExecutor::class, $this->ssh);
 });
@@ -51,7 +47,7 @@ describe('task-vms:prepare-host', function (): void {
 
     it('refuses invalid host settings before it connects', function (array $host, string $message): void {
         $beast = task_vm_fleet_node('beast', '10.44.0.7', [RoleName::AppDev]);
-        config()->set('task_vms.incus.hosts', [['node_id' => $beast->id, 'cidr' => '10.252.0.0/24', ...$host]]);
+        config()->set('task_vms.incus.hosts', [['node_id' => $beast->id, 'cidr' => '10.252.0.0/24', 'max_vms' => 4, ...$host]]);
 
         $this->artisan('task-vms:prepare-host', ['node' => (string) $beast->id])
             ->expectsOutputToContain($message)
@@ -59,11 +55,8 @@ describe('task-vms:prepare-host', function (): void {
 
         expect($this->ssh->commands)->toBe([]);
     })->with([
-        'network outside the reserved prefix' => [['network' => 'incusbr0'], '[task_vm.settings_invalid] The host network [incusbr0] is invalid.'],
-        'project with shell text' => [['project' => 'x; rm -rf /'], 'The host project [x; rm -rf /] is invalid.'],
-        'public cidr' => [['cidr' => '8.8.8.0/24'], 'must be a private network from /16 to /28'],
-        'cidr overlapping the fleet' => [['cidr' => '10.44.0.0/16'], 'overlaps [10.44.0.128/25]'],
-        'cidr not a network address' => [['cidr' => '10.252.0.1/24'], 'is not an IPv4 network'],
+        'network outside the reserved prefix' => [['network' => 'incusbr0'], '[task_vm.invalid_config] The task VM config is invalid: incus.hosts.0.network is invalid.'],
+        'cidr overlapping the fleet' => [['cidr' => '10.44.0.0/16'], 'incus.hosts.0.cidr must not overlap the VPN subnet [10.44.0.0/24].'],
     ]);
 
     it('refuses a Node that is not a configured task VM host', function (): void {
@@ -78,7 +71,7 @@ describe('task-vms:prepare-host', function (): void {
 
     it('fails when the script does not confirm', function (): void {
         $beast = task_vm_fleet_node('beast', '10.44.0.7', [RoleName::AppDev]);
-        config()->set('task_vms.incus.hosts', [['node_id' => $beast->id, 'cidr' => '10.252.0.0/24']]);
+        config()->set('task_vms.incus.hosts', [['node_id' => $beast->id, 'cidr' => '10.252.0.0/24', 'max_vms' => 4]]);
         $this->ssh = new AppDevFakeSshExecutor([new CommandResult(1, '', "incus-host: ufw is not installed\n", 1, false)]);
         app()->instance(SshExecutor::class, $this->ssh);
 
@@ -112,9 +105,20 @@ describe('task-vms:prepare-hub', function (): void {
         expect($this->ssh->connections[0]->host)->toBe('10.44.0.1')
             ->and($this->ssh->connections[0]->user)->toBe('orbit')
             ->and($this->ssh->commands[0]->arguments)->toBe([
-                'sudo', '-n', 'bash', '-s', '--', '10.44.0.128/25', '10.44.0.2', '10.44.0.3:443', '10.44.0.3:8317', '10.44.0.7',
+                'sudo', '-n', 'bash', '-s', '--', '10.44.0.128/25', '10.44.0.1', '10.44.0.2', '3774', '10.44.0.3:443', '10.44.0.3:8317', '10.44.0.7',
             ])
             ->and($this->ssh->commands[0]->input)->toBe(file_get_contents(resource_path('task-vms/hub.sh')));
+    });
+
+    it('passes the configured VPN DNS address, Pi port, and default origin port', function (): void {
+        app(VpnSettings::class)->configure(subnet: '10.44.0.0/24', dnsServer: '10.44.0.53');
+        config()->set('orbit.pi.port', 4774);
+        config()->set('task_vms.model_proxy_origin', 'https://10.44.0.3');
+
+        $this->artisan('task-vms:prepare-hub')->assertSuccessful();
+
+        expect(array_slice($this->ssh->commands[0]->arguments, 5, 6))
+            ->toBe(['10.44.0.128/25', '10.44.0.53', '10.44.0.2', '4774', '10.44.0.3:443', '10.44.0.3:443']);
     });
 
     it('allows task VM Nodes inside the range', function (): void {
@@ -133,12 +137,12 @@ describe('task-vms:prepare-hub', function (): void {
         expect($this->ssh->commands)->toBe([]);
     })->with([
         'range outside the WireGuard subnet' => [
-            fn () => config()->set('task_vms.wireguard_range', '10.44.64.0/20'),
-            '[task_vm.range_outside_vpn_subnet] Range [10.44.64.0/20] is not inside the WireGuard subnet [10.44.0.0/24].',
+            fn () => config()->set('task_vms.wireguard_range', '10.45.0.0/25'),
+            '[task_vm.invalid_config] The task VM config is invalid: wireguard_range must be a smaller network inside the VPN subnet [10.44.0.0/24].',
         ],
         'range that covers the whole subnet' => [
             fn () => config()->set('task_vms.wireguard_range', '10.44.0.0/23'),
-            '[task_vm.range_outside_vpn_subnet]',
+            'wireguard_range must be a smaller network inside the VPN subnet',
         ],
         'fleet Node inside the range' => [
             fn () => task_vm_fleet_node('laptop', '10.44.0.200', []),
@@ -146,11 +150,19 @@ describe('task-vms:prepare-hub', function (): void {
         ],
         'model proxy inside the range' => [
             fn () => config()->set('task_vms.model_proxy_origin', 'http://10.44.0.140:8317'),
-            '[task_vm.range_in_use] Endpoint [10.44.0.140]',
+            '[task_vm.invalid_config] The task VM config is invalid: model_proxy_origin [http://10.44.0.140:8317] must name an IPv4 address outside [10.44.0.128/25].',
         ],
         'model proxy by name' => [
             fn () => config()->set('task_vms.model_proxy_origin', 'http://models.orbit:8317'),
-            '[task_vm.range_in_use] Endpoint [models.orbit]',
+            '[task_vm.invalid_config] The task VM config is invalid: model_proxy_origin [http://models.orbit:8317] must name an IPv4 address',
+        ],
+        'no model proxy' => [
+            fn () => config()->set('task_vms.model_proxy_origin', null),
+            '[task_vm.invalid_config] The task VM config is invalid: model_proxy_origin is not set.',
+        ],
+        'no dev Cluster' => [
+            fn () => config()->set('task_vms.dev_cluster_id', null),
+            '[task_vm.invalid_config] The task VM config is invalid: dev_cluster_id is not set.',
         ],
         'missing dev Cluster' => [
             fn () => config()->set('task_vms.dev_cluster_id', 999),
@@ -204,10 +216,12 @@ describe('task VM setup scripts', function (): void {
         'host cidr not a network' => ['incus-host.sh', ['orbit-tasks', 'orbittask0', '10.252.0.1/24', 'default', 'img'], 'not a network address'],
         'host cidr too wide' => ['incus-host.sh', ['orbit-tasks', 'orbittask0', '10.0.0.0/8', 'default', 'img'], 'prefix must be /16 to /28'],
         'host argument count' => ['incus-host.sh', ['orbit-tasks'], 'usage: incus-host.sh'],
-        'hub range not a network' => ['hub.sh', ['10.44.0.129/25', '10.44.0.2', '10.44.0.3:443', '10.44.0.3:8317', '10.44.0.7'], 'range is not a network address'],
-        'hub port out of range' => ['hub.sh', ['10.44.0.128/25', '10.44.0.2', '10.44.0.3:99999', '10.44.0.3:8317', '10.44.0.7'], 'invalid Reverb endpoint'],
-        'hub router with rule text' => ['hub.sh', ['10.44.0.128/25', '10.44.0.2', '10.44.0.3:443', '10.44.0.3:8317', '10.44.0.7 accept'], 'invalid router address'],
-        'hub without router' => ['hub.sh', ['10.44.0.128/25', '10.44.0.2', '10.44.0.3:443', '10.44.0.3:8317'], 'usage: hub.sh'],
+        'hub range not a network' => ['hub.sh', ['10.44.0.129/25', '10.44.0.1', '10.44.0.2', '3774', '10.44.0.3:443', '10.44.0.3:8317', '10.44.0.7'], 'range is not a network address'],
+        'hub port out of range' => ['hub.sh', ['10.44.0.128/25', '10.44.0.1', '10.44.0.2', '3774', '10.44.0.3:99999', '10.44.0.3:8317', '10.44.0.7'], 'invalid Reverb endpoint'],
+        'hub router with rule text' => ['hub.sh', ['10.44.0.128/25', '10.44.0.1', '10.44.0.2', '3774', '10.44.0.3:443', '10.44.0.3:8317', '10.44.0.7 accept'], 'invalid router address'],
+        'hub without router' => ['hub.sh', ['10.44.0.128/25', '10.44.0.1', '10.44.0.2', '3774', '10.44.0.3:443', '10.44.0.3:8317'], 'usage: hub.sh'],
+        'hub DNS address with rule text' => ['hub.sh', ['10.44.0.128/25', '10.44.0.1 accept', '10.44.0.2', '3774', '10.44.0.3:443', '10.44.0.3:8317', '10.44.0.7'], 'invalid DNS address'],
+        'hub Pi port not a number' => ['hub.sh', ['10.44.0.128/25', '10.44.0.1', '10.44.0.2', '22 }', '10.44.0.3:443', '10.44.0.3:8317', '10.44.0.7'], 'invalid Pi port'],
     ]);
 });
 
