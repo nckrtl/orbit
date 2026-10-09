@@ -8,25 +8,25 @@ use App\Domain\Projects\DevelopmentDeployStep;
 use App\Infrastructure\Processes\CommandResult;
 use App\Models\Instance;
 
+/** Deploys a development default in its own checkout. */
 interface DevelopmentDeployment
 {
-    public function initialize(Instance $instance): void;
+    /** Turns an old release layout into a plain checkout once and returns the commit it serves. */
+    public function convert(Instance $instance): string;
 
-    public function target(Instance $instance): string;
+    /** Fetches the Project's default branch. */
+    public function target(Instance $instance): DevelopmentTarget;
 
-    public function selected(Instance $instance): DeploymentRelease;
+    public function checkout(Instance $instance, string $commit, DeploymentRequest $request): void;
 
-    public function releases(Instance $instance): DeploymentReleaseState;
-
-    public function prepare(Instance $instance, string $commit): DeploymentRelease;
-
-    public function executeStep(Instance $instance, DeploymentRelease $release, DevelopmentDeployStep $step, DeploymentRequest $request): CommandResult;
-
-    public function activate(Instance $instance, DeploymentRelease $release): DeploymentRelease;
+    public function executeStep(Instance $instance, DevelopmentDeployStep $step, DeploymentRequest $request): CommandResult;
 
     /**
-     * Keeps the selected release and every seed another Instance leases, then the previous selection while the home
-     * holds fewer than DeploymentRelease::RETAINED_PER_HOME. It removes the other releases.
+     * Removes what is left of the old release layout after `convert`, and returns the names of the
+     * release folders it kept because Orbit does not own them.
+     *
+     * @param  list<string>  $consumers  The checkouts seeded from this default.
+     * @return list<string>
      */
-    public function prune(Instance $instance, DeploymentRelease $selected): void;
+    public function removeReleases(Instance $instance, array $consumers): array;
 }

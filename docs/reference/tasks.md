@@ -1568,13 +1568,13 @@ The engine knows the configured check, lifecycle steps, workspace routing, and t
 
 Task create accepts no planner. There is no `plan` field, no planner thread, and no stored planner state. An external ADE plans and steers the work. Orbit runs the assigned work.
 
-### Starting from the default release
+### Starting from the default checkout
 
-A new task workspace is a linked worktree of the Project's `default` repository on the selected Node. Its task branch starts at the current successful release's commit, not a newer fetched default branch. Orbit reads the authoritative `current` selection under the Node source lock, records `seed_path` and `seed_commit` on the new Instance before preparing its source, and preserves that selection on retries. An empty selection is recorded too: a later default deployment does not reseed a clone that already started without a release.
+A new task workspace is a linked worktree of the Project's `default` repository on the selected Node. Its task branch starts at the last commit that [deployed](/reference/deployments#development-defaults) in the default's checkout, not a newer fetched default branch. Orbit reads that commit under the Node source lock, records `seed_path` and `seed_commit` on the new Instance before preparing its source, and preserves that selection on retries. An empty selection is recorded too: a later default deployment does not reseed a clone that already started without a seed.
 
-The default Instance API also reads that selection, so an interrupted release switch cannot expose stale database fields. Both explicit Instance setup and asynchronous task baseline setup receive the recorded `ORBIT_SEED_PATH` and `ORBIT_SEED_COMMIT`; the Project copies its own dependency and cache folders from that release with reflinks. The workspace never writes back to the seed.
+Both explicit Instance setup and asynchronous task baseline setup receive the recorded `ORBIT_SEED_PATH` and `ORBIT_SEED_COMMIT`; the Project copies its own dependency and cache folders from the default checkout with reflinks, then runs its locked installs. A deployment of the default can change those folders during the copy. The workspace never writes back to the seed.
 
-When the Project has no development release on that Node, Orbit creates an independent clone and resolves its branch as before. The seed variables are empty and setup must install dependencies from its lock files. There is no automatic root-only dependency copy. External `instance:register` callers read `seed_path` and `seed_commit` from the `default` Instance API, create a branch and linked worktree at that commit, then register it and run setup.
+When the Project's default has not deployed on that Node, Orbit creates an independent clone and resolves its branch as before. The seed variables are empty and setup must install dependencies from its lock files. There is no automatic root-only dependency copy. External `instance:register` callers read `seed_path` and `seed_commit` from the `default` Instance API, create a branch and linked worktree at that commit, then register it and run setup.
 
 ### Routing and cleanup
 

@@ -3,9 +3,8 @@
 declare(strict_types=1);
 
 use App\Domain\AppDev\RuntimeConvergenceException;
-use App\Domain\Instances\Deployment\DeploymentRelease;
-use App\Domain\Instances\Deployment\DeploymentReleaseState;
 use App\Domain\Instances\Deployment\DevelopmentDeployment;
+use App\Domain\Instances\Deployment\DevelopmentTarget;
 use App\Domain\Projects\DevelopmentDeployStep;
 use App\Domain\Projects\ProjectDevelopmentDeployStepStore;
 use App\Infrastructure\Processes\CommandResult;
@@ -18,17 +17,12 @@ it('deploys an app-dev default through the existing API and preserves best-effor
     $home = '/fast/apps/deployment-stream/default';
     $fixture->instance->update(['name' => 'default', 'source_layout' => 'checkout', 'checkout_path' => $home]);
     app(ProjectDevelopmentDeployStepStore::class)->create($fixture->instance->project, new DevelopmentDeployStep('warm', 'false', required: false), null, null);
-    $previous = new DeploymentRelease('initial', $home.'/releases/initial', str_repeat('a', 40));
-    $release = new DeploymentRelease('fresh', $home.'/releases/fresh', str_repeat('b', 40));
+    $commit = str_repeat('b', 40);
     $remote = Mockery::mock(DevelopmentDeployment::class);
-    $remote->shouldReceive('initialize')->once();
-    $remote->shouldReceive('selected')->once()->andReturn($previous);
-    $remote->shouldReceive('target')->once()->andReturn($release->commit);
-    $remote->shouldReceive('prune')->twice();
-    $remote->shouldReceive('prepare')->once()->andReturn($release);
+    $remote->shouldReceive('target')->once()->andReturn(new DevelopmentTarget($commit, false));
+    $remote->shouldReceive('checkout')->once();
     $remote->shouldReceive('executeStep')->once()->andThrow(new RuntimeConvergenceException('deployment-step-warm', 'deployment.step_failed', 'Failed warm-up.', result: new CommandResult(42, '', '', 1, false)));
-    $remote->shouldReceive('activate')->once()->andReturn($release);
-    $remote->shouldReceive('releases')->once()->andReturn(new DeploymentReleaseState(['fresh', 'initial'], 'fresh'));
+    $remote->shouldNotReceive('convert', 'removeReleases');
     app()->instance(DevelopmentDeployment::class, $remote);
 
     $response = $this->withServerVariables(['REMOTE_ADDR' => $fixture->caller->wireguard_ip])
@@ -40,12 +34,13 @@ it('deploys an app-dev default through the existing API and preserves best-effor
     $output = array_values(array_filter($events, static fn (array $event): bool => $event['type'] === 'output'));
 
     expect($final['status'])->toBe('succeeded')
-        ->and($final['selected_release'])->toBe('fresh')
+        ->and($final['selected_release'])->toBeNull()
         ->and(base64_decode($output[0]['data_base64']))->toContain('Best-effort step failed (exit 42): warm')
         ->and(InstanceDeployment::query()->sole()->status)->toBe('succeeded')
-        ->and(InstanceDeployment::query()->sole()->selected_release)->toBe('fresh')
+        ->and(InstanceDeployment::query()->sole()->selected_release)->toBeNull()
+        ->and(InstanceDeployment::query()->sole()->commit)->toBe($commit)
         ->and($fixture->deployment->invocations)->toBe(0);
-    $this->getJson("/api/v1/instances/{$fixture->instance->id}/releases")->assertOk()->assertJsonPath('data.selected_release', 'fresh');
+    $this->getJson("/api/v1/instances/{$fixture->instance->id}/releases")->assertOk()->assertJsonPath('data.selected_release', null)->assertJsonPath('data.releases', []);
     $history = $this->getJson("/api/v1/instances/{$fixture->instance->id}/deployments");
-    $history->assertOk()->assertJsonPath('data.0.status', 'succeeded');
+    $history->assertOk()->assertJsonPath('data.0.status', 'succeeded')->assertJsonPath('data.0.commit', $commit);
 });

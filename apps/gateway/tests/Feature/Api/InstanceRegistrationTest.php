@@ -5,8 +5,6 @@ declare(strict_types=1);
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Instances\ComposerSourceClassifier;
-use App\Domain\Instances\Deployment\DeploymentRelease;
-use App\Domain\Instances\Deployment\DevelopmentDeployment;
 use App\Domain\Instances\DevelopmentInstanceConfigurator;
 use App\Domain\Instances\DevelopmentRouteProjector;
 use App\Domain\Instances\DevelopmentSourceProfile;
@@ -267,18 +265,17 @@ it('binds registration seed selection to the adopted source commit', function (b
     $commit = str_repeat($matching ? 'a' : 'b', 40);
     Instance::query()->create([
         'project_id' => $project->id, 'node_id' => $this->node->id, 'name' => 'default',
-        'checkout_path' => $home, 'status' => InstanceState::Active, 'development_release_layout' => true,
+        'checkout_path' => $home, 'status' => InstanceState::Active,
+        'seed_path' => $home, 'seed_commit' => $commit, 'seed_repository' => $home,
     ]);
-    app()->instance(DevelopmentDeployment::class, Mockery::mock(DevelopmentDeployment::class)->shouldReceive('selected')
-        ->andReturn(new DeploymentRelease('selected', $home.'/releases/selected', $commit))->getMock());
     $this->registrationSource->facts = [registration_facts(path: '/work/acme-copy')];
     $this->postJson('/api/v1/instances/register', ['source_path' => '/work/acme-copy', 'instance_name' => 'registered-copy'])
         ->assertOk()->assertJsonPath('data.instance.starting_commit', str_repeat('a', 40))
         ->assertJsonPath('data.instance.seed_commit', $matching ? $commit : null);
     $registered = Instance::query()->where('name', 'registered-copy')->sole();
     expect($registered->seed_selected)->toBeTrue()
-        ->and($registered->seed_path)->toBe($matching ? $home.'/releases/selected' : null);
-})->with(['matching release' => true, 'newer release' => false]);
+        ->and($registered->seed_path)->toBe($matching ? $home : null);
+})->with(['matching deployed commit' => true, 'newer deployed commit' => false]);
 
 it('resolves a Project by canonical repository identity and returns bounded source state', function (): void {
     $project = Project::query()->create([

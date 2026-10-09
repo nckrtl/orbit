@@ -87,7 +87,7 @@ The Gateway derives the file location and the user from the Instance's placement
 | `app-dev` | `.env` in the Instance's application directory within the checkout | The Node's managed user |
 | `app-prod` | `.env` in the production home | The Instance's production user |
 
-For Laravel, the [application directory](/reference/projects#application-directory) is the effective web root without its trailing `/public`. With root `apps/site/public`, development reads and writes `<checkout>/apps/site/.env`, and `.env.testing` lives beside it. A development default uses the same paths in its stable checkout home and copies those files into each candidate's application directory. Before [setup](/reference/instance-setup#run-setup) runs in the active release, Orbit copies them into that release too, so `instance:setup` after a synchronization sees the new values.
+For Laravel, the [application directory](/reference/projects#application-directory) is the effective web root without its trailing `/public`. With root `apps/site/public`, development reads and writes `<checkout>/apps/site/.env`, and `.env.testing` lives beside it. A development default uses the same paths in its checkout.
 
 On `app-prod`, every release links `.env` in its application directory to the production home's file. With root `apps/site/public`, `<home>/releases/<name>/apps/site/.env` links to `<home>/.env`; no release-root `.env` link is needed. See [Production release layout](/reference/deployments).
 
@@ -167,7 +167,7 @@ Removing the annotator Process deletes that stored key. Synchronization renders 
 
 The annotator also projects the concrete `ANNOTATOR_URL` and `ORBIT_ANNOTATOR_PORT` into every systemd Process of the Instance. These derived values override a stale `.env` value or a caller-supplied environment map. Process creation and removal rewrite the existing units of sibling Processes without changing their observed runtime state. Sleeping workers are not started, and cold dependencies are not restored. A running sibling reads the new values on its next start or restart. After removal, units unset both keys, even before the next environment synchronization. This runtime projection does not write `.env`; see [Annotator Process](/reference/agentation#annotator-process).
 
-A production [deployment](/reference/deployments) synchronizes the stored configuration before it runs any deploy step. A development default keeps its configured environment files at the stable checkout home. Explicit synchronization writes there; its next development deployment copies `.env` and any `.env.testing` into the candidate without changing the live seed. Deploy the default by hand when these file changes need to take effect before the next push.
+A production [deployment](/reference/deployments) synchronizes the stored configuration before it runs any deploy step. A development default deploys in its checkout, so synchronization writes the files it serves and a deployment does not synchronize.
 
 ## Synchronize during a domain change
 
