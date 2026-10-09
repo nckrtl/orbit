@@ -212,7 +212,7 @@ it('enrolls and prepares one owned workspace through initial admission or cloud 
     } finally {
         fclose($file);
     }
-})->with(['initial source claim' => [false, false], 'cloud source recovery' => [true, false], 'initial private preview' => [false, true]]);
+})->with(['initial source claim' => [false, false], 'cloud source recovery' => [true, false], 'initial private preview' => [false, true], 'cloud private preview recovery' => [true, true]]);
 
 it('does not admit a project with the rollout switch off or a stale claim', function (string $fault): void {
     $workspace = UpCloudRuntimeWorkspace::create();

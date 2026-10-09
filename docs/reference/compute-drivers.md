@@ -117,7 +117,7 @@ the dedicated bridge. Host firewall access requires the opt-in policy below.
 
 A new local Project reservation records `project_slug` beside its one pinned `operator` image. The host accepts only a private x86_64 VM image with `user.orbit.project.owner=orbit-task-project-image`, `user.orbit.project.slug=<project-slug>`, `user.orbit.project.account=orbit`, and `user.orbit.project.bootstrap=unenrolled`. Image preparation must verify the managed account and absence of fleet or private-topology identity before assigning these properties. An image with Orbit template properties is refused even if it also has Project properties.
 
-Provisioning verifies the Project marker on an existing guest and worktree volume before any mutation. A retry cannot change the Project or adopt an unmarked reservation. These image checks do not enroll the guest or authorize SSH, WireGuard, or hub access. Local Project claim admission remains unavailable until its bootstrap, network, fleet, Route, and cleanup contracts are implemented and accepted.
+Provisioning verifies the Project marker on an existing guest and worktree volume before any mutation. A retry cannot change the Project or adopt an unmarked reservation. These image checks do not enroll the guest or authorize SSH, WireGuard, or hub access. Keep local Project claims disabled until bootstrap, network, fleet, Route, and cleanup acceptance has passed.
 
 ### Enroll an owned local Project VM
 
@@ -137,7 +137,7 @@ An Incus host can record `project_bootstrap` with a public IPv4 `wireguard_addre
 
 The host validates the closed `project_bootstrap` descriptor against its own interface and the separately approved root policy before recording it on the bridge, guest, and worktree volume. A retry refuses changed or missing endpoint markers before mutation. The SSH proxy listens only on the recorded host WireGuard address and reserved port, and forwards to the owned guest at port 22. Host filtering accepts the recorded Gateway on the WireGuard interface only when the connection's original destination is that host address and port. Direct SSH to the guest and other proxy ports remain blocked.
 
-The root policy permits UDP from this guest to the recorded public WireGuard hub endpoint and established replies. Project policy has one guest and grants no topology Pi ingress. Private-network and host exclusions remain in force. Fleet enrollment and hub policy still require separate implementation and approval.
+The root policy permits UDP from this guest to the recorded public WireGuard hub endpoint and established replies. Project policy has one guest and grants no topology Pi ingress. Private-network and host exclusions remain in force. Fleet enrollment installs its own hub policy before publishing the peer. New live host and hub paths require separate approval.
 
 This read-only check does not create a bootstrap endpoint, enroll a Node, or change host or hub networking. Those steps remain required before local Project claims can start.
 
@@ -349,7 +349,7 @@ The scheduler reconciles review retention after publication and on later ticks. 
 
 Merge and cancellation remove task workspaces through their sandbox reservations. Under the group admission lock, Orbit checks the group, Project, Instance, reservation, and compute host. It refuses foreign group references and unexpected live Routes, Processes, Schedules, or database connections. Guest checkout paths never reach host source inspection or deletion.
 
-For Incus, Orbit revokes the model key, destroys owned compute, and confirms destruction before deleting the workspace row and clearing its task references. A failed operation retains ownership for retry. The reservation remains as audit history. UpCloud cleanup records destruction intent and revokes the model key before removing an exclusive workspace, its native app-dev role and Node, and the owned hub policy. The reservation retains provider IDs throughout. If provider deletion fails after the workspace is removed, cleanup retries through the reservation. A foreign workspace, Node, role, or live resource reference refuses cleanup.
+For an Orbit Incus pair, Orbit revokes the model key, destroys owned compute, and confirms destruction before deleting the workspace row and clearing its task references. A failed operation retains ownership for retry. The reservation remains as audit history. Enrolled Project cleanup on either provider records destruction intent and revokes the model key before removing an exclusive workspace, its native app-dev role and Node, and the owned hub policy. The reservation retains provider IDs throughout. If provider deletion fails after the workspace is removed, cleanup retries through the reservation. A foreign workspace, Node, role, or live resource reference refuses cleanup.
 
 The sweep retries reservations with no Instance when their group has ended, has been deleted, or has already recorded destruction intent. It does not adopt unrecorded host resources or start cleanup of an active group. Failed retries use the workspace sweep's time budget and backoff.
 
@@ -469,7 +469,9 @@ Project claims use local Incus capacity first when a host has that Project's dev
 
 An enrolled Project VM runs checks and workspace commands through its own pinned fleet SSH connection. Pi uses the same fleet model endpoint and per-sandbox credentials as the cloud lane. Temporary repository access renews only for the owned, running Node and its Project. Local park retains the Node and bootstrap reservation. Resume verifies the restored guest and SSH key, reinstalls its hub limits, and confirms Pi before another turn starts.
 
-Web-serving Projects get one generated private Route, `task-<id>.<project>.<dev-tld>`, on their enrolled VM. Native development provisioning uses the Project root and prepares PHP, certificates, Caddy, and private DNS. Laravel previews import their environment through the native Instance environment flow. An empty `APP_KEY` receives one key per workspace; retries synchronize the stored environment and retain its keys instead of importing it again. Only the owned, running Project guest can use this runtime path. Generic source, transfer, and removal actions retain their sandbox guards. Non-web Projects keep a source-only workspace.
+Web-serving Projects get one generated private Route, `task-<id>.<project>.<dev-tld>`, on their enrolled VM. Native development provisioning uses the Project root and prepares PHP, certificates, Caddy, and private DNS.
+
+Laravel previews import their environment through the native Instance environment flow. An empty `APP_KEY` receives one key per workspace; retries synchronize the stored environment and retain its keys instead of importing it again. Only the owned, running Project guest can use this runtime path. Native preview source-access grants use the same ownership guard and target that guest through pinned fleet SSH. Generic source, transfer, and removal actions retain their sandbox guards. Non-web Projects keep a source-only workspace.
 
 Fleet cleanup applies to both providers. After destruction intent and model revocation, it records one native Instance removal journal for the exclusive workspace. Its source inventory names the sandbox reservation; it does not claim to inspect or quarantine a host checkout. Source finalization records retention inside that VM until compute destruction. Guest-local certificates and services remain with it, so cleanup can withdraw publication while the VM is parked.
 

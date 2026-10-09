@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Instances;
 
 use App\Domain\Instances\DevelopmentSourceAccess;
-use App\Domain\Instances\InstanceSandboxGuard;
+use App\Domain\Instances\ProjectSandboxRuntimeGuard;
 use App\Infrastructure\AppDev\DevelopmentSite;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
@@ -20,7 +20,7 @@ final readonly class NativeDevelopmentSourceAccess implements DevelopmentSourceA
 
     public function grant(Instance $instance): void
     {
-        InstanceSandboxGuard::assertHostOperation($instance);
+        ProjectSandboxRuntimeGuard::assertRuntime($instance);
         $instance->loadMissing('node');
         $command = new DevelopmentCaddyAccessCommand;
         $sites = $command->walkedSites($this->sites($instance));
