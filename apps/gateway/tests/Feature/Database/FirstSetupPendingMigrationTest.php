@@ -9,7 +9,7 @@ use App\Models\Project;
 use Illuminate\Support\Facades\DB;
 
 it('marks only unfinished instance:create rows, never task workspaces or active Instances', function (): void {
-    $migration = require base_path('database/migrations/2026_10_19_000000_record_instance_first_setup_pending.php');
+    $migration = require base_path('database/migrations/2026_10_19_000001_record_instance_first_setup_pending.php');
     $node = Node::query()->create([
         'name' => 'app-dev',
         'status' => 'active',
