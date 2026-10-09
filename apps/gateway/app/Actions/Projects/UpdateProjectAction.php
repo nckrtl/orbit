@@ -10,6 +10,8 @@ use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Instances\ProductionRepositoryBinding;
+use App\Domain\Instances\ProductionRepositoryRecord;
 use App\Domain\Projects\ProjectCode;
 use App\Domain\Projects\ProjectDefaultBranchInheritance;
 use App\Domain\Projects\ProjectRepositoryUpdatePlanner;
@@ -42,6 +44,7 @@ final readonly class UpdateProjectAction
         private ProjectUpdateSourceMutator $sources,
         private ProjectUpdateProjectionMutator $projections,
         private RepositoryDefaultBranchResolver $branches,
+        private ProductionRepositoryBinding $productionRepositories,
         private ?RecordEventBroadcaster $broadcaster = null,
     ) {}
 
@@ -224,7 +227,7 @@ final readonly class UpdateProjectAction
 
             $normalized = $this->normalized($locked, $data);
 
-            if (! $this->changesState($locked, $normalized)) {
+            if (! $this->changesState($locked, $normalized) && ! $this->rebindsProduction($locked, $data)) {
                 $complete = ProjectUpdate::query()->create([
                     'project_id' => $locked->id,
                     'status' => ProjectUpdateStatus::Complete,
@@ -337,10 +340,18 @@ final readonly class UpdateProjectAction
 
         if (is_string($update->requested_repository_url)) {
             $this->assertRepositoryIdentity($project, $update->requested_repository_url);
-            $this->repositories->assertWorktreesOwned($plan['checkouts'], $plan['worktrees']);
-            $this->sources->preflightRepository(
-                $plan['checkouts'],
-                $project->repository_url,
+
+            if ($update->requested_repository_url !== $project->repository_url) {
+                $this->repositories->assertWorktreesOwned($plan['checkouts'], $plan['worktrees']);
+                $this->sources->preflightRepository(
+                    $plan['checkouts'],
+                    $project->repository_url,
+                    $update->requested_repository_url,
+                );
+            }
+
+            $inventory['production_repositories'] = $this->preflightProductionRepositories(
+                $plan['production'],
                 $update->requested_repository_url,
             );
         }
@@ -382,12 +393,17 @@ final readonly class UpdateProjectAction
                 ->all());
             $origins = $evidence['origins'] ?? [];
             $origins = is_array($origins) ? $origins : [];
-            $evidence['origins'] = $this->sources->changeOrigins(
-                $checkouts,
-                $update->previous_repository_url,
-                $update->requested_repository_url,
-                $this->originMutations($origins),
-            );
+
+            if ($update->requested_repository_url !== $update->previous_repository_url) {
+                $evidence['origins'] = $this->sources->changeOrigins(
+                    $checkouts,
+                    $update->previous_repository_url,
+                    $update->requested_repository_url,
+                    $this->originMutations($origins),
+                );
+            }
+
+            $this->rebindProductionRepositories($update, $inventory, $evidence);
         }
 
         $slugInventory = $this->storedMap($inventory['slug'] ?? null);
@@ -563,6 +579,8 @@ final readonly class UpdateProjectAction
             $this->sources->restoreOrigins($this->originMutations($evidence['origins']));
         }
 
+        $this->restoreProductionRepositories($update);
+
         foreach ($this->branchEvidence($evidence['branches'] ?? []) as $row) {
             if (! $row['switched']) {
                 continue;
@@ -627,6 +645,129 @@ final readonly class UpdateProjectAction
             || $normalized['repository_url'] !== $project->repository_url
             || $normalized['default_branch'] !== $project->default_branch
             || $normalized['root'] !== $project->root;
+    }
+
+    /**
+     * A repository request re-binds production homes even when the URL is already stored,
+     * so `project:update --repository` with the current URL repairs a home that an older
+     * update left on another URL ([Projects](/reference/projects#production-instances)).
+     */
+    private function rebindsProduction(Project $project, UpdateProjectData $data): bool
+    {
+        return $data->repositoryUrlProvided
+            && $project->instances()->get()->contains(
+                static fn (Instance $instance): bool => $instance->usesProductionReleaseLayout(),
+            );
+    }
+
+    /**
+     * @param  list<Instance>  $production
+     * @return list<array{instance_id: int, record: array{layout: ?string, initial: ?string, releases: array<string, string>}}>
+     */
+    private function preflightProductionRepositories(array $production, string $repository): array
+    {
+        $records = [];
+
+        foreach ($production as $instance) {
+            if (! $instance->usesProductionReleaseLayout()) {
+                continue;
+            }
+
+            $record = $this->productionRepositories->inspect($instance);
+
+            if (! $record->sameRepositoryAs($repository)) {
+                throw new ResourceOperationException(
+                    errorCode: 'project.production_repository_mismatch',
+                    message: "Production Instance [{$instance->id}] serves another repository. Only another URL for the same repository can replace it.",
+                    status: 409,
+                    details: ['instance_id' => (string) $instance->id],
+                );
+            }
+
+            if ($record->boundTo($repository)) {
+                continue;
+            }
+
+            $records[] = ['instance_id' => $instance->id, 'record' => $record->toArray()];
+        }
+
+        return $records;
+    }
+
+    /**
+     * @param  array<string, mixed>  $inventory
+     * @param  array<string, mixed>  $evidence
+     */
+    private function rebindProductionRepositories(ProjectUpdate $update, array $inventory, array &$evidence): void
+    {
+        $records = $this->productionRecords($inventory);
+
+        if ($records === [] || ! is_string($update->requested_repository_url)) {
+            return;
+        }
+
+        // Record the attempt first, so a failure part-way still restores every home.
+        $evidence['production_repositories'] = true;
+        $update->update(['evidence' => $evidence]);
+
+        foreach ($records as [$instance, $record]) {
+            $this->productionRepositories->rebind(
+                $instance,
+                $record,
+                $record->withRepository($update->requested_repository_url),
+            );
+        }
+    }
+
+    private function restoreProductionRepositories(ProjectUpdate $update): void
+    {
+        $evidence = $this->storedMap($update->evidence) ?? [];
+
+        if (($evidence['production_repositories'] ?? false) !== true || ! is_string($update->requested_repository_url)) {
+            return;
+        }
+
+        foreach ($this->productionRecords($this->storedMap($update->inventory) ?? []) as [$instance, $record]) {
+            $this->productionRepositories->rebind(
+                $instance,
+                $record->withRepository($update->requested_repository_url),
+                $record,
+            );
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $inventory
+     * @return list<array{Instance, ProductionRepositoryRecord}>
+     */
+    private function productionRecords(array $inventory): array
+    {
+        $rows = $inventory['production_repositories'] ?? [];
+        $records = [];
+
+        if (! is_array($rows)) {
+            return [];
+        }
+
+        foreach ($rows as $row) {
+            if (! is_array($row) || ! is_int($row['instance_id'] ?? null)) {
+                continue;
+            }
+
+            $instance = Instance::query()->find($row['instance_id']);
+
+            if (! $instance instanceof Instance) {
+                throw new ResourceOperationException(
+                    errorCode: 'project.production_ownership_changed',
+                    message: 'A production Instance changed during the Project update.',
+                    status: 409,
+                );
+            }
+
+            $records[] = [$instance, ProductionRepositoryRecord::fromArray($row['record'] ?? null)];
+        }
+
+        return $records;
     }
 
     private function assertSlugAvailable(Project $project, string $slug): void

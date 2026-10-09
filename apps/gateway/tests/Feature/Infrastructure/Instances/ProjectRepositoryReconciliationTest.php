@@ -6,6 +6,7 @@ use App\Actions\Projects\UpdateProjectAction;
 use App\Data\Projects\UpdateProjectData;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Instances\ProductionRepositoryRecord;
 use App\Domain\Projects\ProjectRepositoryUpdatePlanner;
 use App\Domain\Projects\ProjectUpdateSourceMutator;
 use App\Domain\Shared\ResourceOperationException;
@@ -15,6 +16,8 @@ use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Projects\RemoteProjectUpdateSourceMutator;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Models\Instance;
+use App\Models\Node;
+use App\Models\ProjectUpdate;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
@@ -220,4 +223,98 @@ describe('App repository reconciliation', function (): void {
             ->and($ssh->commands[0]->input)
             ->toContain('test ! -f "$path/.git"');
     });
+
+    it('re-binds every production home when the URL moves from SSH to HTTPS', function (): void {
+        $production = orb101_production_instance($this->fixture);
+        $ssh = 'git@github.com:acme/site.git';
+        $https = 'https://github.com/acme/site.git';
+        $record = new ProductionRepositoryRecord($ssh, $ssh, ['initial' => $ssh, '20261009-a' => $ssh]);
+        $this->fixture->production->records[$production->id] = $record;
+
+        app(UpdateProjectAction::class)->execute($this->fixture->project, orb101_repository_data($https));
+
+        expect($this->fixture->project->refresh()->repository_url)->toBe($https)
+            ->and($this->fixture->production->rebinds)->toEqual([[$production->id, $record, $record->withRepository($https)]])
+            ->and($this->fixture->production->records[$production->id]->boundTo($https))->toBeTrue();
+    });
+
+    it('refuses a different repository while a production home records the old one', function (): void {
+        $production = orb101_production_instance($this->fixture);
+        $ssh = 'git@github.com:acme/site.git';
+        $this->fixture->production->records[$production->id] = new ProductionRepositoryRecord($ssh, $ssh, ['initial' => $ssh]);
+
+        expect(fn () => app(UpdateProjectAction::class)->execute(
+            $this->fixture->project,
+            orb101_repository_data('https://github.com/acme/other.git'),
+        ))->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('project.production_repository_mismatch');
+        });
+
+        expect($this->fixture->project->refresh()->repository_url)->toBe($ssh)
+            ->and($this->fixture->production->rebinds)->toBe([])
+            ->and($this->fixture->sources->originMutations)->toBe([]);
+    });
+
+    it('repairs a home that an earlier update left on the old URL when the current URL is sent again', function (): void {
+        $production = orb101_production_instance($this->fixture);
+        $ssh = 'git@github.com:acme/site.git';
+        $https = 'https://github.com/acme/site.git';
+        $this->fixture->project->update(['repository_url' => $https]);
+        $record = new ProductionRepositoryRecord($ssh, $ssh, ['initial' => $ssh]);
+        $this->fixture->production->records[$production->id] = $record;
+
+        app(UpdateProjectAction::class)->execute($this->fixture->project->refresh(), orb101_repository_data($https));
+
+        expect($this->fixture->production->rebinds)->toEqual([[$production->id, $record, $record->withRepository($https)]])
+            ->and($this->fixture->sources->originMutations)->toBe([])
+            ->and(ProjectUpdate::query()->latest('id')->first()?->status->value)->toBe('complete');
+
+        // A home that already records the URL needs no rewrite.
+        app(UpdateProjectAction::class)->execute($this->fixture->project->refresh(), orb101_repository_data($https));
+
+        expect($this->fixture->production->rebinds)->toHaveCount(1);
+    });
+
+    it('restores production homes when the update rolls back', function (): void {
+        $production = orb101_production_instance($this->fixture);
+        $ssh = 'git@github.com:acme/site.git';
+        $https = 'https://github.com/acme/site.git';
+        $record = new ProductionRepositoryRecord($ssh, null, ['initial' => $ssh]);
+        $this->fixture->production->records[$production->id] = $record;
+        $this->fixture->production->failRebind = true;
+
+        expect(fn () => app(UpdateProjectAction::class)->execute($this->fixture->project, orb101_repository_data($https)))
+            ->toThrow(function (ResourceOperationException $exception): void {
+                expect($exception->errorCode)->toBe('project.production_rebind_failed');
+            });
+
+        expect($this->fixture->project->refresh()->repository_url)->toBe($ssh)
+            ->and($this->fixture->production->rebinds)->toHaveCount(2)
+            ->and($this->fixture->production->rebinds[1])->toEqual([$production->id, $record->withRepository($https), $record])
+            ->and(ProjectUpdate::query()->latest('id')->first()?->status->value)->toBe('rolling_back');
+    });
 });
+
+function orb101_production_instance(Orb101ProjectUpdateFixture $fixture): Instance
+{
+    $node = Node::query()->create([
+        'name' => 'app-prod',
+        'status' => 'active',
+        'public_ssh_host' => '192.0.2.81',
+        'wireguard_ip' => '10.44.0.81',
+    ]);
+    $node->roles()->create(['role' => 'app-prod', 'status' => 'active']);
+
+    return Instance::query()->create([
+        'project_id' => $fixture->project->id,
+        'node_id' => $node->id,
+        'name' => 'production',
+        'environment' => 'production',
+        'source_layout' => 'release',
+        'checkout_path' => '/home/orbit-app-72/releases/initial',
+        'production_home' => '/home/orbit-app-72',
+        'production_user' => 'orbit-app-72',
+        'branch' => 'main',
+        'status' => InstanceState::Active,
+    ]);
+}

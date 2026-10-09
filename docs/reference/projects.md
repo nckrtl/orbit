@@ -7,6 +7,7 @@ covers:
   - "apps/gateway/app/Infrastructure/SourceControl/NativeRepositoryDefaultBranchResolver.php"
   - "apps/gateway/app/{Http/{Controllers/Api/ProjectsController.php,Requests/Projects/**},Data/Projects/**}"
   - "apps/gateway/app/Models/{Project,ProjectUpdate}.php"
+  - "apps/gateway/app/{Domain,Infrastructure}/Instances/*ProductionRepository*.php"
   - "apps/cli/app/Commands/Projects/**"
   - "apps/gateway/database/migrations/*_{rename_app_domain_to_project_and_instance,add_task_workspace_routing}.php"
 ---
@@ -134,7 +135,7 @@ orbit project:update 14 --source-access=gh_cli --default-branch=main
 | --- | --- |
 | `type` and `--type` | Applies at once. A `laravel-app` needs a Route; changing away keeps existing Routes. |
 | `slug` and `--slug` | Projects every Instance before publication, with no partial projection. Checkout paths, production users, and homes stay unchanged. Generated Routes use the new slug; explicit domains do not. |
-| `repository_url` and `--repository` | Runs `git remote set-url origin` in each development checkout. Equivalent HTTPS and SSH URLs share an identity. See [Repository changes](#repository-changes). |
+| `repository_url` and `--repository` | Runs `git remote set-url origin` in each development checkout and re-binds each production home. Equivalent HTTPS and SSH URLs share an identity. See [Repository changes](#repository-changes). |
 | `source_access` and `--source-access` | Applies at once and touches no checkout. See [Change source access](#change-source-access). |
 | `default_branch` and `--default-branch` | Must exist on the remote. Switches every development `default` Instance without a `branch_override`. Explicit overrides stay unchanged. |
 | `root` and `--root` | Changes the effective root of every Instance without its own root. Orbit reprojects the runtime of each such Instance that has a Route. |
@@ -174,13 +175,13 @@ The Gateway applies `slug`, `repository_url`, `default_branch`, and `root` as on
 | Status | Work |
 | --- | --- |
 | `reserved` | Records the request and the previous values. |
-| `preflighted` | Checks every affected checkout, worktree, and generated domain. |
-| `prepared` | Switches branches, changes origins, and creates replacement Routes. The old values stay in effect. |
+| `preflighted` | Checks every affected checkout, worktree, production home, and generated domain. |
+| `prepared` | Switches branches, changes origins, re-binds production homes, and creates replacement Routes. The old values stay in effect. |
 | `publishing` | Publishes the new Project values after projection succeeds. Replaces generated Routes and updates Instance URLs, environments, and runtimes. |
 | `cleaning_up` | Checks that no production Instance changed. |
 | `complete` | Done. |
 
-A failure before `publishing` rolls back: Orbit restores origins, branches, and Routes and ends in `rolled_back`. A rollback that fails stays `rolling_back`, and an identical retry continues it. A failure after `publishing` starts stays in place, and an identical retry continues forward. A different update while one is incomplete returns `project.update_in_progress`.
+A failure before `publishing` rolls back: Orbit restores origins, production homes, branches, and Routes and ends in `rolled_back`. A rollback that fails stays `rolling_back`, and an identical retry continues it. A failure after `publishing` starts stays in place, and an identical retry continues forward. A different update while one is incomplete returns `project.update_in_progress`.
 
 When updating source, the Gateway passes `-c core.hooksPath=/dev/null` and `-c core.fsmonitor=false` to Git during preflight, origin changes, fetches, branch changes, and rollback. The Gateway does not run checkout hooks or a custom filesystem monitor for those operations. The overrides do not change the stored Git configuration.
 
@@ -192,7 +193,21 @@ Run [Doctor](/cli/doctor) to inspect any projection that needs attention.
 
 A repository change touches only `origin`. Local branches, the checked-out commit, and the recorded starting commit stay the same. Orbit never pushes. Linked worktrees share the checkout's repository and need no change.
 
-Every origin check reads the `remote.origin.url` stored in the checkout. It ignores `insteadOf` rewrites on the Node. The update never changes production source, the deployment branch, or releases, and it never starts a deployment.
+Every origin check reads the `remote.origin.url` stored in the checkout. It ignores `insteadOf` rewrites on the Node.
+
+#### Production Instances
+
+A production home records the repository URL in three places: the release layout marker and the initial clone marker under `/var/lib/orbit/app-instance-sources/<instance>/`, and `remote.origin.url` of each retained release. [Deployment and rollback](/reference/deployments) compare these values byte for byte with the Project's `repository_url`.
+
+A repository change re-binds every production home on the release layout to the new URL. Preflight reads each home first. Every recorded URL must name the same repository as the new URL, in SSH or HTTPS form, with or without `.git`. Another repository fails with `project.production_repository_mismatch`, and nothing changes. Prepare then rewrites each value that differs, the releases first and the release layout marker last. Each rewrite is a compare-and-swap, so a retry continues safely. A partial release without an origin stays as it is. Rollback writes the recorded URLs back.
+
+A re-bind changes only those URLs. It never changes production source, the selected release, the deployment branch, or the recorded commit, and it never starts a deployment.
+
+A repository request also re-binds when the URL is already the Project's URL. Use it to repair a home that an update before this rule left on the old URL. Deployment names that repair with `deployment.repository_rebind_required`.
+
+```bash
+orbit project:update 3 --repository=https://github.com/acme/site.git
+```
 
 ## Remove a Project
 
@@ -219,6 +234,8 @@ The Gateway returns these codes for Project requests.
 | `project.repository_unowned_common` | A worktree uses a repository that no Orbit checkout owns. |
 | `project.source_switch_failed` | A `default` checkout cannot switch to the new default branch. |
 | `project.production_ownership_changed` | A production Instance changed during the update. |
+| `project.production_repository_mismatch` | A production home records another repository than the new URL. `details.instance_id` names the Instance. |
+| `project.production_rebind_failed` | Orbit could not read or re-bind a production home. |
 | `project.update_failed` | The update failed for a reason without its own code, and Orbit rolled back. |
 | `project.has_instances` | Removal found Instances. |
 | `project.has_routes` | Removal found Routes. |

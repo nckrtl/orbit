@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Instances;
 
+use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Instances\Deployment\DeploymentEvent;
 use App\Domain\Instances\Deployment\DeploymentOutputStream;
@@ -14,6 +15,7 @@ use App\Domain\Instances\Deployment\DeploymentStep;
 use App\Domain\Instances\Deployment\ProductionDeployment;
 use App\Domain\Instances\InstanceSandboxGuard;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Instances\ProductionRepositoryBinding;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppProd\ProductionSshExecutor;
 use App\Infrastructure\GitHub\GitReadScript;
@@ -35,6 +37,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
         private ProductionSshExecutor $ssh,
         private RepositoryReadAccess $access,
         ?Closure $releaseName = null,
+        private ?ProductionRepositoryBinding $repositories = null,
     ) {
         $this->releaseName = $releaseName ?? static fn (): string => gmdate('YmdHis').'-'.bin2hex(random_bytes(8));
     }
@@ -104,7 +107,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
                     commit=$(sudo -u "$user" -H git -C "$release" rev-parse --verify HEAD)
                     printf '%s\t%s\n' "$name" "$commit"
                     BASH, $root));
-        $result = $this->execute(
+        $result = $this->executeBound(
             $instance,
             new RemoteCommand(
                 arguments: [
@@ -251,7 +254,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
         [$repository, $user, $home, $root] = $this->identity($instance);
         $this->assertRelease($release, $home);
 
-        $result = $this->execute(
+        $result = $this->executeBound(
             $instance,
             new RemoteCommand(
                 arguments: [
@@ -343,7 +346,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
     {
         InstanceSandboxGuard::assertHostOperation($instance);
         [$repository, $user, $home, $root] = $this->identity($instance);
-        $result = $this->execute(
+        $result = $this->executeBound(
             $instance,
             new RemoteCommand(
                 arguments: ['bash', '-seu', '--', $repository, $user, $home, (string) $instance->id, $root],
@@ -366,7 +369,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
         InstanceSandboxGuard::assertHostOperation($instance);
         $this->assertReleaseName($name);
         [$repository, $user, $home, $root] = $this->identity($instance);
-        $result = $this->execute(
+        $result = $this->executeBound(
             $instance,
             new RemoteCommand(
                 arguments: [
@@ -394,7 +397,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
     {
         InstanceSandboxGuard::assertHostOperation($instance);
         [$repository, $user, $home, $root] = $this->identity($instance);
-        $result = $this->execute(
+        $result = $this->executeBound(
             $instance,
             new RemoteCommand(
                 arguments: ['bash', '-seu', '--', $repository, $user, $home, (string) $instance->id, $root],
@@ -580,6 +583,54 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
         string $errorCode,
     ): CommandResult {
         return $this->ssh->execute($instance->node, $command, $step, $errorCode);
+    }
+
+    /**
+     * Runs a command that checks the repository binding. When it fails because the home
+     * records another URL, the error names the repair instead of the failed check.
+     */
+    private function executeBound(
+        Instance $instance,
+        RemoteCommand $command,
+        string $step,
+        string $errorCode,
+    ): CommandResult {
+        try {
+            return $this->execute($instance, $command, $step, $errorCode);
+        } catch (RuntimeConvergenceException $exception) {
+            throw $this->bindingFailure($instance, $exception) ?? $exception;
+        }
+    }
+
+    private function bindingFailure(Instance $instance, RuntimeConvergenceException $exception): ?ResourceOperationException
+    {
+        $repository = $instance->project->repository_url;
+
+        try {
+            $record = ($this->repositories ?? new RemoteProductionRepositoryBinding($this->ssh))->inspect($instance);
+        } catch (\Throwable) {
+            return null;
+        }
+
+        if ($record->boundTo($repository)) {
+            return null;
+        }
+
+        if (! $record->sameRepositoryAs($repository)) {
+            return new ResourceOperationException(
+                'deployment.repository_mismatch',
+                "Production Instance [{$instance->id}] serves another repository than its Project.",
+                409,
+                $exception,
+            );
+        }
+
+        return new ResourceOperationException(
+            'deployment.repository_rebind_required',
+            "Production Instance [{$instance->id}] records another URL for its repository. Run `orbit project:update {$instance->project_id} --repository=<repository URL>` with the Project's URL to re-bind it.",
+            409,
+            $exception,
+        );
     }
 
     /** @return array{string, string} */
