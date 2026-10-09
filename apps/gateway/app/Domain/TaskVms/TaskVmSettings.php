@@ -61,8 +61,7 @@ final readonly class TaskVmSettings
         $origin = self::origin(Config::get('task_vms.model_proxy_origin'));
         $hostEntries = Config::get('task_vms.incus.hosts');
 
-        $configured = $enabled || $clusterId !== null || $origin !== null || $hostEntries !== [];
-        $hosts = $configured ? self::hosts($hostEntries, self::vpnSubnet($range)) : [];
+        $hosts = self::configuredInConfig() ? self::hosts($hostEntries, self::vpnSubnet($range)) : [];
 
         if ($enabled) {
             match (true) {
@@ -91,13 +90,14 @@ final readonly class TaskVmSettings
     }
 
     /**
-     * Whether an operator has configured task VMs: enabled them, or set the Cluster, the origin, or a host.
-     * From then on the reserved range lies inside the VPN subnet, and every Node's Caddy refuses it on
-     * every site except the Gateway API and Reverb.
+     * The reserved range that every Node's Caddy refuses on every site except the Gateway API and Reverb, or
+     * null while task VMs are not configured. It reads only what the guard needs, so another invalid task VM
+     * value never blocks a Caddy build. Once task VMs are configured, an invalid range throws: the guard
+     * fails closed.
      */
-    public function configured(): bool
+    public static function caddyGuardRange(): ?string
     {
-        return $this->enabled || $this->devClusterId !== null || $this->modelProxyOrigin !== null || $this->hosts !== [];
+        return self::configuredInConfig() ? self::wireguardRange(Config::get('task_vms.wireguard_range'))->value() : null;
     }
 
     public function host(int $nodeId): TaskVmHost
@@ -109,6 +109,15 @@ final readonly class TaskVmSettings
         }
 
         throw new TaskVmException('task_vm.unknown_host', "Node [{$nodeId}] is not a task VM host.");
+    }
+
+    /** Task VMs are enabled, or the Cluster, the origin, or a host is set. Malformed hosts JSON counts as set. */
+    private static function configuredInConfig(): bool
+    {
+        return Config::get('task_vms.enabled') === true
+            || self::filled(Config::get('task_vms.dev_cluster_id')) !== null
+            || self::filled(Config::get('task_vms.model_proxy_origin')) !== null
+            || Config::get('task_vms.incus.hosts') !== [];
     }
 
     private static function wireguardRange(mixed $value): Ipv4Subnet

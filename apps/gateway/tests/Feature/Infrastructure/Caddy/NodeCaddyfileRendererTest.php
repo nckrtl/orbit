@@ -10,7 +10,6 @@ use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\AppDev\DevelopmentCaddyConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentSite;
@@ -452,14 +451,30 @@ describe('task VM guard', function (): void {
             ->toContain("shop.test {\n    bind 10.44.0.9 192.168.1.9\n    @orbit_outside not remote_ip private_ranges 100.64.0.0/10 10.44.0.0/24\n    abort @orbit_outside\n    @orbit_task_vms remote_ip 10.44.0.128/25\n    abort @orbit_task_vms\n}\n");
     });
 
-    it('turns an invalid task VM config into a build problem', function (): void {
-        caddy_build_task_vms(['model_proxy_origin' => 'http://10.44.0.3:8317/v1']);
+    it('ignores invalid task VM values that the guard does not read', function (): void {
+        $node = caddy_build_services_node();
+        $unconfigured = caddy_build_renderer()->render($node)->content;
+
+        caddy_build_task_vms(['dev_cluster_id' => null, 'model_proxy_origin' => null, 'pi' => ['artifact_path' => '/home/orbit/pi', 'artifact_sha256' => null, 'models' => null]]);
+        $off = caddy_build_renderer()->render($node);
+
+        caddy_build_task_vms(['model_proxy_origin' => 'http://10.44.0.3:8317/v1', 'pi' => ['artifact_path' => '/home/orbit/pi', 'artifact_sha256' => null, 'models' => null], 'incus' => ['hosts' => [['node_id' => 0]]]]);
+        $configured = caddy_build_renderer()->render($node);
+
+        expect($off->buildable())->toBeTrue()
+            ->and($off->content)->toBe($unconfigured)
+            ->and($configured->buildable())->toBeTrue()
+            ->and(caddy_build_refuses_task_vms($configured))->toContain(true)
+            ->and($configured->content)->toContain("    @orbit_task_vms remote_ip 10.44.0.128/25\n");
+    });
+
+    it('refuses the build when task VMs are configured and the range cannot be read', function (): void {
+        caddy_build_task_vms(['wireguard_range' => '10.44.0.129/25']);
 
         $caddyfile = caddy_build_renderer()->render(caddy_build_services_node());
 
         expect($caddyfile->buildable())->toBeFalse()
-            ->and($caddyfile->problems)->toHaveCount(1)
-            ->and($caddyfile->problems[0])->toContain('The task VM config is invalid: model_proxy_origin');
+            ->and($caddyfile->problems)->toBe(['The task VM config is invalid: wireguard_range must be an IPv4 network, for example 10.44.0.128/25.']);
     });
 
     it('validates the guarded websocket Node when a Caddy binary is installed', function (): void {
@@ -622,7 +637,6 @@ function caddy_build_task_vms(array $values = []): void
         'incus' => ['hosts' => []],
         ...$values,
     ]]);
-    app()->forgetInstance(TaskVmSettings::class);
 }
 
 /** @return array<string, bool> Each site by source and name, and whether it refuses task VMs. */

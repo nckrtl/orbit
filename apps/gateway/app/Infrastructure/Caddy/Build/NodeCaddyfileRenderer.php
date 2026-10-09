@@ -47,8 +47,7 @@ final readonly class NodeCaddyfileRenderer
         }
 
         try {
-            $taskVms = app(TaskVmSettings::class);
-            $taskVmRange = $taskVms->configured() ? $taskVms->wireguardRange : null;
+            $taskVmRange = TaskVmSettings::caddyGuardRange();
         } catch (TaskVmException $exception) {
             $problems[] = $exception->getMessage();
             $taskVmRange = null;

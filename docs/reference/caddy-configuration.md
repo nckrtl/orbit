@@ -187,6 +187,8 @@ The next convergence of a Caddy role on the Node installs Caddy and builds the N
 
 A failed build does not publish a new file. A build fails when a site cannot render from stored state, when two sites collide, when Caddy is below the floor, or when the Node lacks an address the file binds. It also fails when `caddy validate` rejects the file, or when Caddy fails to reload.
 
+While [task VMs](/reference/compute-drivers#refuse-task-vms-in-caddy) are configured and `task_vms.wireguard_range` is invalid, every build on every Node fails at stage `render`, because Orbit cannot render the task VM guard. That includes the Gateway release handoff, which then fails with `gateway.release_caddy_failed`. Correct the range in the Gateway's environment and run `gateway:release:configure`. No other task VM value affects a build.
+
 A failed reload leaves Caddy on the configuration it already runs. The script points `/etc/caddy/Caddyfile` back at the previous version and asks Caddy to load it again. It never restarts a running Caddy. It starts Caddy only when Caddy is not running.
 
 One broken site blocks every Caddy change on its Node until it is fixed, because each build renders every site. A certificate file that someone removed by hand fails validation, for example. Converge the role or Route that owns the site again to publish the certificate.
