@@ -8,7 +8,16 @@ use App\Infrastructure\Nodes\CaddyPackageSourceProgram;
 use App\Infrastructure\Nodes\Roles\NodeRolePrerequisiteCommandFactory;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Node;
+use Symfony\Component\Process\Process;
 use Tests\Support\CaddyKernelSettingHarness;
+
+it('authenticates offline Caddy snapshots and refuses altered packages or repository metadata', function (): void {
+    $process = new Process(['python3', base_path('tests/Fixtures/Compute/caddy_source_snapshot_test.py'), resource_path('compute/caddy-source-snapshot.py')]);
+    $process->setTimeout(120);
+    $process->run();
+
+    expect($process->isSuccessful())->toBeTrue($process->getErrorOutput());
+})->group('subprocess');
 
 describe('Caddy release floor', function (): void {
     it('reads the release from either build of `caddy version`', function (string $output, ?string $release): void {
@@ -74,6 +83,7 @@ describe('Caddy package source', function (): void {
             '2.9.0',
             '/etc/sysctl.d/60-orbit-caddy.conf',
             'net.ipv4.tcp_migrate_req = 1',
+            '/usr/local/share/orbit/caddy-source',
         ]);
     });
 

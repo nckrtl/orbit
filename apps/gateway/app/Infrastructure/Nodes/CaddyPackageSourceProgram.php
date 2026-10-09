@@ -41,6 +41,8 @@ final class CaddyPackageSourceProgram
 
     public const string KERNEL_SETTING = 'net.ipv4.tcp_migrate_req = 1';
 
+    public const string SNAPSHOT_PATH = '/usr/local/share/orbit/caddy-source';
+
     /**
      * The positional arguments the program consumes, in order.
      *
@@ -60,12 +62,18 @@ final class CaddyPackageSourceProgram
             CaddyRelease::MINIMUM,
             self::KERNEL_SETTING_PATH,
             self::KERNEL_SETTING,
+            self::SNAPSHOT_PATH,
         ];
     }
 
     public static function render(): string
     {
-        return <<<'BASH'
+        $verifier = file_get_contents(resource_path('compute/caddy-source-snapshot.py'));
+        if (! is_string($verifier) || $verifier === '') {
+            throw new \RuntimeException('The Caddy snapshot verifier is unavailable.');
+        }
+
+        return str_replace('__SNAPSHOT_VERIFY__', $verifier, <<<'BASH'
             source_uri=$1
             suite=$2
             component=$3
@@ -77,6 +85,7 @@ final class CaddyPackageSourceProgram
             minimum_version=$9
             kernel_setting_path=${10}
             kernel_setting=${11}
+            snapshot_path=${12}
 
             for managed_path in "$keyring_path" "$source_path" "$kernel_setting_path"; do
                 if [ ! -e "$managed_path" ] && [ ! -L "$managed_path" ]; then
@@ -146,9 +155,17 @@ final class CaddyPackageSourceProgram
                 install -m 0644 -o root -g root -- "$kernel_setting_body" "$kernel_setting_path"
             fi
 
-            curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
-                --output "$downloaded_key" \
-                "$key_url"
+            if [ -e "$snapshot_path" ] || [ -L "$snapshot_path" ]; then
+                python3 -I - "$snapshot_path" "$key_sha256" "$key_fingerprint" "$minimum_version" <<'ORBIT_CADDY_SNAPSHOT' > /dev/null
+            __SNAPSHOT_VERIFY__
+            ORBIT_CADDY_SNAPSHOT
+                cp -- "$snapshot_path/gpg.key" "$downloaded_key"
+                source_uri="file:$snapshot_path/repository"
+            else
+                curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
+                    --output "$downloaded_key" \
+                    "$key_url"
+            fi
             printf '%s  %s\n' "$key_sha256" "$downloaded_key" | sha256sum --check --status
 
             primary_fingerprint=$(GNUPGHOME="$gnupg_home" gpg --batch --with-colons --show-keys "$downloaded_key" \
@@ -211,6 +228,6 @@ final class CaddyPackageSourceProgram
                     "$minimum_version" >&2
                 exit 1
             fi
-            BASH;
+            BASH);
     }
 }
