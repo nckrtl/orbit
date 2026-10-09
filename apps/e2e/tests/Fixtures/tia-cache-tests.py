@@ -792,7 +792,7 @@ class RealPestCacheTest(unittest.TestCase):
             cache.seed(first, store, [project])
             self.assertEqual(snapshot['graph'], (first / project / '.orbit-tia/graph.json').read_text())
             output = cache.run(first / project, 'composer', 'test:affected')
-            self.assertEqual('run\nrun\n', (first / project / '.executed').read_text())
+            self.assertEqual('run\\nrun\\n', (first / project / '.executed').read_text())
             self.assertFalse((first / project / '.executed-other').exists(), output)
 
             # After CI records the newer main, the next worktree starts at that commit and runs nothing.
