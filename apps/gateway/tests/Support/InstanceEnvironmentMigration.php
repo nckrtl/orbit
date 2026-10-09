@@ -11,6 +11,7 @@ function owned_interrupted_creation_removal_migration(): object
     {
         public function down(): void
         {
+            (require base_path('database/migrations/2026_10_19_000000_allow_owned_project_sandbox_instance_removal.php'))->down();
             reserved_task_worktree_removal_migration()->down();
             (require base_path('database/migrations/2026_10_10_000001_allow_owned_interrupted_creation_removal.php'))->down();
         }
@@ -19,6 +20,7 @@ function owned_interrupted_creation_removal_migration(): object
         {
             (require base_path('database/migrations/2026_10_10_000001_allow_owned_interrupted_creation_removal.php'))->up();
             reserved_task_worktree_removal_migration()->up();
+            (require base_path('database/migrations/2026_10_19_000000_allow_owned_project_sandbox_instance_removal.php'))->up();
         }
     };
 }

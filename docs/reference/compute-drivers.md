@@ -125,7 +125,7 @@ Local fleet enrollment has its own disabled-by-default `ORBIT_INCUS_ENROLLMENT_E
 
 The reservation pins both sides of Node ownership, the complete Incus placement, and the SSH key. Retries verify the same guest and key through a separate read-only fleet identity operation. This operation permits existing enrollment files but keeps all host placement and firewall checks. It cannot replace a missing Node or repin a changed key.
 
-The hub confirms the sandbox's fleet limits before native provisioning publishes its peer. Its configured public UDP endpoint must match the recorded bootstrap endpoint, including on retries. Bootstrap uses the recorded private host address and reserved SSH port; enrolled traffic uses the VM's own WireGuard address. The Node joins only as `app-dev`, uses the managed `orbit` account, and has no grants to other Nodes. These enrollment primitives do not enable local Project claims; preview and cleanup acceptance remain required.
+The hub confirms the sandbox's fleet limits before native provisioning publishes its peer. Its configured public UDP endpoint must match the recorded bootstrap endpoint, including on retries. Bootstrap uses the recorded private host address and reserved SSH port; enrolled traffic uses the VM's own WireGuard address. The Node joins only as `app-dev`, uses the managed `orbit` account, and has no grants to other Nodes. Local Project workspace admission has a separate disabled-by-default `ORBIT_INCUS_PROJECT_WORKSPACES_ENABLED` gate. Enable it only after local enrollment, runtime, and cleanup acceptance.
 
 ### Local Project SSH identity
 
@@ -347,7 +347,7 @@ The scheduler reconciles review retention after publication and on later ticks. 
 
 ## Task workspace cleanup
 
-Merge and cancellation remove task workspaces through their sandbox reservations. Under the group admission lock, Orbit checks the group, Project, Instance, reservation, and compute host. It refuses foreign group references and unexpected live Routes, Processes, Schedules, or database connections. Guest checkout paths never reach the shared-host Instance remover.
+Merge and cancellation remove task workspaces through their sandbox reservations. Under the group admission lock, Orbit checks the group, Project, Instance, reservation, and compute host. It refuses foreign group references and unexpected live Routes, Processes, Schedules, or database connections. Guest checkout paths never reach host source inspection or deletion.
 
 For Incus, Orbit revokes the model key, destroys owned compute, and confirms destruction before deleting the workspace row and clearing its task references. A failed operation retains ownership for retry. The reservation remains as audit history. UpCloud cleanup records destruction intent and revokes the model key before removing an exclusive workspace, its native app-dev role and Node, and the owned hub policy. The reservation retains provider IDs throughout. If provider deletion fails after the workspace is removed, cleanup retries through the reservation. A foreign workspace, Node, role, or live resource reference refuses cleanup.
 
@@ -463,14 +463,26 @@ The operator then uses its isolated Gateway profile to list the active Gateway a
 
 Provisioning reserves and attaches an owned workspace before preparing source, the isolated pair, and Pi in that order. It holds the group's execution lock during preparation. A failed step retains the reservation and workspace for retry; it never adopts an unrelated workspace or falls back to shared compute. Only successful preparation returns the workspace to the scheduler, which runs the Project's baseline setup and check before starting an implementer.
 
+### Admit a Project claim
+
+Project claims use local Incus capacity first when a host has that Project's development image. An existing reservation keeps its provider. An unavailable host or incomplete local configuration refuses admission; only measured lack of local capacity permits cloud placement. Local enrollment and workspace admission each require their own opt-in. Cloud recovery keeps its recorded provider and restores from the published branch.
+
+An enrolled Project VM runs checks and workspace commands through its own pinned fleet SSH connection. Pi uses the same fleet model endpoint and per-sandbox credentials as the cloud lane. Temporary repository access renews only for the owned, running Node and its Project. Local park retains the Node and bootstrap reservation. Resume verifies the restored guest and SSH key, reinstalls its hub limits, and confirms Pi before another turn starts.
+
+Web-serving Projects get one generated private Route, `task-<id>.<project>.<dev-tld>`, on their enrolled VM. Native development provisioning uses the Project root and prepares PHP, certificates, Caddy, and private DNS. Laravel previews import their environment through the native Instance environment flow. An empty `APP_KEY` receives one key per workspace; retries synchronize the stored environment and retain its keys instead of importing it again. Only the owned, running Project guest can use this runtime path. Generic source, transfer, and removal actions retain their sandbox guards. Non-web Projects keep a source-only workspace.
+
+Fleet cleanup applies to both providers. After destruction intent and model revocation, it records one native Instance removal journal for the exclusive workspace. Its source inventory names the sandbox reservation; it does not claim to inspect or quarantine a host checkout. Source finalization records retention inside that VM until compute destruction. Guest-local certificates and services remain with it, so cleanup can withdraw publication while the VM is parked.
+
+Native Route withdrawal handles active previews and resumes from recorded evidence after a partial failure. Runtime cleanup and row deletion finish before removal of the native `app-dev` role and peer, hub policy, and compute. A failed Route or peer removal retains reservation ownership for retry. Foreign journals, targets, public Routes, and changed workspace ownership refuse cleanup before mutation.
+
 ### Admit an UpCloud project claim
 
-`ORBIT_SANDBOX_PROJECT_CLAIMS_ENABLED` defaults to false. Its first lane uses UpCloud directly; it refuses project Incus reservations rather than changing their placement. Enable UpCloud compute, enrollment, and the model proxy, and configure Pi models and the pinned artifact before enabling this switch. Orbit projects retain their local pair path.
+`ORBIT_SANDBOX_PROJECT_CLAIMS_ENABLED` defaults to false. Local placement also requires `ORBIT_INCUS_PROJECT_WORKSPACES_ENABLED`; cloud placement requires UpCloud enrollment. Enable UpCloud compute, enrollment, and the model proxy, and configure Pi models and the pinned artifact before enabling this switch. Orbit projects retain their local pair path.
 
-The claim reserves and starts one VM, enrolls its owned Node, attaches one private task workspace, fetches source directly from GitHub, and prepares Pi. It then returns the source-resolved workspace to the scheduler. The scheduler runs the project's setup steps, including the TIA baseline restore, and its baseline check before starting the implementer. Retries keep the reservation and preserve prepared source. The task workspace has no preview Route.
+The claim reserves and starts one VM, enrolls its owned Node, attaches one private task workspace, fetches source directly from GitHub, and prepares Pi. It prepares the private preview for web-serving Projects and then returns the workspace to the scheduler. The scheduler runs the project's setup steps, including the TIA baseline restore, and its baseline check before starting the implementer. Retries keep the reservation and preserve prepared source. Non-web Projects have no preview Route.
 
 Review expiry, merge, and cancellation use the owned cleanup path. A failed cleanup retains destruction intent and provider IDs. Review feedback can use the original running VM during retention.
 
 When review feedback resumes a group whose UpCloud VM was destroyed, Orbit first confirms an open pull request in the Project repository. It reserves a replacement VM only after the old reservation has finished cleanup. It restores `task-{group id}` at the confirmed pull request commit using temporary GitHub App access, prepares fresh Pi and model credentials, and reruns Project setup and baseline checks before starting the implementer. A missing branch or mismatched commit keeps the group waiting; recovery never starts from the default branch. Retries preserve the replacement reservation and local work.
 
-Orbit does not recreate a VM just for preview access because private task workspaces have no preview Route. Keep unattended claims disabled until the complete live UpCloud flow has passed acceptance.
+A destroyed cloud VM must finish branch recovery before preview access resumes. Keep unattended claims disabled until the complete live UpCloud flow has passed acceptance.

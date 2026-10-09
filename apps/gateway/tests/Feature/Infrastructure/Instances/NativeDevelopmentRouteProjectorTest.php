@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Clusters\SetClusterRouterAction;
 use App\Actions\Routes\ConvergeRouteAction;
+use App\Actions\Routes\CreateRouteAction;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Clusters\ClusterRouterOperationLock;
@@ -58,6 +59,7 @@ use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Str;
 use Tests\Support\FakeClusterRouterDnsSelectionReconciler;
+use Tests\Support\IncusRuntimeWorkspace;
 use Tests\Support\SshNodeCaddyBuilds;
 
 it('uses one local workload site when Router and workload roles share a Node', function (): void {
@@ -1578,3 +1580,20 @@ final class Orb127RouteProcessRunner implements ProcessRunner
             : new CommandResult(0, '', '', 1, false);
     }
 }
+
+it('converges the Project sandbox leaf and private preview through native projection', function (): void {
+    $workspace = IncusRuntimeWorkspace::create();
+    $workspace->project->update(['type' => 'laravel-app', 'root' => 'public']);
+    $workspace->update(['task_workspace_routed' => true, 'root' => 'public', 'status' => InstanceState::SourceResolved]);
+    $route = app(CreateRouteAction::class)->ensureForInstance($workspace, null);
+    [$projector, $ssh, $processes, $home] = orb127_route_projector();
+    try {
+        $projector->converge($workspace, $route);
+        expect($route->fresh()->sites_published)->toBeTrue();
+        expect(collect($ssh->commands)->flatMap(fn (RemoteCommand $command): array => $command->arguments))
+            ->toContain('app-instance-'.$workspace->id, 'route-'.$route->id.'-router');
+        expect($processes->invocations)->not->toBeEmpty();
+    } finally {
+        new Filesystem()->deleteDirectory($home);
+    }
+});

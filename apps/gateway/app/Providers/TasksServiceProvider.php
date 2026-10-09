@@ -38,9 +38,9 @@ use App\Domain\Tasks\TaskWorkspaceMcp;
 use App\Domain\Tasks\TaskWorkspaceSigner;
 use App\Domain\Tasks\TaskWorkspaceStateReader;
 use App\Domain\Tasks\TaskWorkspaceTopology;
+use App\Infrastructure\Compute\ProjectSandboxFleetRemoval;
 use App\Infrastructure\Compute\SandboxHubNetwork;
 use App\Infrastructure\Compute\UpCloudComputeDriver;
-use App\Infrastructure\Compute\UpCloudSandboxFleetRemoval;
 use App\Infrastructure\Compute\UpCloudSandboxNodeBootstrap;
 use App\Infrastructure\Tasks\AgentViewTaskWorkspaceDiffReader;
 use App\Infrastructure\Tasks\GitHubTaskBaseBranchFetcher;
@@ -78,7 +78,7 @@ final class TasksServiceProvider extends ServiceProvider
     /** @var array<class-string, class-string> */
     public array $bindings = [
         ComputeDriver::class => UpCloudComputeDriver::class,
-        SandboxFleetRemover::class => UpCloudSandboxFleetRemoval::class,
+        SandboxFleetRemover::class => ProjectSandboxFleetRemoval::class,
         SandboxNodeBootstrap::class => UpCloudSandboxNodeBootstrap::class,
         SandboxNetworkPolicy::class => SandboxHubNetwork::class,
         InstanceProvisioning::class => TaskWorkspaceProvisioner::class,
