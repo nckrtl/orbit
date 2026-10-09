@@ -123,7 +123,6 @@ pest()->tia()->watch([
     // Sandbox programs, each with the tests that run it or read it. A new program stays unwatched until it is listed.
     'resources/compute/sandbox-hub-network.py' => 'tests/Feature/Infrastructure/Compute/UpCloudSandboxEnrollmentTest.php',
     'resources/compute/guest-github-access.py' => 'tests/Feature/Infrastructure/Tasks/SandboxGitHubAccessTest.php',
-    'resources/compute/guest-github-dns.py' => 'tests/Feature/Infrastructure/Tasks/SandboxWorkspaceSourceTest.php',
     'resources/compute/guest-workspace-source.py' => 'tests/Feature/Infrastructure/Tasks/SandboxWorkspaceSourceTest.php',
     'resources/compute/guest-pair-dns.py' => 'tests/Feature/Infrastructure/Tasks/SandboxPairRuntimeTest.php',
     'resources/compute/guest-pair-runtime.py' => 'tests/Feature/Infrastructure/Tasks/SandboxPairRuntimeTest.php',
