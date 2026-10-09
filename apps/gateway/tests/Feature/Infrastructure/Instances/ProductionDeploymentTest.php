@@ -507,9 +507,9 @@ it('prunes a production home to the selected, the previous, and the newest other
             ['state_directory="$home/state"', 'test -d "$home"', '"$(id -un):$(id -gn):600"', '! -uid "$(id -u)"', '! -gid "$(id -g)"'],
             $ssh->commands[0]->input ?? '',
         );
-        // The fixture's processes stand in for the production user's. Nothing outside the sandbox runs from a release.
+        // The test's own child processes stand in for the production user's: the fake sudo cannot read other processes.
         expect($script)->toContain('pgrep -u "$user"');
-        $script = str_replace('pgrep -u "$user"', 'pgrep -u "$(id -u)"', $script);
+        $script = str_replace('pgrep -u "$user"', 'pgrep -P "$PPID"', $script);
         $arguments = $ssh->commands[0]->arguments;
         expect(array_slice($arguments, 8))->toBe(['3', '20260104000000-d', $previous ?? '']);
         array_splice($arguments, 3, 3, [$repository, 'orbit-fixture', $home]);
@@ -574,7 +574,7 @@ it('removes nothing when it cannot read where a running process works', function
         chmod($sandbox.'/bin/sudo', 0755);
         $script = str_replace(
             ['state_directory="/var/lib/orbit/app-instance-sources/$instance"', 'test "$home" = "/home/$user"', 'root:root:600', '! -user "$user"', '! -group "$user"', 'pgrep -u "$user"', 'sudo readlink --'],
-            ['state_directory="$home/state"', 'test -d "$home"', '"$(id -un):$(id -gn):600"', '! -uid "$(id -u)"', '! -gid "$(id -g)"', 'pgrep -u "$(id -u)"', 'false --'],
+            ['state_directory="$home/state"', 'test -d "$home"', '"$(id -un):$(id -gn):600"', '! -uid "$(id -u)"', '! -gid "$(id -g)"', 'pgrep -P "$PPID"', 'false --'],
             $ssh->commands[0]->input ?? '',
         );
         $arguments = $ssh->commands[0]->arguments;
