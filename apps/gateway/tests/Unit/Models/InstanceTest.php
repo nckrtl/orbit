@@ -32,7 +32,8 @@ it('keeps non-Laravel dependency trees at repository scope and uses the effectiv
 
 it('requires a Route and serves PHP for web-serving project types only', function (ProjectType $type, bool $serving): void {
     $instance = new Instance(['checkout_path' => '/srv/repository', 'source_is_laravel' => false]);
-    $instance->setRelation('project', new Project(['type' => $type, 'root' => 'public']));
+    // A package with a web root is a serving app; only path `.` with no web root is non-serving.
+    $instance->setRelation('project', new Project(['type' => $type, 'root' => $serving ? 'public' : '.']));
 
     expect($instance->requiresRoute())->toBe($serving)
         ->and($instance->servesPhp())->toBe($serving);

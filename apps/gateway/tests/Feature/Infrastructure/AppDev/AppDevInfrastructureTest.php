@@ -681,7 +681,7 @@ it('publishes the other pools, then fails, when a desired pool names a missing w
             expect($exception->errorCode)
                 ->toBe(RemoteAppDevPhpFpmManager::PoolDirectoryMissing)
                 ->and($exception->getMessage())
-                ->toContain('orbit-app-instance-'.$missing->id, '/home/orbit/apps/acme/missing');
+                ->toContain('orbit-instance-'.$missing->id.'-web', '/home/orbit/apps/acme/missing');
         });
 
     $publishCall = collect($ssh->commands)
@@ -691,8 +691,8 @@ it('publishes the other pools, then fails, when a desired pool names a missing w
     expect($ssh->commands[0]->arguments)
         ->toContain('/home/orbit/apps/acme/present', '/home/orbit/apps/acme/missing')
         ->and($kept)
-        ->toContain('[orbit-app-instance-'.$present->id.']')
-        ->not->toContain('[orbit-app-instance-'.$missing->id.']')
+        ->toContain('[orbit-instance-'.$present->id.'-web]')
+        ->not->toContain('[orbit-instance-'.$missing->id.'-web]')
         ->and($publishCall?->input)
         ->toContain(base64_encode($kept));
 });
@@ -752,7 +752,7 @@ it('reports the installed and desired pools whose working directory is missing, 
     $presentDirectory = $harness->phpRoot().'/../apps/present';
     $missingDirectory = $harness->phpRoot().'/../apps/missing';
     $harness->prepare('8.5', 'orbit-scopes.conf', implode("\n", [
-        '[orbit-app-instance-'.$present->id.']',
+        '[orbit-instance-'.$present->id.'-web]',
         "chdir = {$presentDirectory}",
         '[orbit-app-instance-342]',
         "chdir = {$removed}",
@@ -783,7 +783,7 @@ it('reports the installed and desired pools whose working directory is missing, 
             ->and($pools)
             ->toBe([
                 ['pool' => 'orbit-app-instance-342', 'version' => '8.5', 'directory' => $removed, 'installed' => true],
-                ['pool' => 'orbit-app-instance-'.$missing->id, 'version' => '8.5', 'directory' => $missingDirectory, 'installed' => false],
+                ['pool' => 'orbit-instance-'.$missing->id.'-web', 'version' => '8.5', 'directory' => $missingDirectory, 'installed' => false],
             ]);
     } finally {
         $harness->cleanup();

@@ -105,7 +105,9 @@ A failed start restores the generated files and service state from before the ch
 
 The shared `/etc/orbit` directory stays `root:root` with mode `0711`, so production users can reach their Schedule scripts without listing the directory. `/etc/orbit/php-fpm` stays closed to application users.
 
-A routed `laravel-app` or `symfony-app` serves PHP. A routed `monorepo` app serves PHP only when its own path holds Laravel source. A `laravel-package` app can select a PHP version from its Composer constraint but is not classified as a Laravel application or served through PHP-FPM. Other app types start no PHP-FPM master. Production source inspection applies the sole app's type when it classifies Composer and Artisan metadata. Migration preserves existing single-app production service, pool, socket and local tuning identities; it does not rename them to the development identity. It [checks the production checkout](/reference/instance-cloning#destination-checks) as the production user, even when the SSH user's home is private.
+A routed `laravel-app` or `symfony-app` serves PHP. A routed `monorepo` app serves PHP only when its own path holds Laravel source. A `laravel-package` app can select a PHP version from its Composer constraint but is not classified as a Laravel application or served through PHP-FPM. Other app types start no PHP-FPM master.
+
+Production source inspection applies the sole app's type when it classifies Composer and Artisan metadata. Migration preserves existing single-app production service, pool, socket and local tuning identities; it does not rename them to the development identity. It [checks the production checkout](/reference/instance-cloning#destination-checks) as the production user, even when the SSH user's home is private.
 
 ## OPcache settings
 

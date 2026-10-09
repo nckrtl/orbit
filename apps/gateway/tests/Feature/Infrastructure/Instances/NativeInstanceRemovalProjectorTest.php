@@ -299,9 +299,9 @@ it('withdraws the pool of a member whose Route is cleared and keeps the other po
     $member->update(['route_cleared_at' => now(), 'route_outcome' => 'deleted']);
     [$projector, $ssh] = orb181_removal_projector($this);
     $ssh->phpDiscovery = "8.5\t".base64_encode(implode("\n", [
-        "[orbit-app-instance-{$instance->id}]",
+        "[orbit-instance-{$instance->id}-web]",
         "chdir = {$instance->checkout_path}",
-        "[orbit-app-instance-{$neighbour->id}]",
+        "[orbit-instance-{$neighbour->id}-web]",
         "chdir = {$neighbour->checkout_path}",
         '',
     ]))."\n";
@@ -311,8 +311,8 @@ it('withdraws the pool of a member whose Route is cleared and keeps the other po
     $published = orb181_published_php_pools($ssh->commands);
     expect($published)->toHaveCount(1)
         ->and($published[0])
-        ->toContain("[orbit-app-instance-{$neighbour->id}]")
-        ->not->toContain("[orbit-app-instance-{$instance->id}]");
+        ->toContain("[orbit-instance-{$neighbour->id}-web]")
+        ->not->toContain("[orbit-instance-{$instance->id}-web]");
 });
 
 it('withdraws the pool even when PHP-FPM skips another site whose directory is missing', function (): void {
@@ -329,9 +329,9 @@ it('withdraws the pool even when PHP-FPM skips another site whose directory is m
     $instance = Instance::query()->findOrFail($member->instance_id);
     [$projector, $ssh] = orb181_removal_projector($this);
     $ssh->phpDiscovery = "8.5\t".base64_encode(implode("\n", [
-        "[orbit-app-instance-{$instance->id}]",
+        "[orbit-instance-{$instance->id}-web]",
         "chdir = {$instance->checkout_path}",
-        "[orbit-app-instance-{$broken->id}]",
+        "[orbit-instance-{$broken->id}-web]",
         "chdir = {$broken->checkout_path}",
         '',
     ]))."\nmissing-directory\t{$broken->checkout_path}\n";

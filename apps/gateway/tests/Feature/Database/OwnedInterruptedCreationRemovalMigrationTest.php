@@ -33,8 +33,11 @@ it('round-trips reserved task worktree eligibility and unresolved source commit 
         expect($sql)->not->toContain("source_layout = 'worktree'");
     }
     $migration->up();
+    $after = DB::table('sqlite_master')->whereIn('name', $names)->pluck('sql', 'name')->all();
+    ksort($before);
+    ksort($after);
 
-    expect(DB::table('sqlite_master')->whereIn('name', $names)->pluck('sql', 'name')->all())->toBe($before);
+    expect($after)->toBe($before);
 });
 
 it('round-trips legacy null-prepare reserved worktree eligibility without changing other trigger clauses', function (): void {

@@ -169,14 +169,14 @@ describe('Route removal certificate order', function (): void {
         // still pending.
         [$route, $instance] = certificate_order_targeted_route($this->nodes, $this->beast, nodeScoped: true);
 
-        expect($this->nodes->names('10.44.0.7', "app-instance-{$instance->id}"))->toBeTrue()
+        expect($this->nodes->names('10.44.0.7', "app-instance-{$instance->id}-app-web"))->toBeTrue()
             ->and(certificate_order_php_sites($this->beast))->toBe(['task-342.acme.test']);
 
         $this->deleteJson("/api/v1/routes/{$route->id}")->assertOk();
 
         expect(Route::query()->whereKey($route->id)->exists())->toBeFalse()
             ->and($instance->refresh()->status)->toBe(InstanceState::SourceResolved)
-            ->and($this->nodes->names('10.44.0.7', "app-instance-{$instance->id}"))->toBeFalse()
+            ->and($this->nodes->names('10.44.0.7', "app-instance-{$instance->id}-app-web"))->toBeFalse()
             ->and($this->nodes->firewallRemovals)->toBe(["10.44.0.7:orbit:route-{$route->id}-lan"])
             ->and($this->php->converged)->toBe(['beast' => []])
             ->and($this->nodes->removedWhileNamed)->toBe([])
@@ -191,7 +191,7 @@ describe('Route removal certificate order', function (): void {
         $this->nodes->issue('10.44.0.20', "route-{$route->id}-router");
         certificate_order_caddy()->converge($router);
 
-        expect($this->nodes->names('10.44.0.30', "app-instance-{$instance->id}"))->toBeTrue()
+        expect($this->nodes->names('10.44.0.30', "app-instance-{$instance->id}-app-web"))->toBeTrue()
             ->and($this->nodes->names('10.44.0.20', "route-{$route->id}-router"))->toBeTrue()
             ->and(certificate_order_php_sites($worker))->toBe(['task-342.acme.test']);
 
@@ -199,7 +199,7 @@ describe('Route removal certificate order', function (): void {
 
         expect(Route::query()->whereKey($route->id)->exists())->toBeFalse()
             ->and($instance->refresh()->status)->toBe(InstanceState::SourceResolved)
-            ->and($this->nodes->names('10.44.0.30', "app-instance-{$instance->id}"))->toBeFalse()
+            ->and($this->nodes->names('10.44.0.30', "app-instance-{$instance->id}-app-web"))->toBeFalse()
             ->and($this->nodes->names('10.44.0.20', "route-{$route->id}-router"))->toBeFalse()
             ->and($this->nodes->hasCertificate('10.44.0.20', "route-{$route->id}-router"))->toBeFalse()
             ->and($this->nodes->firewallRemovals)->toBe(["10.44.0.30:orbit:route-{$route->id}-lan"])
@@ -223,7 +223,7 @@ describe('Route removal certificate order', function (): void {
 
         expect($route->refresh()->status)->toBe(RouteStatus::Failed)
             ->and($route->failed_step)->toBe('targeted:caddy')
-            ->and($this->nodes->names('10.44.0.7', "app-instance-{$instance->id}"))->toBeTrue()
+            ->and($this->nodes->names('10.44.0.7', "app-instance-{$instance->id}-app-web"))->toBeTrue()
             ->and(RouteRemovalResidue::query()->exists())->toBeFalse();
     });
 
@@ -246,7 +246,7 @@ describe('Route removal certificate order', function (): void {
         expect(Route::query()->whereKey($route->id)->exists())->toBeFalse()
             ->and($this->nodes->names('10.44.0.20', "route-{$route->id}-router"))->toBeFalse()
             ->and($this->nodes->hasCertificate('10.44.0.20', "route-{$route->id}-router"))->toBeFalse()
-            ->and($this->nodes->names('10.44.0.30', "app-instance-{$instance->id}"))->toBeTrue()
+            ->and($this->nodes->names('10.44.0.30', "app-instance-{$instance->id}-app-web"))->toBeTrue()
             ->and($this->php->converged)->toBe([])
             ->and($this->nodes->firewallRemovals)->toBe([]);
 
@@ -256,7 +256,7 @@ describe('Route removal certificate order', function (): void {
         expect($artifact->applies($worker))->toBeTrue()
             ->and($artifact->applies($router))->toBeFalse()
             ->and($artifact->apply($worker))->toBeTrue()
-            ->and($this->nodes->names('10.44.0.30', "app-instance-{$instance->id}"))->toBeFalse()
+            ->and($this->nodes->names('10.44.0.30', "app-instance-{$instance->id}-app-web"))->toBeFalse()
             ->and($this->php->converged)->toBe(['worker' => []])
             ->and($this->nodes->firewallRemovals)->toBe(["10.44.0.30:orbit:route-{$route->id}-lan"])
             ->and(RouteRemovalResidue::query()->exists())->toBeFalse()
@@ -285,7 +285,7 @@ describe('Route removal certificate order', function (): void {
 
         expect($second->skipped)->toBe([])
             ->and(RouteRemovalResidue::query()->exists())->toBeFalse()
-            ->and($this->nodes->names('10.44.0.7', "app-instance-{$instance->id}"))->toBeFalse()
+            ->and($this->nodes->names('10.44.0.7', "app-instance-{$instance->id}-app-web"))->toBeFalse()
             ->and($footprint->drifted($this->beast))->toBeFalse();
     });
 
@@ -513,7 +513,7 @@ function certificate_order_targeted_route(CertificateOrderNodes $nodes, Node $no
     ]);
     $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
     $route->publishSites();
-    $nodes->issue((string) $node->wireguard_ip, "app-instance-{$instance->id}");
+    $nodes->issue((string) $node->wireguard_ip, "app-instance-{$instance->id}-app-web");
     certificate_order_caddy()->converge($node);
 
     return [$route, $instance];
