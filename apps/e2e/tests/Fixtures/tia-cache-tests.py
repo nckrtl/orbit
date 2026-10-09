@@ -167,7 +167,7 @@ class MainCacheTest(unittest.TestCase):
     def prune_development_releases(self, selected):
         source = Path(cache.__file__).resolve().parent.parent / 'apps/gateway/app/Infrastructure/Instances/DevelopmentReleaseProgram.php'
         program = subprocess.check_output(['php', '-r', 'require $argv[1]; echo App\\Infrastructure\\Instances\\DevelopmentReleaseProgram::prune();', str(source)], text=True)
-        return subprocess.run(['bash', '-seu', '--', str(self.root), str(self.root), '303', selected.name], input=program, capture_output=True, text=True)
+        return subprocess.run(['bash', '-seu', '--', str(self.root), str(self.root), '303', '3', selected.name], input=program, capture_output=True, text=True)
 
     def test_cache_attachment_recovers_after_process_termination_at_each_transition(self):
         self.store.mkdir(parents=True)
