@@ -399,7 +399,7 @@ Cold tool inputs include the pinned pnpm package under `opt/orbit-image/pnpm`. T
 
 ### Build a cold candidate
 
-`bin/sandbox-template-build --plan` verifies inputs and refuses existing candidate resources. `--prepare` allocates a new isolated pair through the production Incus helper, installs the pinned offline inputs, creates the managed `orbit` account, and verifies the shared source and CI baseline hashes. `--converge` bootstraps the private Gateway and enrolls its roleless operator through native Orbit commands.
+`bin/sandbox-template-build --plan` verifies inputs and refuses existing candidate resources. `--prepare` allocates a new isolated pair through the production Incus helper, installs the pinned offline inputs, creates the managed `orbit` account, and verifies the shared source and CI baseline hashes. `--converge` installs public DNS upstreams in each owned guest, bootstraps the private Gateway, and enrolls its roleless operator through native Orbit commands. Public DNS uses `1.1.1.1` and `9.9.9.9` with the systemd resolver default route. More specific fleet DNS routes remain authoritative. Guest DNS never depends on access to the Incus host. A foreign resolver file or failed resolver restart refuses readiness.
 
 Each mode accepts the same JSON object with the required fields `project`, `pool`, `sandbox_id`, `budget`, `subnet`, `blocked_networks`, `base_image`, `inputs`, and `source_manifest`. `workload_roles` is an optional ordered list from `app-dev`, `app-prod`, and `app-prod-2`. Omission builds only the pair. The budget must cover all requested guests.
 
@@ -433,7 +433,7 @@ This helper prepares source only. It does not certify ignored files, dependency 
 
 The builder must mark every candidate VM and its source volume with `user.orbit.template.candidate=<template UUID>`. The names and compute ownership must match `sandbox_id`. Only the recorded candidate guests may attach the source volume. The candidate must be running, have only its root disk, source disk, and group network, and contain no task-source or Pi/model runtime state. The command refuses existing template volumes or matching image identities. It never changes a promoted alias or accepts an unmarked pair.
 
-The publisher runs independent guest audits together, bounded by the requested inventory of at most five guests. It waits for every audit before changing source, stopping guests, or creating publication outputs.
+The publisher runs independent guest audits together, bounded by the requested inventory of at most five guests. Each guest command has a 60-minute limit for scanning mounted source and offline inputs. It waits for every audit before changing source, stopping guests, or creating publication outputs.
 
 The command checks guest prerequisites and known credential locations before source changes. It refuses GitHub tokens in guest files or process environments, subscription credentials, and the shared worker account. This audit complements a clean image build; it cannot establish provenance for arbitrary candidate files. The cold builder must still supply verified packages, tools, dependencies, and CI baselines.
 
