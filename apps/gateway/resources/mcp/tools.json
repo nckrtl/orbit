@@ -6998,6 +6998,13 @@
           "instance_id": {
             "type": "integer"
           },
+          "web_root": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 255
+          },
           "node_id": {
             "type": "integer"
           },
@@ -7027,6 +7034,13 @@
               },
               "instance_id": {
                 "type": "integer"
+              },
+              "web_root": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 255
               }
             },
             "required": [
@@ -7271,6 +7285,14 @@
               "public"
             ],
             "description": "New publication intent"
+          },
+          "web_root": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 255,
+            "description": "New web root inside the Instance checkout; empty to serve the Instance root"
           }
         },
         "additionalProperties": false,

@@ -24,6 +24,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property int|null $cluster_id
  * @property int|null $generation_basis_node_id
  * @property string $domain
+ * @property string|null $web_root
  * @property RouteProvenance $provenance
  * @property RoutePublication $publication
  * @property RouteStatus $status
@@ -69,6 +70,7 @@ final class Route extends Model
         'cluster_id',
         'generation_basis_node_id',
         'domain',
+        'web_root',
         'provenance',
         'publication',
         'status',
@@ -114,6 +116,12 @@ final class Route extends Model
     public function isApp(): bool
     {
         return $this->kind === RouteKind::App;
+    }
+
+    /** A Route with a web root serves that directory of its Instance's checkout instead of the effective root. */
+    public function hasWebRoot(): bool
+    {
+        return $this->web_root !== null;
     }
 
     public function isAuthoritative(): bool

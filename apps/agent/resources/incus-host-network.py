@@ -323,9 +323,31 @@ def chains(spec, ipv6=False):
     return rules, jumps
 
 
-def render(spec, ipv6=False, remove=False):
-    rules, jumps = chains(spec, ipv6)
-    rows = ['*filter']
+def nat_chains(spec):
+    bootstrap = spec.get('project_bootstrap')
+    if bootstrap is None:
+        return {}, {}
+    subnet = ipaddress.ip_network(spec['subnet'], strict=True)
+    host, operator = str(subnet.network_address + 1), str(subnet.network_address + 10)
+    bridge = name(spec['sandbox_id'])
+    chain = 'OTN-' + bridge[3:]
+    gateway = spec['gateway_address']
+    rules = {chain: [f'-s {gateway}/32 -d {operator}/32 -p tcp -m tcp --dport 22 '
+                     f'-m conntrack --ctstate NEW,ESTABLISHED --ctdir ORIGINAL --ctproto tcp '
+                     f'--ctorigsrc {gateway}/32 --ctorigdst {bootstrap["ssh_host"]}/32 '
+                     f'--ctorigdstport {bootstrap["ssh_port"]} -j SNAT --to-source {host}',
+                     '-j RETURN']}
+    return rules, {'POSTROUTING': [f'-o {bridge} -j {chain}']}
+
+
+def policy_tables(spec):
+    return [(True, 'filter'), (False, 'filter')] + ([(False, 'nat')] if spec.get('project_bootstrap') else [])
+
+
+def render(spec, ipv6=False, remove=False, table='filter'):
+    require(table in ('filter', 'nat') and not (ipv6 and table == 'nat'))
+    rules, jumps = chains(spec, ipv6) if table == 'filter' else nat_chains(spec)
+    rows = ['*' + table]
     if remove:
         rows += [f'-D {hook} {rule}' for hook, values in jumps.items() for rule in values]
         rows += [f'-F {chain}' for chain in rules]
@@ -338,9 +360,10 @@ def render(spec, ipv6=False, remove=False):
     return '\n'.join(rows + ['COMMIT', ''])
 
 
-def snapshot(ipv6=False):
+def snapshot(ipv6=False, table='filter'):
+    require(table in ('filter', 'nat') and not (ipv6 and table == 'nat'))
     program = '/usr/sbin/ip6tables-save' if ipv6 else '/usr/sbin/iptables-save'
-    rows = run([program, '-t', 'filter'])
+    rows = run([program, '-t', table])
     result = {}
     for row in rows.splitlines():
         if row.startswith(':'):
@@ -351,18 +374,18 @@ def snapshot(ipv6=False):
     return result
 
 
-def desired(spec, ipv6=False):
+def desired(spec, ipv6=False, table='filter'):
     # Ask the installed netfilter tools to normalize syntax in a fresh namespace.
     script = """import subprocess,sys
-v=sys.argv[1]; text=sys.stdin.read()
+v=sys.argv[1]; table=sys.argv[2]; text=sys.stdin.read()
 r=subprocess.run(['/usr/sbin/'+v+'-restore','--noflush'], input=text,text=True,capture_output=True)
 if r.returncode: sys.exit(1)
-r=subprocess.run(['/usr/sbin/'+v+'-save','-t','filter'],text=True,capture_output=True)
+r=subprocess.run(['/usr/sbin/'+v+'-save','-t',table],text=True,capture_output=True)
 if r.returncode: sys.exit(1)
 print(r.stdout)
 """
     program = 'ip6tables' if ipv6 else 'iptables'
-    output = run(['/usr/bin/unshare', '--net', '/usr/bin/python3', '-I', '-c', script, program], render(spec, ipv6))
+    output = run(['/usr/bin/unshare', '--net', '/usr/bin/python3', '-I', '-c', script, program, table], render(spec, ipv6, table=table))
     result = {}
     for row in output.splitlines():
         if row.startswith(':'):
@@ -373,8 +396,9 @@ print(r.stdout)
     return result
 
 
-def state(spec, expected, current):
-    owned, jumps = chains(spec)
+def state(spec, expected, current, table='filter'):
+    require(table in ('filter', 'nat'))
+    owned, jumps = chains(spec) if table == 'filter' else nat_chains(spec)
     marker = set(owned)
     present = marker.intersection(current)
     references = {hook: [rule for rule in rows if any(token in marker for token in rule)]
@@ -391,29 +415,31 @@ def state(spec, expected, current):
         prefix = []
         for rule in current.get(hook, []):
             target = rule[-1] if len(rule) >= 2 and rule[-2] == '-j' else ''
-            if not re.fullmatch(r'OT[IFO]-[a-f0-9]{10}', target):
+            if not re.fullmatch(r'OTN-[a-f0-9]{10}' if table == 'nat' else r'OT[IFO]-[a-f0-9]{10}', target):
                 break
             prefix.append(rule)
         for rule in prefix:
             suffix = rule[-1].split('-', 1)[1]
-            require(rule in [flag + ['ot-' + suffix, '-j', 'OT' + hook[0] + '-' + suffix]
-                             for flag in ([['-i']] if hook == 'INPUT' else [['-o']] if hook == 'OUTPUT' else [['-i'], ['-o']])])
+            require(rule in [flag + ['ot-' + suffix, '-j', ('OTN' if table == 'nat' else 'OT' + hook[0]) + '-' + suffix]
+                             for flag in ([['-i']] if hook == 'INPUT' else [['-o']] if hook in ('OUTPUT', 'POSTROUTING') else [['-i'], ['-o']])])
         require(all(rule in prefix for rule in expected[hook]))
     return 'present'
 
 
 def change(spec, remove=False):
-    # Validate both families before changing either. A partially completed install is retryable.
-    families = [True, False] if not remove else [False, True]
+    # Validate every table before mutation. Remove bootstrap NAT before its filter boundary.
+    families = policy_tables(spec)
+    if remove:
+        families = list(reversed(families))
     plans = []
-    for ipv6 in families:
-        plans.append((ipv6, state(spec, desired(spec, ipv6), snapshot(ipv6))))
-    for ipv6, status in plans:
+    for ipv6, table in families:
+        plans.append((ipv6, table, state(spec, desired(spec, ipv6, table), snapshot(ipv6, table), table)))
+    for ipv6, table, status in plans:
         if (remove and status == 'present') or (not remove and status == 'absent'):
             program = '/usr/sbin/ip6tables-restore' if ipv6 else '/usr/sbin/iptables-restore'
-            run([program, '--wait', '10', '--noflush'], render(spec, ipv6, remove))
-    for ipv6 in families:
-        require(state(spec, desired(spec, ipv6), snapshot(ipv6)) == ('absent' if remove else 'present'))
+            run([program, '--wait', '10', '--noflush'], render(spec, ipv6, remove, table))
+    for ipv6, table in families:
+        require(state(spec, desired(spec, ipv6, table), snapshot(ipv6, table), table) == ('absent' if remove else 'present'))
 
 
 def manifest_path(identity):
@@ -437,6 +463,10 @@ def apply(request, config):
                 owned = {'OT' + hook + '-' + name(spec['sandbox_id'])[3:] for hook in 'IFO'}
                 require(not owned.intersection(current) and not any(
                     token in owned for rules in current.values() for rule in rules for token in rule))
+            current = snapshot(table='nat')
+            owned = {'OTN-' + name(spec['sandbox_id'])[3:]}
+            require(not owned.intersection(current) and not any(
+                token in owned for rules in current.values() for rule in rules for token in rule))
             return {'removed': True}
         spec = json.loads(read(path))
         require(spec['project'] == request['project'] and spec['sandbox_id'] == request['sandbox_id']
@@ -474,12 +504,12 @@ def apply(request, config):
         require(False)
     else:
         # Refuse adoption even when an unrecorded chain happens to match our policy.
-        for ipv6 in (False, True):
-            require(state(spec, desired(spec, ipv6), snapshot(ipv6)) == 'absent')
+        for ipv6, table in policy_tables(spec):
+            require(state(spec, desired(spec, ipv6, table), snapshot(ipv6, table), table) == 'absent')
         put(path, json.dumps(spec, sort_keys=True).encode())
     if request['operation'] == 'verify':
-        for ipv6 in (False, True):
-            require(state(spec, desired(spec, ipv6), snapshot(ipv6)) == 'present')
+        for ipv6, table in policy_tables(spec):
+            require(state(spec, desired(spec, ipv6, table), snapshot(ipv6, table), table) == 'present')
         return {'ready': True}
     change(spec)
     return {'ready': True}

@@ -8,6 +8,7 @@ use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Metrics\ExporterDegradationReason;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Nodes\NodeReachabilityProbe;
@@ -22,6 +23,7 @@ use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Shared\StoredInteger;
+use App\Models\Instance;
 use App\Models\Route;
 use App\Models\RouteRemovalResidue;
 use Illuminate\Support\Facades\DB;
@@ -127,8 +129,12 @@ final readonly class RemoveRouteAction
                 );
             }
 
-            $this->associations->assertTargetsDetachable($locked);
-            $this->reconciliation->assertRouteMutable($locked);
+            // A Route with a web root is an additional site, so its active Instance keeps serving
+            // through its own Route.
+            if (! $locked->hasWebRoot()) {
+                $this->associations->assertTargetsDetachable($locked);
+                $this->reconciliation->assertRouteMutable($locked);
+            }
         }
 
         $this->assertStandaloneRemovalAllowed($locked, $allowTracking);
@@ -153,6 +159,7 @@ final readonly class RemoveRouteAction
                 $failureStep = RouteRemovalStep::Php;
                 $this->cleanupStep($locked, $failureStep, function () use ($locked, $skippedNodeIds): void {
                     $this->projection->cleanupPhp($locked, $skippedNodeIds);
+                    $this->synchronizeWebRootUrls($locked, $skippedNodeIds);
                 });
             }
 
@@ -189,6 +196,26 @@ final readonly class RemoveRouteAction
         });
 
         return $locked;
+    }
+
+    /**
+     * Another Route serving the removed Route's directory takes over its `APP_URL`.
+     *
+     * @param  list<int>  $skippedNodeIds
+     */
+    private function synchronizeWebRootUrls(Route $route, array $skippedNodeIds): void
+    {
+        if (! $route->hasWebRoot()) {
+            return;
+        }
+
+        foreach ($route->targets as $target) {
+            $instance = Instance::query()->find($target->instance_id);
+
+            if ($instance instanceof Instance && $instance->status === InstanceState::Active && ! in_array($instance->node_id, $skippedNodeIds, true)) {
+                app(SynchronizeRouteWebRootUrlsAction::class)->execute($instance);
+            }
+        }
     }
 
     private function assertStandaloneRemovalAllowed(Route $route, bool $allowTracking): void
@@ -335,7 +362,7 @@ final readonly class RemoveRouteAction
             $locked = Route::query()->with('targets')->lockForUpdate()->findOrFail($route->id);
             $this->assertTargetsUnchanged($locked, $expectedTargetIds);
 
-            if ($locked->targets->isNotEmpty()) {
+            if ($locked->targets->isNotEmpty() && ! $locked->hasWebRoot()) {
                 $this->associations->assertTargetsDetachable($locked);
             }
 

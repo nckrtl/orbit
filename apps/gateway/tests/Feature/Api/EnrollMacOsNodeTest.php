@@ -37,7 +37,7 @@ beforeEach(function (): void {
     });
     app()->instance(HostKeyScanner::class, new class implements HostKeyScanner
     {
-        public function scan(string $host, int $port): HostKey
+        public function scan(string $host, int $port, ?SshConnection $via = null): HostKey
         {
             return new HostKey('ssh-ed25519', 'PUBLICKEY', 'SHA256:'.str_repeat('M', 43));
         }

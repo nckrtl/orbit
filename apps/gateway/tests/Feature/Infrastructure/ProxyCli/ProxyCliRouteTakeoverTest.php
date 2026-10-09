@@ -195,7 +195,7 @@ function proxycli_takeover_manager(array &$events, bool $failBuild = false): Nat
 
             public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
             {
-                if (in_array(CaddyPackageSourceProgram::SOURCE_URI, $command->arguments, true)) {
+                if (in_array(CaddyPackageSourceProgram::RELEASE_URL, $command->arguments, true)) {
                     $this->events[] = ['event' => 'ssh:caddy-source'];
 
                     return new CommandResult(0, '', '', 1, false);

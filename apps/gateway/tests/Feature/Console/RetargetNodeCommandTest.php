@@ -20,7 +20,7 @@ use App\Models\Node;
 beforeEach(function (): void {
     app()->instance(HostKeyScanner::class, new class implements HostKeyScanner
     {
-        public function scan(string $host, int $port): HostKey
+        public function scan(string $host, int $port, ?SshConnection $via = null): HostKey
         {
             return new HostKey('ssh-ed25519', 'host-key', 'SHA256:pinned');
         }
@@ -114,7 +114,7 @@ it('retargets a node from the gateway console', function (): void {
 it('reports typed retarget failures without leaking command output', function (): void {
     app()->instance(HostKeyScanner::class, new class implements HostKeyScanner
     {
-        public function scan(string $host, int $port): HostKey
+        public function scan(string $host, int $port, ?SshConnection $via = null): HostKey
         {
             throw new RuntimeException('sensitive command output');
         }
@@ -139,7 +139,7 @@ it('reports typed retarget failures without leaking command output', function ()
 it('explains the node-side recovery when a converged node is unreachable over wireguard', function (): void {
     app()->instance(HostKeyScanner::class, new class implements HostKeyScanner
     {
-        public function scan(string $host, int $port): HostKey
+        public function scan(string $host, int $port, ?SshConnection $via = null): HostKey
         {
             throw new RuntimeException('sensitive command output');
         }

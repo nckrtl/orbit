@@ -10,6 +10,7 @@ use Orbit\Sdk\Requests\Routes\SetRouteTargetRequest;
 use Orbit\Sdk\Requests\Routes\ShowRouteRequest;
 use Orbit\Sdk\Requests\Routes\UnsetRouteTargetRequest;
 use Orbit\Sdk\Requests\Routes\UpdateRouteRequest;
+use Orbit\Sdk\Responses\Instances\InstanceResponse;
 use Orbit\Sdk\Responses\Routes\RemovedRouteResponse;
 use Orbit\Sdk\Responses\Routes\RouteResponse;
 use Orbit\Sdk\Responses\Routes\RoutesResponse;
@@ -218,6 +219,34 @@ it('does not keep replaced Route request class names', function (string $class):
 ]);
 
 /** @return array<string, mixed> */
+describe('route web root', function (): void {
+    it('transports a web root on create and sets or clears it on update', function (): void {
+        expect(new CreateRouteRequest(domain: 'docs.shop.test', instanceId: 7, webRoot: 'apps/docs/public')->body()->all())
+            ->toBe(['domain' => 'docs.shop.test', 'publication' => 'private', 'instance_id' => 7, 'web_root' => 'apps/docs/public'])
+            ->and(new UpdateRouteRequest(9, webRoot: 'apps/admin/public')->body()->all())
+            ->toBe(['web_root' => 'apps/admin/public'])
+            ->and(new UpdateRouteRequest(9, clearWebRoot: true)->body()->all())
+            ->toBe(['web_root' => null])
+            ->and(new UpdateRouteRequest(9, publication: 'private')->body()->all())
+            ->toBe(['publication' => 'private']);
+    });
+
+    it('reads the web root of a Route', function (): void {
+        $route = RouteResponse::fromGatewayData([...route_data(), 'web_root' => 'apps/docs/public'], route_request_id());
+
+        expect($route->webRoot)->toBe('apps/docs/public')
+            ->and($route->toArray()['web_root'])->toBe('apps/docs/public')
+            ->and(RouteResponse::fromGatewayData(route_data(), route_request_id())->webRoot)->toBeNull();
+    });
+
+    it('reads every Route of an Instance', function (): void {
+        $instance = InstanceResponse::fromGatewayData(['id' => 5, 'routes' => [route_data(), [...route_data(), 'id' => 12, 'web_root' => 'apps/docs/public']]], route_request_id());
+
+        expect(array_map(static fn (RouteResponse $route): ?string => $route->webRoot, $instance->routes))->toBe([null, 'apps/docs/public'])
+            ->and($instance->toArray()['routes'][1]['web_root'])->toBe('apps/docs/public');
+    });
+});
+
 function route_envelope(): array
 {
     return ['data' => route_data(), 'meta' => ['request_id' => route_request_id()]];
@@ -247,6 +276,7 @@ function route_data(): array
         'targets' => [['id' => 12, 'instance_id' => 7, 'position' => 0]],
         'process_id' => null,
         'upstream' => null,
+        'web_root' => null,
     ];
 }
 

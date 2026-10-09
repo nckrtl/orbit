@@ -197,7 +197,7 @@ Smoke does not run before the web switch. Any failure after the switch counts, a
 
 To decide, deploy compares the migrations the database has applied with the previous release's files, never with what is pending now. A killed attempt of the same commit can leave such a migration.
 
-After a verified release, deploy removes old releases. It keeps the newest `ORBIT_GATEWAY_RELEASES_KEEP` releases (default 5), and always the current and the previous one.
+After a verified release, deploy removes old releases. It keeps at most `ORBIT_GATEWAY_RELEASES_KEEP` releases, 3 by default and at least 2: the current one and the previous one, whatever their age, and then the newest others. After a rollback to an older release, the previous release takes the place of the oldest of the newest others, so the count never grows.
 
 It also removes each release directory without `REVISION` that is more than 1 hour old, with its web build. Such a directory is left by a prepare that stopped, for example an adoption that lacked a GitHub App permission, and no later prepare of another commit removes it. Every prepare holds the release lock, and so does deploy while it prunes, so no prepare is writing to the directory. The age is a margin on top.
 
@@ -390,7 +390,7 @@ The unit runs `gateway:release:run <record>`, which claims the record and runs t
 | `gateway.release_migrations_unreadable` | The `migrations` table could not be read. Nothing changed. |
 | `gateway.release_snapshot_failed`, `gateway.release_snapshot_unavailable` | The pre-migration snapshot failed, or the database is not SQLite. Nothing changed. |
 | `gateway.release_migrate_failed` | The release's migrations failed. The release pauses. |
-| `gateway.release_caddy_failed`, `gateway.release_fpm_failed`, `gateway.release_units_failed` | The handoff could not publish Caddy, reload PHP-FPM, or install the Gateway units. |
+| `gateway.release_caddy_failed`, `gateway.release_fpm_failed`, `gateway.release_units_failed` | The handoff could not publish Caddy, reload PHP-FPM, or install the Gateway units. Caddy also fails while task VMs are configured and `task_vms.wireguard_range` is invalid: see [Refuse task VMs in Caddy](/reference/compute-drivers#refuse-task-vms-in-caddy). |
 | `gateway.release_scheduler_busy` | After the drain limit, a tasks tick held its lock for more than 330 seconds, so the scheduler was not stopped. See below. |
 | `gateway.release_scheduler_failed` | The scheduler unit did not stop, start, or become active. |
 | `gateway.release_handoff_failed` | The release printed no handoff result. |
@@ -424,7 +424,7 @@ php /home/orbit/orbit/apps/gateway/artisan gateway:release:rollback <id>
 php /home/orbit/orbit/apps/gateway/artisan gateway:release:rollback <id> --force
 ```
 
-`<id>` is the first 12 hex digits of a retained release. Rollback switches to it and runs the same handoff, verify, web switch, and smoke as a deploy. It refuses when the database has applied a migration the target does not ship. `--force` switches the code anyway and names the newest pre-migration snapshot. It does not migrate backwards. A failed verification switches back to the release that was current, because rollback itself does not migrate.
+`<id>` is the first 12 hex digits of a retained release. With the default of 3, a rollback can reach the previous release and one other retained release. Rollback switches to it and runs the same handoff, verify, web switch, and smoke as a deploy. It refuses when the database has applied a migration the target does not ship. `--force` switches the code anyway and names the newest pre-migration snapshot. It does not migrate backwards. A failed verification switches back to the release that was current, because rollback itself does not migrate.
 
 Rollback switches the web app to the target's build. Pruning a Gateway release removes its web build too, so every retained release keeps its own, and a manual `bin/web-deploy` never prunes it. When the build is gone anyway, rollback installs it from the commit's CI artifact, which exists for 14 days. When the artifact has expired too, a rollback does not block the code on assets: it leaves `web/current` as it is, records the web step as `kept` with a warning, and smoke skips its `web` check. A deploy always fails without its web build.
 
@@ -759,7 +759,7 @@ The rollout visits a Node when all of these hold:
 
 Roleless Nodes, such as operator machines, and macOS Nodes stay out. Their operators run `orbit self-update`. The Gateway's own Node stays out too. Each release's [runtime handoff](#gateway-node-agent) updates its agent, and its CLI is the release's own `apps/cli`. `fleet:rollout:status` lists every Node it leaves out, with the reason `sandbox`, `inactive`, `platform`, `unmanaged`, `gateway`, `roleless`, or `foreign_cli`.
 
-A task sandbox is an `app-dev` Node that an [UpCloud sandbox reservation](/reference/compute-drivers#enroll-an-owned-project-vm) owns: its `compute_sandbox_id` names the reservation. The Gateway creates it for one task group and removes it when the group ends or its review window expires ([ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm)). Provisioning gives it the agent and footprint of the Gateway's release at that time.
+A task sandbox is an `app-dev` Node that a [task VM](/reference/compute-drivers#task-vms) or an [UpCloud sandbox reservation](/reference/compute-drivers#enroll-an-owned-project-vm) owns. The rollout leaves out the Node of every task VM that is not `destroyed`, with the reason `sandbox`. Orbit does not create or remove task VMs yet: that part is not built yet ([ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm)). The Gateway creates an UpCloud sandbox for one task group and removes it when the group ends or its review window expires. Provisioning gives it the agent and footprint of the Gateway's release at that time.
 
 The rollout and the catch-up never visit a task sandbox, provisioning installs no Orbit CLI on it, and Doctor reports no `node.release_lag` for it. A group that resumes after its sandbox was destroyed gets a new sandbox Node, provisioned from the current release. The `sandbox` reason comes first, so a sandbox shows it in every state.
 

@@ -1,14 +1,17 @@
 import copy
 from contextlib import nullcontext
 import json
+import os
 from pathlib import Path
 import runpy
 import sys
+import tempfile
 import unittest
 from unittest.mock import patch
 
 module = runpy.run_path(sys.argv.pop(1))
 ProjectImage, Refusal = module['ProjectImage'], module['Refusal']
+audit = runpy.run_path(str(Path(sys.argv[0]).resolve().parents[3] / 'resources/compute/guest-template-audit.py'))
 
 
 def request():
@@ -76,6 +79,76 @@ class FakeImage(ProjectImage):
 
 
 class ProjectImageTest(unittest.TestCase):
+    def test_project_preparation_removes_only_the_inherited_executable(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            binary = root / 'usr/local/bin/orbit-pi-server'
+            binary.parent.mkdir(parents=True)
+            binary.write_bytes(b'inherited executable')
+            binary.chmod(0o755)
+            sentinel = binary.parent / 'orbit-agent'
+            sentinel.write_bytes(b'preserve agent')
+
+            audit['remove_project_pi'](root, owner=os.getuid())
+
+            self.assertFalse(binary.exists())
+            self.assertEqual(sentinel.read_bytes(), b'preserve agent')
+            audit['project_pi_prerequisites'](root)
+
+    def test_project_preparation_preserves_binary_when_artifact_or_runtime_state_exists(self):
+        for relative in ('etc/orbit/sandbox-pi', 'home/orbit/.orbit-sandbox-pi',
+                         'etc/systemd/system/orbit-sandbox-pi.service',
+                         'etc/systemd/system/orbit-sandbox-model.socket',
+                         'etc/systemd/system/orbit-sandbox-model.service'):
+            with self.subTest(path=relative), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                binary = root / 'usr/local/bin/orbit-pi-server'
+                binary.parent.mkdir(parents=True)
+                binary.write_bytes(b'preserve')
+                binary.chmod(0o755)
+                state = root / relative
+                state.parent.mkdir(parents=True, exist_ok=True)
+                state.touch()
+
+                with self.assertRaises(ValueError):
+                    audit['remove_project_pi'](root, owner=os.getuid())
+                self.assertEqual(binary.read_bytes(), b'preserve')
+
+    def test_project_preparation_refuses_unsafe_binary_and_parent_paths(self):
+        for fault in ('mode', 'owner', 'symlink', 'hardlink', 'parent'):
+            with self.subTest(fault=fault), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                binary = root / 'usr/local/bin/orbit-pi-server'
+                binary.parent.mkdir(parents=True)
+                binary.write_bytes(b'preserve')
+                binary.chmod(0o755)
+                owner = os.getuid()
+                if fault == 'mode':
+                    binary.chmod(0o777)
+                elif fault == 'owner':
+                    owner += 1
+                elif fault == 'symlink':
+                    binary.rename(root / 'outside')
+                    binary.symlink_to(root / 'outside')
+                elif fault == 'hardlink':
+                    os.link(binary, root / 'outside')
+                else:
+                    binary.parent.rename(root / 'outside')
+                    binary.parent.symlink_to(root / 'outside')
+
+                with self.assertRaises(ValueError):
+                    audit['remove_project_pi'](root, owner=owner)
+                self.assertEqual(binary.read_bytes(), b'preserve')
+
+    def test_project_publication_refuses_a_preinstalled_binary(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            binary = root / 'usr/local/bin/orbit-pi-server'
+            binary.parent.mkdir(parents=True)
+            binary.touch()
+            with self.assertRaises(ValueError):
+                audit['project_pi_prerequisites'](root)
+
     def test_owns_an_offline_guest_and_publishes_only_a_new_private_project_image(self):
         image = FakeImage()
         self.assertTrue(image.prepare()['prepared'])

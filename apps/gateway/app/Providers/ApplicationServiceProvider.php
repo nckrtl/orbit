@@ -54,6 +54,7 @@ use App\Domain\Doctor\ProcessStateInspector;
 use App\Domain\Doctor\ProjectStateInspector;
 use App\Domain\Doctor\PublicRouteEdgeInspector;
 use App\Domain\Doctor\RoleStateInspector;
+use App\Domain\Doctor\RouteApplicationUrlInspector;
 use App\Domain\Doctor\ScheduleStateInspector;
 use App\Domain\Firewall\FirewallInspector;
 use App\Domain\Firewall\FirewallManager;
@@ -104,12 +105,14 @@ use App\Domain\Instances\ProductionInstanceSourceLifecycle;
 use App\Domain\Instances\ProductionPhpRuntimeManager;
 use App\Domain\Instances\ProductionReleaseLayout;
 use App\Domain\Instances\ProductionRouteProjector;
+use App\Domain\Instances\ProductionWebRootManager;
 use App\Domain\Instances\Queue\InstanceQueueReader;
 use App\Domain\Instances\Registration\RegistrationSourceManager;
 use App\Domain\Instances\Removal\DevelopmentInstanceSourceFinalizer;
 use App\Domain\Instances\Removal\DevelopmentInstanceSourceRemoval;
 use App\Domain\Instances\Removal\InstanceRemovalProjector;
 use App\Domain\Instances\Removal\ProductionInstanceContentRetention;
+use App\Domain\Instances\RouteApplicationUrlWriter;
 use App\Domain\Instances\Sqlite\InstanceSqliteSeeder;
 use App\Domain\Instances\Sqlite\SqliteSnapshotTransfer;
 use App\Domain\Instances\Transfer\InstanceTransferRouteProjector;
@@ -238,6 +241,7 @@ use App\Infrastructure\Doctor\NativeProcessStateInspector;
 use App\Infrastructure\Doctor\NativeProjectStateInspector;
 use App\Infrastructure\Doctor\NativePublicRouteEdgeInspector;
 use App\Infrastructure\Doctor\NativeRoleStateInspector;
+use App\Infrastructure\Doctor\NativeRouteApplicationUrlInspector;
 use App\Infrastructure\Doctor\NativeScheduleStateInspector;
 use App\Infrastructure\Doctor\SharedInstalledPackageInventory;
 use App\Infrastructure\Doctor\SshNodeStateInspector;
@@ -276,6 +280,7 @@ use App\Infrastructure\Instances\NativeInstanceRemovalProjector;
 use App\Infrastructure\Instances\NativeInstanceTransferRuntime;
 use App\Infrastructure\Instances\NativeProductionInstanceProvisioner;
 use App\Infrastructure\Instances\NativeProductionRouteProjector;
+use App\Infrastructure\Instances\PlacementRouteApplicationUrlWriter;
 use App\Infrastructure\Instances\ProtectedSqliteSnapshotTransfer;
 use App\Infrastructure\Instances\RecordedProductionInstanceContentRetention;
 use App\Infrastructure\Instances\RemoteDevelopmentDeployment;
@@ -293,6 +298,7 @@ use App\Infrastructure\Instances\RemoteInstanceTransferSource;
 use App\Infrastructure\Instances\RemoteProductionDeployment;
 use App\Infrastructure\Instances\RemoteProductionInstanceSourceLifecycle;
 use App\Infrastructure\Instances\RemoteProductionPhpRuntimeManager;
+use App\Infrastructure\Instances\RemoteProductionWebRootManager;
 use App\Infrastructure\Instances\RemoteRegistrationSourceManager;
 use App\Infrastructure\Logs\CacheLogStreamStore;
 use App\Infrastructure\Metrics\MetricsCadvisorRuntime;
@@ -430,6 +436,8 @@ final class ApplicationServiceProvider extends ServiceProvider
         InstanceRemover::class => RemoveInstanceAction::class,
         InstanceRemovalProjector::class => NativeInstanceRemovalProjector::class,
         DevelopmentInstanceConfigurator::class => RemoteDevelopmentInstanceConfigurator::class,
+        RouteApplicationUrlWriter::class => PlacementRouteApplicationUrlWriter::class,
+        ProductionWebRootManager::class => RemoteProductionWebRootManager::class,
         ProjectUpdateSourceMutator::class => RemoteProjectUpdateSourceMutator::class,
         ProjectUpdateProjectionMutator::class => NativeProjectUpdateProjectionMutator::class,
         DevelopmentInstanceProvisioner::class => NativeDevelopmentInstanceProvisioner::class,
@@ -460,6 +468,7 @@ final class ApplicationServiceProvider extends ServiceProvider
         InstanceStateInspector::class => NativeInstanceStateInspector::class,
         PublicRouteEdgeInspector::class => NativePublicRouteEdgeInspector::class,
         PrivateRouteProjectionInspector::class => NativePrivateRouteProjectionInspector::class,
+        RouteApplicationUrlInspector::class => NativeRouteApplicationUrlInspector::class,
         CustomProxyRouteInspector::class => NativeCustomProxyRouteInspector::class,
         MetricsCredentialManager::class => NativeMetricsCredentialManager::class,
         MetricsAccessRevoker::class => NativeMetricsAccessRevoker::class,

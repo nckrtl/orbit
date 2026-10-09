@@ -122,6 +122,11 @@ final readonly class InstanceEnvironmentStore
                     ->where('instance_id', $expected->instanceId)
                     ->whereIn('env_key', $removed)
                     ->delete();
+                // The next synchronization may remove these keys from the workload file.
+                $this->recordOwnedKeys($expected->instanceId, [
+                    ...$this->ownedKeys($expected->instanceId),
+                    ...$removed,
+                ]);
             }
 
             $remaining = array_diff_key($stored, array_flip($removed));
@@ -209,10 +214,27 @@ final readonly class InstanceEnvironmentStore
                 $this->configurationMissing();
             }
 
-            return new InstanceEnvironmentSynchronizationSnapshot($values);
+            return new InstanceEnvironmentSynchronizationSnapshot(
+                $values,
+                $this->ownedKeys($expected->instanceId),
+            );
         });
 
         return $snapshot;
+    }
+
+    /**
+     * Record the keys a synchronization wrote. The workload file now holds exactly these keys, so
+     * Orbit owns them and no others.
+     *
+     * @param  list<string>  $keys
+     */
+    public function recordSynchronizedKeys(InstanceEnvironmentContext $expected, array $keys): void
+    {
+        DB::transaction(function () use ($expected, $keys): void {
+            $this->assertCurrent($expected, requireActiveNode: true);
+            $this->recordOwnedKeys($expected->instanceId, $keys);
+        });
     }
 
     public function copyForClone(
@@ -363,6 +385,26 @@ final readonly class InstanceEnvironmentStore
         }
 
         return $values;
+    }
+
+    /** @return list<string> */
+    private function ownedKeys(int $instanceId): array
+    {
+        $keys = Instance::query()->whereKey($instanceId)->value('environment_owned_keys');
+        $keys = is_string($keys) ? json_decode($keys, true) : $keys;
+
+        return is_array($keys) ? array_values(array_filter($keys, is_string(...))) : [];
+    }
+
+    /** @param list<string> $keys */
+    private function recordOwnedKeys(int $instanceId, array $keys): void
+    {
+        $keys = array_values(array_unique($keys));
+        sort($keys, SORT_STRING);
+
+        Instance::query()->whereKey($instanceId)->update([
+            'environment_owned_keys' => json_encode($keys, JSON_THROW_ON_ERROR),
+        ]);
     }
 
     private function conflict(): never

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Domain\Schedules;
 
-use App\Domain\Instances\InstanceSandboxGuard;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -143,7 +142,6 @@ final readonly class ScheduleTargetResolver
 
     private function instance(Instance $instance, bool $requireActive = true): ScheduleTarget
     {
-        InstanceSandboxGuard::assertHostOperation($instance);
         $instance->loadMissing('node');
         $this->assertNode($instance->node, $requireActive);
 

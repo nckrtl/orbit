@@ -18,7 +18,7 @@ The [Routes reference](/reference/routes) describes the Route record, domain sel
 | [`route:create`](#orbit-routecreate) | Create an explicit app Route for an Instance or a Node-owned custom proxy Route. |
 | [`route:list`](#orbit-routelist) | List Routes. |
 | [`route:show`](#orbit-routeshow) | Show one Route. |
-| [`route:update`](#orbit-routeupdate) | Change the domain or publication of an explicit Project Route. |
+| [`route:update`](#orbit-routeupdate) | Change the domain, publication, or web root of a Project Route. |
 | [`route:target:set`](#orbit-routetargetset) | Set the target, or a complete production target set. |
 | [`route:target:unset`](#orbit-routetargetunset) | Clear the target. |
 | [`route:destroy`](#orbit-routedestroy) | Remove a Route. |
@@ -30,7 +30,7 @@ Every command accepts `--json`. Route, Project, Instance, and Cluster arguments 
 Create an explicit app Route targeting an Instance, or create a custom proxy Route for a Node-local service.
 
 ```bash
-orbit route:create <instance> <domain> [--publication=private|public]
+orbit route:create <instance> <domain> [--publication=private|public] [--web-root=PATH]
 orbit route:create <domain> --node=NODE --upstream=URL
 orbit route:create <domain> --node=NODE --process=PROCESS
 ```
@@ -46,17 +46,19 @@ orbit route:create <domain> --node=NODE --process=PROCESS
 | `--node=NODE` | none | Serving Node ID or name, required only for the custom proxy form. |
 | `--upstream=URL` | none | Loopback HTTP URL for a custom proxy Route, such as `http://127.0.0.1:4788`. |
 | `--process=PROCESS` | none | Name or ID of a Node Process on the serving Node, for a custom proxy Route. |
+| `--web-root=PATH` | none | A web root inside the Instance's checkout or release, such as `apps/docs/public`. The Route becomes another site of the Instance. A production Instance needs a deployed release. |
 
 ```bash
 orbit route:create 12 shop.example.test
 orbit route:create 12 shop.example.com --publication=public
+orbit route:create 12 docs.shop.test --web-root=apps/docs/public
 orbit route:create executor.orbit --node=beast --upstream=http://127.0.0.1:4788
 orbit route:create executor.orbit --node=beast --process=executor
 ```
 
 In a terminal, Orbit lists available Instances for an omitted Instance ID and prompts for an omitted domain. If no Instances are available or selection is cancelled, it creates nothing. In noninteractive or JSON mode, provide both arguments for the app form.
 
-The app form creates and activates a Route for the Instance. The Instance implies the Project and scope. An inactive Instance returns `route.target_inactive`; an Instance already targeted by another Route returns `route.target_conflict`. An identical retry for an existing active Route returns that Route. See [Create and change targets](/reference/routes#create-and-change-targets).
+The app form creates and activates a Route for the Instance. The Instance implies the Project and scope. An inactive Instance returns `route.target_inactive`; an Instance already targeted by another Route returns `route.target_conflict`. An identical retry for an existing active Route returns that Route. With `--web-root`, the Instance keeps its own Route and gets another site. See [Create and change targets](/reference/routes#create-and-change-targets) and [Serve several web roots](/reference/routes#serve-several-web-roots).
 
 `--upstream` or `--process` selects the custom proxy form. Its first argument is the domain, and it needs `--node`. It cannot take an Instance or public publication. A successful custom proxy request converges its Node-local serving path.
 
@@ -68,7 +70,11 @@ The app form creates and activates a Route for the Instance. The Instance implie
 | `route.scope_required` | A custom proxy Route needs a serving Node and uses the domain as its only positional argument. |
 | `route.target_inactive` | The Instance is not active. |
 | `route.target_web_root_unsupported` | The target Instance has no supported relative web root, such as a package rooted at `.`. |
-| `route.target_conflict` | The target Instance already belongs to another Route. |
+| `route.target_conflict` | The target Instance already has a Route without a web root. |
+| `route.web_root_release_missing` | The production Instance has no selected release. Deploy it first. |
+| `route.web_root_unsafe` | The production web root would serve an application `.env`, or sits in the default directory without being the Instance root. |
+| `app-prod.web_root_invalid` | The selected production release lacks the web root or its application directory, or the web root holds a link. |
+| `route.web_root_unsupported` | A custom proxy Route got a web root. |
 | `route.router_required` | The Cluster has no active Router. |
 | `route.node_inactive`, `route.cluster_inactive` | The Instance's Node or Cluster, or the custom proxy's Node, is not active. |
 | `route.upstream_invalid` | The upstream is not a loopback HTTP URL. |
@@ -93,20 +99,22 @@ orbit route:show <route>
 
 ## orbit route:update
 
-Change the domain or the publication of an explicit Project Route. Give at least one option.
+Change the domain or the publication of an explicit Project Route, or the web root of a Route. Give at least one option. Send `--web-root` on its own.
 
 ```bash
-orbit route:update <route> [--domain=DOMAIN] [--publication=INTENT]
+orbit route:update <route> [--domain=DOMAIN] [--publication=INTENT] [--web-root=PATH]
 ```
 
 | Option | Meaning |
 | --- | --- |
 | `--domain=DOMAIN` | The new domain. |
 | `--publication=INTENT` | The new publication, `private` or `public`. |
+| `--web-root=PATH` | The new web root. `--web-root=` clears it, so the Route serves the Instance's effective root. |
 
 ```bash
 orbit route:update 9 --domain=shop.example.com
 orbit route:update 9 --publication=public
+orbit route:update 14 --web-root=apps/admin/public
 ```
 
 A domain change creates a replacement Route and returns its ID. The current Route stays authoritative until cutover. A publication-only change keeps the Route ID. See [Change an explicit domain](/reference/routes#change-an-explicit-domain) and [Publish the public edge](/reference/routes#publish-the-public-edge).
@@ -122,6 +130,11 @@ During a domain change, `route:show` shows both Routes, `replacement_step`, `fai
 | `route.domain_immutable` | The Route is generated. Only an explicit domain can change. |
 | `route.domain_conflict` | Another Route owns the new domain. |
 | `route.domain_change_conflict` | Another domain change is in progress. |
+| `route.web_root_domain_immutable` | A Route with a web root keeps its domain. Create a new Route and remove the old one. |
+| `route.web_root_update_separate` | `--web-root` was combined with another option. |
+| `route.web_root_unsupported` | The Route is not an active app Route with one active target. |
+| `route.web_root_conflict` | The Route is the only Route without a web root of a `laravel-app` or `symfony-app` Instance, or of a production Instance. |
+| `route.target_conflict` | A cleared web root would give the Instance a second Route without a web root. |
 | `route.reconciliation_required` | The Route or its targets do not allow this change, for example a public domain for development Instances. |
 | `instance.source_profile_missing` | A target has no recorded source profile. Orbit does not recover missing profiles on older Instances; see the [no-legacy-support rule](/reference/projects#one-public-name-without-compatibility). |
 

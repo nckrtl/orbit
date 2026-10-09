@@ -54,6 +54,7 @@ describe(InstanceResponse::class, function (): void {
             'detached' => false,
             'status' => 'active',
             'route' => null,
+            'routes' => [],
             'domain' => null,
             'url' => null,
             'removal' => null,

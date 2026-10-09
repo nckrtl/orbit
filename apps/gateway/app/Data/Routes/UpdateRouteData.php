@@ -13,5 +13,7 @@ final readonly class UpdateRouteData
         public ?string $domain,
         public bool $publicationProvided,
         public ?RoutePublication $publication,
+        public bool $webRootProvided = false,
+        public ?string $webRoot = null,
     ) {}
 }
