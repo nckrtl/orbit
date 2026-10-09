@@ -5745,12 +5745,13 @@ it('starts the reviewer with the first review request when the group has no revi
         ->and(app(TaskTurnReceipts::class)->prepared)->toBe(['reviewer:final']);
 });
 
-function tick_final_approval(): string
+/** @param list<string> $changes */
+function tick_final_approval(array $changes = ['Tasks store their records.']): string
 {
     return json_encode([
         'outcome' => 'approved',
         'summary' => 'Checked the feature.',
-        'pull_request' => ['summary' => 'Adds tick routing.', 'changes' => ['Tasks store their records.'], 'breaking' => []],
+        'pull_request' => ['summary' => 'Adds tick routing.', 'changes' => $changes, 'breaking' => []],
         'nonce' => bin2hex(random_bytes(8)),
     ], JSON_THROW_ON_ERROR);
 }
@@ -5825,6 +5826,31 @@ it('continues an approval tick after Jev recording fails and reaches later work'
         ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Settling)
         ->and($task->fresh()?->status)->toBe(TaskStatus::Completed);
     Exceptions::assertReported(QueryException::class);
+});
+
+it('publishes when a change starts with the last subtask title, without asking Jev', function (): void {
+    [$group, $task, , $signer, $publisher] = tick_review([tick_final_approval(['Models: tasks store their records.'])], last: true);
+    Classification::fake([['subtask_'.$task->id => new BooleanAnswer(0.45)]])->preventStrayClassifications();
+
+    app(TaskScheduler::class)->tick();
+
+    Classification::assertNothingClassified();
+    expect($signer->messages)->toBe(["Models\n\nChecked the feature."])
+        ->and($publisher->pushes)->toBe([$group->id])
+        ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Settling)
+        ->and($task->fresh()?->status)->toBe(TaskStatus::Completed);
+});
+
+it('holds the approval when no change starts with the last subtask title and Jev answers no', function (): void {
+    [, $task, , $signer, $publisher] = tick_review([tick_final_approval()], last: true);
+    Classification::fake([['subtask_'.$task->id => new BooleanAnswer(0.45)]])->preventStrayClassifications();
+
+    app(TaskScheduler::class)->tick();
+
+    expect(app(AgentCommandDispatcher::class)->commands[0]['message']['text'])->toContain('The pull request change list does not cover the subtask "Models".')
+        ->and($signer->messages)->toBe([])
+        ->and($publisher->pushes)->toBe([])
+        ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing);
 });
 
 it('commits the last approved subtask, opens the pull request with the reviewer fields, and settles the group', function (): void {

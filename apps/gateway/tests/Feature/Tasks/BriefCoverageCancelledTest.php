@@ -213,9 +213,9 @@ it('does not assign a call-level label to a mixed-answer coverage call', functio
     Classification::fake([
         ['subtask_'.$completed->id => new BooleanAnswer(0.97), 'subtask_'.$other->id => new BooleanAnswer(0.2)],
     ])->preventStrayClassifications();
-    app(LaravelAiTaskBriefCoverage::class)->missing($group, new TaskTurnPullRequest('Summary.', ['Export', 'Route'], []), 88, ['Export', 'Route']);
+    app(LaravelAiTaskBriefCoverage::class)->missing($group, new TaskTurnPullRequest('Summary.', ['Adds Export', 'Adds Route'], []), 88, ['Adds Export', 'Adds Route']);
     app(BriefCoverageLabeler::class)->label($group, new TaskPullRequestHealth(
-        state: 'merged', pullRequestNumber: 42, mergeBody: "## Changes\n\n- Export\n- Route\n",
+        state: 'merged', pullRequestNumber: 42, mergeBody: "## Changes\n\n- Adds Export\n- Adds Route\n",
         mergeSha: 'merge-sha', mergedAt: '2026-10-01T10:00:00Z',
     ));
 
@@ -278,11 +278,11 @@ it('marks long Jev evidence incomplete and leaves its question unlabeled', funct
     $completed->update(['brief' => $longBrief]);
     Classification::fake([['subtask_'.$completed->id => new BooleanAnswer(0.2)]])->preventStrayClassifications();
 
-    app(LaravelAiTaskBriefCoverage::class)->missing($group, new TaskTurnPullRequest('Export feature.', ['Export'], []), 89, ['Export']);
+    app(LaravelAiTaskBriefCoverage::class)->missing($group, new TaskTurnPullRequest('Export feature.', ['Adds Export'], []), 89, ['Adds Export']);
     app(BriefCoverageLabeler::class)->label($group, new TaskPullRequestHealth(
         state: 'merged',
         pullRequestNumber: 42,
-        mergeBody: "Summary.\n\n## Changes\n\n- Export\n",
+        mergeBody: "Summary.\n\n## Changes\n\n- Adds Export\n",
         mergeSha: 'merge-sha',
         mergedAt: '2026-10-01T10:00:00Z',
     ));
@@ -290,7 +290,7 @@ it('marks long Jev evidence incomplete and leaves its question unlabeled', funct
     $stored = JevDecision::query()->sole();
     expect($stored->questions['__orbit_truncated__'] ?? false)->toBeTrue()
         ->and($stored->input_state['__orbit_truncated__'] ?? false)->toBeTrue()
-        ->and($stored->merge_changes)->toBe(['Export'])
+        ->and($stored->merge_changes)->toBe(['Adds Export'])
         ->and($stored->merge_changes_redacted)->toBeFalse()
         ->and($stored->labels)->toBeNull();
 });
@@ -307,7 +307,7 @@ it('caps snapshots under the JSON byte limit when many short fields dominate', f
 
 it('caps Unicode questions, input state, and merge changes at the persisted JSON byte limit', function (): void {
     [$group, $cancelled, $failed, $completed] = cancelled_brief_coverage_group();
-    $longLine = 'Export '.str_repeat('é', 20000);
+    $longLine = 'CSV export '.str_repeat('é', 20000);
     $group->update(['brief' => $longLine]);
     $completed->update(['brief' => $longLine]);
     Classification::fake([['subtask_'.$completed->id => new BooleanAnswer(0.97)]])->preventStrayClassifications();

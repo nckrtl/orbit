@@ -63,6 +63,94 @@ it('counts a subtask as covered from a probability of one half', function (): vo
     expect(app(LaravelAiTaskBriefCoverage::class)->missing($group, coverage_pull_request()))->toBe(['Route']);
 });
 
+/** @return array{Task, Task, Task, Task} the 1261 shape: two completed subtasks and the reviewing publish subtask */
+function coverage_publication_group(): array
+{
+    $project = Project::query()->create(['name' => 'Website', 'slug' => 'website', 'repository_url' => 'git@github.com:acme/website.git', 'default_branch' => 'main']);
+    $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Prepare the website release', 'brief' => 'Ship the preparatory work as one pull request.', 'status' => 'reviewing']);
+    $audit = Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'Audit the release checklist', 'brief' => 'List the open release items.', 'status' => 'completed']);
+    $copy = Task::query()->create(['parent_id' => $group->id, 'position' => 2, 'title' => 'Update the landing copy', 'brief' => 'Rewrite the landing page copy.', 'status' => 'completed']);
+    $publish = Task::query()->create(['parent_id' => $group->id, 'position' => 3, 'title' => 'Publish preparatory PR (not CLEAN) with report', 'brief' => 'Open the preparatory pull request and attach the readiness report.', 'status' => 'reviewing']);
+
+    return [$group, $audit, $copy, $publish];
+}
+
+/** @return list<string> the four changes of approval 2851 */
+function coverage_publication_changes(): array
+{
+    return [
+        'Audit the release checklist: every open release item is listed in docs/release.md.',
+        'Update the landing copy: the landing page uses the new product copy.',
+        'Publish preparatory PR (not CLEAN) with report: the pull request carries the readiness report and says it is not CLEAN.',
+        'The release notes link the readiness report.',
+    ];
+}
+
+it('covers a subtask whose exact title starts a change without asking Jev', function (): void {
+    [$group, $export, $route] = coverage_group();
+    Classification::fake([[
+        'subtask_'.$export->id => new BooleanAnswer(0.1),
+        'subtask_'.$route->id => new BooleanAnswer(0.1),
+    ]])->preventStrayClassifications();
+
+    $missing = app(LaravelAiTaskBriefCoverage::class)->missing($group, new TaskTurnPullRequest('Adds an order export.', ['  Export: orders export as CSV.', 'Route - the download route serves the file.'], []));
+
+    expect($missing)->toBe([]);
+    Classification::assertNothingClassified();
+    expect(DB::table('jev_decisions')->count())->toBe(0);
+});
+
+it('covers the 2851 change list even when Jev answers false for the publish subtask', function (): void {
+    [$group, $audit, $copy, $publish] = coverage_publication_group();
+    Classification::fake([[
+        'subtask_'.$audit->id => new BooleanAnswer(0.9),
+        'subtask_'.$copy->id => new BooleanAnswer(0.9),
+        'subtask_'.$publish->id => new BooleanAnswer(0.45),
+    ]])->preventStrayClassifications();
+
+    $missing = app(LaravelAiTaskBriefCoverage::class)->missing($group, new TaskTurnPullRequest('Prepares the release.', coverage_publication_changes(), []), 2851, coverage_publication_changes());
+
+    expect($missing)->toBe([]);
+    Classification::assertNothingClassified();
+});
+
+it('still reports the publish subtask missing when its title-prefixed change is omitted', function (): void {
+    [$group, $audit, $copy, $publish] = coverage_publication_group();
+    $changes = array_values(array_filter(coverage_publication_changes(), static fn (string $change): bool => ! str_starts_with($change, 'Publish preparatory PR')));
+    Classification::fake([[
+        'subtask_'.$publish->id => new BooleanAnswer(0.45),
+    ]])->preventStrayClassifications();
+
+    $missing = app(LaravelAiTaskBriefCoverage::class)->missing($group, new TaskTurnPullRequest('Prepares the release.', $changes, []), 2851, $changes);
+
+    expect($missing)->toBe(['Publish preparatory PR (not CLEAN) with report']);
+    Classification::assertClassified(static fn (ClassificationPrompt $prompt): bool => is_array($prompt->state)
+        && array_column($prompt->state['subtasks'], 'title') === ['Publish preparatory PR (not CLEAN) with report']);
+    $record = DB::table('jev_decisions')->sole();
+    expect(array_keys(json_decode($record->questions, true)))->toBe(['subtask_'.$publish->id])
+        ->and(json_decode($record->task_ids, true))->toBe([$publish->id]);
+});
+
+it('leaves a change that only continues the title word, or differs in punctuation, to Jev', function (string $change): void {
+    [$group, , , $publish] = coverage_publication_group();
+    Classification::fake([[
+        'subtask_'.$publish->id => new BooleanAnswer(0.45),
+    ]])->preventStrayClassifications();
+    $changes = [
+        'Audit the release checklist.',
+        'Update the landing copy.',
+        $change,
+    ];
+
+    expect(app(LaravelAiTaskBriefCoverage::class)->missing($group, new TaskTurnPullRequest('Prepares the release.', $changes, [])))
+        ->toBe(['Publish preparatory PR (not CLEAN) with report']);
+})->with([
+    'without parentheses' => 'Publish preparatory PR not CLEAN with report: done.',
+    'lowercase' => 'publish preparatory PR (not CLEAN) with report: done.',
+    'longer last word' => 'Publish preparatory PR (not CLEAN) with reports attached.',
+    'title inside the change' => 'Done: Publish preparatory PR (not CLEAN) with report.',
+]);
+
 it('records the Jev call', function (): void {
     [$group, $export, $route] = coverage_group();
     Classification::fake([[
