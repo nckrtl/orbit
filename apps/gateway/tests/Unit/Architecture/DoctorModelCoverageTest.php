@@ -52,6 +52,7 @@ use App\Models\RouteAnalyticsTracking;
 use App\Models\RouteCustomProxy;
 use App\Models\RouteRemovalResidue;
 use App\Models\RouteTarget;
+use App\Models\SandboxImage;
 use App\Models\Schedule;
 use App\Models\ScheduleDefinition;
 use App\Models\Setting;
@@ -98,6 +99,7 @@ it('partitions every persisted model across doctor dispositions', function (): v
     ];
     $excluded = [
         TaskSandbox::class,
+        SandboxImage::class,
         GatewayRelease::class,
         FleetRollout::class,
         FleetRolloutNode::class,
