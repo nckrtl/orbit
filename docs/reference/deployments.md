@@ -54,7 +54,7 @@ A deployment runs in the checkout itself, in two phases.
 
 **Source preparation.** Orbit fetches the default branch and checks out the fetched commit on that branch. Untracked and ignored files stay, so dependencies, caches, `.env` files, and databases carry over.
 
-The exception is a directory that the new commit no longer has, such as a removed package. Git would leave that directory's untracked and ignored files, for example its `node_modules`. Orbit deletes them before the checkout, so a [seed](#seeds) copy finds only directories that the commit has.
+The exception is a directory that the old commit has and the new commit removes, such as a package. Git would leave that directory's untracked and ignored files, for example its `node_modules`. Orbit deletes them before the checkout, so a [seed](#seeds) copy finds only directories that the commit has.
 
 - When tracked files have uncommitted changes, Orbit refuses with `deployment.checkout_dirty`. The output lists those files, and the checkout stays unchanged.
 - When the local default branch has commits that the fetched commit does not contain, Orbit refuses with `deployment.branch_diverged` and changes nothing. A checkout would drop those commits.

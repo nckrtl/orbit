@@ -217,10 +217,11 @@ Before the change merges, check each home under `/fast/apps/<project>/default`:
 After the first tick:
 
 1. `orbit instance:show` for 4, 315, and 386: `seed_path` is the checkout, and `seed_commit` is a commit on `main`.
-2. Each home has no `releases` and no `current`, and `git status --untracked-files=no` is clean. When the deployment output names a release folder that Orbit kept, delete that folder by hand.
-3. `/fast/apps/orbit/default/packages/agent-annotation` is gone. Its `node_modules` would break Project 46's `seed-dependencies` setup step. Then create a disposable Project 46 Instance on beast. Its setup must pass. Remove it afterward.
-4. `https://php-data-bridge-demo.test` and `https://orbit-website.test` answer, and their Caddy root is the checkout's `public`, not `current/public`.
-5. Instance 315 has no Route. `orbit instance:show 315` still lists none, and no Route of Project 46 points at `/fast/apps/orbit/default/current`.
+2. Each home has no `releases` and no `current`. `git status --untracked-files=no` is clean.
+3. The deployment output names any release folder that Orbit kept. Delete such a folder by hand.
+4. `/fast/apps/orbit/default/packages/agent-annotation` is gone. Its `node_modules` would break Project 46's `seed-dependencies` setup step. Then create a disposable Project 46 Instance on beast. Its setup must pass. Remove it afterward.
+5. `https://php-data-bridge-demo.test` and `https://orbit-website.test` answer, and their Caddy root is the checkout's `public`, not `current/public`.
+6. Instance 315 has no Route. `orbit instance:show 315` still lists none, and no Route of Project 46 points at `/fast/apps/orbit/default/current`.
 
 ## Configure Orbit's task policy
 
