@@ -36,7 +36,9 @@ use App\Infrastructure\Tasks\ProjectSandboxWorkspaceProvisioner;
 use App\Infrastructure\Tasks\TaskWorkspaceProvisioner;
 use App\Models\Instance;
 use App\Models\TaskSandbox;
+use Illuminate\Log\Events\MessageLogged;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Tests\Feature\GitHub\GitHubTestSupport;
 use Tests\Support\FakeSandboxModelProxy;
@@ -175,6 +177,12 @@ it('enrolls and prepares one owned workspace through initial admission or cloud 
 
         return new CommandResult(0, json_encode($response), '', 1, false);
     });
+    $timings = [];
+    Log::listen(function (MessageLogged $event) use (&$timings): void {
+        if ($event->message === 'A Project sandbox admission phase finished.') {
+            $timings[] = $event->context;
+        }
+    });
     try {
         $provisioner = app(TaskWorkspaceProvisioner::class);
         if ($restore) {
@@ -202,6 +210,10 @@ it('enrolls and prepares one owned workspace through initial admission or cloud 
         expect($second->node->accessibleNodes()->pluck('nodes.id')->all())->toBe([$second->node_id]);
         expect($second->taskSandbox->pi_ready_at)->not->toBeNull();
         expect($phases)->toBe(['initialize', 'checkout', 'artifact', 'pi', 'github', 'inspect', 'artifact', 'pi', 'github']);
+        $admission = ['compute', 'enroll', 'workspace', 'source', 'pi', 'github', ...($web ? ['development'] : [])];
+        expect(array_column($timings, 'phase'))->toBe([...$admission, ...$admission]);
+        expect(array_unique(array_column($timings, 'group_id')))->toBe([$group->id]);
+        expect(array_filter(array_column($timings, 'seconds'), fn ($seconds): bool => ! is_float($seconds) || $seconds < 0))->toBe([]);
         if ($web) {
             expect($environmentWrites)->toHaveCount(2);
             expect($environmentWrites[1])->toBe($environmentWrites[0]);

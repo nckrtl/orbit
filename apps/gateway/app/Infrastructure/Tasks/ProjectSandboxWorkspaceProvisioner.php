@@ -35,6 +35,7 @@ use App\Models\Node;
 use App\Models\Task;
 use App\Models\TaskSandbox;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 /** One owned Project VM; admission and recovery preserve its recorded provider. */
 final readonly class ProjectSandboxWorkspaceProvisioner
@@ -121,6 +122,7 @@ final readonly class ProjectSandboxWorkspaceProvisioner
             } elseif (Instance::query()->where('project_id', $group->project_id)->where('name', TaskWorkspaceName::for($group))->exists()) {
                 throw $this->ownership();
             }
+            $clock = hrtime(true);
             $sandbox = $restore ? $this->compute->execute($group, $restoreCommit) : $this->allocate->execute($group);
             if (! in_array($sandbox->provider, ['upcloud', 'incus'], true) || $sandbox->group_id !== $group->id
                 || $sandbox->state !== SandboxState::Running || $sandbox->desired_power !== 'running') {
@@ -129,6 +131,7 @@ final readonly class ProjectSandboxWorkspaceProvisioner
             if ($sandbox->provider === 'incus' && (! config('compute.incus.enrollment_enabled', false) || ! config('compute.incus.project_workspaces_enabled', false))) {
                 throw new ComputeException('compute.not_ready', 'Local Project workspace admission is disabled.');
             }
+            $clock = $this->phase($group, 'compute', $clock);
             if ($sandbox->enrolled_at === null) {
                 $node = $sandbox->provider === 'incus' ? $this->localEnroll->execute($sandbox) : $this->enroll->execute($sandbox);
             } else {
@@ -140,6 +143,7 @@ final readonly class ProjectSandboxWorkspaceProvisioner
             }
             $sandbox->refresh();
             $this->nodeAccess->execute($node, $node);
+            $clock = $this->phase($group, 'enroll', $clock);
             DB::transaction(function () use ($group, $reserved, $sandbox, $node, $restore): void {
                 $locked = Task::topLevel()->lockForUpdate()->findOrFail($group->id);
                 $this->assertClaim($locked, $reserved, $restore);
@@ -163,9 +167,13 @@ final readonly class ProjectSandboxWorkspaceProvisioner
                 $locked->taskable()->associate($workspace);
                 $locked->save();
             });
+            $clock = $this->phase($group, 'workspace', $clock);
             $workspace = $this->source->prepare($group->refresh(), $restoreCommit);
+            $clock = $this->phase($group, 'source', $clock);
             $this->pi->prepare($workspace);
+            $clock = $this->phase($group, 'pi', $clock);
             $this->gitAccess->prepare($workspace);
+            $clock = $this->phase($group, 'github', $clock);
             if ($workspace->task_workspace_routed) {
                 $this->development->reserve($workspace, null);
                 foreach ($workspace->routes()->get() as $route) {
@@ -176,11 +184,21 @@ final readonly class ProjectSandboxWorkspaceProvisioner
                     || $this->environmentImport->importExisting($workspace) !== null)) {
                     $this->environmentSync->execute($workspace);
                 }
+                $this->phase($group, 'development', $clock);
             }
             $this->assertClaim($group->refresh(), $reserved, $restore);
 
             return $workspace->refresh();
         });
+    }
+
+    /** Log one admission phase's duration so readiness time can be measured, and restart the clock. */
+    private function phase(Task $group, string $phase, int $started): int
+    {
+        $now = hrtime(true);
+        Log::info('A Project sandbox admission phase finished.', ['group_id' => $group->id, 'phase' => $phase, 'seconds' => round(($now - $started) / 1e9, 2)]);
+
+        return $now;
     }
 
     private function assertClaim(Task $group, Task $reserved, bool $restore): void

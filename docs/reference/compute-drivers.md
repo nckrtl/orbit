@@ -485,6 +485,8 @@ Native Route withdrawal handles active previews and resumes from recorded eviden
 
 The claim reserves and starts one VM, enrolls its owned Node, attaches one private task workspace, fetches source directly from GitHub, and prepares Pi. It prepares the private preview for web-serving Projects and then returns the workspace to the scheduler. The scheduler runs the project's setup steps, including the TIA baseline restore, and its baseline check before starting the implementer. Retries keep the reservation and preserve prepared source. Non-web Projects have no preview Route.
 
+Each admission attempt writes one Gateway log line for every phase it finishes, with the message `A Project sandbox admission phase finished.` The context names the `group_id`, the `phase`, and its duration in `seconds`. The phases are `compute`, `enroll`, `workspace`, `source`, `pi`, `github`, and, for web-serving Projects, `development`. `compute` covers only the attempt that finds the VM running; boot time is the gap between the reservation's `create_attempted_at` and that line. A retry logs its phases again, so short durations mark work that was already done.
+
 Review expiry, merge, and cancellation use the owned cleanup path. A failed cleanup retains destruction intent and provider IDs. Review feedback can use the original running VM during retention.
 
 When review feedback resumes a group whose UpCloud VM was destroyed, Orbit first confirms an open pull request in the Project repository. It reserves a replacement VM only after the old reservation records confirmed destruction, revokes its model and Pi credentials, and releases its fleet Node. Provider server and disk IDs remain in that reservation as audit history; recovery does not require clearing them.
