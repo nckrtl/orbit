@@ -21,8 +21,11 @@ return new class extends Migration
         });
         // A create that stopped before activation still owns its first setup. An active Instance
         // keeps the default: Orbit cannot tell an unfinished create from a later failed setup.
+        // Task workspaces settle at source_resolved and are never created by instance:create, so
+        // they keep the default too.
         DB::table('instances')
             ->whereIn('status', ['reserved', 'checkout_prepared', 'source_resolved'])
+            ->whereNull('task_workspace_routed')
             ->update(['first_setup_pending' => true]);
     }
 

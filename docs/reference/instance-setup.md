@@ -89,7 +89,9 @@ The Instance's seed is its own release, so setup in a release always gets empty 
 
 [Synchronization](/reference/environment-variables) writes `.env` and `.env.testing` in the checkout's application directory, and a deploy copies them into its new release. So `database:create --instance` followed by `instance:setup` would migrate with the release's older `.env`.
 
-Before each setup step in a release, Orbit copies those two files from the checkout into the same directory of the release, as a deploy does: `cp -a` keeps the mode and makes the managed user the owner. Each file replaces the release's copy in one rename, so the served application never reads a partial file. A file that the checkout lacks stays as it is in the release. A link or a directory in place of either file stops setup before its first step.
+Before each setup step in a release, Orbit copies those two files from the checkout into the same directory of the release, as a deploy does: `cp -a` keeps the mode and makes the managed user the owner. Each file replaces the release's copy in one rename, so the served application never reads a partial file.
+
+A file that the checkout lacks stays as it is in the release. A link in place of the checkout's file, or a directory in place of the release's file, stops setup before its first step. A link in place of the release's file is replaced by a regular file, as a deploy does.
 
 Setup and teardown export `VP_HOME` to the Node's [resolved Vite+ store](/reference/tools#tool-managers). Project-local `vp` processes inherit that value even in these non-login shells, rather than using the default `~/.vite-plus`.
 
