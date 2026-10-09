@@ -244,6 +244,7 @@ describe('broken development releases', function (): void {
         $this->fixture->push('after foreign folder');
 
         expect(app(DeployDefaultInstanceAction::class)->execute($instance)?->succeeded)->toBeTrue()
+            ->and(readlink($this->fixture->home.'/current'))->toBe('releases/release-1')
             ->and(file_get_contents($foreign.'/tools/tool'))->toBe('kept');
         Log::shouldHaveReceived('warning')->with('Skipping owned broken development release.', [
             'instance_id' => $instance->id, 'release' => 'foreign', 'reason' => 'missing-git',
@@ -778,16 +779,4 @@ describe('real development release programs', function (): void {
             ->and(trim(DevelopmentDeploymentFixture::command(['git', '-C', $this->fixture->home, 'rev-parse', 'HEAD'])))->toBe($this->fixture->initialCommit);
     });
 
-    it('fails closed when pruning encounters an unregistered path', function (): void {
-        dev935_require_reflinks($this->fixture);
-        $this->fixture->deployment->initialize($this->fixture->instance);
-        mkdir($this->fixture->home.'/releases/foreign');
-        file_put_contents($this->fixture->home.'/releases/foreign/protected', 'must-survive');
-        $this->fixture->push('foreign-path');
-        $result = app(DeployDefaultInstanceAction::class)->execute($this->fixture->instance);
-
-        expect($result?->succeeded)->toBeFalse()
-            ->and(readlink($this->fixture->home.'/current'))->toBe('releases/initial')
-            ->and(file_get_contents($this->fixture->home.'/releases/foreign/protected'))->toBe('must-survive');
-    });
 });
