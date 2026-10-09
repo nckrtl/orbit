@@ -137,7 +137,8 @@ final readonly class SynchronizeInstanceEnvironmentAction implements InstanceEnv
             throw new ResourceOperationException(
                 errorCode: 'env.sync_would_drop_keys',
                 message: 'The workload environment file has keys that stored configuration lacks. '
-                    .'Run env:import to store them before env:sync, or remove them from the file.',
+                    .'Store them with env:update or env:import (--replace when other keys are already stored), '
+                    .'or remove them from the file.',
                 status: 409,
                 details: ['keys' => implode(',', $unowned)],
             );
