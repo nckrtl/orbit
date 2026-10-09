@@ -3,7 +3,6 @@ title: "Caddy configuration"
 description: "How the Gateway builds each Node's whole Caddyfile from its database and pushes it in one step, and what happens when a build fails."
 covers:
   - apps/gateway/app/Infrastructure/Caddy/**
-  - apps/gateway/app/Infrastructure/Instances/{NativeAppProjectionServingRuntime,DevelopmentCaddyAccessCommand}.php
   - apps/gateway/app/Console/Commands/CaddyBuildCommand.php
   - apps/gateway/app/Infrastructure/Doctor/NativeCaddyBuildInspector.php
   - apps/gateway/app/Infrastructure/Nodes/Roles/CaddyRoleFailure.php
@@ -134,14 +133,6 @@ The Gateway refuses to remove a certificate that a site in its stored state stil
 The `app-dev` role creates the hibernation marker and log directories before it requests a build, because `caddy validate` opens those logs as the `caddy` user. The convergence of `app-dev`, `app-prod`, `router`, and `ingress` first runs the step `caddy-service-ordering`, which orders the Caddy service after `wg-quick@orbit`, and then builds the Node.
 
 The Gateway runs one build at a time for each Node. A second build waits up to 30 seconds and then reads the latest committed state, so the last build always renders every committed change. A build that renders the file that is already live changes nothing and does not reload Caddy, so open WebSocket streams stay connected.
-
-### Committed app candidates
-
-During a Project app-list or Instance override update, the development site repository reads the committed app-projection journal. Its render side selects old or candidate effective paths, source profiles and app Route intents. Ordinary public configuration readers still see published maps and profiles. A build requested independently of the update reads the same committed phase; no in-memory override or temporary public-row rewrite is used. [Projects](/reference/projects#candidate-rendering-and-public-configuration) owns that selection and the parent publication boundary.
-
-The native serving adapter uses this whole-Node build, the existing development projection and Node service locks, native source inspection/access checks and certificate/DNS/Route owners. It prepares candidate document roots and access, FPM socket references and cached APP_URL with protected owned recovery. Retained apps keep Route/domain/provenance/port identities; additions reserve candidate app Routes through the same internal Route contract, and removals withdraw only the removed app's generated artifacts. Certificates exist before a site is rendered, and are removed only after no committed render uses them. No second publisher or unmanaged fragment is introduced. Remote builds run outside database transactions.
-
-Before publication, recovery commits old-side rendering and rebuilds from the current committed desired state. It preserves unrelated sites, including changes committed after preparation; it does not restore a stale whole-Node Caddyfile snapshot. After publication, recovery verifies the candidate side and cleans owned preparation artifacts forward. Each mutating step has a committed intent and protected receipt; a lost build/reload response is verified against actual state before retry, rather than treated as failure. The serving adapter is complete before either lifecycle integration uses it; a fake or database-only adapter is not runtime acceptance.
 
 ### How a build is pushed
 

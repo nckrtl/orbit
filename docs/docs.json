@@ -623,7 +623,6 @@
               "decisions/0182-start-tasks-from-project-task-definitions",
               "decisions/0190-run-mysql-servers-with-a-gateway-held-admin-password",
               "decisions/0191-clone-the-default-instance-database-for-each-new-instance",
-              "decisions/0196-derive-application-directory-from-web-root",
               "decisions/0198-keep-delivery-line-proofs-as-repo-commands",
               "decisions/0200-run-each-task-group-in-its-own-sandbox-vm"
             ]
@@ -660,6 +659,10 @@
     }
   },
   "redirects": [
+    {
+      "source": "/decisions/0196-derive-application-directory-from-web-root",
+      "destination": "/reference/projects#application-directory"
+    },
     {
       "source": "/decisions/0203-review-and-merge-pull-requests-inside-orbit",
       "destination": "/reference/tasks#review-and-merge"

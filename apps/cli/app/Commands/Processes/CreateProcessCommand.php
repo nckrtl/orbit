@@ -24,6 +24,7 @@ final class CreateProcessCommand extends TargetedProcessCommand
         {--preset= : Process preset: vp-dev, annotator, agentation-mcp, or antigravity-watch}
         {--node= : Node ID or registered name}
         {--project= : Numeric Project ID}
+        {--app= : App name; required when the Project has several apps}
         {--for= : Comma-separated definition environments}
         {--runtime=systemd : systemd or docker}
         {--command=* : One command argument; repeat for each argv item}
@@ -241,6 +242,7 @@ final class CreateProcessCommand extends TargetedProcessCommand
                 keepAlive: $this->option('keep-alive') === true,
                 preset: $preset,
                 user: $user,
+                app: $this->stringOption('app'),
             ),
             ProcessResponse::class,
             ['Create Process', 'Creating Process', 'Created Process'],
@@ -329,6 +331,7 @@ final class CreateProcessCommand extends TargetedProcessCommand
         try {
             $definition = json_encode(
                 [
+                    ...($this->stringOption('app') === null ? [] : ['app' => $this->stringOption('app')]),
                     'name' => $name,
                     'environments' => $environments,
                     'spec' => $spec,

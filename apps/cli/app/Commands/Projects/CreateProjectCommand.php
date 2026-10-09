@@ -8,6 +8,7 @@ use App\Commands\GatewayCommand;
 use App\Commands\Projects\Concerns\ParsesTaskWorkspaceRouted;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
+use App\Support\NamedAppOptions;
 use Orbit\Sdk\Requests\Projects\CreateProjectRequest;
 use Orbit\Sdk\Responses\Projects\ProjectResponse;
 
@@ -23,7 +24,7 @@ final class CreateProjectCommand extends GatewayCommand
         {--name= : Optional display name}
         {--source-access= : How Orbit reads a private github.com repository: github_app (default) or gh_cli}
         {--default-branch= : Stored default branch; resolve the remote default when omitted}
-        {--root= : Repository-relative root; defaults to . for package types and public otherwise}
+        {--apps= : JSON list of apps, each with name, path, web_root and type}
         {--task-check= : Task check command. Omitted stores none}
         {--task-workspace-routed= : Whether new task workspaces get a Route (true or false)}
         {--task-compute= : Compute for future task groups (shared or vm)}
@@ -105,7 +106,14 @@ final class CreateProjectCommand extends GatewayCommand
             );
         }
 
-        $root = $this->stringOption('root') ?? $this->defaultRoot($type);
+        $apps = NamedAppOptions::apps($this->stringOption('apps') ?? '');
+
+        if ($apps === null) {
+            return $this->renderGatewayFailure(
+                'project.apps_invalid',
+                'Pass --apps as a JSON list of apps, each with name, path, web_root and type.',
+            );
+        }
         $taskCheck = $this->stringOption('task-check');
 
         if ($taskCheck !== null && (trim($taskCheck) === '' || strlen($taskCheck) > 4096)) {
@@ -117,7 +125,7 @@ final class CreateProjectCommand extends GatewayCommand
             new CreateProjectRequest(
                 slug: $slug,
                 repositoryUrl: $repositoryUrl,
-                root: $root,
+                apps: $apps,
                 type: $type,
                 name: $this->stringOption('name'),
                 defaultBranch: $this->stringOption('default-branch'),
@@ -145,11 +153,6 @@ final class CreateProjectCommand extends GatewayCommand
         $this->writeHumanMessage("Request ID: {$project->requestId}");
 
         return self::SUCCESS;
-    }
-
-    private function defaultRoot(string $type): string
-    {
-        return in_array($type, ['laravel-package', 'node-package'], true) ? '.' : 'public';
     }
 
     private function hasSafeRepositoryInput(string $repositoryUrl): bool

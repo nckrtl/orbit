@@ -41,6 +41,7 @@ it('preserves one bounded item while redacting command credentials and independe
             'error_code' => null,
             'last_run_at' => null,
             'last_run_status' => null,
+            'app' => 'web',
             'request_id' => schedule_response_request_id(),
         ])
         ->and(json_encode($response->toArray(), JSON_THROW_ON_ERROR))
@@ -238,6 +239,7 @@ function schedule_response_data(bool $includeCommand = true): array
         'error_code' => null,
         'last_run_at' => null,
         'last_run_status' => null,
+        'app' => 'web',
     ];
 
     if ($includeCommand) {

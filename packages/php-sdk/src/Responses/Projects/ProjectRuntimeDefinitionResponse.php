@@ -20,6 +20,7 @@ final readonly class ProjectRuntimeDefinitionResponse
         public array $environments,
         public array $spec,
         public string $requestId,
+        public ?string $app = null,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -38,15 +39,17 @@ final readonly class ProjectRuntimeDefinitionResponse
             environments: self::stringList($data['environments'] ?? null),
             spec: $redactor->redactArray(self::stringKeyedArray($data['spec'] ?? null)),
             requestId: $requestId,
+            app: is_string($data['app'] ?? null) ? $data['app'] : null,
         );
     }
 
-    /** @return array{id: string, project_id: int, name: string, environments: list<string>, spec: array<string, mixed>, request_id: string} */
+    /** @return array{id: string, project_id: int, app: string|null, name: string, environments: list<string>, spec: array<string, mixed>, request_id: string} */
     public function toArray(): array
     {
         return [
             'id' => $this->id,
             'project_id' => $this->projectId,
+            'app' => $this->app,
             'name' => $this->name,
             'environments' => $this->environments,
             'spec' => $this->spec,

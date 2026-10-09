@@ -31,7 +31,9 @@ final readonly class LogStreamTargetResolver
     public function forInstance(Instance $instance): LogStreamTarget
     {
         InstanceSandboxGuard::assertHostOperation($instance);
-        $checkout = StoragePath::tryParse($instance->source_is_laravel === true ? $instance->applicationDirectory() : $instance->checkout_path);
+        // Logs have no app selector yet; a Project with several apps returns app.required.
+        $app = $instance->appConfiguration()['name'];
+        $checkout = StoragePath::tryParse($instance->runtimeForApp($app)['laravel'] === true ? $instance->applicationDirectory($app) : $instance->checkout_path);
 
         if ($checkout === null) {
             throw new ResourceOperationException(

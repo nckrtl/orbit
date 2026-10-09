@@ -6,9 +6,11 @@ namespace Orbit\Sdk\Responses\Instances;
 
 use Orbit\Sdk\Responses\Deployments\DeploymentStepResponse;
 use Orbit\Sdk\Responses\Nodes\NodeIdentityResponse;
+use Orbit\Sdk\Responses\Projects\ProjectAppResponse;
 use Orbit\Sdk\Responses\Projects\ProjectIdentityResponse;
 use Orbit\Sdk\Responses\Routes\RouteResponse;
 use SensitiveParameter;
+use stdClass;
 
 /**
  * @phpstan-type InstanceRecordFields array{
@@ -26,8 +28,8 @@ use SensitiveParameter;
  *     checkout_path: string,
  *     production_user: string|null,
  *     production_home: string|null,
- *     root: string|null,
- *     effective_root: string|null,
+ *     apps: list<array{name: string, path: string, web_root: string|null, type: string}>,
+ *     app_overrides: array<string, array{path: string, web_root: string|null}>|stdClass,
  *     selected_branch: string|null,
  *     branch_override: string|null,
  *     starting_commit: string|null,
@@ -57,8 +59,8 @@ use SensitiveParameter;
  *     checkout_path: string,
  *     production_user: string|null,
  *     production_home: string|null,
- *     root: string|null,
- *     effective_root: string|null,
+ *     apps: list<array{name: string, path: string, web_root: string|null, type: string}>,
+ *     app_overrides: array<string, array{path: string, web_root: string|null}>|stdClass,
  *     selected_branch: string|null,
  *     branch_override: string|null,
  *     starting_commit: string|null,
@@ -88,8 +90,10 @@ final readonly class InstanceResponse
         public string $checkoutPath,
         public ?string $productionUser,
         public ?string $productionHome,
-        public ?string $root,
-        public ?string $effectiveRoot,
+        /** @var list<ProjectAppResponse> */
+        public array $apps,
+        /** @var array<string, array{path: string, web_root: string|null}> */
+        public array $appOverrides,
         public ?string $selectedBranch,
         public ?string $branchOverride,
         public ?string $startingCommit,
@@ -135,8 +139,8 @@ final readonly class InstanceResponse
             checkoutPath: is_string($data['checkout_path'] ?? null) ? $data['checkout_path'] : '',
             productionUser: is_string($data['production_user'] ?? null) ? $data['production_user'] : null,
             productionHome: is_string($data['production_home'] ?? null) ? $data['production_home'] : null,
-            root: is_string($data['root'] ?? null) ? $data['root'] : null,
-            effectiveRoot: is_string($data['effective_root'] ?? null) ? $data['effective_root'] : null,
+            apps: ProjectAppResponse::listFromGatewayData($data['apps'] ?? null),
+            appOverrides: self::appOverrides($data['app_overrides'] ?? null),
             selectedBranch: is_string($data['selected_branch'] ?? null) ? $data['selected_branch'] : null,
             branchOverride: is_string($data['branch_override'] ?? null) ? $data['branch_override'] : null,
             startingCommit: is_string($data['starting_commit'] ?? null) ? $data['starting_commit'] : null,
@@ -170,8 +174,8 @@ final readonly class InstanceResponse
             'checkout_path' => $this->checkoutPath,
             'production_user' => $this->productionUser,
             'production_home' => $this->productionHome,
-            'root' => $this->root,
-            'effective_root' => $this->effectiveRoot,
+            'apps' => array_map(static fn (ProjectAppResponse $app): array => $app->toArray(), $this->apps),
+            'app_overrides' => $this->appOverrides === [] ? new stdClass : $this->appOverrides,
             'selected_branch' => $this->selectedBranch,
             'branch_override' => $this->branchOverride,
             'starting_commit' => $this->startingCommit,
@@ -209,6 +213,31 @@ final readonly class InstanceResponse
         }
 
         return RouteResponse::fromGatewayData($route, $requestId);
+    }
+
+    /** @return array<string, array{path: string, web_root: string|null}> */
+    private static function appOverrides(mixed $value): array
+    {
+        if (! is_array($value)) {
+            return [];
+        }
+
+        $overrides = [];
+
+        foreach ($value as $name => $override) {
+            if (
+                ! is_string($name)
+                || ! is_array($override)
+                || ! is_string($override['path'] ?? null)
+                || ! (is_string($override['web_root'] ?? null) || ($override['web_root'] ?? null) === null)
+            ) {
+                continue;
+            }
+
+            $overrides[$name] = ['path' => $override['path'], 'web_root' => $override['web_root'] ?? null];
+        }
+
+        return $overrides;
     }
 
     /** @return list<DeploymentStepResponse> */

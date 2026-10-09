@@ -18,8 +18,8 @@ describe(InstanceResponse::class, function (): void {
             'checkout_path' => '/home/orbit/apps/orbit-docs',
             'production_user' => null,
             'production_home' => null,
-            'root' => null,
-            'effective_root' => 'public',
+            'apps' => [['name' => 'web', 'path' => 'site', 'web_root' => 'public', 'type' => 'laravel-app']],
+            'app_overrides' => ['web' => ['path' => 'site', 'web_root' => 'public']],
             'selected_branch' => 'main',
             'branch_override' => 'main',
             'starting_commit' => 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
@@ -44,8 +44,8 @@ describe(InstanceResponse::class, function (): void {
             'checkout_path' => '/home/orbit/apps/orbit-docs',
             'production_user' => null,
             'production_home' => null,
-            'root' => null,
-            'effective_root' => 'public',
+            'apps' => [['name' => 'web', 'path' => 'site', 'web_root' => 'public', 'type' => 'laravel-app']],
+            'app_overrides' => ['web' => ['path' => 'site', 'web_root' => 'public']],
             'selected_branch' => 'main',
             'branch_override' => 'main',
             'starting_commit' => 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
@@ -66,15 +66,18 @@ describe(InstanceResponse::class, function (): void {
     it('uses safe values for invalid gateway fields', function (): void {
         $response = InstanceResponse::fromGatewayData([
             'id' => 'invalid',
-            'root' => ['invalid'],
+            'apps' => [['name' => 'web'], 'invalid', ['name' => 'api', 'path' => 'api', 'web_root' => 7, 'type' => 'laravel-app']],
+            'app_overrides' => ['web' => ['path' => ['invalid']], 'api' => 'invalid', 0 => ['path' => 'x', 'web_root' => null]],
             'seed_path' => ['invalid'],
             'seed_commit' => false,
         ], 'request-id');
 
         expect($response->id)
             ->toBe(0)
-            ->and($response->root)
-            ->toBeNull()
+            ->and($response->apps)
+            ->toBe([])
+            ->and($response->appOverrides)
+            ->toBe([])
             ->and($response->seedPath)->toBeNull()
             ->and($response->seedCommit)->toBeNull();
     });

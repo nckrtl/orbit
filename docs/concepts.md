@@ -21,8 +21,8 @@ These are the terms every part of Orbit shares. Each domain page defines the ter
 - **Project**: One Git repository, its named apps and the defaults for running them. See [Projects](/reference/projects).
 - **Project Documents**: Folders and versioned files owned by a Project, independent of Git branches and Instances. See [Project Documents](/reference/project-documents).
 - **Named app**: An application within a Project, with a name, repository-relative path, relative web root and type. See [Application directory](/reference/projects#application-directory).
-- **Instance**: One running copy of the whole Project on a Node, serving each configured app in development or the sole app in supported production. See [Applications](/domains/applications).
-- **Route**: A domain that reaches one named app in an Instance, a pool for the same app, or a Node-local service. See [Routes](/reference/routes).
+- **Instance**: One running copy of the whole Project on a Node. In development it serves each app; production supports a Project with one app. See [Applications](/domains/applications).
+- **Route**: A domain that reaches one app of an Instance, or a Node-local service. See [Routes](/reference/routes).
 - **Process**: A long-running service that Orbit manages for an Instance or a Node, such as a queue worker. See [Processes and schedules](/reference/processes-and-schedules).
 - **Schedule**: A command that runs on a timer for an Instance or a Node. See [Schedules](/reference/schedules).
 - **Deployment**: One release that Orbit prepares and activates on a production Instance. See [Production release layout](/reference/deployments).

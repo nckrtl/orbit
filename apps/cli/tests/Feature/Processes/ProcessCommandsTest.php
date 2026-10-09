@@ -111,6 +111,7 @@ it('adds one explicit Docker process through the active gateway', function (): v
             '--volume' => ['redis-data:/data'],
             '--restart' => 'unless-stopped',
             '--start' => true,
+            '--app' => 'web',
             '--json' => true,
         ])
         ->expectsOutput(process_cli_json())
@@ -131,6 +132,7 @@ it('adds one explicit Docker process through the active gateway', function (): v
             'ports' => ['127.0.0.1:6380:6379/tcp'],
             'volumes' => [['source' => 'redis-data', 'target' => '/data', 'read_only' => false]],
             'restart_policy' => 'unless-stopped',
+            'app' => 'web',
             'start' => true,
             'keep_alive' => false,
         ]);
@@ -1250,6 +1252,7 @@ it('records one Project process definition through structured flags', function (
             '--runtime' => 'systemd',
             '--command' => ['/usr/bin/php', 'artisan', 'queue:work'],
             '--restart' => 'on-failure',
+            '--app' => 'web',
             '--json' => true,
         ])
         ->expectsOutput(process_definition_cli_json())
@@ -1260,7 +1263,7 @@ it('records one Project process definition through structured flags', function (
         ->and($mock->getLastPendingRequest()?->getUrl())
         ->toBe('https://10.44.0.1/api/v1/projects/7/process-definitions')
         ->and((string) $mock->getLastPendingRequest()?->body())
-        ->toBe('{"name":"queue","environments":["development","production"],"spec":{"runtime":"systemd","command":["/usr/bin/php","artisan","queue:work"],"restart_policy":"on-failure","keep_alive":false}}');
+        ->toBe('{"app":"web","name":"queue","environments":["development","production"],"spec":{"runtime":"systemd","command":["/usr/bin/php","artisan","queue:work"],"restart_policy":"on-failure","keep_alive":false}}');
 });
 
 it('records keep-alive on a Project process definition', function (): void {
@@ -1469,6 +1472,7 @@ function process_cli_payload(array $overrides = []): array
         'cpu' => null,
         'memory_bytes' => null,
         'user' => null,
+        'app' => null,
     ], $overrides);
 }
 
@@ -1541,6 +1545,7 @@ function process_definition_cli_data(): array
     return [
         'id' => '0199cc62-68f3-75b8-9f11-36fe92ac1f36',
         'project_id' => 7,
+        'app' => 'web',
         'name' => 'queue',
         'environments' => ['development', 'production'],
         'spec' => [

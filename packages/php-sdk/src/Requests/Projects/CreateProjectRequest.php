@@ -22,7 +22,8 @@ final class CreateProjectRequest extends GatewayRequest implements HasBody
         private readonly string $slug,
         #[\SensitiveParameter]
         private readonly string $repositoryUrl,
-        private readonly string $root,
+        /** @var list<array{name: string, path: string, web_root: string|null, type: string}> */
+        private readonly array $apps,
         private readonly string $type = 'laravel-app',
         private readonly ?string $name = null,
         private readonly ?string $defaultBranch = null,
@@ -57,7 +58,7 @@ final class CreateProjectRequest extends GatewayRequest implements HasBody
                 'repository_url' => $this->repositoryUrl,
                 'source_access' => $this->sourceAccess,
                 'default_branch' => $this->defaultBranch,
-                'root' => $this->root,
+                'apps' => $this->apps,
                 'task_compute' => $this->taskCompute,
                 ...($this->taskCheckProvided ? ['task_check' => $this->taskCheck] : []),
                 ...($this->taskWorkspaceRouted === null ? [] : ['task_workspace_routed' => $this->taskWorkspaceRouted]),

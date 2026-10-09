@@ -165,12 +165,12 @@ describe('gateway object-state boundary', function (): void {
             'slug' => 'orbit',
             'type' => 'laravel-app',
             'repository_url' => $repositoryUrl,
-            'root' => 'public',
+            'apps' => [['name' => 'web', 'path' => '.', 'web_root' => 'public', 'type' => 'laravel-app']],
         ];
         $request = new CreateProjectRequest(
             slug: 'orbit',
             repositoryUrl: $repositoryUrl,
-            root: 'public',
+            apps: [['name' => 'web', 'path' => '.', 'web_root' => 'public', 'type' => 'laravel-app']],
             name: 'Orbit',
         );
         $needles = [
@@ -399,7 +399,7 @@ describe('gateway object-state boundary', function (): void {
 
     it('rejects inherited raw Saloon debugging', function (string $target, string $operation): void {
         $transport = $target === 'request'
-            ? new CreateProjectRequest('orbit', 'https://git.example.test/orbit.git', 'public')
+            ? new CreateProjectRequest('orbit', 'https://git.example.test/orbit.git', [])
             : new GatewayConnector('https://gateway.test');
 
         expect(fn (): object => gateway_object_state_raw_debug_operation($transport, $operation))
@@ -465,7 +465,7 @@ function gateway_object_state_project_constructor_exception(string $repositoryUr
         new CreateProjectRequest(
             slug: 'orbit',
             repositoryUrl: $repositoryUrl,
-            root: 'public',
+            apps: [['name' => 'web', 'path' => '.', 'web_root' => 'public', 'type' => 'laravel-app']],
             name: [],
         );
     } catch (TypeError $exception) {

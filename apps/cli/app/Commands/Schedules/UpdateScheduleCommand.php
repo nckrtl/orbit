@@ -21,6 +21,7 @@ final class UpdateScheduleCommand extends ScheduleCommand
     protected $signature = 'schedule:update
         {name : Schedule definition name}
         {--project= : Numeric Project ID}
+        {--app= : App name; required when the Project has several apps}
         {--for= : Comma-separated definition environments}
         {--calendar= : Native systemd calendar expression}
         {--command= : Command to run}
@@ -96,6 +97,7 @@ final class UpdateScheduleCommand extends ScheduleCommand
         try {
             $definition = json_encode(
                 [
+                    ...($this->stringOption('app') === null ? [] : ['app' => $this->stringOption('app')]),
                     'name' => $name,
                     'environments' => $environments,
                     'spec' => [

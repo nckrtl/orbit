@@ -37,6 +37,7 @@ it('serializes distinct typed targets and preserves omitted versus explicit add 
         command: '',
         timeoutSeconds: 0,
         start: false,
+        app: 'web',
     );
 
     expect($omitted->getMethod())
@@ -62,6 +63,7 @@ it('serializes distinct typed targets and preserves omitted versus explicit add 
             'command' => '',
             'timeout_seconds' => 0,
             'start' => false,
+            'app' => 'web',
         ]);
 
     $targetType = new ReflectionParameter([CreateScheduleRequest::class, '__construct'], 'target')->getType();

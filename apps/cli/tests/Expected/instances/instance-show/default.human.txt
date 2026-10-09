@@ -19,9 +19,9 @@ Fetching Processes...
 │
 ├  SSR port          13714
 │
-├  Root override     —
+├  Apps              web: . · web root public · laravel-app
 │
-├  Effective root    public
+├  App overrides     —
 │
 ├  Selected branch   dev
 │

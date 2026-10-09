@@ -16,7 +16,8 @@ final readonly class ProjectResponse
         public string $type,
         public string $repositoryUrl,
         public ?string $defaultBranch,
-        public ?string $root,
+        /** @var list<ProjectAppResponse> */
+        public array $apps,
         public string $requestId,
         /** @var list<array{project_id: int, project_slug: string, node_id: int, node_name: string, development_instance_count: int}>|null */
         public ?array $excludedNodes = null,
@@ -46,7 +47,7 @@ final readonly class ProjectResponse
                 ? $redactor->redactText($data['repository_url'])
                 : '',
             defaultBranch: is_string($data['default_branch'] ?? null) ? $data['default_branch'] : null,
-            root: is_string($data['root'] ?? null) ? $data['root'] : null,
+            apps: ProjectAppResponse::listFromGatewayData($data['apps'] ?? null),
             requestId: $requestId,
             excludedNodes: self::exclusions($data['excluded_nodes'] ?? null),
             taskCheck: is_string($data['task_check'] ?? null) ? $data['task_check'] : null,
@@ -69,7 +70,7 @@ final readonly class ProjectResponse
             'repository_url' => $this->repositoryUrl,
             'source_access' => $this->sourceAccess,
             'default_branch' => $this->defaultBranch,
-            'root' => $this->root,
+            'apps' => array_map(static fn (ProjectAppResponse $app): array => $app->toArray(), $this->apps),
             'task_check' => $this->taskCheck,
             ...($this->taskWorkspaceRouted === null ? [] : ['task_workspace_routed' => $this->taskWorkspaceRouted]),
             ...($this->taskCompute === null ? [] : ['task_compute' => $this->taskCompute]),

@@ -13,15 +13,14 @@ The Gateway reports visits for an Instance that publishes a tracking host. The r
 
 ## Read the stats
 
-`GET /api/v1/instances/{instance}/analytics/stats` returns one report for the Instance's sole tracked app. A Project with several apps returns `app.analytics_multi_app_unsupported` (409) before role checks, domain derivation or Plausible access. The read accepts no app selector and never picks a primary app; an `app` query returns existing `validation.failed`. The web page hides this panel and makes no stats request for multiple apps. The CLI and PHP SDK have no counterpart. [Analytics](/reference/analytics#single-app-boundary) owns the migration and adding-second-app guard.
+`GET /api/v1/instances/{instance}/analytics/stats` returns one report. The Orbit web Instance page shows it. The CLI and the PHP SDK have no counterpart for this read. The read has no app selector. It uses the app of a single-app Project; on a Project with several apps it returns `app.required` once tracking is available. See [One app only](/reference/analytics#one-app-only).
 
 | Field | Meaning |
 | --- | --- |
 | `available` | False when the analytics role is not active or the Instance publishes no tracking host. Every other field is then absent. |
 | `readable` | False when the panel may show but the driver could not obtain stats. Visitor fields are then absent. |
 | `driver` | `plausible_ce` for the fleet Plausible Community Edition driver. |
-| `app` | The stored sole app name when `available` is true; existing tracking migrates to `web`. |
-| `site_domain` | The sole app's authoritative Route domain from `app_runtime[app].domain`, which is the Plausible site. |
+| `site_domain` | The Instance's authoritative public domain, which is the Plausible site. |
 | `live_visitors` | People on the site now, as Plausible realtime visitors. |
 | `visitors` | `past_24h`, `past_7d`, and `past_30d` visitor counts. `past_24h` is Plausible's `day` period: today in the site timezone. |
 | `pages` | Up to ten paths for the last 30 days, each with `path` and `visitors`, most visitors first. |
@@ -29,7 +28,7 @@ The Gateway reports visits for an Instance that publishes a tracking host. The r
 
 ## Know when the panel is available
 
-After confirming that the Project has exactly one app, the Gateway reports stats as available when both conditions below hold. Tracking configuration must identify that sole app; it cannot substitute another app's domain.
+The Gateway reports stats as available when both of these are true.
 
 | Condition | How the Gateway decides |
 | --- | --- |
@@ -42,7 +41,7 @@ The web page fetches this report on the Instance view. It draws the panel only w
 
 The Plausible Community Edition driver calls the Stats API on the analytics Node over WireGuard, at the published Plausible port. It sends the stored Stats API key as a bearer token. It never uses a public URL and never returns the key.
 
-The site is the stored sole app's authoritative Route domain. That is the snippet's `data-domain`. App-domain migration can change this name to `web.<project>.<tld>`; Orbit does not migrate Plausible's old site or history. The operator creates the new site and updates the snippet, or the report is unreadable with `analytics.stats_site_missing`. The request cannot name another app or site.
+The site is the Instance's authoritative public domain. That is the `data-domain` in the tracking snippet. The request cannot name another site.
 
 The driver asks Plausible for realtime visitors, visitor totals for `day`, `7d`, and `30d`, and a 30-day page breakdown limited to ten rows. If any of those calls fails, the whole read is unreadable. The Gateway does not mix a successful count with a missing one.
 
@@ -54,12 +53,12 @@ An unavailable report is `available: false`. That is not an error. A failed read
 | --- | --- |
 | `analytics.stats_key_missing` | No Stats API key is stored on the Gateway. Store one with `orbit analytics:credentials --set`. |
 | `analytics.stats_unauthorized` | Plausible rejected the stored key. |
-| `analytics.stats_site_missing` | Plausible has no site for the sole app's current domain. Create that site in Plausible. |
-| `analytics.stats_domain_missing` | The Instance has tracking but its recorded sole app has no authoritative domain. |
+| `analytics.stats_site_missing` | Plausible has no site for the Instance's domain. Create that site in Plausible. |
+| `analytics.stats_domain_missing` | The Instance has tracking but no authoritative domain to map to a site. |
 | `analytics.stats_unreadable` | Plausible did not answer, or the answer was not a stats report. |
 
 | Status | Error code | Cause |
 | --- | --- | --- |
-| 409 | `app.analytics_multi_app_unsupported` | The Project has several apps; tracking and stats are single-app only. |
 | 403 | `peer.identity_unknown` or `node_access.required` | The caller is not an active WireGuard peer or lacks access to the Instance's Node. |
 | 404 | `resource.not_found` | No Instance matches the path. |
+| 422 | `app.required` | The Project has several apps. |

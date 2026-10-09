@@ -27,6 +27,7 @@ final class CreateScheduleCommand extends ScheduleCommand
         {--node= : Positive Node ID}
         {--instance= : Positive Instance ID}
         {--project= : Numeric Project ID}
+        {--app= : App name; required when the Project has several apps}
         {--for= : Comma-separated definition environments}
         {--calendar= : Native systemd calendar expression}
         {--command= : Command to run}
@@ -119,6 +120,7 @@ final class CreateScheduleCommand extends ScheduleCommand
                 command: $command,
                 timeoutSeconds: $timeout,
                 start: $this->option('no-start') === true ? false : null,
+                app: $this->stringOption('app'),
             ),
             ScheduleResponse::class,
             ['Create Schedule', 'Creating Schedule', 'Created Schedule'],
@@ -203,6 +205,7 @@ final class CreateScheduleCommand extends ScheduleCommand
         try {
             $definition = json_encode(
                 [
+                    ...($this->stringOption('app') === null ? [] : ['app' => $this->stringOption('app')]),
                     'name' => $name,
                     'environments' => $environments,
                     'spec' => [

@@ -24,9 +24,7 @@ A viewer can follow the log as the application writes it with a [live log stream
 
 ## Know which file the Gateway reads
 
-The Gateway reads one file under `storage/logs` in the selected app's [application directory](/reference/projects#application-directory). App path `apps/site` means `<checkout>/apps/site/storage/logs` in development or `<production-home>/current/apps/site/storage/logs` in supported single-app production. App path `.` selects the checkout or release root. One-shot reads and live streams use the same app and directory.
-
-API reads accept `?app=NAME`, CLI uses `--app=NAME`, SDK uses `$app` and MCP uses `app`. Single-app omission resolves its name; multi-app omission returns `app.required`, and an unknown name returns `app.not_found`. Responses add `data.app`. Live stream creation also sends the app name; fallback to a one-shot read must keep it. An Instance Route-domain selector and explicit app must agree or return `app.selector_conflict`.
+The Gateway reads one file under `storage/logs` in the Instance's [application directory](/reference/projects#application-directory), which is the Laravel convention. App path `apps/site` means `<checkout>/apps/site/storage/logs` in development or `<production-home>/current/apps/site/storage/logs` in production. App path `.` keeps `storage/logs` at the checkout or release root. One-shot reads and live streams use the same directory. Logs have no app selector; they follow the app of a single-app Project.
 
 | Order | File | Used when |
 | --- | --- | --- |

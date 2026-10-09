@@ -14,7 +14,10 @@ describe(ProjectResponse::class, function (): void {
             'repository_url' => 'git@github.com:nckrtl/orbit-docs.git',
             'source_access' => 'gh_cli',
             'default_branch' => 'main',
-            'root' => 'public',
+            'apps' => [
+                ['name' => 'web', 'path' => '.', 'web_root' => 'public', 'type' => 'laravel-app'],
+                ['name' => 'docs', 'path' => 'docs', 'web_root' => null, 'type' => 'node-app'],
+            ],
             'task_check' => 'composer check',
             'task_workspace_routed' => false,
             'task_compute' => 'vm',
@@ -28,7 +31,10 @@ describe(ProjectResponse::class, function (): void {
             'repository_url' => 'git@github.com:nckrtl/orbit-docs.git',
             'source_access' => 'gh_cli',
             'default_branch' => 'main',
-            'root' => 'public',
+            'apps' => [
+                ['name' => 'web', 'path' => '.', 'web_root' => 'public', 'type' => 'laravel-app'],
+                ['name' => 'docs', 'path' => 'docs', 'web_root' => null, 'type' => 'node-app'],
+            ],
             'task_check' => 'composer check',
             'task_workspace_routed' => false,
             'task_compute' => 'vm',
@@ -37,11 +43,11 @@ describe(ProjectResponse::class, function (): void {
     });
 
     it('normalizes invalid optional source defaults to null', function (): void {
-        $response = ProjectResponse::fromGatewayData(['default_branch' => ['invalid'], 'root' => ['invalid']], 'request-id');
+        $response = ProjectResponse::fromGatewayData(['default_branch' => ['invalid'], 'apps' => 'invalid'], 'request-id');
 
         expect($response->defaultBranch)
             ->toBeNull()
-            ->and($response->root)
-            ->toBeNull();
+            ->and($response->apps)
+            ->toBe([]);
     });
 });

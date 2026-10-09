@@ -92,6 +92,7 @@ it('adds one stopped Instance Schedule and renders exact json', function (): voi
         ->artisan('schedule:create', schedule_cli_add_arguments([
             '--instance' => '7',
             '--no-start' => true,
+            '--app' => 'web',
             '--json' => true,
         ]))
         ->expectsOutput(json_encode(
@@ -110,6 +111,7 @@ it('adds one stopped Instance Schedule and renders exact json', function (): voi
             'command' => 'php artisan report:send',
             'timeout_seconds' => 900,
             'start' => false,
+            'app' => 'web',
         ]);
 });
 
@@ -138,6 +140,7 @@ it('records one Project Schedule definition through structured flags', function 
             '--calendar' => 'hourly',
             '--command' => 'php artisan report:send',
             '--timeout' => '3600',
+            '--app' => 'web',
             '--json' => true,
         ])
         ->expectsOutput(schedule_definition_cli_json())
@@ -148,7 +151,7 @@ it('records one Project Schedule definition through structured flags', function 
         ->and($mock->getLastPendingRequest()?->getUrl())
         ->toBe('https://10.44.0.1/api/v1/projects/7/schedule-definitions')
         ->and((string) $mock->getLastPendingRequest()?->body())
-        ->toBe('{"name":"hourly-report","environments":["production"],"spec":{"command":"php artisan report:send","calendar":"hourly","timeout_seconds":3600}}');
+        ->toBe('{"app":"web","name":"hourly-report","environments":["production"],"spec":{"command":"php artisan report:send","calendar":"hourly","timeout_seconds":3600}}');
 });
 
 it('lists shows updates and destroys Project Schedule definitions by name', function (
@@ -721,6 +724,7 @@ function schedule_definition_cli_data(): array
     return [
         'id' => '0199cc62-68f3-75b8-9f11-36fe92ac1f36',
         'project_id' => 7,
+        'app' => 'web',
         'name' => 'hourly-report',
         'environments' => ['production'],
         'spec' => [

@@ -2,8 +2,8 @@
 title: "Instance environment variables"
 description: "How the Gateway imports, stores, updates, and synchronizes an Instance .env file without exposing its values."
 covers:
-  - apps/gateway/app/Domain/Instances/{Environment/**,AppProjectionEnvironment.php}
-  - apps/gateway/app/Infrastructure/Instances/{NativeAppProjectionEnvironment,AppProjectionEnvironmentProgram,RemoteInstanceEnvironmentAccess,NativeInstanceEnvironmentOperationLock}.php
+  - apps/gateway/app/Domain/Instances/Environment/**
+  - apps/gateway/app/Infrastructure/Instances/{RemoteInstanceEnvironmentAccess,NativeInstanceEnvironmentOperationLock}.php
   - apps/gateway/app/Actions/*/{Import,Update,Synchronize}*EnvironmentAction.php
   - apps/gateway/app/Http/Controllers/Api/InstanceEnvironment*Controller.php
   - apps/gateway/app/Models/{Instance,InstanceEnvironmentValue}.php
@@ -14,7 +14,7 @@ covers:
 
 # Instance environment variables
 
-The Gateway owns a separate environment configuration for every Instance/app pair. It stores each key and value encrypted, and it writes that app's `.env` file only when you synchronize. A value never appears in a response, an Activity entry, an error, or a log. [`env`](/cli/env) lists the commands.
+The Gateway owns a separate environment configuration for each app of an Instance. It stores each key and value encrypted, and it writes the app's `.env` file only when you synchronize. A value never appears in a response, an Activity entry, an error, or a log. [`env`](/cli/env) lists the commands.
 
 `ORBIT_DOCUMENT_CLEANUP_RUNTIME` selects the private local directory for isolated Project Document cleanup-gate fixtures when `APP_ENV=testing`; other environments ignore this override. Its default is `/run/orbit/project-documents/`. Never point it into `ORBIT_HOME`, a checkout, a web directory, or a backup. Installed Gateway services use the default runtime directory. This setting is not an Instance environment value or deletion authorization. See [the restore-time cleanup gate](/reference/project-documents#restore-time-cleanup-gate).
 
@@ -60,9 +60,7 @@ The Incus harness also reads its own environment. `ORBIT_E2E_INCUS_MEMORY` overr
 
 ## Operations
 
-Import, update and synchronize accept `app` in the JSON body; read operations accept it as a query parameter. CLI commands use `--app=NAME`, and PHP SDK requests use `$app`. Responses include `app` with `instance_id`. Omission selects the only app of the Project. Several apps without a selector return `app.required`; a name outside the Project returns `app.not_found`; an explicit selector that disagrees with a Route domain returns `app.selector_conflict` (all HTTP 422). A domain identifies the app as well as its Instance, but a pooled domain still returns `env.target_ambiguous`.
-
-Configuration storage, key counts and size limits apply independently to each Instance/app pair. Import or synchronization of one app never reads or replaces a sibling's file.
+The operations have no app selector. They act on the sole app of a single-app Project; on a Project with several apps they return `app.required`. Orbit still keeps a separate stored configuration and `.env` file for each app, and writes derived values such as `APP_URL` into each app's own configuration.
 
 The import and update endpoints accept either a positive numeric Instance ID or an exact Route domain in `{instance}`. A selector that matches no Instance returns HTTP 404. A Route domain that has multiple Instance targets returns HTTP 409 with `env.target_ambiguous`. The Instance's recorded placement owns its environment: the owning Node is the Instance's `node_id`, not a Route. An Instance without a Route can still have its environment synchronized. Changing the Project's [task workspace routing setting](/reference/projects#task-workspace-routing) does not change an existing Instance's environment target.
 
@@ -86,16 +84,16 @@ The Gateway derives the file location and the user from the Instance's placement
 
 | Placement | File | User |
 | --- | --- | --- |
-| `app-dev` | `.env` in the selected app's effective application directory within the checkout | The Node's managed user |
-| `app-prod` (single app only) | `.env` in the production home | The Instance's production user |
+| `app-dev` | `.env` in the app's application directory within the checkout | The Node's managed user |
+| `app-prod` | `.env` in the production home | The Instance's production user |
 
-The [application directory](/reference/projects#application-directory) is the app's effective `path`, not a directory guessed from source files. With app path `apps/site`, development reads and writes `<checkout>/apps/site/.env`, and `.env.testing` lives beside it. A development default keeps every app's files in its stable checkout home and copies each to the same relative application directory in every candidate. App paths must be distinct so no two apps share an environment file.
+The [application directory](/reference/projects#application-directory) is the app's effective `path`, not a directory guessed from source files. With app path `apps/site`, development reads and writes `<checkout>/apps/site/.env`, and `.env.testing` lives beside it. A development default keeps these files in its stable checkout home and copies them into the same application directory of each candidate. App paths must be distinct, so no two apps share an environment file.
 
-On supported single-app production, Orbit links `.env` from the app directory to the production home's file when the web root is non-null. With app path `apps/site` and web root `public`, `<home>/releases/<name>/apps/site/.env` links to `<home>/.env`; no release-root `.env` link is needed.
+Production supports a Project with one app. Every release links `.env` in the app directory to the production home's file when the web root is non-null. With app path `apps/site` and web root `public`, `<home>/releases/<name>/apps/site/.env` links to `<home>/.env`; no release-root `.env` link is needed.
 
-Before [setup](/reference/instance-setup#run-setup) runs in the active release of a development default, Orbit copies each app's `.env` and `.env.testing` into the same application directory of that release too, so `instance:setup` after a synchronization sees the new values.
+Before [setup](/reference/instance-setup#run-setup) runs in the active release of a development default, Orbit copies `.env` and `.env.testing` into the same application directory of that release too, so `instance:setup` after a synchronization sees the new values.
 
-For a converted non-public root, such as `apps/site/web`, the full root becomes the app path with null web root. Each release retains `<release>/.env` with target `../../.env` to `<production-home>/.env`, not a link inside that app directory. Migration associates this configuration with `web` without moving any environment file or link, changing runtime paths, or losing values. Environment storage for several production apps is outside this group and provisioning is refused before remote writes. See [Production release layout](/reference/deployments).
+An app with null web root, such as a converted root `apps/site/web`, keeps the release-root link `<release>/.env` with target `../../.env`. The migration to named apps assigns existing values to app `web` and moves no environment file or link. See [Production release layout](/reference/deployments).
 
 `ORBIT_TASKS_WORKER_USER` is a setting in the Gateway's own environment, not in an Instance's `.env`. It selects the worker account for [checkout ACLs](/reference/instance-setup#checkout-access), normally `orbit-worker`. An unset setting leaves checkout access unchanged. It does not change the Instance's placement, the user that imports or synchronizes its environment, or the mode `0600` used for a synchronized `.env` file. Setting an Instance key with that name does not configure the Gateway.
 
@@ -129,7 +127,7 @@ The Gateway checks the complete result before it stores any part of an import or
 
 ## Synchronize
 
-Synchronization takes one snapshot of the Instance, selected app, that app's authoritative Route, and that app's stored configuration. `{{instance.domain}}` means the selected app's Route domain; it is not a shared Instance primary domain. `{{instance.environment}}` remains Instance-wide. Migration keeps both placeholder spellings and associates existing values with `web`; no new placeholder syntax or fallback is introduced. It resolves `{{instance.domain}}` to the Route's domain when one is present and resolves `{{instance.environment}}` to `development` on `app-dev` or `production` on `app-prod`. Only a stored domain placeholder requires a Route. A leftover `{{` or `}}` after rendering returns `env.reference_unavailable` (409) before the file changes.
+Synchronization takes one snapshot of the Instance, the app's authoritative Route, and the app's stored configuration. It resolves `{{instance.domain}}` to that app's Route domain when one is present and resolves `{{instance.environment}}` to `development` on `app-dev` or `production` on `app-prod`. Only a stored domain placeholder requires a Route. A leftover `{{` or `}}` after rendering returns `env.reference_unavailable` (409) before the file changes.
 
 Before it decrypts a value, the Gateway checks SSH access, the user, the path, the directory's write permission, the file type and owner, read-only storage, and free space. A failed check returns an error and leaves `.env` as it is.
 
@@ -149,7 +147,7 @@ When Git cannot report whether it tracks the file, for example because of a dubi
 
 Synchronization changes only `.env` and `.env.testing`. It does not run application code, clear a framework cache, or restart a service or Process. Run those steps yourself when running code must see the new values.
 
-The Gateway takes one consistent snapshot of the Instance owner, selected app, that app's authoritative Route, and its complete stored configuration. It resolves `{{instance.domain}}` from the Route when available and `{{instance.environment}}` to the default Laravel mode for the Instance's Node role (`development` on app-dev or `production` on app-prod). A Route is required only when a stored value uses the domain placeholder; a missing Route or unavailable reference then stops synchronization before replacement. An incomplete Route transition also stops synchronization. The generated dotenv file has stable key order and preserves literal whitespace, newlines, quotes, dollar signs, backslashes, empty strings, and stored application keys.
+The Gateway takes one consistent snapshot of the Instance owner, the app's authoritative Route, and its complete stored configuration. It resolves `{{instance.domain}}` from the Route when available and `{{instance.environment}}` to the default Laravel mode for the Instance's Node role (`development` on app-dev or `production` on app-prod). A Route is required only when a stored value uses the domain placeholder; a missing Route or unavailable reference then stops synchronization before replacement. An incomplete Route transition also stops synchronization. The generated dotenv file has stable key order and preserves literal whitespace, newlines, quotes, dollar signs, backslashes, empty strings, and stored application keys.
 
 Import, update, synchronize, deploy, removal, and Route changes on one Instance share one operation lock. A competing request waits or returns `env.operation_busy`.
 
@@ -169,7 +167,7 @@ Other operations also change stored keys, and never the file itself:
 
 Removing the annotator Process deletes that stored key. Synchronization renders the current Route domain. Without a Route, the domain placeholder returns `env.reference_unavailable`.
 
-The annotator also projects the concrete `ANNOTATOR_URL` and `ORBIT_ANNOTATOR_PORT` into every systemd Process of the selected app. These derived values override a stale `.env` value or a caller-supplied environment map. Process creation and removal rewrite the existing units of sibling Processes of that app without changing their observed runtime state. Sleeping workers are not started, and cold dependencies are not restored. A running sibling reads the new values on its next start or restart. After removal, units unset both keys, even before the next environment synchronization. This runtime projection does not write `.env`; see [Annotator Process](/reference/agentation#annotator-process).
+The annotator also projects the concrete `ANNOTATOR_URL` and `ORBIT_ANNOTATOR_PORT` into every systemd Process of its app. These derived values override a stale `.env` value or a caller-supplied environment map. Process creation and removal rewrite the existing units of sibling Processes of that app without changing their observed runtime state. Sleeping workers are not started, and cold dependencies are not restored. A running sibling reads the new values on its next start or restart. After removal, units unset both keys, even before the next environment synchronization. This runtime projection does not write `.env`; see [Annotator Process](/reference/agentation#annotator-process).
 
 A production [deployment](/reference/deployments) synchronizes the stored configuration before it runs any deploy step. A development default keeps its configured environment files at the stable checkout home. Explicit synchronization writes there; its next development deployment copies `.env` and any `.env.testing` into the candidate without changing the live seed. Deploy the default by hand when these file changes need to take effect before the next push.
 
@@ -187,19 +185,7 @@ A Project slug change updates the Laravel `APP_URL` that the Route domain owns. 
 
 ## Inspect the projection with Doctor
 
-[Doctor](/cli/doctor#named-app-checks) renders each app's stored configuration against that app's Route and the Instance placement and compares it with that app's `.env` file. It reports a missing, unsafe, or different production file as an `instance` finding. It shows no environment key or value. For each classified Laravel app, Doctor also compares cached `app.url` with that app's authoritative Route when `bootstrap/cache/config.php` exists, using a bounded read without application bootstrap. It reports `instance.laravel_url_mismatch` for a different URL and `instance.inspection_failed` for an unsafe or unreadable cache. An absent cache is valid; Doctor never creates or clears one.
-
-## App-path preparation and protected receipts
-
-Project app-list and Instance override updates use the same native environment adapter with explicit old/candidate contexts. Configuration stays encrypted and keyed to the same app. Public readers keep the published paths throughout preparation; the adapter never changes a public map to make an environment resolver select a candidate. [Projects](/reference/projects#protected-step-and-receipt-contract) owns the journal and receipt schema.
-
-Preflight verifies canonical containment, safe parent directories, regular-file and owner checks, permissions and free space without following unsafe links. Each configured source `.env` and managed `.env.testing` must match that app's rendered stored configuration. A different source requires import and synchronization before retry. A destination file is acceptable only when it matches the same app's rendered configuration; even a matching destination is snapshotted before replacement. Unrelated files fail with `instance.app_environment_conflict`, including during Project app-list preparation. Empty unconfigured apps without files remain file-free. No sibling's file is imported and no old-path environment is deleted.
-
-The adapter records the stable-home and selected-release targets separately on a development `default`, including their release identity and protection metadata. It stages configured files at candidate paths with mode `0600`, independently of the live seed. Production's durable environment and release-link layout do not change; unsupported production path mutations fail before preparation.
-
-Before snapshot or staging, commit an intent with a stable receipt identity. Protected remote receipts bind every snapshot and result to owner, Instance, app, step, plan digest and exact target. Environment bytes travel only through protected transport and snapshots or encrypted control-plane storage, never plaintext journal fields, argv, logs or public output. On a lost response, inspect the existing receipt and file identity before retrying; do not recapture a modified source or destination. Missing or foreign evidence refuses mutation and retains the owner for recovery.
-
-Before publication, restore only snapshotted artifacts with their exact ownership, modes and required access protections; remove only files proven created by this owner. A foreign replacement is a conflict, not an owned file to remove. After publication, verify the candidate files and clean only owned snapshot/staging artifacts. Cleanup is checkpointed and retryable; old-path files retain their protections. Preparation, restore and cleanup leave siblings untouched. Environment import/update/synchronize entrypoints honor persisted foreign app owners even after the original worker and its OS lock disappear, while retaining existing unrelated environment error contracts.
+[Doctor](/cli/doctor) renders a production Instance's stored configuration against its Route and placement and compares it with the `.env` file. It reports a missing, unsafe, or different production file as an `instance` finding. For each Route of a Laravel app, Doctor also compares the `APP_URL` in that app's `.env`, and the cached `app.url` when `bootstrap/cache/config.php` exists, with the app's Route URL. A different URL is `instance.laravel_url_mismatch`. Doctor shows no environment key or value, and it never creates or clears a cache. See [Named-app checks](/cli/doctor#named-app-checks).
 
 ## Storage and recovery
 
@@ -214,7 +200,7 @@ Environment operations return these codes in the Orbit error envelope. None of t
 | Code | HTTP | Cause |
 | --- | --- | --- |
 | `env.target_ambiguous` | 409 | The domain reaches more than one Instance. |
-| `env.owner_unavailable` | 409 | The Instance is not active or not fully placed, or the selected app lacks its authoritative healthy Route when a domain reference requires one. |
+| `env.owner_unavailable` | 409 | The Instance is not active or not fully placed, or its app's Route is unhealthy or in transition. |
 | `instance.placement_unavailable` | 409 | The owning Node does not have exactly one active `app-dev` or `app-prod` role. |
 | `env.import_conflict` | 409 | Import without `replace` found a key that is already stored. |
 | `env.import_source_missing` | 404 | The recorded source `.env` file does not exist; fix or restore the file before importing. |

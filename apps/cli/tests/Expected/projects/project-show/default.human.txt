@@ -15,7 +15,7 @@ Fetching Instances...
 │
 ├  Default branch          —
 │
-├  Web root                —
+├  Apps                    web: . · web root public · laravel-app
 │
 ├  Task compute            shared
 │

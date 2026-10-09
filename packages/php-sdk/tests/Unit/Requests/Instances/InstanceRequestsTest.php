@@ -38,7 +38,7 @@ describe('Instance rename requests', function (): void {
 });
 
 describe('Instance requests', function (): void {
-    it('creates an Instance with inherited root and maps the typed response', function (): void {
+    it('creates an Instance with inherited apps and maps the typed response', function (): void {
         $mockClient = new MockClient([
             CreateInstanceRequest::class => MockResponse::make(instance_envelope(), 201),
         ]);
@@ -76,7 +76,7 @@ describe('Instance requests', function (): void {
             'checkout_path' => '/home/orbit-app-3',
             'production_user' => 'orbit-app-3',
             'production_home' => '/home/orbit-app-3',
-            'effective_root' => '/home/orbit-app-3/current/public',
+            'apps' => [['name' => 'web', 'path' => '.', 'web_root' => 'public', 'type' => 'laravel-app']],
         ];
         $mockClient = new MockClient([
             CreateInstanceRequest::class => MockResponse::make([
@@ -92,24 +92,26 @@ describe('Instance requests', function (): void {
             ->toBe('orbit-app-3')
             ->and($response->productionHome)
             ->toBe('/home/orbit-app-3')
-            ->and($response->effectiveRoot)
-            ->toBe('/home/orbit-app-3/current/public');
+            ->and($response->apps[0]->webRoot ?? null)
+            ->toBe('public');
     });
 
-    it('transports only the optional root override', function (): void {
+    it('transports only the optional app overrides', function (): void {
         $request = new CreateInstanceRequest(
             projectId: 3,
             nodeId: 4,
             name: 'main',
-            root: 'site/public',
+            appOverrides: ['web' => ['path' => 'site', 'web_root' => 'public']],
         );
 
-        expect($request->body()->all())->toBe([
+        expect($request->body()->all())->toEqual([
             'project_id' => 3,
             'node_id' => 4,
             'name' => 'main',
-            'root' => 'site/public',
-        ]);
+            'app_overrides' => (object) ['web' => ['path' => 'site', 'web_root' => 'public']],
+        ])
+            ->and((string) $request->body())
+            ->toBe('{"project_id":3,"node_id":4,"name":"main","app_overrides":{"web":{"path":"site","web_root":"public"}}}');
     });
 
     it('transports an optional Database server and preserves omission', function (): void {
@@ -220,7 +222,7 @@ describe('Instance requests', function (): void {
                 'slug' => 'orbit-docs',
                 'repository_url' => 'https://github.com/nckrtl/orbit-docs.git',
                 'default_branch' => 'main',
-                'root' => 'public',
+                'apps' => [['name' => 'web', 'path' => '.', 'web_root' => 'public', 'type' => 'laravel-app']],
             ],
             'instance' => instance_gateway_data(),
             'instances' => [instance_gateway_data()],
@@ -240,7 +242,7 @@ describe('Instance requests', function (): void {
             includeWorktrees: true,
             projectId: 3,
             instanceName: 'preview',
-            root: 'web',
+            appOverrides: ['web' => ['path' => 'web', 'web_root' => null]],
         );
         $response = $connector->send($request)->dto();
 
@@ -249,13 +251,15 @@ describe('Instance requests', function (): void {
             ->and($request->resolveEndpoint())
             ->toBe('/api/v1/instances/register')
             ->and($request->body()->all())
-            ->toBe([
+            ->toEqual([
                 'source_path' => '/work/orbit-docs',
                 'include_worktrees' => true,
+                'app_overrides' => (object) ['web' => ['path' => 'web', 'web_root' => null]],
                 'project_id' => 3,
                 'instance_name' => 'preview',
-                'root' => 'web',
             ])
+            ->and((string) $request->body())
+            ->toContain('"app_overrides":{"web":{"path":"web","web_root":null}}')
             ->and($response)
             ->toBeInstanceOf(InstanceRegistrationResponse::class)
             ->and($response->instance->sourceLayout)
@@ -292,7 +296,7 @@ describe('Instance requests', function (): void {
             ->and($response->instances)
             ->toHaveCount(1)
             ->and($response->toArray())
-            ->toBe([
+            ->toEqual([
                 'instances' => [instance_sdk_data()],
                 'request_id' => instance_request_id(),
             ]);
@@ -415,8 +419,8 @@ function instance_gateway_data(): array
         'checkout_path' => '/home/orbit/apps/orbit-docs',
         'production_user' => null,
         'production_home' => null,
-        'root' => null,
-        'effective_root' => 'public',
+        'apps' => [['name' => 'web', 'path' => '.', 'web_root' => 'public', 'type' => 'laravel-app']],
+        'app_overrides' => [],
         'selected_branch' => 'main',
         'branch_override' => null,
         'starting_commit' => 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
@@ -476,6 +480,8 @@ function instance_sdk_data(): array
 
     return [
         ...$withIdentities,
+        // The SDK keeps an empty override map a JSON object, as the Gateway sends it.
+        'app_overrides' => new stdClass,
         'route' => [
             ...instance_gateway_route_data(),
             'request_id' => instance_request_id(),

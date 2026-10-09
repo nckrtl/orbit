@@ -170,7 +170,7 @@ describe('instance:register', function (): void {
         ]);
     });
 
-    it('transports a root override for the existing Project', function (): void {
+    it('transports app overrides for the existing Project', function (): void {
         $mockClient = MockClient::global([
             RegisterInstanceRequest::class => registration_mock_response(),
         ]);
@@ -178,18 +178,34 @@ describe('instance:register', function (): void {
         $this
             ->artisan('instance:register', [
                 '--yes' => true,
-                '--root' => 'web',
+                '--app-overrides' => '{"web":{"path":"web","web_root":"public"}}',
                 '--no-interaction' => true,
                 '--json' => true,
             ])
             ->expectsOutput(registration_json())
             ->assertExitCode(0);
 
-        expect($mockClient->getLastRequest()?->body()->all())->toBe([
+        expect($mockClient->getLastRequest()?->body()->all())->toEqual([
             'source_path' => '/work/acme',
-            'root' => 'web',
+            'app_overrides' => (object) ['web' => ['path' => 'web', 'web_root' => 'public']],
         ]);
     });
+
+    it('rejects invalid app overrides before sending a request', function (string $overrides): void {
+        $mockClient = MockClient::global();
+
+        $this
+            ->artisan('instance:register', [
+                '--yes' => true,
+                '--app-overrides' => $overrides,
+                '--no-interaction' => true,
+                '--json' => true,
+            ])
+            ->expectsOutput(instance_app_overrides_invalid_json())
+            ->assertExitCode(1);
+
+        expect($mockClient->getLastPendingRequest())->toBeNull();
+    })->with(instance_invalid_app_overrides());
 
     it('renders the Gateway refusal when no Project owns the repository', function (): void {
         MockClient::global([
@@ -330,7 +346,7 @@ describe('instance:create', function (): void {
             ->assertExitCode(0);
     });
 
-    it('creates an Instance with inherited root as JSON', function (): void {
+    it('creates an Instance with inherited apps as JSON', function (): void {
         $mockClient = MockClient::global([
             CreateInstanceRequest::class => instance_mock_response(201),
         ]);
@@ -355,7 +371,7 @@ describe('instance:create', function (): void {
             ->toBe(['project_id' => 3, 'node_id' => 2, 'name' => 'dev']);
     });
 
-    it('transports an optional root override without execution controls', function (): void {
+    it('transports optional app overrides without execution controls', function (): void {
         $mockClient = MockClient::global([
             CreateInstanceRequest::class => instance_mock_response(201),
         ]);
@@ -365,16 +381,51 @@ describe('instance:create', function (): void {
                 'project' => '3',
                 'node' => '2',
                 'name' => 'dev',
-                '--root' => 'site/public',
+                '--app-overrides' => '{"web":{"path":"site","web_root":"public"}}',
             ])
             ->assertExitCode(0);
 
-        expect($mockClient->getLastRequest()?->body()->all())->toBe([
+        expect($mockClient->getLastRequest()?->body()->all())->toEqual([
             'project_id' => 3,
             'node_id' => 2,
             'name' => 'dev',
-            'root' => 'site/public',
-        ]);
+            'app_overrides' => (object) ['web' => ['path' => 'site', 'web_root' => 'public']],
+        ])
+            ->and((string) $mockClient->getLastRequest()?->body())
+            ->toContain('"app_overrides":{"web":{"path":"site","web_root":"public"}}');
+    });
+
+    it('rejects invalid app overrides before sending a request', function (string $overrides): void {
+        $mockClient = MockClient::global();
+
+        $this
+            ->artisan('instance:create', [
+                'project' => '3',
+                'node' => '2',
+                'name' => 'dev',
+                '--app-overrides' => $overrides,
+                '--json' => true,
+            ])
+            ->expectsOutput(instance_app_overrides_invalid_json())
+            ->assertExitCode(1);
+
+        expect($mockClient->getLastPendingRequest())->toBeNull();
+    })->with(instance_invalid_app_overrides());
+
+    it('refuses the removed root option before sending a request', function (): void {
+        $mockClient = MockClient::global();
+        $tester = new CommandTester(app(Kernel::class)->all()['instance:create']);
+
+        expect($tester->execute([
+            'project' => '3',
+            'node' => '2',
+            'name' => 'dev',
+            '--root' => 'public',
+            '--json' => true,
+        ], ['interactive' => false]))->toBe(1);
+        expect(json_decode(trim($tester->getDisplay()), associative: true, flags: JSON_THROW_ON_ERROR)['error']['message'])
+            ->toBe('The "--root" option does not exist.');
+        expect($mockClient->getLastPendingRequest())->toBeNull();
     });
 
     it('transports an optional Route domain without local policy validation', function (): void {
@@ -449,7 +500,8 @@ describe('instance:create', function (): void {
         expect(instance_source_text(Artisan::output()))->toContain(
             'Instance: dev',
             'Source layout checkout',
-            'Effective root public',
+            'Apps web: . · web root public · laravel-app',
+            'App overrides —',
             'Selected branch dev',
             'Branch override —',
             'Domain dev.orbit.test',
@@ -463,7 +515,8 @@ describe('instance:create', function (): void {
             'production_user' => 'orbit-app-3',
             'production_home' => '/home/orbit-app-3',
             'checkout_path' => '/home/orbit-app-3',
-            'effective_root' => '/home/orbit-app-3/current/public',
+            'apps' => [['name' => 'web', 'path' => 'site', 'web_root' => 'public', 'type' => 'laravel-app']],
+            'app_overrides' => ['web' => ['path' => 'site', 'web_root' => 'public']],
         ];
         MockClient::global([CreateInstanceRequest::class => instance_mock_response(201, $payload)]);
 
@@ -471,7 +524,8 @@ describe('instance:create', function (): void {
         expect(instance_source_text(Artisan::output()))->toContain(
             'Production user orbit-app-3',
             'Production home /home/orbit-app-3',
-            'Effective root /home/orbit-app-3/current/public',
+            'Apps web: site · web root public · laravel-app',
+            'App overrides web',
         );
     });
 });
@@ -509,8 +563,8 @@ describe('instance:list', function (): void {
 
         expect(Artisan::call('instance:list'))->toBe(0);
         expect(instance_source_text(Artisan::output()))->toContain(
-            'ID PROJECT NODE VITE PORT NAME SOURCE LAYOUT ROOT SELECTED BRANCH BRANCH OVERRIDE ROUTE DOMAIN URL STATUS REMOVAL',
-            '5 3 2 — dev checkout public dev — dev.orbit.test https://dev.orbit.test active —',
+            'ID PROJECT NODE VITE PORT NAME SOURCE LAYOUT APPS SELECTED BRANCH BRANCH OVERRIDE ROUTE DOMAIN URL STATUS REMOVAL',
+            '5 3 2 — dev checkout web dev — dev.orbit.test https://dev.orbit.test active —',
             'Request ID: '.instance_request_id(),
         );
     });
@@ -590,8 +644,8 @@ describe('instance:show', function (): void {
             'Node beast',
             'Source layout checkout',
             'Checkout /home/orbit/apps/orbit-docs/dev',
-            'Root override —',
-            'Effective root public',
+            'Apps web: . · web root public · laravel-app',
+            'App overrides —',
             'Selected branch dev',
             'Branch override —',
             'Domain dev.orbit.test',
@@ -760,4 +814,27 @@ it('rejects invalid parent IDs before creating an Instance', function (
 function no_processes_response(): MockResponse
 {
     return MockResponse::make(['data' => [], 'meta' => ['request_id' => instance_request_id()]]);
+}
+
+function instance_app_overrides_invalid_json(): string
+{
+    return json_encode([
+        'error' => [
+            'code' => 'instance.app_overrides_invalid',
+            'message' => 'Pass --app-overrides as a JSON object keyed by app name, each with path and web_root.',
+            'request_id' => null,
+        ],
+    ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+}
+
+/** @return array<string, array{string}> */
+function instance_invalid_app_overrides(): array
+{
+    return [
+        'not JSON' => ['{web'],
+        'a list' => ['[{"path":"site","web_root":null}]'],
+        'a missing web root' => ['{"web":{"path":"site"}}'],
+        'an extra key' => ['{"web":{"path":"site","web_root":null,"type":"laravel-app"}}'],
+        'a path that is not text' => ['{"web":{"path":7,"web_root":null}}'],
+    ];
 }

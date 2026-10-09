@@ -25,7 +25,8 @@ final class UpdateProjectRequest extends GatewayRequest implements HasBody
         #[\SensitiveParameter]
         private readonly ?string $repositoryUrl = null,
         private readonly ?string $defaultBranch = null,
-        private readonly ?string $root = null,
+        /** @var list<array{name: string, path: string, web_root: string|null, type: string}>|null */
+        private readonly ?array $apps = null,
         private readonly ?string $taskCheck = null,
         private readonly bool $taskCheckProvided = false,
         private readonly ?string $sourceAccess = null,
@@ -56,7 +57,7 @@ final class UpdateProjectRequest extends GatewayRequest implements HasBody
                 'repository_url' => $this->repositoryUrl,
                 'source_access' => $this->sourceAccess,
                 'default_branch' => $this->defaultBranch,
-                'root' => $this->root,
+                'apps' => $this->apps,
                 'task_compute' => $this->taskCompute,
                 ...($this->taskCheckProvided ? ['task_check' => $this->taskCheck] : []),
                 ...($this->taskWorkspaceRouted === null ? [] : ['task_workspace_routed' => $this->taskWorkspaceRouted]),

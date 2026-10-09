@@ -6,6 +6,7 @@ use App\Commands\Projects\CreateProjectCommand;
 use App\Commands\Projects\UpdateProjectCommand;
 use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
+use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
@@ -19,6 +20,7 @@ use Saloon\Exceptions\Request\FatalRequestException;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Saloon\Http\PendingRequest;
+use Symfony\Component\Console\Tester\CommandTester;
 
 beforeEach(function (): void {
     MockClient::destroyGlobal();
@@ -50,6 +52,7 @@ describe('project:create', function (): void {
                 'repository' => 'git@github.com:nckrtl/orbit.git',
                 '--name' => 'Orbit',
                 '--default-branch' => 'stable',
+                '--apps' => project_apps_option(),
                 '--json' => true,
             ])
             ->expectsOutput(app_json())
@@ -68,7 +71,7 @@ describe('project:create', function (): void {
                 'type' => 'laravel-app',
                 'repository_url' => 'git@github.com:nckrtl/orbit.git',
                 'default_branch' => 'stable',
-                'root' => 'public',
+                'apps' => project_apps(),
             ]);
     });
 
@@ -81,13 +84,13 @@ describe('project:create', function (): void {
             'slug' => 'node-kit',
             'type' => 'node-package',
             'repository' => 'https://github.com/acme/node-kit.git',
-            '--root' => '.',
+            '--apps' => '[{"name":"kit","path":".","web_root":null,"type":"node-package"}]',
         ])->assertExitCode(0);
 
         expect($mockClient->getLastRequest())
             ->toBeInstanceOf(CreateProjectRequest::class)
             ->and($mockClient->getLastRequest()?->body()->all())
-            ->toMatchArray(['type' => 'node-package', 'root' => '.']);
+            ->toMatchArray(['type' => 'node-package', 'apps' => [['name' => 'kit', 'path' => '.', 'web_root' => null, 'type' => 'node-package']]]);
     });
 
     it('creates a Project that reads through the GitHub CLI', function (): void {
@@ -100,6 +103,7 @@ describe('project:create', function (): void {
             'type' => 'laravel-app',
             'repository' => 'git@github.com:acme/leden.git',
             '--source-access' => 'gh_cli',
+            '--apps' => project_apps_option(),
         ])->assertExitCode(0);
 
         expect($mockClient->getLastRequest()?->body()->all())->toMatchArray(['source_access' => 'gh_cli']);
@@ -118,25 +122,32 @@ describe('project:create', function (): void {
         'update' => ['project:update', ['project' => '14']],
     ]);
 
-    it('defaults the root by Project type when --root is omitted', function (string $type, string $root): void {
-        $mockClient = MockClient::global([
-            CreateProjectRequest::class => app_mock_response(201),
-        ]);
-
-        $this->artisan('project:create', [
+    it('refuses missing or invalid project apps before contacting the Gateway', function (?string $apps): void {
+        $mockClient = MockClient::global();
+        $arguments = [
             'slug' => 'kit',
-            'type' => $type,
+            'type' => 'laravel-app',
             'repository' => 'https://github.com/acme/kit.git',
-        ])->assertExitCode(0);
+            '--json' => true,
+        ];
 
-        expect($mockClient->getLastRequest()?->body()->all())
-            ->toMatchArray(['type' => $type, 'root' => $root]);
+        if ($apps !== null) {
+            $arguments['--apps'] = $apps;
+        }
+
+        $this->artisan('project:create', $arguments)
+            ->expectsOutput(project_apps_invalid_json())
+            ->assertExitCode(1);
+
+        expect($mockClient->getLastPendingRequest())->toBeNull();
     })->with([
-        'node-package' => ['node-package', '.'],
-        'laravel-package' => ['laravel-package', '.'],
-        'laravel-app' => ['laravel-app', 'public'],
-        'symfony-app' => ['symfony-app', 'public'],
-        'monorepo' => ['monorepo', 'public'],
+        'omitted' => [null],
+        'not JSON' => ['[{"name":'],
+        'an empty list' => ['[]'],
+        'an object' => ['{"name":"web","path":".","web_root":"public","type":"laravel-app"}'],
+        'a missing web root' => ['[{"name":"web","path":".","type":"laravel-app"}]'],
+        'an extra key' => ['[{"name":"web","path":".","web_root":"public","type":"laravel-app","root":"public"}]'],
+        'a name that is not text' => ['[{"name":1,"path":".","web_root":"public","type":"laravel-app"}]'],
     ]);
 
     it('reports the created project for humans', function (): void {
@@ -147,13 +158,14 @@ describe('project:create', function (): void {
                 'slug' => 'orbit',
                 'type' => 'laravel-app',
                 'repository' => 'git@github.com:nckrtl/orbit.git',
+                '--apps' => project_apps_option(),
             ])
             ->expectsOutput('Project [orbit] created.')
             ->expectsOutputToContain(app_request_id())
             ->assertExitCode(0);
     });
 
-    it('transports a custom relative root', function (): void {
+    it('transports several apps with custom paths and web roots', function (): void {
         $mockClient = MockClient::global([
             CreateProjectRequest::class => app_mock_response(201),
         ]);
@@ -161,14 +173,17 @@ describe('project:create', function (): void {
         $this
             ->artisan('project:create', [
                 'slug' => 'orbit',
-                'type' => 'laravel-app',
+                'type' => 'monorepo',
                 'repository' => 'git@github.com:nckrtl/orbit.git',
-                '--root' => 'web/public',
+                '--apps' => '[{"name":"web","path":"apps/site","web_root":"public","type":"laravel-app"},{"name":"docs","path":"docs","web_root":null,"type":"node-app"}]',
             ])
             ->assertExitCode(0);
 
-        expect($mockClient->getLastRequest()?->body()->all()['root'] ?? null)
-            ->toBe('web/public');
+        expect($mockClient->getLastRequest()?->body()->all()['apps'] ?? null)
+            ->toBe([
+                ['name' => 'web', 'path' => 'apps/site', 'web_root' => 'public', 'type' => 'laravel-app'],
+                ['name' => 'docs', 'path' => 'docs', 'web_root' => null, 'type' => 'node-app'],
+            ]);
     });
 
     it('rejects an unbounded or control-bearing slug without disclosure or gateway IO', function (string $slug): void {
@@ -208,7 +223,7 @@ describe('project:create', function (): void {
             'slug' => 'kit',
             'type' => 'node-package',
             'repository' => 'https://github.com/acme/kit.git',
-            '--root' => '.',
+            '--apps' => '[{"name":"kit","path":".","web_root":null,"type":"node-package"}]',
         ];
 
         if ($option !== null) {
@@ -221,7 +236,7 @@ describe('project:create', function (): void {
             'slug' => 'kit',
             'type' => 'node-package',
             'repository_url' => 'https://github.com/acme/kit.git',
-            'root' => '.',
+            'apps' => [['name' => 'kit', 'path' => '.', 'web_root' => null, 'type' => 'node-package']],
             ...$expected,
         ]);
     })->with([
@@ -279,6 +294,7 @@ describe('project:create', function (): void {
                 'slug' => 'Orbit App',
                 'type' => 'laravel-app',
                 'repository' => 'nckrtl/orbit',
+                '--apps' => project_apps_option(),
             ])
             ->assertExitCode(0);
 
@@ -289,9 +305,100 @@ describe('project:create', function (): void {
                 'slug' => 'Orbit App',
                 'type' => 'laravel-app',
                 'repository_url' => 'nckrtl/orbit',
-                'root' => 'public',
+                'apps' => project_apps(),
             ]);
     });
+});
+
+describe('project apps', function (): void {
+    it('round-trips --apps from project:create through project:show --json', function (): void {
+        $apps = '[{"name":"web","path":"apps/site","web_root":"public","type":"laravel-app"},{"name":"docs","path":"docs","web_root":null,"type":"node-app"}]';
+        $stored = null;
+        $mockClient = MockClient::global([
+            CreateProjectRequest::class => static function (PendingRequest $pendingRequest) use (&$stored): MockResponse {
+                $body = $pendingRequest->body()?->all();
+                $stored = is_array($body) ? $body['apps'] ?? null : null;
+
+                return MockResponse::make(['data' => [...app_payload(), 'apps' => $stored], 'meta' => ['request_id' => app_request_id()]], 201);
+            },
+            ShowProjectRequest::class => static function () use (&$stored): MockResponse {
+                return MockResponse::make(['data' => [...app_payload(), 'apps' => $stored], 'meta' => ['request_id' => app_request_id()]]);
+            },
+        ]);
+
+        $this->artisan('project:create', [
+            'slug' => 'orbit',
+            'type' => 'monorepo',
+            'repository' => 'git@github.com:nckrtl/orbit.git',
+            '--apps' => $apps,
+            '--json' => true,
+        ])->assertExitCode(0);
+
+        expect(Artisan::call('project:show', ['project' => '3', '--json' => true]))->toBe(0);
+        $shown = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+        expect($mockClient->getLastRequest())->toBeInstanceOf(ShowProjectRequest::class)
+            ->and($stored)->toBe(json_decode($apps, true, flags: JSON_THROW_ON_ERROR))
+            ->and($shown['apps'])->toBe(json_decode($apps, true, flags: JSON_THROW_ON_ERROR))
+            ->and($shown)->not->toHaveKey('root');
+    });
+
+    it('sends --apps on project:update and shows each app for humans', function (): void {
+        $apps = [
+            ['name' => 'web', 'path' => 'apps/site', 'web_root' => 'public', 'type' => 'laravel-app'],
+            ['name' => 'docs', 'path' => 'docs', 'web_root' => null, 'type' => 'node-app'],
+        ];
+        $mockClient = MockClient::global([
+            UpdateProjectRequest::class => app_mock_response(),
+            ShowProjectRequest::class => MockResponse::make(['data' => [...app_payload(), 'apps' => $apps], 'meta' => ['request_id' => app_request_id()]]),
+            ListInstancesRequest::class => MockResponse::make(['data' => [], 'meta' => ['request_id' => app_request_id()]]),
+        ]);
+
+        $this->artisan('project:update', [
+            'project' => '3',
+            '--apps' => json_encode($apps, JSON_THROW_ON_ERROR),
+            '--json' => true,
+        ])->assertExitCode(0);
+
+        expect($mockClient->getLastRequest()?->body()->all())->toBe(['apps' => $apps]);
+
+        expect(Artisan::call('project:show', ['project' => '3']))->toBe(0);
+        $output = preg_replace('/[\s│]+/u', ' ', Artisan::output());
+        expect($output)
+            ->toContain('Apps web: apps/site · web root public · laravel-app, docs: docs · no web root · node-app')
+            ->not->toContain('Web root');
+    });
+
+    it('refuses the removed --root option without sending a request', function (string $command, array $arguments): void {
+        $mockClient = MockClient::global();
+        $tester = new CommandTester(app(Kernel::class)->all()[$command]);
+
+        expect($tester->execute([...$arguments, '--root' => 'public', '--json' => true], ['interactive' => false]))->toBe(1);
+        expect(json_decode(trim($tester->getDisplay()), associative: true, flags: JSON_THROW_ON_ERROR))->toBe([
+            'error' => [
+                'code' => 'input.invalid',
+                'message' => 'The "--root" option does not exist.',
+                'request_id' => null,
+            ],
+        ]);
+        expect($mockClient->getLastPendingRequest())->toBeNull();
+    })->with([
+        'create' => ['project:create', ['slug' => 'orbit', 'type' => 'laravel-app', 'repository' => 'git@github.com:nckrtl/orbit.git', '--apps' => project_apps_option()]],
+        'update' => ['project:update', ['project' => '3']],
+    ]);
+
+    it('fails locally with project.apps_invalid for invalid --apps JSON', function (string $command, array $arguments): void {
+        $mockClient = MockClient::global();
+
+        $this->artisan($command, [...$arguments, '--apps' => '[{"name":"web",', '--json' => true])
+            ->expectsOutput(project_apps_invalid_json())
+            ->assertExitCode(1);
+
+        expect($mockClient->getLastPendingRequest())->toBeNull();
+    })->with([
+        'create' => ['project:create', ['slug' => 'orbit', 'type' => 'laravel-app', 'repository' => 'git@github.com:nckrtl/orbit.git']],
+        'update' => ['project:update', ['project' => '3']],
+    ]);
 });
 
 describe('project:create repository boundary', function (): void {
@@ -344,6 +451,7 @@ describe('project:create repository boundary', function (): void {
                 'slug' => 'orbit',
                 'type' => 'laravel-app',
                 'repository' => $repository,
+                '--apps' => project_apps_option(),
             ])
             ->assertExitCode(0);
 
@@ -366,6 +474,7 @@ describe('project:create repository boundary', function (): void {
                 'slug' => 'orbit',
                 'type' => 'laravel-app',
                 'repository' => $repository,
+                '--apps' => project_apps_option(),
             ])
             ->assertExitCode(0);
 
@@ -376,7 +485,7 @@ describe('project:create repository boundary', function (): void {
                 'slug' => 'orbit',
                 'type' => 'laravel-app',
                 'repository_url' => $repository,
-                'root' => 'public',
+                'apps' => project_apps(),
             ]);
     })->with([
         'unrecognized reference' => 'not-a-repository',
@@ -417,7 +526,7 @@ describe('project:list', function (): void {
             ->toContain('SLUG')
             ->toContain('TYPE')
             ->toContain('REPOSITORY')
-            ->toContain('WEB ROOT')
+            ->toContain('APPS')
             ->toContain(app_request_id());
     });
 
@@ -527,8 +636,8 @@ describe('project:show', function (): void {
             ->toContain('git@github.com:nckrtl/orbit.git')
             ->toContain('Default branch')
             ->toContain('main')
-            ->toContain('Web root')
-            ->toContain('public')
+            ->toContain('Apps')
+            ->toContain('web: . · web root public · laravel-app')
             ->toContain('Task check')
             ->toContain('composer check')
             ->toContain('No Instances.')
@@ -564,7 +673,7 @@ describe('project:show', function (): void {
     ]);
 
     it('returns legacy null source defaults unchanged', function (): void {
-        $payload = [...app_payload(), 'default_branch' => null, 'root' => null];
+        $payload = [...app_payload(), 'default_branch' => null];
         MockClient::global([
             ShowProjectRequest::class => MockResponse::make([
                 'data' => $payload,
@@ -848,9 +957,31 @@ function app_payload(): array
         'repository_url' => 'git@github.com:nckrtl/orbit.git',
         'source_access' => 'github_app',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => project_apps(),
         'task_check' => 'composer check',
     ];
+}
+
+/** @return list<array{name: string, path: string, web_root: string|null, type: string}> */
+function project_apps(): array
+{
+    return [['name' => 'web', 'path' => '.', 'web_root' => 'public', 'type' => 'laravel-app']];
+}
+
+function project_apps_option(): string
+{
+    return json_encode(project_apps(), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+}
+
+function project_apps_invalid_json(): string
+{
+    return json_encode([
+        'error' => [
+            'code' => 'project.apps_invalid',
+            'message' => 'Pass --apps as a JSON list of apps, each with name, path, web_root and type.',
+            'request_id' => null,
+        ],
+    ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
 }
 
 function app_mock_response(int $status = 200): MockResponse
@@ -970,6 +1101,7 @@ describe('Project task compute', function (): void {
         $this->artisan('project:create', [
             'slug' => 'orbit', 'type' => 'monorepo',
             'repository' => 'https://github.com/nckrtl/orbit.git',
+            '--apps' => project_apps_option(),
             '--task-compute' => $mode, '--json' => true,
         ])->assertExitCode(0);
         expect($mock->getLastRequest()?->body()->all()['task_compute'])->toBe($mode);

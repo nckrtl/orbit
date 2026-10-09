@@ -64,7 +64,7 @@ describe('project contract', function (): void {
     });
 
     it('renders a created project', function (): void {
-        $arguments = ['slug' => 'acme', 'type' => 'laravel-app', 'repository' => 'git@github.com:acme/site.git', '--default-branch' => 'main'];
+        $arguments = ['slug' => 'acme', 'type' => 'laravel-app', 'repository' => 'git@github.com:acme/site.git', '--default-branch' => 'main', '--apps' => '[{"name":"web","path":".","web_root":"public","type":"laravel-app"}]'];
         run_project_contract('projects/project-create/created', 'project:create', $arguments, 'projects/project-create/created.human.txt', 0);
         run_project_contract('projects/project-create/created', 'project:create', [...$arguments, '--json' => true], 'projects/project-create/created.json', 0);
     });

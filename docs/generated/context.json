@@ -235,6 +235,7 @@
                 "Gateway",
                 "Instance",
                 "Process",
+                "Project",
                 "Route"
             ],
             "governing_adrs": []
@@ -330,6 +331,7 @@
                 "packages/php-sdk"
             ],
             "concepts": [
+                "Cluster",
                 "Deployment",
                 "Gateway",
                 "Instance",
@@ -338,7 +340,8 @@
                 "Project",
                 "Role",
                 "Route",
-                "Schedule"
+                "Schedule",
+                "Tool"
             ],
             "governing_adrs": []
         },
@@ -448,6 +451,7 @@
             "kind": "product",
             "components": [
                 "apps/cli",
+                "apps/docs",
                 "packages/php-sdk"
             ],
             "concepts": [
@@ -509,7 +513,6 @@
                 "Cluster",
                 "Gateway",
                 "Instance",
-                "Named app",
                 "Node",
                 "Process",
                 "Project",
@@ -723,36 +726,6 @@
             ]
         },
         {
-            "path": "docs/decisions/0196-derive-application-directory-from-web-root.md",
-            "title": "Derive the application directory from the web root",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/e2e",
-                "apps/gateway",
-                "apps/web",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Deployment",
-                "Doctor",
-                "Gateway",
-                "Instance",
-                "Named app",
-                "Node",
-                "Node agent",
-                "Process",
-                "Project",
-                "Route",
-                "Schedule",
-                "Subtask",
-                "Task"
-            ],
-            "governing_adrs": [
-                "0196"
-            ]
-        },
-        {
             "path": "docs/decisions/0198-keep-delivery-line-proofs-as-repo-commands.md",
             "title": "ADR 0198: Keep delivery-line proofs as repository commands",
             "kind": "decision",
@@ -846,7 +819,6 @@
                 "0182",
                 "0190",
                 "0191",
-                "0196",
                 "0198",
                 "0200"
             ]
@@ -881,7 +853,6 @@
                 "Role",
                 "Route",
                 "Task",
-                "Task workspace",
                 "Tool"
             ],
             "governing_adrs": []
@@ -1122,7 +1093,6 @@
                 "Instance",
                 "Node",
                 "Process",
-                "Project",
                 "Role",
                 "Route"
             ],
@@ -1629,7 +1599,6 @@
             "concepts": [
                 "Gateway",
                 "Instance",
-                "Named app",
                 "Node",
                 "Project",
                 "Route"
@@ -1649,7 +1618,7 @@
                 "Node",
                 "Node agent",
                 "Process",
-                "Route"
+                "Project"
             ],
             "governing_adrs": []
         },
@@ -2018,6 +1987,7 @@
             "kind": "reference",
             "components": [
                 "apps/cli",
+                "apps/docs",
                 "apps/gateway"
             ],
             "concepts": [
@@ -2038,9 +2008,7 @@
                 "Task workspace",
                 "Tool"
             ],
-            "governing_adrs": [
-                "0196"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/proxycli.md",
@@ -2075,7 +2043,6 @@
                 "Doctor",
                 "Gateway",
                 "Instance",
-                "Named app",
                 "Node",
                 "Process",
                 "Project",
@@ -2243,7 +2210,6 @@
                 "Extension",
                 "Gateway",
                 "Instance",
-                "Named app",
                 "Node",
                 "Node agent",
                 "Process",

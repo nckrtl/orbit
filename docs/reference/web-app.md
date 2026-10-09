@@ -18,11 +18,13 @@ The generated API schema also includes the Project development deploy step opera
 
 The generated API schema includes show and update operations for Project Documents storage on the Gateway, with their redacted `DocumentStorage` response. Credential fields are update inputs only, never response properties. These types describe the [storage contract](/reference/project-documents#private-s3-boundary); they do not add storage settings controls to the web app.
 
-The generated Instance response separates effective four-field `apps`, stored `app_overrides` and name-keyed `app_runtime`. Each runtime entry has its own Route/domain/URL, source profile and nullable Vite, Agentation and annotator ports/URLs. There are no scalar Instance runtime aliases or primary-app fallback. Instance detail renders each app and selects that app for environment/log/dependency panels. [Instance runtime output](/reference/projects#instance-app-runtime-output) fixes the schema and SDK representation; [Annotator Process](/reference/agentation#annotator-process) owns its endpoint.
+The generated Instance response includes the effective `apps` and the stored `app_overrides`. It also has nullable `annotator_port` and `annotator_url` fields for the app of a single-app Project. The URL points to `/__orbit/annotator` on that app's Route when a port and Route exist. The generated Process create description also lists the `annotator` preset. The annotator fields add no web UI control; see [Annotator Process](/reference/agentation#annotator-process). [Instance app output](/reference/projects#instance-app-output) describes the app fields.
+
+The Project page lists the Project's apps with their name, path, web root, and type. While the Project has no Instances, you can add, change, and remove apps there and save the complete list. While it has Instances, the list is read-only and says why: remove the Instances, change the apps, then recreate the Instances. See [Change apps](/reference/projects#change-apps). The Instance page lists its effective apps and marks each app that has an override. It does not edit overrides.
 
 [GitHub feedback fixups](/reference/tasks#review-fixup-lifecycle) use the existing subtask `fixup_problem` and `brief` fields. Regenerating the API types confirms that feedback consumption adds no response field or web merge control. Source provenance is task data, not a rendered GitHub instruction or permission to merge.
 
-The generated Instance rename request exposes `branch`, `domain` and `app`. Branch or domain is required. A domain targets the named app; omission resolves the sole app, never the first of several. App without domain is invalid. Branch-only recording changes no Routes or Instance name. Optional TypeScript properties do not replace the [rename validation and retry contract](/reference/routes#change-an-instance-route-domain). A domain-edit control sends the selected app; it cannot use a scalar Instance domain.
+The generated Instance rename request exposes optional `branch` and `domain` fields. The Gateway still requires at least one; optional TypeScript properties do not replace API validation. This API operation adds no web UI control.
 
 The Project schema includes `task_workspace_routed`, which describes routing for new task workspaces; an existing workspace keeps its recorded mode. The Gateway serves it from its own origin.
 
@@ -31,8 +33,6 @@ The generated Process schema includes nullable `user`, the explicitly selected a
 Extension navigation follows the Gateway's enabled set: each page and its route depend only on their own extension. Tasks pages need only the `tasks` extension. The Quota page needs only `proxycli`, and it shows provider quota whenever `proxycli` is enabled and its collector is configured, whether or not Tasks is enabled. Tasks and ProxyCLI links and routes are absent while their extension is disabled. The Gateway API remains authoritative, so a stale direct request still receives `extension.disabled` rather than granting access.
 
 The Route create request type distinguishes an app Route with `instance_id` from a custom proxy Route with `node_id` and an upstream or Process; it has no app Route creation form with `project_id` or a targetless scope.
-
-Analytics controls and stats are [single-app only](/reference/analytics#single-app-boundary). Multi-app views show the unsupported-analytics explanation and make no stats or enable request. Stored inconsistent tracking can still be disabled through cleanup. The app editor displays `app.analytics_multi_app_unsupported` when adding another app to a Project with tracked Instances; disable tracking first. No analytics component reads a removed scalar Instance domain.
 
 ## Open the app
 

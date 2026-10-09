@@ -23,7 +23,8 @@ final class RegisterInstanceRequest extends GatewayRequest implements HasBody
         private readonly bool $includeWorktrees = false,
         private readonly ?int $projectId = null,
         private readonly ?string $instanceName = null,
-        private readonly ?string $root = null,
+        /** @var array<string, array{path: string, web_root: string|null}>|null */
+        private readonly ?array $appOverrides = null,
         private readonly ?string $domain = null,
         private readonly bool $setup = false,
     ) {}
@@ -41,7 +42,7 @@ final class RegisterInstanceRequest extends GatewayRequest implements HasBody
         );
     }
 
-    /** @return array<string, bool|int|string> */
+    /** @return array<string, bool|int|string|object> */
     protected function defaultBody(): array
     {
         $body = ['source_path' => $this->sourcePath];
@@ -54,10 +55,13 @@ final class RegisterInstanceRequest extends GatewayRequest implements HasBody
             $body['setup'] = true;
         }
 
+        if ($this->appOverrides !== null) {
+            $body['app_overrides'] = (object) $this->appOverrides;
+        }
+
         foreach ([
             'project_id' => $this->projectId,
             'instance_name' => $this->instanceName,
-            'root' => $this->root,
             'domain' => $this->domain,
         ] as $key => $value) {
             if ($value === null) {

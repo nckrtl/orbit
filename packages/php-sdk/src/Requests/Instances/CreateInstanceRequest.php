@@ -26,7 +26,8 @@ final class CreateInstanceRequest extends GatewayRequest implements HasBody
         private readonly int $projectId,
         private readonly int $nodeId,
         private readonly string $name,
-        private readonly ?string $root = null,
+        /** @var array<string, array{path: string, web_root: string|null}>|null */
+        private readonly ?array $appOverrides = null,
         private readonly ?string $domain = null,
         private readonly ?string $branch = null,
         private readonly ?string $databaseServer = null,
@@ -45,7 +46,7 @@ final class CreateInstanceRequest extends GatewayRequest implements HasBody
         );
     }
 
-    /** @return array<string, bool|int|string> */
+    /** @return array<string, bool|int|string|object> */
     protected function defaultBody(): array
     {
         $body = [
@@ -54,8 +55,8 @@ final class CreateInstanceRequest extends GatewayRequest implements HasBody
             'name' => $this->name,
         ];
 
-        if ($this->root !== null) {
-            $body['root'] = $this->root;
+        if ($this->appOverrides !== null) {
+            $body['app_overrides'] = (object) $this->appOverrides;
         }
 
         if ($this->domain !== null) {

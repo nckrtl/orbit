@@ -192,18 +192,17 @@ it('does not treat the removal source-safety override as consent', function (): 
     expect(json_decode($result['output'], true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe('input.confirmation_required');
 });
 
-it('rejects invalid supplied registration fields before consent or mutation', function (string $option, string $value, string $field): void {
+it('rejects invalid supplied registration fields before consent or mutation', function (string $option, string $value, string $code): void {
     $case = instance_source_consent_case('register');
     $case['arguments'] = [...$case['arguments'], $option.'='.$value, '--yes', '--json'];
     $result = run_instance_source_consent($case, [], pty: false);
     expect($result['status'])->toBe(1)->and($result['requests'])->toBe([]);
     $error = json_decode($result['output'], true, flags: JSON_THROW_ON_ERROR)['error'];
-    expect($error['code'])->toBe('validation.failed')->and($error['message'])->toBe('The request data is invalid.')
-        ->and($error['details'])->toBe([$field => ['The root must be a normalized relative web path.']])
-        ->and($error['request_id'])->toBeNull();
+    expect($error['code'])->toBe($code)->and($error['request_id'])->toBeNull();
 })->with([
-    ['--root', '../public', 'root'],
-    ['--root', '/public', 'root'],
+    'app overrides that are not JSON' => ['--app-overrides', '{web', 'instance.app_overrides_invalid'],
+    'app overrides without a web root' => ['--app-overrides', '{"web":{"path":"../public"}}', 'instance.app_overrides_invalid'],
+    'the removed root option' => ['--root', 'public', 'input.invalid'],
 ]);
 
 it('asks only for ownership consent and sends no Project values', function (): void {

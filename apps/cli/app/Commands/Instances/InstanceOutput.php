@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Commands\Instances;
 
 use App\Support\Console\ConsoleWriter;
+use App\Support\NamedAppOptions;
 use Orbit\Sdk\Responses\Deployments\DeploymentStepResponse;
 use Orbit\Sdk\Responses\Instances\InstanceResponse;
 
@@ -21,8 +22,8 @@ trait InstanceOutput
             'Checkout' => $instance->checkoutPath,
             'Vite port' => $instance->vitePort,
             'SSR port' => $instance->ssrPort,
-            'Root override' => $instance->root,
-            'Effective root' => $instance->effectiveRoot,
+            'Apps' => NamedAppOptions::describeAll($instance->apps),
+            'App overrides' => $instance->appOverrides === [] ? null : array_keys($instance->appOverrides),
             'Selected branch' => $instance->selectedBranch,
             'Branch override' => $instance->branchOverride,
             'Domain' => $instance->domain,

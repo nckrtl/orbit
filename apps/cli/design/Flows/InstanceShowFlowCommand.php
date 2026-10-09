@@ -9,8 +9,10 @@ use App\Support\Console\ConsoleInterrupted;
 use App\Support\Console\PromptAborted;
 use App\Support\Console\Renderers\TableTheme;
 use App\Support\Console\SearchableDataTablePrompt;
+use App\Support\NamedAppOptions;
 use Design\Support\TabbedShowPrompt;
 use Design\Support\TabbedShowRenderer;
+use Orbit\Sdk\Responses\Projects\ProjectAppResponse;
 use RuntimeException;
 
 /**
@@ -46,8 +48,7 @@ final class InstanceShowFlowCommand extends GatewayCommand
             'Source layout' => $instance['source_layout'],
             'Checkout' => $instance['checkout_path'],
             'Vite port' => $instance['vite_port'],
-            'Root override' => $instance['root'],
-            'Effective root' => $instance['effective_root'],
+            'Apps' => $instance['apps'] === [] ? null : $instance['apps'],
             'Selected branch' => $instance['selected_branch'],
             'Branch override' => $instance['branch_override'],
             'Domain' => $instance['domain'],
@@ -112,8 +113,7 @@ final class InstanceShowFlowCommand extends GatewayCommand
      *     source_layout: string,
      *     checkout_path: string,
      *     vite_port: int|null,
-     *     root: string|null,
-     *     effective_root: string|null,
+     *     apps: list<string>,
      *     selected_branch: string|null,
      *     branch_override: string|null,
      *     domain: string|null,
@@ -139,8 +139,7 @@ final class InstanceShowFlowCommand extends GatewayCommand
             'source_layout' => $this->fixtureString($record, 'source_layout', $name),
             'checkout_path' => $this->fixtureString($record, 'checkout_path', $name),
             'vite_port' => $this->fixtureNullableInt($record, 'vite_port', $name),
-            'root' => $this->fixtureNullableString($record, 'root', $name),
-            'effective_root' => $this->fixtureNullableString($record, 'effective_root', $name),
+            'apps' => NamedAppOptions::describeAll(ProjectAppResponse::listFromGatewayData($record['apps'] ?? null)) ?? [],
             'selected_branch' => $this->fixtureNullableString($record, 'selected_branch', $name),
             'branch_override' => $this->fixtureNullableString($record, 'branch_override', $name),
             'domain' => $this->fixtureNullableString($record, 'domain', $name),

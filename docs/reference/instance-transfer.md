@@ -110,7 +110,7 @@ If a Schedule targets the Instance before reservation or is added before cutover
 
 Orbit records the source Cluster's Router on the transfer before cutover, and cleanup uses that record.
 
-Cleanup deletes the old checkout or worktree and its runtime files, certificates, and firewall rules on the old workload and Router. The result reports the destination Node and checkout path, all app domains in `app_runtime`, and whether cleanup finished. It does not depend on an HTTP response from the application.
+Cleanup deletes the old checkout or worktree and its runtime files, certificates, and firewall rules on the old workload and Router. The result reports the destination Node, path, domain, and whether cleanup finished. The domain is null when the Project has several apps. It does not depend on an HTTP response from the application.
 
 ## Failure codes
 

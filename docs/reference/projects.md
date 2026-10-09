@@ -2,13 +2,14 @@
 title: "Projects"
 description: "How a Project records one repository, its named apps, source access, and Instance defaults, and how create, update, and removal work."
 covers:
-  - "apps/gateway/app/{Actions/Instances/UpdateInstanceAppOverridesAction.php,Domain/Instances/AppProjection{Owner,Plan,Runtime,Recovery}.php,Infrastructure/Instances/NativeAppProjectionRuntime.php,{Actions,Domain,Infrastructure}/Projects/**}"
+  - "apps/gateway/app/{Actions,Domain,Infrastructure}/Projects/**"
   - "apps/gateway/app/Domain/SourceControl/{GitRepositoryIdentity,GitRepositoryOrigin,ProjectRoot,RelativeWebRoot,RepositoryDefaultBranchResolver}.php"
   - "apps/gateway/app/Infrastructure/SourceControl/NativeRepositoryDefaultBranchResolver.php"
   - "apps/gateway/app/{Http/{Controllers/Api/ProjectsController.php,Requests/Projects/**},Data/Projects/**}"
-  - "apps/gateway/app/Models/{Project,ProjectUpdate,InstanceAppUpdate,InstanceAppProjection}.php"
-  - "apps/gateway/database/migrations/{2026_10_12_{000000_add_named_apps_to_projects,000004_create_app_projection_journals,000005_add_apps_to_project_update_journals},*_{rename_app_domain_to_project_and_instance,add_task_workspace_routing}}.php"
+  - "apps/gateway/app/Models/{Project,ProjectUpdate}.php"
+  - "apps/gateway/database/migrations/{2026_10_21_{000000_add_named_apps_to_projects,000004_add_app_to_schedules,000005_remove_project_and_instance_roots},*_{rename_app_domain_to_project_and_instance,add_task_workspace_routing}}.php"
   - "apps/cli/app/Commands/Projects/**"
+  - "apps/cli/app/Support/NamedAppOptions.php"
 ---
 
 # Projects
@@ -28,6 +29,7 @@ A Project stores these fields. API responses, the SDK, and CLI JSON use the same
 | `slug` | Unique name, at most 63 characters. It names the directory of each new checkout and the generated domains. |
 | `name` | Display name. It defaults to the slug. |
 | `code` | Unique code of three uppercase letters. See [Project codes](#project-codes). |
+| `type` | The Project's type. See [Project types](#project-types). A single-app Project's app keeps this type. |
 | `apps` | Non-empty list of named applications. Each entry has `name`, `path`, `web_root`, and `type`. See [Application directory](#application-directory). |
 | `repository_url` | HTTPS or SSH Git URL that Orbit uses to fetch. |
 | `source_access` | `github_app` or `gh_cli`. How Orbit reads a private `github.com` repository. See [Source access](#source-access). |
@@ -50,105 +52,41 @@ Each app stores its application directory explicitly as `path`, relative to the 
 
 Null web root serves the application directory itself for `laravel-app`, `symfony-app`, `monorepo`, and package apps with a non-dot path. Only a package with path `.` and null web root is non-serving.
 
-Each path is 1 through 255 bytes, with segments containing only ASCII letters, digits, dots, underscores and hyphens. The composed serving path is at most 255 bytes. Paths accept `/` separators only, with no absolute prefix, drive prefix, backslash, NUL, empty segment, trailing slash, `.` segment other than the entire application path, or `..` segment. Resolution must stay inside the checkout or release, including after resolving symlinks. Configuration validation checks the lexical form; projection checks containment before making runtime changes.
+Each path is 1 through 255 bytes, with segments containing only ASCII letters, digits, dots, underscores and hyphens. The composed serving path is at most 255 bytes. Paths accept `/` separators only, with no absolute prefix, drive prefix, backslash, NUL, empty segment, trailing slash, `.` segment other than the entire application path, or `..` segment. Resolution must stay inside the checkout or release, including after resolving symlinks. Configuration validation checks the lexical form; provisioning checks containment before making runtime changes.
 
 App paths must be distinct within the effective app list; nested directories are allowed but two apps cannot own the same manifests or `.env` path. Names and paths are case-sensitive. An existing app's name identifies it; replacing the name is removal plus addition. Responses sort apps by name; creation retries compare lists by name, not order.
 
-An Instance inherits every Project app. `app_overrides` is an object keyed by existing app name. Each value has exactly `path` and `web_root`, both required; it overrides both for that Instance. Omitted names inherit. An update replaces the whole override map; `{}` clears it. It cannot add apps or override names or types. Instance responses expose the stored map and an effective `apps` list with the same four fields as the Project. Effective path uniqueness and type rules apply after overrides. Registration adopts the whole checkout and inherits all apps unless the caller sends this map; it never discovers nested apps.
+An Instance inherits every Project app. `app_overrides` is an object keyed by existing app name. Each value has exactly `path` and `web_root`, both required; it overrides both for that Instance. Omitted names inherit, and `{}` inherits every app. You set the map when you create or register the Instance; it cannot add apps or override names or types. Effective path uniqueness and type rules apply after overrides. Registration adopts the whole checkout and inherits all apps unless the caller sends this map; it never discovers nested apps.
 
 The application directory contains `composer.json`, `artisan`, development [environment files](/reference/environment-variables#where-the-file-lives), and Laravel [logs](/reference/instance-logs#know-which-file-the-gateway-reads). Source inspection, PHP-FPM, default systemd Instance Processes, and Instance Schedules use the selected app's directory. Production resolves its single app through `current`. Setup, teardown, deploy steps, and task-check commands still run from the repository root; a nested Artisan step must change directory explicitly. [Setup and teardown](/reference/instance-setup#run-setup) and [task checks](/reference/tasks#project-check) export `VP_HOME` to the Node's resolved Vite+ store, including for project-local `vp`. Git identity, transfers and source selection cover the whole repository.
 
-### Instance app runtime output
+### Instance app output
 
-Project `apps` and Instance effective `apps` contain only the four configuration fields. Runtime state is a separate Instance `app_runtime` object keyed by every effective app name. API list/show and mutation responses, CLI JSON and MCP use the same keys. Each value has exactly `route`, `domain`, `url`, `source_profile`, `vite_port`, `agentation_port`, `agentation_url`, `annotator_port`, and `annotator_url`. It includes null members rather than omitting them.
+Instance responses expose the stored `app_overrides` map and an effective `apps` list with the same four fields as the Project. The CLI shows them as an Apps field.
 
 ```json
 {
   "apps": [
-    {"name":"admin","path":"apps/admin","web_root":"public","type":"laravel-app"},
+    {"name":"docs","path":"apps/docs","web_root":"public","type":"laravel-app"},
     {"name":"web","path":"apps/site","web_root":"public","type":"laravel-app"}
   ],
-  "app_overrides": {},
-  "app_runtime": {
-    "admin": {
-      "route": null, "domain": null, "url": null,
-      "source_profile": null,
-      "vite_port": 5173, "agentation_port": null, "agentation_url": null,
-      "annotator_port": null, "annotator_url": null
-    },
-    "web": {
-      "route": null, "domain": null, "url": null,
-      "source_profile": {"php_version":"8.5","laravel":true},
-      "vite_port": 5174, "agentation_port": null, "agentation_url": null,
-      "annotator_port": null, "annotator_url": null
-    }
-  }
+  "app_overrides": {}
 }
 ```
 
-This example selects app fields from an Instance during preparation, not an active serving Instance. `route` is null without an authoritative association; otherwise it is the full [Route record](/reference/routes#route-record), including its immutable `app`. `domain` equals that Route's domain and `url` equals `https://<domain>`; both are null without it. During replacement they follow the authoritative side of cutover, never a pending first Route. A classified `source_profile` has exactly nullable string `php_version` and boolean `laravel`; null means inspection has not completed or serving inspection was skipped.
+The Instance `route`, `domain`, `url`, and port fields describe the sole app of a single-app Project. They are null when the Project has several apps. Each serving app has its own Route; a [generated domain](/reference/routes#select-a-domain-and-scope) starts with the app name, such as `docs.main.drift.test`.
 
-Ports are null or integers from 1024 through 65535. Agentation and annotator URLs are their service bases, `https://<domain>/__orbit/agentation` and `https://<domain>/__orbit/annotator`; each is null without both its own port and authoritative Route. Production port members are null. Object keys sort by app name. Runtime state cannot be supplied as configuration. The PHP SDK has `$apps`, `$appOverrides` and `$appRuntime` on `InstanceResponse`; `$appRuntime` is a name-keyed map of `InstanceAppRuntimeResponse` DTOs with `$route`, `$domain`, `$url`, `$sourceProfile`, `$vitePort`, `$agentationPort`, `$agentationUrl`, `$annotatorPort` and `$annotatorUrl`. `toArray()` emits the JSON keys above; `$sourceProfile` is null or an `InstanceAppSourceProfileResponse` DTO with `$phpVersion` and `$laravel`.
+### Change apps
 
-The removed top-level Instance `route`, `domain`, `url`, `vite_port`, `agentation_port`, `annotator_port`, `annotator_url`, `selected_php_version`, `source_is_laravel` and any scalar source-profile output have no aliases or primary-app fallback, even for one app. Stored Route/target association, source classification, port assignments and pending reservation or withdrawal state migrate to app `web` without resetting classification. Ports without collisions stay unchanged; [port migration](/reference/assigned-vite-ports#migrate-port-reservations) defines collision preflight, journaled reallocation and retained-reservation refusal. Missing classification remains null. Migration retires the Instance scalar columns only after these app-keyed records exist. Instance-wide branch, checkout, placement, hibernation, release and lifecycle fields remain unchanged. Human output renders an Apps subtree rather than one domain or port column.
+A Project's apps and an Instance's overrides change only while the Project has no Instances. An Instance serves its apps from Routes, PHP-FPM pools, environment files, Processes, and Schedules. Orbit does not move those runtimes in place.
 
-### Shared app-projection ownership
+To change the apps of a Project with Instances, remove its Instances, send the new `apps` list, and recreate the Instances. `PATCH /api/v1/projects/{project}` with `apps` returns `project.apps_locked_by_instances` (409) while any Instance of the Project exists, including one being created or removed. To change an Instance's overrides, remove the Instance and create or register it again with the new map.
 
-Project app-list changes and Instance override changes share per-Instance projection plans, admission guards and remote step receipts. `ProjectUpdate` owns the Project request, its complete affected Instance set and its `reserved`, `preflighted`, `prepared`, `publishing`, `cleaning_up` and terminal phases. `InstanceAppUpdate` owns one Instance's normalized override request, prior map, candidate map and publication/recovery phase. Neither shared adapter publishes public configuration. `InstanceAppProjection` belongs to exactly one of these parent operations and one affected Instance; it records immutable before/candidate effective apps, profiles and resource fingerprints. Each Instance has at most one incomplete owner for app mutations, including after its executing process exits.
-
-Reservation uses the existing Instance operation locks and their existing ordering and reentrancy, followed by the existing projection and Node service locks where needed. A Project operation takes every affected Instance lock before any preflight and reserves the entire Instance set durably in one transaction or reserves none. No remote work runs in that transaction. Releasing an OS lock does not abandon a journal. A retry takes the same locks and resumes the recorded owner; a new request cannot steal it. [ADR 0196](/decisions/0196-derive-application-directory-from-web-root#delivery-and-planned-path-inventory) fixes the admission entrypoints and planned files.
-
-Contention between app mutations returns existing `instance.lifecycle_busy` (409). Within the same unfinished override owner, a different normalized map returns `instance.app_update_in_progress`; within the same Project owner, a different request returns `project.update_in_progress`. Equivalent maps ignore key order and app lists compare by name. Unrelated lock callers retain their existing errors, including environment and Process lock errors. More specific source, Route, environment and runtime errors survive; only unspecified override projection failures use `instance.app_update_failed`. Failed restoration retains ownership and accepts only the identical request.
-
-### Candidate rendering and public configuration
-
-Preparation commits a projection phase before requesting remote work. Internal serving readers select the before or candidate app/profile view from that committed journal, through the existing whole-Node Caddy build and shared-version FPM paths. Every independent Node rebuild sees the same phase. Public API, CLI, SDK, MCP, web and ordinary configuration readers continue to use published Project apps, Instance overrides and runtime profiles until the parent's publication boundary.
-
-Candidate Process and Schedule resolvers receive explicit internal targets and immutable resource fingerprints, not a temporarily changed public row. Route ID, domain, provenance and port identities are carried explicitly for retained apps; app-list additions/removals prepare or withdraw generated Routes through their existing owners.
-
-No temporary public-row staging, transaction-held remote build, in-memory renderer override, second Caddy publisher or unmanaged Node fragment is allowed. Before publication, restoration first commits the old-side rendering intent and reconciles current desired Node state, including unrelated sites and pools. It never installs a stale whole-Node snapshot. Recovery restores private files only from their recorded owned artifacts. After publication, verification and cleanup continue forward.
-
-### Protected step and receipt contract
-
-Each plan freezes its parent kind/ID, Instance and Node placement, normalized request digest, old/candidate app configuration and profiles, selected release identity, app Route/domain/provenance/port identities, and affected Process/Schedule IDs and specification fingerprints. It records desired Process state separately from observed running/stopped/sleeping state, and records Schedule timer enabled and active state separately. Changing a frozen resource is a conflict, not permission to replace the plan on retry.
-
-| Record | Required evidence |
-| --- | --- |
-| Parent journal | Stable operation ID, normalized request and prior configuration, phase, publication boundary and completion result. Project ownership includes the complete affected Instance set. |
-| Per-Instance projection | Exactly one parent kind/ID, Instance/Node identity, immutable plan and digest, old/candidate profiles and resource fingerprints, committed render side and recovery direction. |
-| Step intent | Stable step ID/sequence, owner/Instance/app/resource identity, plan digest, action/targets, receipt identity, recovery action and status. Commit before every remote mutation. |
-| Protected remote receipt | Same owner/Instance/app/step/digest, target identities, before-state snapshot references and protection metadata, created-vs-existing artifacts, verified result and completion marker. Snapshot bytes stay protected, not in plaintext journal fields. |
-| Step acknowledgment | Verified receipt/result fingerprint, completed phase or retained conflict/failure evidence. An absent acknowledgment is not proof that remote work failed. |
-
-Receipt creation has a stable retry identity of its own. Snapshot/receipt creation, stop, write, reload, state restoration and cleanup each require a committed intent. After interruption or a lost response, recovery inspects that receipt and actual owned artifacts before retrying; it never captures an already modified file as its original snapshot. Missing, damaged or foreign evidence stops recovery without guessing or deleting foreign files. Restore and cleanup are checkpointed steps too.
-
-Shared receipts authorize remote preparation, restoration and cleanup only; the parent alone installs public maps/profiles. Completed retries verify completion and return the current resource without restarting runtimes. Environment bytes appear only in encrypted control-plane storage or protected remote snapshots/transport, never plaintext journal fields, command arguments, logs or public output. [Environment](/reference/environment-variables#app-path-preparation-and-protected-receipts) owns file checks and protection details.
-
-### Instance override update lifecycle
-
-`PATCH /api/v1/instances/{instance}` accepts `app_overrides`; CLI `instance:update --app-overrides=JSON`, SDK `UpdateInstanceRequest($appOverrides: ...)` and MCP `instance-update` send that map. It cannot be combined with production `deployment_branch`. Omission is unchanged; `{}` clears all overrides. Equivalent maps ignore key order. This separate mutation owns the Instance operation lock from reservation through cleanup, sharing it with deploy, transfer, removal, rename, environment, Processes, Schedules and dependency operations. A competing owner returns existing `instance.lifecycle_busy` (409). An update to the Project's app list also acquires the affected Instance locks before preflight; neither operation may change an effective app beneath the other.
-
-The `InstanceAppUpdate` journal records the requested map and prior map durably for the Instance. Its shared projections record prior/candidate runtime profiles, effective paths, protected snapshot references and step intents before remote mutation. It preflights every affected app's canonical containment, distinct paths, source classification, web root, permissions and available runtime. It validates every existing Process, preset and Schedule against the new app path. Domains, Route IDs, provenance and ports are unchanged.
-
-An override update cannot change a retained app between serving and non-serving in either direction (only a package with path `.` and null web root is non-serving); it returns `app.serving_state_change_unsupported` (409) before remote work. This includes clearing an override when inheritance would change the app's serving state. Initial Instance creation or registration may supply a serving package override because provisioning reserves and publishes its required Route before activation. Migration also preserves an existing serving package override; it is not a new override mutation.
-
-Production override mutations return `app.production_path_update_unsupported` (409); migrated overrides remain readable and are inherited by single-app cloning, but production paths change only through source preparation in a separate feature.
-
-For a path change, encrypted configuration stays keyed to the same app. A source environment file must match the rendered stored configuration before preflight can continue; import and synchronize local edits first. A different source file or an unrelated destination `.env`/`.env.testing` returns `instance.app_environment_conflict` (409). A destination file matching the same app's rendered configuration is acceptable and is snapshotted. Orbit stages the configured `.env` and any managed `.env.testing` in the new app directory with mode `0600`. Empty unconfigured apps with no files remain file-free. It never imports a sibling's file, follows an unsafe link, or deletes a file at the old app path.
-
-On a development `default`, preflight and staging cover both the stable home's environment path and the selected release's new app path; runtime projection continues through `current`. A candidate or selected release never links back to another app's live seed.
-
-Preparation projects Caddy access, source profile and PHP version, FPM pool/socket working directory and cached APP_URL for each affected serving app. It rewrites derived Process environment paths, preset runtime files and default working directories, while retaining explicit Process directories. It rewrites Schedule scripts and service working directories while preserving timer state. It stops affected running Processes during preparation and restores their recorded running/stopped state against the new path before publication; it never starts sleeping Processes or cold dependencies. Unchanged apps retain their files, pools, Processes and Schedules. Repository commands and Git paths do not move.
-
-Publication is one database transaction that installs the override map and corresponding app profiles after every prepared projection succeeds. Before this transaction, public output shows the old map and profiles even when committed internal rendering selects candidate paths. The transaction also records the journal's published boundary; a lost response cannot make recovery choose rollback after the new map became visible.
-
-Prepublication failure restores snapshotted files, runtimes and desired states, removes only owned newly staged files, and records rollback completion. A failed rollback stays recoverable and accepts only the identical request. After publication, recovery goes forward: it verifies the new projection and cleans only operation-owned staging files, without restoring old app paths. It leaves old-path environment files in place with their existing protections. No unrelated file is removed.
-
-A journal checkpoint precedes each mutating step. A crash resumes from that journal and verifies remote results rather than assuming an unfinished write failed. An identical retry resumes rollback before publication or forward cleanup after publication; a completed retry, including a lost success response, returns the current Instance without restarting runtimes. A different map during an incomplete update returns `instance.app_update_in_progress` (409). An infrastructure failure without a more specific existing code returns `instance.app_update_failed` (409), retaining the failed step for inspection and retry. A confirmed unchanged map is a no-op. The web editor uses this same lifecycle, not a database-only override save.
+A Project without Instances replaces its complete app list in one write. Removing an app that a Process definition, Schedule definition, or Route still names returns `project.app_in_use` (409) with the app in `details.app`. Remove that reference first. Removing the last app is invalid.
 
 ### Convert removed fields
 
-The migration removes the Project and Instance `root` fields, `--root` flag and SDK `$root`, with no alias. Requests that send these removed settings fail validation. It moves the former Project `type` into the app. Every existing Project gets one app named `web`. Convert each removed web-root value independently; do not derive overrides from the converted Project.
+The migration removes the Project and Instance `root` fields, `--root` flag and SDK `$root`, with no alias. Requests that send `root` fail with `validation.failed` and a message that names `root`. It copies the Project `type` into the app. Every existing Project gets one app named `web`. Convert each removed web-root value independently; do not derive overrides from the converted Project.
 
 | Removed value | App path | App web root | Explanation |
 | --- | --- | --- | --- |
@@ -171,41 +109,21 @@ All interfaces use the same names. API JSON, CLI JSON and MCP use snake_case. PH
 | Purpose | API / MCP | CLI | PHP SDK |
 | --- | --- | --- | --- |
 | Project app list | `apps` on create, update, list and show | `--apps=JSON` on `project:create` and `project:update` | `$apps` on `CreateProjectRequest`, `UpdateProjectRequest` and `ProjectResponse` |
-| Instance path overrides | `app_overrides` on create, register and update; responses also return effective `apps` | `--app-overrides=JSON` on those mutations | `$appOverrides` on corresponding Instance requests/responses; `$apps` on responses |
-| Instance Process or Schedule app | `app` on create and in responses; optional list filter | `--app=NAME` on create/list | `$app` on create requests and response DTOs; optional list request parameter |
-| Project Process or Schedule definition app | Top-level `app` alongside `name`, `environments`, `spec` on create/replace and responses | `--app=NAME` on definition create/update/list | `$app` on definition requests and response DTOs |
-| App Route | `app` on create and in responses; optional list filter | `route:create INSTANCE DOMAIN --app=NAME`, `route:list --app=NAME` | `$app` on `CreateRouteRequest`, `RouteResponse` and list request |
-| App environment, logs, dependencies and source inspection | `app` selector; query on reads, JSON body on mutations | `--app=NAME` | `$app` on corresponding requests and response app identity |
+| Instance path overrides | `app_overrides` on create and register; responses also return effective `apps` | `--app-overrides=JSON` on `instance:create` and `instance:register` | `$appOverrides` on `CreateInstanceRequest`, `RegisterInstanceRequest` and `InstanceResponse`; `$apps` on `InstanceResponse` |
+| Instance Process or Schedule app | `app` on create and in responses | `--app=NAME` on `process:create` and `schedule:create` | `$app` on `CreateProcessRequest`, `CreateScheduleRequest`, `ProcessResponse` and `ScheduleResponse` |
+| Project Process or Schedule definition app | Top-level `app` alongside `name`, `environments`, `spec` on create/replace and responses | `--app=NAME` with `--project` on `process:create`, `process:update`, `schedule:create` and `schedule:update` | `app` in the definition JSON; `$app` on `ProjectRuntimeDefinitionResponse` |
 
-`POST /api/v1/projects` requires `apps`; there is no implicit app list in API, SDK, MCP or CLI. `PATCH` with `apps` replaces the complete list; omission leaves it unchanged. Unknown or duplicate fields and wrong JSON types return HTTP 422 `validation.failed`. CLI `--apps` and `--app-overrides` are JSON, not comma-separated shorthand, files or repeatable flags. Invalid JSON fails locally with `project.apps_invalid` or `instance.app_overrides_invalid`. `project:create` takes `SLUG REPOSITORY`, not a Project type positional argument. No surface retains a Project-level type selector.
+`POST /api/v1/projects` requires `apps`; there is no implicit app list in API, SDK, MCP or CLI. `PATCH` with `apps` replaces the complete list; omission leaves it unchanged. Unknown or duplicate fields and wrong JSON types return HTTP 422 `validation.failed`. CLI `--apps` and `--app-overrides` are JSON, not comma-separated shorthand, files or repeatable flags. Invalid JSON fails locally with `project.apps_invalid` or `instance.app_overrides_invalid`.
 
-For example, `orbit project:create drift git@github.com:acme/drift.git --apps='[{"name":"web","path":"apps/site","web_root":"public","type":"laravel-app"},{"name":"admin","path":"apps/admin","web_root":"public","type":"laravel-app"}]'` creates two apps in one repository. SDK create/update `$apps` inputs are lists of four-field arrays (`name` and `path` strings, nullable string `web_root`, string `type`), not shorthand tuples. Project and Instance response `$apps` properties are lists of `ProjectAppResponse` DTOs with `$name`, `$path`, `$webRoot` and `$type`; `toArray()` emits the same four-field JSON. `$appOverrides` inputs and response properties are name-keyed maps of arrays with string `path` and nullable string `web_root`. There is no single-app shorthand or scalar fallback.
+For example, `orbit project:create drift monorepo git@github.com:acme/drift.git --apps='[{"name":"web","path":"apps/site","web_root":"public","type":"laravel-app"},{"name":"docs","path":"apps/docs","web_root":"public","type":"laravel-app"}]'` creates two apps in one repository. SDK create/update `$apps` inputs are lists of four-field arrays (`name` and `path` strings, nullable string `web_root`, string `type`), not shorthand tuples. Project and Instance response `$apps` properties are lists of `ProjectAppResponse` DTOs with `$name`, `$path`, `$webRoot` and `$type`; `toArray()` emits the same four-field JSON. `$appOverrides` inputs and response properties are name-keyed maps of arrays with string `path` and nullable string `web_root`. There is no single-app shorthand or scalar fallback.
 
-An app selector is an exact name, not an app ID or path. Omission resolves the sole app and stores its name, including a sole non-serving package. Several apps require an explicit selector; there is no primary app. A Route-domain selector identifies its app and Instance; an explicit `app` must agree with it. A pooled domain remains ambiguous for operations that require one Instance. Node-owned Processes and Schedules reject `app`. A null selector is not omission and fails `validation.failed`.
+An app selector is an exact name, not an app ID or path. Omission resolves the sole app and stores its name, including a sole non-serving package. Several apps require an explicit selector; there is no primary app. A missing selector returns `app.required`, and an unknown name returns `app.not_found`. Node-owned Processes and Schedules reject `app` with `app.selector_unsupported`. Resource-ID start, stop, run, log and destroy operations use the resource's stored app and accept no selector.
 
-Resource-ID start/stop/run/log/destroy operations use the resource's stored app and accept no new selector. Project slug change, transfer and removal process all affected apps. Instance domain rename affects only the selected app; it never changes the Instance name or sibling domains.
+Environment, log and dependency operations, production Instances, and analytics have no app selector yet. They work on single-app Projects. On a Project with several apps, an operation that needs one app returns `app.required`.
 
-Generated MCP schemas expose `apps`, `app_overrides` and `app` on the same operations as API requests. The web app's Project create/edit form has a repeatable app editor with name, path, web root and type; it sends the entire list. Instance detail lists every app with its effective paths and Route and edits the override map. Process/Schedule and definition forms have an app picker required for multi-app Projects; single-app forms send the sole name. Environment/log/dependency panels select an app. Route forms choose an app.
+Generated MCP schemas expose `apps`, `app_overrides` and `app` on the same operations as API requests. The [web app](/reference/web-app) lists a Project's apps. It edits them while the Project has no Instances and shows them read-only, with the reason, while it has Instances.
 
 Only packages with path `.` and null web root show as non-serving rather than a broken link. Other null web roots serve the app directory itself.
-
-The web app displays the same validation codes, never chooses the first app, and uses no fallback to removed fields.
-
-### App-list update safety and limits
-
-Adding or changing an app preflights all affected development Instances and their effective paths, domain conflicts and runtime projections before publishing the list.
-
-An edit to the app list cannot change a retained name between serving and non-serving, in either direction, at the Project or effective Instance level. Serving state follows the app type and effective path as well as its web root; null alone does not mean non-serving. It returns `app.serving_state_change_unsupported` (409), even when an override masks the declared change or no Instance exists. Add a new app name with the intended serving state instead; remove the old app only after satisfying app-in-use checks.
-
-Existing overrides remain for unchanged names and win over Project paths. Removing an app is refused while a Process, Schedule, Project definition, explicit Route, tracking configuration or environment configuration refers to it, or an Instance has an override for it. Generated Routes and pools can be removed by the app-list update itself.
-
-A rename is removal plus addition, not an implicit reference rewrite. Removing the last app is invalid. `ProjectUpdate` stores requested/prior app lists and normalized identity, reserves every affected Instance through the shared ownership contract, and prepares additions, removals and path/type changes through the complete environment, serving and worker adapters. Publication installs the app list and corresponding profiles at the existing `publishing` boundary. Before `publishing`, failure restores old app configuration, Routes and runtimes; once `publishing` starts, retry continues forward under the existing Project update lifecycle. The parent's phase, not a missing step acknowledgment, selects recovery direction. Scalar updates that omit `apps` retain the existing lifecycle.
-
-Multi-app production releases are not supported in this group. A Project with production Instances cannot add a second app.
-
-Production creation or cloning of a multi-app Project is refused before remote work. Existing production pools accept only the same Project and app on every target and reassignment. Database attachment commands for Instances require one app; adding a second app to a Project with attached Instance databases is refused. Several development apps can still store their own database keys independently. [Analytics](/reference/analytics#single-app-boundary) remains single-app only; a second app is refused while any Instance has tracking hosts. Disable tracking before that app-list edit.
-
-An app-list change that changes an existing production Instance's effective path, web root or type returns `app.production_path_update_unsupported`; unrelated development overrides remain editable. Slug changes retain the existing production source/release boundary and do not start a deployment.
 
 ## Setup and teardown steps
 
@@ -219,7 +137,7 @@ A Project owns an ordered [development deploy list](/reference/deployments#devel
 
 ## Project types
 
-The type belongs to each named app. Every Instance inherits that type; path overrides do not change it. The Project's repository-wide `task_check` defaults to null regardless of its apps.
+Each named app has a type, and that type decides the app's runtime. Every Instance inherits the app types; path overrides do not change them. The Project also keeps its own `type`. When the type of a Project with one app changes, that app takes the new type. The Project's repository-wide `task_check` defaults to null regardless of its apps.
 
 | App type | Web root | Route | PHP-FPM |
 | --- | --- | --- | --- |
@@ -238,8 +156,8 @@ A `symfony-app` serves like a `laravel-app`: one Route, a PHP-FPM pool, and the 
 Create a Project before you create or register its first Instance.
 
 ```bash
-orbit project:create acme git@github.com:acme/site.git --apps='[{"name":"web","path":".","web_root":"public","type":"laravel-app"}]'
-orbit project:create leden git@github.com:acme/leden.git --source-access=gh_cli --apps='[{"name":"web","path":"apps/site","web_root":"public","type":"laravel-app"}]'
+orbit project:create acme laravel-app git@github.com:acme/site.git --apps='[{"name":"web","path":".","web_root":"public","type":"laravel-app"}]'
+orbit project:create leden laravel-app git@github.com:acme/leden.git --source-access=gh_cli --apps='[{"name":"web","path":"apps/site","web_root":"public","type":"laravel-app"}]'
 ```
 
 Every interface requires the app list. Each entry must include its type, path and web root, including explicit null for a non-serving package. Without `--default-branch`, the Gateway reads the remote default branch once and stores it. A later change on the remote does not update the Project. An explicit branch must exist on the remote. The Gateway reads the remote with the Project's [source access](#source-access).
@@ -281,7 +199,7 @@ Change the code in the web app, or send `PATCH /api/v1/projects/{project}` with 
 
 ## Update a Project
 
-Use `project:update` when an existing Project must change its apps, slug, repository access URL, source access, default branch, task check, task workspace routing, or review and merge. The Gateway API accepts `PATCH /api/v1/projects/{project}` with those same fields, including `task_workspace_routed`. The PHP SDK sends `UpdateProjectRequest` to that path. Omitted fields stay unchanged; send `task_check: null` to clear the task check. The CLI and the MCP `project-update` tool accept the same fields. The [Update lifecycle](#update-lifecycle) defines source reconciliation. The API, SDK, CLI, activity, Doctor, and validation contracts expose no `main_branch` or `--main-branch` name.
+Use `project:update` when an existing Project must change its type, apps, slug, repository access URL, source access, default branch, task check, task workspace routing, or review and merge. The Gateway API accepts `PATCH /api/v1/projects/{project}` with those same fields, including `task_workspace_routed`. The PHP SDK sends `UpdateProjectRequest` to that path. Omitted fields stay unchanged; send `task_check: null` to clear the task check. The CLI and the MCP `project-update` tool accept the same fields. The [Update lifecycle](#update-lifecycle) defines source reconciliation. The API, SDK, CLI, activity, Doctor, and validation contracts expose no `main_branch` or `--main-branch` name.
 
 ```bash
 orbit project:update 3 --repository=https://github.com/acme/site.git --default-branch=stable
@@ -292,7 +210,7 @@ orbit project:update 14 --source-access=gh_cli --default-branch=main
 
 | Field | Effect |
 | --- | --- |
-| `apps` and `--apps` | Replaces the complete app list through preflight and runtime reconciliation. Omission leaves it unchanged. |
+| `apps` and `--apps` | Replaces the complete app list while the Project has no Instances. See [Change apps](#change-apps). Omission leaves it unchanged. |
 | `slug` and `--slug` | Projects every Instance before publication, with no partial projection. Checkout paths, production users, and homes stay unchanged. Generated Routes use the new slug; explicit domains do not. |
 | `repository_url` and `--repository` | Runs `git remote set-url origin` in each development checkout. Equivalent HTTPS and SSH URLs share an identity. See [Repository changes](#repository-changes). |
 | `source_access` and `--source-access` | Applies at once and touches no checkout. See [Change source access](#change-source-access). |
@@ -301,8 +219,6 @@ orbit project:update 14 --source-access=gh_cli --default-branch=main
 | `task_workspace_routed` and `--task-workspace-routed=true\|false` | Sets routing for future task workspaces. Existing workspaces keep their recorded mode and Routes. |
 | `review_and_merge` and `--review-and-merge=true\|false` | Switches the [review-and-merge flow](/reference/tasks#review-and-merge). It applies at the next tick, to open tasks too. |
 | `merge_check` and `--merge-check=NAME` | Names the check that must pass before Orbit merges. Send null or `--clear-merge-check` to clear it. |
-
-An app type or path change must keep every effective Instance app valid. A serving Route requires a serving app with a contained composed document root (null serves the app directory); otherwise the update returns `route.target_web_root_unsupported`.
 
 ### Change source access
 
@@ -330,7 +246,7 @@ orbit project:update 46 --review-and-merge=true --merge-check="Required checks"
 
 An unfinished [Instance rename](/reference/routes) owns its Route and URL until it completes. Project reconciliation checks that owner under the shared Instance locks and returns `instance.lifecycle_busy` before changing the Project or projecting a new slug. Retry the matching rename first, including after its domain has converged but its completion transaction failed.
 
-The Gateway applies `slug`, `repository_url`, `default_branch`, and `apps` as one recorded operation:
+The Gateway applies `slug`, `repository_url`, and `default_branch` as one recorded operation:
 
 | Status | Work |
 | --- | --- |
@@ -363,30 +279,22 @@ A Project with tasks cannot be removed. The Gateway refuses the request with HTT
 
 ## Errors
 
-The Gateway returns these codes for Project requests. Named-app requests add the following exhaustive set; existing source, runtime, Route and environment failures keep their existing codes and include app identity for app-scoped failures. API errors use the stated HTTP status. CLI semantic validation and MCP failures preserve the same code; malformed JSON types or unknown members at the API use existing `validation.failed` (422).
+The Gateway returns these codes for Project requests. Named-app requests add the following codes; existing source, runtime, Route and environment failures keep their existing codes. API errors use the stated HTTP status. CLI semantic validation and MCP failures preserve the same code; malformed JSON types or unknown members at the API use existing `validation.failed` (422).
 
 | New code | HTTP | Cause |
 | --- | --- | --- |
 | `project.apps_invalid` | 422 | Empty app list, missing app member, invalid name/type/path/web root, or an invalid composed document root. Also local CLI JSON-list parse failure. |
 | `project.app_name_conflict` | 422 | Duplicate app name in the submitted list. |
 | `project.app_path_conflict` | 422 | Two effective apps share an application path, including after Instance overrides. |
-| `project.app_in_use` | 409 | Removing an app would leave an override, Process, Schedule, definition, explicit Route, tracking configuration or stored environment reference. |
+| `project.apps_locked_by_instances` | 409 | An apps update while the Project has Instances. Remove the Instances, change the apps, then recreate the Instances. |
+| `project.app_in_use` | 409 | Removing an app that a Process definition, Schedule definition or Route still names. |
 | `instance.app_overrides_invalid` | 422 | Invalid override-map shape, unknown app name, or invalid override paths. Also local CLI map parse failure. |
 | `app.required` | 422 | An app-scoped operation omitted the selector on a multi-app Project. |
 | `app.not_found` | 422 | The selected app does not belong to the owning Project. |
-| `app.selector_conflict` | 422 | A Route-domain selector and explicit app name disagree. |
 | `app.selector_unsupported` | 422 | A Node-owned Process or Schedule was given an app. |
-| `instance.app_environment_conflict` | 409 | Override preflight found unsynchronized source environment files or unrelated destination environment files. |
-| `instance.app_update_in_progress` | 409 | Another override map is recorded by an incomplete update. |
-| `instance.app_update_failed` | 409 | Override projection failed without a more specific existing code; identical retry resumes recovery. |
-| `app.production_path_update_unsupported` | 409 | An override update targets production, or an app-list change changes an existing production app's effective path, web root or type. |
-| `app.serving_state_change_unsupported` | 409 | A retained app's declared or effective serving state would change between serving and non-serving through an app-list or override edit, including override clearing. |
 | `app.port_migration_conflict` | 409 | Port migration found conflicting retained transfer/withdrawal reservations; complete the named owning operations before retrying migration. |
-| `app.analytics_multi_app_unsupported` | 409 | An analytics read/enable targets a multi-app Project, or adding another app would affect an Instance with tracking hosts. |
-| `app.production_multi_app_unsupported` | 409 | Adding another app with production Instances present, or preparing production from a multi-app Project. |
-| `app.database_multi_app_unsupported` | 409 | Adding another app while Instance database attachments exist, or using an Instance database attachment operation on a multi-app Project. |
 
-No new Doctor issue codes are added. The `app` field distinguishes existing app-scoped findings. App lookup and validation finish before remote changes; app-list preflight and publication retain the recorded update and retry rules.
+No new Doctor issue codes are added. The `app` field distinguishes existing app-scoped findings. App lookup and validation finish before remote changes.
 
 | Code | Cause |
 | --- | --- |
@@ -421,7 +329,7 @@ Registration must find exactly one Project from a checkout's origin. Comparing U
 
 ### Updates are separate from creation
 
-Creation stays idempotent: a changed value is a conflict, never an update. Changing a slug, URL, branch, or app list touches checkouts, Routes, and runtimes on several Nodes, so it runs as one recorded operation. A plain database update would leave checkouts, domains, and document roots out of step.
+Creation stays idempotent: a changed value is a conflict, never an update. Changing a slug, URL, or branch touches checkouts, Routes, and runtimes on several Nodes, so it runs as one recorded operation. A plain database update would leave checkouts, domains, and document roots out of step.
 
 ### Recovery goes forward after publication
 
@@ -430,6 +338,20 @@ Before `publishing`, the old values are still in effect, so a rollback is safe. 
 ### App type decides capabilities
 
 Instances share the Project's app list and app types. Per-Instance type or PHP-FPM flags were rejected because they could classify the same app differently. A package with no web root has no Route or idle PHP-FPM master. An app with a web root has its own Route, not a Route chosen from repository order.
+
+### Apps are explicit
+
+A repository can hold several applications, and a Laravel application can sit below the checkout's top level. The application directory owns `artisan`, `composer.json`, `.env`, and logs; the checkout does not. So each app records its `path` and `web_root`, and every runtime path comes from them. Searching the repository for `artisan` or `public` directories was rejected, because the result would depend on what happens to be in the checkout. Deriving the application directory from one web-root setting was rejected, because it cannot describe several apps and it hides which directory owns `.env`.
+
+Repository commands stay at the repository root. Setup, teardown, deploy steps, task checks, and Git operations belong to the repository, not to one app, so a nested Artisan step changes directory itself.
+
+### One Route and one pool per app
+
+Every serving app gets its own Route, PHP-FPM pool, environment file, and `APP_URL`. Generated domains start with the app name, also for a single app named `web`, so a second app never renames the first. Choosing a primary app was rejected: list order or a default name would decide which app owns the plain domain, and adding an app could then move it.
+
+### Apps change only without Instances
+
+An Instance turns its apps into Routes, certificates, PHP-FPM pools, environment files, Processes, and Schedules on its Node. Moving those in place needs a journaled preparation, publication, and rollback across every affected runtime and Node. That machinery was rejected as more code and risk than the change is worth: apps change rarely, and removing and recreating Instances already converges every runtime through tested lifecycles. So the Gateway refuses an apps change while the Project has Instances, and an Instance keeps the override map it was created with.
 
 ### A setting routes task workspaces
 

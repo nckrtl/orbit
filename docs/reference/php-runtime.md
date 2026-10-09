@@ -8,18 +8,17 @@ covers:
   - apps/gateway/app/Infrastructure/Nodes/{PhpFpmRuntimeIniRenderer,RemotePhpPackageManager}.php
   - apps/gateway/app/Infrastructure/AppDev/{DevelopmentPhpFpmConfigRenderer,RemoteAppDevPhpFpmManager}.php
   - apps/gateway/app/Infrastructure/SharedOrbitDirectory.php
-  - apps/gateway/app/Infrastructure/Instances/{NativeAppProjectionServingRuntime,DevelopmentCaddyAccessCommand}.php
 ---
 
 # PHP runtimes
 
-Orbit installs PHP from the pinned Sury apt source and serves each site through PHP-FPM over a Unix socket. Development Instances on a Node share one PHP-FPM service per PHP version. Each routed PHP app gets its own pool and socket. Each supported single-app production Instance gets its own PHP-FPM service, with its own OPcache. Multi-app production releases are not part of the named-app development group.
+Orbit installs PHP from the pinned Sury apt source and serves each site through PHP-FPM over a Unix socket. Development Instances on a Node share one PHP-FPM service per PHP version. Each routed PHP app gets its own pool and socket. Each production Instance that serves PHP gets its own PHP-FPM service, with its own OPcache. Production supports a Project with one app.
 
 ## Select the PHP version
 
 The Gateway reads the source's `composer.json` once, before it publishes the runtime or DNS. For a routed Laravel app, source inspection reads `composer.json` and `artisan` from the [application directory](/reference/projects#application-directory), not from an unrelated repository-root Composer project. It tries PHP 8.5, then PHP 8.4, and picks the first version that the `require.php` constraint allows.
 
-For an app with `path: apps/site` and `web_root: public`, the working directory for PHP-FPM is `<checkout>/apps/site` in development or `<production-home>/current/apps/site` in supported single-app production; Caddy's document root is the corresponding `apps/site/public`. An app path of `.` keeps the checkout or release root as the working directory. Each app's source profile and PHP version are resolved independently; sibling apps may select different supported versions.
+For an app with `path: apps/site` and `web_root: public`, the working directory for PHP-FPM is `<checkout>/apps/site` in development or `<production-home>/current/apps/site` in production; Caddy's document root is the corresponding `apps/site/public`. An app path of `.` keeps the checkout or release root as the working directory. Each app has its own source profile, so sibling apps can select different PHP versions.
 
 Before the first production deployment, `current` is absent, so the dedicated pool starts in the application's directory under `releases/initial`. Once a deployment or rollback selects a release, Orbit reconciles the pool to the application's directory under `current` before refreshing its PHP cache. It validates the selected directory before starting or restarting FPM.
 
@@ -47,7 +46,7 @@ Orbit does not recover missing source profiles on older Instances. [Projects: On
 
 ## Development runtime
 
-Development apps share the distribution service `php<version>-fpm`. Each routed PHP app has exactly one pool named `orbit-instance-{id}-{app}` and socket `/run/php/orbit-{id}-{app}.sock`, mode `0660`, group `caddy`. Instance ID and app name make the identity unique on the Node. Convergence, transfer and removal manage all app pools; reprojecting one app does not point it at a sibling's socket. Non-serving apps and package types have no pools.
+Development apps share the distribution service `php<version>-fpm`. Each routed PHP app has one pool named `orbit-instance-{id}-{app}` and socket `/run/php/orbit-{id}-{app}.sock`, mode `0660`, group `caddy`. An Instance created before named apps can keep its earlier pool name until Orbit moves it to the app identity. Convergence, transfer, and removal manage every app's pool. Non-serving apps and package types have no pool.
 
 The Gateway writes every Orbit pool for a version into one file, `/etc/php/<version>/fpm/pool.d/orbit-scopes.conf`, and rewrites it from stored state at each PHP-FPM convergence on the Node. Instance creation, transfer, and removal run that convergence.
 
@@ -78,14 +77,6 @@ php_admin_value[opcache.revalidate_freq] = 0
 ```
 
 `opcache.file_update_protection` stays at its stock 2 seconds, because file times have one-second resolution.
-
-### Candidate app projection
-
-Project app-list and Instance override preparation inspect candidate source and validate access and available PHP versions using explicit internal app contexts. The native serving adapter selects desired pools from committed app-projection journals, using the same before/candidate render side as [Caddy](/reference/caddy-configuration#committed-app-candidates). Public app maps and source profiles remain published values until the parent lifecycle publishes. Independent convergence reads the same committed candidate state; it does not depend on the update worker's memory.
-
-Candidate pools keep the Instance/app socket identity while changing derived document and working directories or PHP-version membership as required. App additions/removals reconcile only their own pools through the existing shared-version manager; sibling pools and services remain intact. Source profiles and cached APP_URL are prepared with owned receipts, not by staging public profile rows. Every remote mutation has a committed step intent, and ambiguous completion verifies the receipt and actual pool/configuration before retry.
-
-Before publication, recovery commits old-side rendering and reconciles the current desired pool set rather than replacing shared-version configuration with a stale Node snapshot. Private app artifacts restore only owned recorded snapshots. After publication, verification and cleanup go forward. Production dedicated FPM identity, pools, release receipts and environment-link layout are unchanged. [Projects](/reference/projects#shared-app-projection-ownership) owns journal admission and recovery boundaries.
 
 ## Production runtime
 
@@ -151,7 +142,7 @@ The refresh never touches another Instance's socket and never reloads a service.
 
 On every Node with an active `app-dev` or `app-prod` role, [Doctor](/cli/doctor) reports `role.php_pool_directory_missing` for each Orbit pool whose working directory is missing. It reports the issue on the `app-dev` role, or else on `app-prod`. A pool in a live `orbit-scopes.conf` with a missing directory stops that PHP version from starting at its next restart; the next PHP-FPM convergence on the Node removes it. A pool that only stored state renders is skipped by convergence until its directory exists.
 
-[Doctor](/cli/doctor#named-app-checks) checks each development app's pool, socket, selected PHP version and effective working directory independently. It checks that each supported production Instance with one PHP app has one service, pool, and socket, and shares none of them. It compares the generated files and rejects a `local.conf` that changes the identity. It also checks the service's `ExecStart` and `PHP_INI_SCAN_DIR`, the master process, its socket, and the user and parent of each worker. An idle pool with no workers is valid.
+[Doctor](/cli/doctor#named-app-checks) checks each development app's pool, socket, and working directory through that app's Route. It checks that each production PHP Instance has one service, pool, and socket, and shares none of them. It compares the generated files and rejects a `local.conf` that changes the identity. It also checks the service's `ExecStart` and `PHP_INI_SCAN_DIR`, the master process, its socket, and the user and parent of each worker. An idle pool with no workers is valid.
 
 Doctor reads only. It never starts PHP-FPM, sends a request, reloads a service, or resets a cache. It does not compare allowed tuning with Orbit's defaults. A process that exits while Doctor reads it is not drift. When Doctor cannot read a required fact, it reports `instance.inspection_failed`.
 

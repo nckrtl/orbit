@@ -80,7 +80,7 @@ No signal at all means pnpm, which still needs `pnpm-lock.yaml`.
 
 ## Collection
 
-`CollectInstanceDependencyFilesAction` reads the recorded checkout, or `current` of a production Instance, over SSH. A fixed Python program runs as the Node's user in development and as the production user in production. For every app type, it reads manifests, lockfiles and manager signals only in the selected app's effective [application directory](/reference/projects#application-directory). App path `apps/site` selects that directory inside the checkout or selected release, not repository-root or sibling manifests. Collection never recursively discovers or combines dependency trees.
+`CollectInstanceDependencyFilesAction` reads the recorded checkout, or `current` of a production Instance, over SSH. A fixed Python program runs as the Node's user in development and as the production user in production. For every app type, it reads manifests, lockfiles, and manager signals only in the app's [application directory](/reference/projects#application-directory). App path `apps/site` selects that directory inside the checkout or selected release, not the repository-root or sibling manifests. Collection has no app selector; a Project with several apps returns `app.required`. Collection never recursively discovers or combines dependency trees.
 
 | Limit | Value |
 | --- | --- |
@@ -91,7 +91,7 @@ No signal at all means pnpm, which still needs `pnpm-lock.yaml`.
 
 Symlinks, non-regular files, and paths that are not canonical fail. Production collection validates and pins the selected release before opening its application directory. The program reads twice and compares the repository or release identity, application directory, file metadata, and hashes. A difference returns `dependencies.source_changed`.
 
-`ScanInstanceDependenciesAction` holds the Instance operation lock, and for development the Node source lock, from collection through publication. It checks the Instance again inside each publication transaction. Its source snapshot retains the app name, effective path, web root, type and source profile. Publication rechecks this same app configuration and source identity; it cannot fall back to another app when the snapshot or live configuration changes.
+`ScanInstanceDependenciesAction` holds the Instance operation lock, and for development the Node source lock, from collection through publication. It checks the Instance again inside each publication transaction. Its source snapshot retains the effective web root and Laravel classification, so directory selection does not fall back to the repository root when the Instance is copied into a snapshot.
 
 Development updates use the same directory for manager-presence inspection, source-safety checks, package commands, and the final scan. Collection receipt validation accepts only the derived directory within the recorded checkout or selected release, not an arbitrary caller-supplied path. Git identity and CLI directory-to-Instance resolution still use the whole repository. Reader rules, package-manager refusals, and collection limits stay unchanged; a nested Laravel app does not enable workspace or multi-importer support.
 
@@ -102,22 +102,20 @@ The Gateway stores the inventory in five tables.
 | Table | Contents |
 | --- | --- |
 | `dependency_packages` | One row per ecosystem and name, shared by all Instances. |
-| `instance_dependency_observations` | The last successful observation per Instance, app name and ecosystem: time, presence, project root, source reference, format, and file hashes. No row means unknown. |
+| `instance_dependency_observations` | The last successful observation per Instance and ecosystem: time, presence, project root, source reference, format, and file hashes. No row means unknown. |
 | `instance_dependency_resolutions` | The resolutions of one observation. |
 | `instance_dependency_edges` | The requirements of one observation. |
-| `instance_dependency_scan_attempts` | Every attempt keyed by Instance, app name and ecosystem, with its time and error code, null on success. |
+| `instance_dependency_scan_attempts` | Every attempt with its time and error code, null on success. |
 
-`PublishInstanceDependencyScanAction` replaces one selected app/ecosystem's observation, resolutions, edges, and attempt in one transaction. Observation uniqueness is `(instance_id, app, ecosystem)`; attempts and observation-owned resolutions/edges retain that app association. Migration assigns `web` to all existing observations and attempts without losing history, file hashes or stale state. Shared package identities stay unchanged. A failure records only the attempt and keeps the stored observation. A database failure records `dependencies.persistence_failed`. An Instance in removal gets `dependencies.instance_unavailable`.
-
-Removing an Instance deletes all its apps' rows but keeps shared package rows. Removing an unused app deletes only its dependency observations, attempts, resolutions and edges. A path change makes that app's previous observation stale until a successful scan at the new path; sibling observations remain current.
+`PublishInstanceDependencyScanAction` replaces one ecosystem's observation, resolutions, edges, and attempt in one transaction. A failure records only the attempt and keeps the stored observation. A database failure records `dependencies.persistence_failed`. An Instance in removal gets `dependencies.instance_unavailable`. Removing an Instance deletes its rows but keeps shared package rows.
 
 ## Responses
 
-A scan or read returns `data` with exactly `instance_id`, `app`, `succeeded`, `composer`, and `javascript`. API, MCP and CLI JSON share this shape; SDK inventory responses have `$instanceId`, `$app`, `$succeeded`, `$composer` and `$javascript` and emit these same snake_case keys. `succeeded` is null until both ecosystems have attempts.
+A scan or read returns `data` with `instance_id`, `succeeded`, `composer`, and `javascript`. `succeeded` is null until both ecosystems have attempts.
 
 Each ecosystem has `ecosystem`, `state`, `succeeded`, `attempted_at`, `error_code`, and `snapshot`. The state is `unknown` before the first success, and stale after a later failure. A snapshot has `observed_at`, a `source` with `project_root`, `reference`, `file_hashes`, and `format`. `project_root` is the absolute directory whose manifests were read; for app path `apps/site`, it ends in `/apps/site`. The production `reference` still identifies the selected release. The snapshot also has a `graph`. A null graph means the ecosystem is absent. An empty graph means a project with no packages.
 
-An update returns `instance_id`, `app`, `succeeded`, `error_code`, `may_have_mutated`, a `composer` and a `javascript` step, and `inventory`. A step has `ecosystem`, `status` (`succeeded`, `absent`, `failed`, or `not_run`), `may_have_mutated`, and `error_code`. A refused update has both steps `not_run` and no inventory.
+An update returns `instance_id`, `succeeded`, `error_code`, `may_have_mutated`, a `composer` and a `javascript` step, and `inventory`. A step has `ecosystem`, `status` (`succeeded`, `absent`, `failed`, or `not_run`), `may_have_mutated`, and `error_code`. A refused update has both steps `not_run` and no inventory.
 
 | Update code | Cause |
 | --- | --- |
@@ -132,11 +130,9 @@ The SDK rejects a whole response that breaks the shape. It accepts at most 32 Mi
 
 ## Target resolution
 
-`GET /api/v1/instances/resolve?domain=DOMAIN` finds the one Instance behind an active Route domain. It returns `domain`, `app`, `instance_id`, `project_id`, `node_id`, and `environment`; `app` is the Route's exact named app, not a primary app. A missing or inaccessible domain returns `dependencies.target_not_found`. A Route with more than one target returns `dependencies.target_ambiguous`. The SDK accepts at most 4,096 bytes of response.
+`GET /api/v1/instances/resolve?domain=DOMAIN` finds the one Instance behind an active Route domain. It returns `domain`, `instance_id`, `project_id`, `node_id`, and `environment`. A missing or inaccessible domain returns `dependencies.target_not_found`. A Route with more than one target returns `dependencies.target_ambiguous`. The SDK accepts at most 4,096 bytes of response.
 
 `GET /api/v1/instances/resolve-directory?directory=PATH` finds the Instance whose checkout or production home holds a canonical path on the caller's Node. It returns `instance_id`, `project_id`, `node_id`, and `environment`. It never looks at other Nodes. Nested matches return `dependencies.target_ambiguous`; the resolver never picks the longest prefix.
-
-Directory resolution does not infer an app from the caller's subdirectory. App-scoped scan/update resolves an explicit `app`, or the sole app; several apps return `app.required`. An explicit selector disagreeing with the resolved Route app returns `app.selector_conflict`. Read queries use `?app=NAME`; scan/update JSON bodies use `{"app":"web"}`. SDK request parameters use `$app`; MCP tools and CLI use `app` and `--app` respectively.
 
 Both return `dependencies.instance_unavailable` for an Instance that is not active or is in removal. Later operations check access and state again.
 

@@ -27,6 +27,7 @@ final class CreateScheduleRequest extends GatewayRequest implements HasBody
         private readonly string $command,
         private readonly ?int $timeoutSeconds = null,
         private readonly ?bool $start = null,
+        private readonly ?string $app = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -58,6 +59,10 @@ final class CreateScheduleRequest extends GatewayRequest implements HasBody
 
         if ($this->start !== null) {
             $body['start'] = $this->start;
+        }
+
+        if ($this->app !== null) {
+            $body['app'] = $this->app;
         }
 
         return $body;

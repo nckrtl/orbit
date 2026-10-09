@@ -301,6 +301,7 @@ function runtime_definition_gateway_data(bool $includeCommand = true): array
     return [
         'id' => runtime_definition_id(),
         'project_id' => 7,
+        'app' => 'web',
         'name' => 'worker',
         'environments' => ['production'],
         'spec' => $spec,

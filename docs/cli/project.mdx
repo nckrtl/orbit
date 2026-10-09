@@ -1,11 +1,11 @@
 ---
 title: "project"
-description: "Create, inspect, update, and remove Projects. A Project owns one repository, a type, and the source defaults that Instances inherit."
+description: "Create, inspect, update, and remove Projects. A Project owns one repository, a type, its named apps, and the source defaults that Instances inherit."
 covers:
   - apps/cli/app/Commands/Project*/**
   - packages/php-sdk/src/Requests/Projects/{Create,Show,Update,Destroy}ProjectRequest.php
   - packages/php-sdk/src/Requests/Projects/ListProjectsRequest.php
-  - packages/php-sdk/src/Responses/Projects/{ProjectResponse,ProjectsResponse,ProjectIdentityResponse}.php
+  - packages/php-sdk/src/Responses/Projects/{ProjectResponse,ProjectsResponse,ProjectIdentityResponse,ProjectAppResponse}.php
 ---
 
 A Project records one Git repository and the defaults for running it. [Projects](/reference/projects) owns the fields, types, update lifecycle, and error codes. [Applications](/domains/applications) shows how a Project becomes an Instance.
@@ -14,7 +14,7 @@ A Project records one Git repository and the defaults for running it. [Projects]
 
 | Command | Result |
 | --- | --- |
-| [`project:create`](#orbit-projectcreate) | Create a Project from a slug, a type, and a repository URL. |
+| [`project:create`](#orbit-projectcreate) | Create a Project from a slug, a type, a repository URL, and its apps. |
 | [`project:list`](#orbit-projectlist) | List Projects. |
 | [`project:show`](#orbit-projectshow) | Show one Project. |
 | [`project:update`](#orbit-projectupdate) | Change a Project and reconcile its Instances. |
@@ -42,12 +42,13 @@ orbit project:document:download acme 12 --output=downloaded-spec.pdf
 ## orbit project:create
 
 ```bash
-orbit project:create <slug> <repository> --apps=JSON [options]
+orbit project:create <slug> <type> <repository> --apps=JSON [options]
 ```
 
 | Argument | Meaning |
 | --- | --- |
 | `slug` | Unique Project slug. |
+| `type` | `monorepo`, `laravel-app`, `symfony-app`, `laravel-package`, or `node-package`. |
 | `repository` | HTTPS or SSH Git URL. |
 
 | Option | Default | Meaning |
@@ -55,20 +56,21 @@ orbit project:create <slug> <repository> --apps=JSON [options]
 | `--name=NAME` | the slug | Display name. |
 | `--source-access=VALUE` | `github_app` | `github_app` or `gh_cli`. How Orbit reads a private `github.com` repository. See [Source access](/reference/projects#source-access). |
 | `--default-branch=BRANCH` | the remote default | Stored default branch. The Gateway verifies that an explicit branch exists. |
-| `--apps=JSON` | required | Complete list of named apps with `name`, `path`, `web_root` and `type`. See [Application directory](/reference/projects#application-directory). |
+| `--apps=JSON` | required | JSON list of named apps, each with `name`, `path`, `web_root` and `type`. Invalid JSON fails with `project.apps_invalid` before a request. See [Application directory](/reference/projects#application-directory). |
 | `--task-check=COMMAND` | none | Command that task baselines and handoffs run in the workspace. See [Project check](/reference/tasks#project-check). |
 | `--task-workspace-routed=true\|false` | true | Whether new task workspaces get a Route. See [Task workspace routing](/reference/projects#task-workspace-routing). |
 
 ```bash
-orbit project:create acme git@github.com:acme/site.git --apps='[{"name":"web","path":".","web_root":"public","type":"laravel-app"}]'
-orbit project:create support git@github.com:acme/support.git --apps='[{"name":"web","path":".","web_root":null,"type":"laravel-package"}]'
+orbit project:create acme laravel-app git@github.com:acme/site.git --apps='[{"name":"web","path":".","web_root":"public","type":"laravel-app"}]'
+orbit project:create support laravel-package git@github.com:acme/support.git --apps='[{"name":"web","path":".","web_root":null,"type":"laravel-package"}]'
+orbit project:create drift monorepo git@github.com:acme/drift.git --apps='[{"name":"web","path":"apps/site","web_root":"public","type":"laravel-app"},{"name":"docs","path":"apps/docs","web_root":"public","type":"laravel-app"}]'
 ```
 
 A retry with the same values returns the existing Project.
 
 ## orbit project:list
 
-List every Project with its slug, named apps, repository and default branch. JSON output also includes the source access.
+List every Project with its slug, type, repository, default branch and app names. JSON output also includes the source access.
 
 ```bash
 orbit project:list [--json]
@@ -84,20 +86,21 @@ orbit project:show <project> [--json]
 
 ## orbit project:update
 
-Change a Project's apps, source access, source defaults, task check, task workspace routing, or review and merge. Omitted fields stay unchanged. The Gateway reconciles affected development sources, checkouts, Routes, effective app paths, and runtimes before publishing the change. It does not start a production deployment. See [Update a Project](/reference/projects#update-a-project) for validation, rollback, and retry behavior.
+Change a Project's type, apps, source access, source defaults, task check, task workspace routing, or review and merge. Omitted fields stay unchanged. The Gateway reconciles affected development sources, checkouts, and Routes before publishing a source change. It does not start a production deployment. See [Update a Project](/reference/projects#update-a-project) for validation, rollback, and retry behavior.
 
 ```bash
-orbit project:update <project> [--apps=JSON] [--slug=SLUG] [--repository=URL] [--source-access=VALUE] [--default-branch=BRANCH] [--task-check=COMMAND] [--clear-task-check] [--task-workspace-routed=true|false] [--review-and-merge=true|false] [--merge-check=NAME] [--clear-merge-check]
+orbit project:update <project> [--type=TYPE] [--apps=JSON] [--slug=SLUG] [--repository=URL] [--source-access=VALUE] [--default-branch=BRANCH] [--task-check=COMMAND] [--clear-task-check] [--task-workspace-routed=true|false] [--review-and-merge=true|false] [--merge-check=NAME] [--clear-merge-check]
 ```
 
 | Option | Meaning |
 | --- | --- |
-| `--apps=JSON` | Replace the complete named-app list. Omitted names are removals subject to app-in-use validation. |
+| `--type=TYPE` | New Project type. A single-app Project's app takes it too. A change to `laravel-app` or `symfony-app` is refused while an active Instance has no Route. |
+| `--apps=JSON` | Replace the complete named-app list. Only while the Project has no Instances; otherwise `project.apps_locked_by_instances`. Removing an app that a definition or Route names fails with `project.app_in_use`. See [Change apps](/reference/projects#change-apps). |
 | `--slug=SLUG` | New Project slug. Generated development domains follow it; recorded paths stay unchanged. |
 | `--repository=URL` | New Git access URL. The Gateway validates ownership before updating checkout origins. |
 | `--default-branch=BRANCH` | New default branch for development sources that inherit it. |
 | `--source-access=VALUE` | `github_app` or `gh_cli`. Applies at once after the Gateway reads the remote with the new value. |
-| `--task-check=COMMAND` | New command that task baselines and handoffs run. An app-list change does not change it. |
+| `--task-check=COMMAND` | New command that task baselines and handoffs run. A type or app-list change does not change it. |
 | `--clear-task-check` | Remove the task check so tasks run no check command. Combining it with `--task-check` fails with `project.task_check_conflict`. |
 | `--task-workspace-routed=true\|false` | Change routing for future task workspaces. Invalid values return `project.task_workspace_routed_invalid` before a request. Existing workspaces keep their mode. |
 | `--review-and-merge=true\|false` | Switch the [review-and-merge flow](/reference/tasks#review-and-merge). Invalid values return `project.review_and_merge_invalid` before a request. |

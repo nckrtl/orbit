@@ -30,7 +30,7 @@ Every command accepts `--json`. Route, Project, Instance, and Cluster arguments 
 Create an explicit app Route targeting an Instance, or create a custom proxy Route for a Node-local service.
 
 ```bash
-orbit route:create <instance> <domain> [--app=NAME] [--publication=private|public]
+orbit route:create <instance> <domain> [--publication=private|public]
 orbit route:create <domain> --node=NODE --upstream=URL
 orbit route:create <domain> --node=NODE --process=PROCESS
 ```
@@ -42,7 +42,6 @@ orbit route:create <domain> --node=NODE --process=PROCESS
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `--app=NAME` | sole app | Named app served by this Route. Several apps require a selector; custom proxy form rejects it. |
 | `--publication=INTENT` | `private` | `private` or `public` for the app form. Custom proxy Routes are private only. |
 | `--node=NODE` | none | Serving Node ID or name, required only for the custom proxy form. |
 | `--upstream=URL` | none | Loopback HTTP URL for a custom proxy Route, such as `http://127.0.0.1:4788`. |
@@ -57,7 +56,7 @@ orbit route:create executor.orbit --node=beast --process=executor
 
 In a terminal, Orbit lists available Instances for an omitted Instance ID and prompts for an omitted domain. If no Instances are available or selection is cancelled, it creates nothing. In noninteractive or JSON mode, provide both arguments for the app form.
 
-The app form creates and activates a Route for the Instance. The Instance implies the Project and scope. An inactive Instance returns `route.target_inactive`; an Instance/app pair already targeted by another authoritative Route returns `route.target_conflict`. An identical retry for an existing active Route returns that Route. See [Create and change targets](/reference/routes#create-and-change-targets).
+The app form creates and activates a Route for the Instance. The Instance implies the Project and scope. The Route serves the Instance's sole app; there is no app selector. An inactive Instance returns `route.target_inactive`; an Instance already targeted by another Route returns `route.target_conflict`. An identical retry for an existing active Route returns that Route. See [Create and change targets](/reference/routes#create-and-change-targets).
 
 `--upstream` or `--process` selects the custom proxy form. Its first argument is the domain, and it needs `--node`. It cannot take an Instance or public publication. A successful custom proxy request converges its Node-local serving path.
 
@@ -68,9 +67,9 @@ The app form creates and activates a Route for the Instance. The Instance implie
 | `route.retry_conflict` | A Route with this domain exists with a different Instance, publication, or custom proxy configuration. |
 | `route.scope_required` | A custom proxy Route needs a serving Node and uses the domain as its only positional argument. |
 | `route.target_inactive` | The Instance is not active. |
-| `route.target_web_root_unsupported` | The selected app is non-serving or has no supported document root. Null web root can serve the app directory; see [target validation](/reference/routes#create-and-change-targets). |
-| `app.required`, `app.not_found` | Multiple apps need a selector, or the selected app is not in the Project. |
-| `route.target_conflict` | The Instance/app pair already belongs to another authoritative Route. |
+| `route.target_web_root_unsupported` | The app is non-serving, such as a package with path `.` and null web root. |
+| `app.required` | The Project has several apps. |
+| `route.target_conflict` | The target Instance already belongs to another Route. |
 | `route.router_required` | The Cluster has no active Router. |
 | `route.node_inactive`, `route.cluster_inactive` | The Instance's Node or Cluster, or the custom proxy's Node, is not active. |
 | `route.upstream_invalid` | The upstream is not a loopback HTTP URL. |

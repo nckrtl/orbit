@@ -107,6 +107,7 @@ it('forwards every explicit process field without applying runtime policy', func
         volumes: [['source' => 'orbit-data', 'target' => '/data', 'read_only' => true]],
         restartPolicy: 'always',
         start: true,
+        app: 'web',
     );
 
     expect($request->body()->all())->toBe([
@@ -116,6 +117,7 @@ it('forwards every explicit process field without applying runtime policy', func
         'runtime' => 'systemd',
         'command' => ['php', 'artisan', 'queue:work'],
         'restart_policy' => 'always',
+        'app' => 'web',
         'start' => true,
         'keep_alive' => false,
         'environment' => ['APP_MODE' => 'production'],

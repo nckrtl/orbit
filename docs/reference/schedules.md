@@ -4,7 +4,6 @@ description: "How the Gateway stores a Schedule, projects it to a native systemd
 covers:
   - apps/gateway/app/Actions/Schedules/**
   - apps/gateway/app/Domain/Schedules/**
-  - apps/gateway/app/Infrastructure/{Instances/{NativeAppProjectionWorkerRuntime,AppProjectionWorkerProgram},Schedules/RemoteScheduleRuntimeManager}.php
   - apps/gateway/app/Infrastructure/Schedules/**
   - apps/gateway/app/Data/Schedules/**
   - apps/gateway/app/Http/{Controllers/Api/Schedule*,Requests/Schedules/*}.php
@@ -30,7 +29,7 @@ The Schedule UUID is its public identity. It is also the only value that names t
 | --- | --- |
 | `id` | An immutable UUID. |
 | `target_type`, `target_id` | Exactly one `node` or `instance` target. |
-| `app` | Stored app name for an Instance target; null for a Node target. Omission on create selects the sole app, never the first of several. |
+| `app` | Stored app name for an Instance target; null for a Node target. Omission on create selects the sole app. |
 | `name` | Unique within the target. 1 through 63 lowercase ASCII letters or digits, with hyphens only between them. |
 | `calendar` | One printable ASCII line of at most 255 bytes. The host Node's `systemd-analyze calendar` must accept it. |
 | `command` | One non-empty UTF-8 line of at most 4,096 bytes, without NUL, carriage return, or line feed. |
@@ -62,7 +61,7 @@ Each operation except Complete records one Activity entry. The entry names the S
 
 ## Execution context
 
-The caller picks the target and, for an Instance, its app. API and MCP use `app`, the CLI uses `--app=NAME`, and SDK requests and response DTOs use `$app`. Several apps with no selector return `app.required`; an unknown name returns `app.not_found`; a Node target with a selector returns `app.selector_unsupported` (all HTTP 422). Definition and copy selectors follow [App target](/reference/processes-and-schedules#app-target). The Gateway derives the host Node, user and shell from placement and the working directory from the selected app's effective path.
+The caller picks the target and, for an Instance, its app. [App target](/reference/processes-and-schedules#app-target) describes the `app` field and its errors. The Gateway derives the host Node, the user, the working directory, and the shell from the target's placement and app.
 
 | Target | User | Working directory | Shell |
 | --- | --- | --- | --- |
@@ -70,7 +69,7 @@ The caller picks the target and, for an Instance, its app. API and MCP use `app`
 | Instance on `app-dev` | The Node's managed user | The Instance's application directory in its checkout | The user's login shell, with `-lc` |
 | Instance on `app-prod` | The Instance's production user | The Instance's application directory under `<production-home>/current` | `/bin/bash -c`, without a login |
 
-The selected app's [application directory](/reference/projects#application-directory) is its effective `path`. With app path `apps/site`, a Schedule runs in `<checkout>/apps/site` on `app-dev` or `<production-home>/current/apps/site` in supported single-app production, so `php artisan schedule:run` finds that app's `artisan` and `.env`. App path `.` keeps the checkout or release root. Node Schedule working directories do not change. Multi-app production preparation is refused before installing copies; each copied definition retains its stored app.
+A Laravel app runs its Schedules in its [application directory](/reference/projects#application-directory), the app's effective `path`. With app path `apps/site`, a Schedule runs in `<checkout>/apps/site` on `app-dev` or `<production-home>/current/apps/site` on `app-prod`, so `php artisan schedule:run` finds that app's `artisan` and `.env`. App path `.` keeps the checkout or release root. Apps that are not Laravel keep the checkout or release root. Node Schedule working directories do not change.
 
 The target Node must be an active Linux Node with a WireGuard address. An Instance target must be active. A production Schedule resolves `current` each time it runs, so a new release changes later runs. A production Instance needs a selected release before it can install a Schedule, even with a disabled timer.
 
@@ -95,14 +94,6 @@ Installation keeps `/etc/orbit` as a real directory owned by `root:root` with mo
 Create validates the input and the target first. Then it installs the artifacts over SSH in one script that holds a lock on the host Node. The script checks the calendar with `systemd-analyze calendar`, stages the new files, checks them with `systemd-analyze verify`, moves them in place, reloads systemd, and sets the timer to the desired state. It checks the timer state before the Schedule becomes `active`.
 
 An existing file at an owned path must be a regular file with the expected owner, mode, and `X-Orbit-Schedule-ID` marker. Otherwise installation stops with `schedule.artifact_conflict`, and Orbit does not overwrite, adopt, or delete the file. When a step fails, the script restores the earlier files and timer state. A first installation removes only the files it created. When the restore fails too, the Schedule becomes `failed` with `schedule.rollback_failed`. Repeat the identical create to retry.
-
-## Candidate path preparation
-
-Project app-list and Instance override updates use explicit internal Schedule candidate targets frozen by owner, app, Schedule ID and specification fingerprint. Public maps and profiles remain published values during preparation. The shared native worker adapter validates affected Schedules, snapshots owned scripts/services/timers and their protections, and uses the existing renderers, owned-file markers and installers to rewrite derived app working directories and environment paths. It never temporarily saves a candidate map to select a different target.
-
-Timer enabled and active state are recorded separately from Process desired/observed state. Preparation reinstalls scripts/services and restores the recorded timer state against the candidate path before publication; rollback restores old targets and the same state. Neither recovery nor retry enables a disabled timer, starts an inactive timer or wakes cold dependencies. Sibling Schedules and apps remain unchanged. Add/run/activate/remove and Instance cascade entrypoints honor persisted foreign app owners through existing operation locks, including after worker exit.
-
-Every stop/write/reload/state-restore/cleanup mutation follows a committed intent with a stable protected receipt. Lost responses inspect receipts and actual owned artifacts rather than recapturing modified snapshots or running the Schedule again. Restore only recorded owned artifacts and their exact protections; foreign replacement refuses recovery. Before publication recovery restores old targets; afterwards it verifies and cleans candidate artifacts forward. [Projects](/reference/projects#protected-step-and-receipt-contract) owns receipt fields and parent publication boundaries; [Processes](/reference/processes-and-schedules#candidate-path-preparation) owns the shared worker adapter's Process state matrix.
 
 ## Timer state
 

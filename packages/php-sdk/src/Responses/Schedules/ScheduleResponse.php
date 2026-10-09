@@ -45,6 +45,7 @@ final readonly class ScheduleResponse
         public ?string $lastRunAt,
         public ?string $lastRunStatus,
         public string $requestId,
+        public ?string $app = null,
     ) {}
 
     /** @param array<array-key, mixed> $data */
@@ -113,6 +114,7 @@ final readonly class ScheduleResponse
             lastRunAt: $lastRunAt,
             lastRunStatus: $lastRunStatus,
             requestId: GatewayRequestId::fromTransport($requestId) ?? '',
+            app: self::boundedString($data['app'] ?? null, 63),
         );
     }
 
@@ -133,6 +135,7 @@ final readonly class ScheduleResponse
             'error_code' => $this->errorCode,
             'last_run_at' => $this->lastRunAt,
             'last_run_status' => $this->lastRunStatus,
+            'app' => $this->app,
             'request_id' => $this->requestId,
         ];
     }

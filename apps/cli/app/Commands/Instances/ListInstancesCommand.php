@@ -11,6 +11,7 @@ use App\Support\Console\ConsoleWriter;
 use Orbit\Sdk\Requests\Instances\ListInstancesRequest;
 use Orbit\Sdk\Responses\Instances\InstanceRemovalProgressResponse;
 use Orbit\Sdk\Responses\Instances\InstancesResponse;
+use Orbit\Sdk\Responses\Projects\ProjectAppResponse;
 
 final class ListInstancesCommand extends GatewayCommand
 {
@@ -53,7 +54,7 @@ final class ListInstancesCommand extends GatewayCommand
                 $instance->vitePort ?? null,
                 $instance->name,
                 $instance->sourceLayout,
-                $instance->effectiveRoot ?? null,
+                implode(', ', array_map(static fn (ProjectAppResponse $app): string => $app->name, $instance->apps)) ?: null,
                 $instance->selectedBranch ?? null,
                 $instance->branchOverride ?? null,
                 $instance->domain ?? null,
@@ -73,7 +74,7 @@ final class ListInstancesCommand extends GatewayCommand
                 'Vite port',
                 'Name',
                 'Source layout',
-                'Root',
+                'Apps',
                 'Selected branch',
                 'Branch override',
                 'Route domain',

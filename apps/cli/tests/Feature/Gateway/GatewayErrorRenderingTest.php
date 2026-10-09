@@ -1005,6 +1005,7 @@ function gateway_validation_arguments(): array
         'slug' => 'Bad Slug',
         'type' => 'laravel-app',
         'repository' => 'https://github.com/laravel/framework.git',
+        '--apps' => '[{"name":"web","path":".","web_root":"public","type":"laravel-app"}]',
     ];
 }
 

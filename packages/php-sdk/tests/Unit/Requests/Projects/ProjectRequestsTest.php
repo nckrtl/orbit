@@ -26,7 +26,7 @@ describe('project requests', function (): void {
         $request = new CreateProjectRequest(
             slug: 'orbit-docs',
             repositoryUrl: 'git@github.com:nckrtl/orbit-docs.git',
-            root: 'public',
+            apps: project_apps_data(),
         );
 
         $response = $connector->send($request)->dto();
@@ -40,7 +40,7 @@ describe('project requests', function (): void {
                 'slug' => 'orbit-docs',
                 'type' => 'laravel-app',
                 'repository_url' => 'git@github.com:nckrtl/orbit-docs.git',
-                'root' => 'public',
+                'apps' => project_apps_data(),
             ])
             ->and($response)
             ->toBeInstanceOf(ProjectResponse::class)
@@ -52,7 +52,7 @@ describe('project requests', function (): void {
         $request = new CreateProjectRequest(
             slug: 'orbit-docs',
             repositoryUrl: 'git@github.com:nckrtl/orbit-docs.git',
-            root: 'web/public',
+            apps: [['name' => 'web', 'path' => 'web', 'web_root' => 'public', 'type' => 'laravel-app']],
             name: 'Orbit Docs',
             defaultBranch: 'stable',
         );
@@ -63,7 +63,7 @@ describe('project requests', function (): void {
             'type' => 'laravel-app',
             'repository_url' => 'git@github.com:nckrtl/orbit-docs.git',
             'default_branch' => 'stable',
-            'root' => 'web/public',
+            'apps' => [['name' => 'web', 'path' => 'web', 'web_root' => 'public', 'type' => 'laravel-app']],
         ]);
     });
 
@@ -186,15 +186,15 @@ describe('project requests', function (): void {
             ->toBe(['task_check' => 'vp run check'])
             ->and($clear->body()->all())
             ->toBe(['task_check' => null])
-            ->and(new UpdateProjectRequest(projectId: 3, root: 'public')->body()->all())
-            ->toBe(['root' => 'public']);
+            ->and(new UpdateProjectRequest(projectId: 3, apps: project_apps_data())->body()->all())
+            ->toBe(['apps' => project_apps_data()]);
     });
 
     it('sends a task check on create only when one is given, including an explicit null', function (): void {
         $request = static fn (?string $taskCheck, bool $provided): CreateProjectRequest => new CreateProjectRequest(
             slug: 'kit',
             repositoryUrl: 'https://github.com/acme/kit.git',
-            root: '.',
+            apps: [['name' => 'kit', 'path' => '.', 'web_root' => null, 'type' => 'node-package']],
             type: 'node-package',
             taskCheck: $taskCheck,
             taskCheckProvided: $provided,
@@ -213,7 +213,7 @@ describe('project requests', function (): void {
             'type' => 'laravel-package',
             'repository_url' => 'https://github.com/acme/kit.git',
             'default_branch' => 'main',
-            'root' => '.',
+            'apps' => [['name' => 'kit', 'path' => '.', 'web_root' => null, 'type' => 'laravel-package']],
             'task_check' => 'composer check',
         ], 'request-id');
 
@@ -226,7 +226,7 @@ describe('project requests', function (): void {
         $create = static fn (?string $sourceAccess): CreateProjectRequest => new CreateProjectRequest(
             slug: 'leden',
             repositoryUrl: 'git@github.com:acme/leden.git',
-            root: 'public',
+            apps: project_apps_data(),
             sourceAccess: $sourceAccess,
         );
 
@@ -250,7 +250,7 @@ describe('project requests', function (): void {
         $create = static fn (?bool $routed): CreateProjectRequest => new CreateProjectRequest(
             slug: 'kit',
             repositoryUrl: 'https://github.com/acme/kit.git',
-            root: '.',
+            apps: [['name' => 'kit', 'path' => '.', 'web_root' => null, 'type' => 'node-package']],
             type: 'node-package',
             taskWorkspaceRouted: $routed,
         );
@@ -331,10 +331,16 @@ function project_gateway_data(): array
         'repository_url' => 'git@github.com:nckrtl/orbit-docs.git',
         'source_access' => 'github_app',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => project_apps_data(),
         'task_check' => 'composer check',
         'task_workspace_routed' => true,
     ];
+}
+
+/** @return list<array{name: string, path: string, web_root: string|null, type: string}> */
+function project_apps_data(): array
+{
+    return [['name' => 'web', 'path' => '.', 'web_root' => 'public', 'type' => 'laravel-app']];
 }
 
 /** @return array<string, mixed> */
@@ -349,7 +355,7 @@ function orbit_request_id(): string
 }
 
 it('preserves explicit compute modes and omits an unspecified mode', function (?string $mode): void {
-    $create = new CreateProjectRequest(slug: 'orbit', repositoryUrl: 'https://github.com/nckrtl/orbit.git', root: '.', taskCompute: $mode);
+    $create = new CreateProjectRequest(slug: 'orbit', repositoryUrl: 'https://github.com/nckrtl/orbit.git', apps: [['name' => 'kit', 'path' => '.', 'web_root' => null, 'type' => 'node-package']], taskCompute: $mode);
     $update = new UpdateProjectRequest(projectId: 3, taskCompute: $mode);
     foreach ([$create, $update] as $request) {
         $body = $request->body()->all();

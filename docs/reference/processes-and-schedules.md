@@ -2,11 +2,12 @@
 title: "Processes and schedules"
 description: "How Orbit runs Processes for an Instance or a Node, and how a Project declares Process and Schedule definitions that production Instances copy."
 covers:
-  - apps/gateway/app/Actions/{Processes/**,ProjectDefinitions/**,Instances/InstantiateProjectRuntimeDefinitionsAction.php}
+  - apps/gateway/app/Actions/Processes/**
   - apps/gateway/app/Domain/Processes/**
-  - apps/gateway/app/Infrastructure/{Instances/{NativeAppProjectionWorkerRuntime,AppProjectionWorkerProgram},Processes/SystemdProcessRenderer}.php
   - apps/gateway/app/Infrastructure/Processes/{RemoteProcessRuntimeManager,SystemdProcessRenderer,DockerProcessRenderer,NativeProcessAdmissionLock,NativeProcessRuntimeLease,SshProcessUserResolver}.php
   - apps/gateway/app/Http/{Controllers/Api/ProcessesController,Requests/Processes/*}.php
+  - apps/gateway/app/Actions/ProjectDefinitions/**
+  - apps/gateway/app/Actions/Instances/InstantiateProjectRuntimeDefinitionsAction.php
   - apps/gateway/app/Http/{Controllers/Api/ProjectRuntimeDefinitionsController,Requests/ProjectDefinitions/*}.php
   - apps/gateway/app/Models/{Process,ProcessDefinition,ScheduleDefinition}.php
 ---
@@ -33,13 +34,13 @@ Instance Processes, Docker Processes, presets, and Project definitions reject `u
 
 ## App target
 
-An Instance Process, Instance Schedule, Process definition or Schedule definition stores one app name. API and MCP use top-level `app`; CLI create and definition create/update use `--app=NAME`; PHP SDK requests and response DTOs use `$app`. Lists expose the stored `app` and accept an optional app filter. An omitted create selector resolves and stores the sole app of the Project. Several apps return `app.required` (422); an unknown app returns `app.not_found` (422). A null selector is invalid, not omitted. A Node-owned Process or Schedule stores null and rejects a supplied selector with `app.selector_unsupported` (422). Definitions validate against the owning Project's app list and copy the stored selector to production records.
+An Instance Process, Instance Schedule, Process definition, or Schedule definition stores one app name. The API and MCP use top-level `app`. The CLI uses `--app=NAME` on `process:create`, `process:update`, `schedule:create`, and `schedule:update`. PHP SDK requests and responses use `$app`. Responses and lists include the stored `app`; lists have no app filter.
 
-The app is part of the immutable create specification. An identical retry with another app returns existing `process.name_taken` or `schedule.retry_conflict` (409). Names remain unique within the existing owner and kind, not per app. Start, stop, restart, run, logs and removal by resource ID derive the app from that record and accept no selector override. Migration assigns `web` to existing Instance-owned records and definitions; Records owned by Nodes retain null app. App removal is refused while these references exist.
+Omission resolves and stores the sole app of the Project. On a Project with several apps, omission returns `app.required` (422). An unknown app returns `app.not_found` (422). A Node Process or Schedule stores null and refuses a selector with `app.selector_unsupported` (422). A definition is checked against its Project's apps, and each copy keeps the app.
 
-Default Instance working directories and environment files use the selected app's effective path for every type. Explicit Process working directories still override the default; Docker keeps `/app`. Presets resolve their working directory, derived origins, certificate identity and assigned ports from the same selected app. Vite and Agentation endpoint ports are unique per Instance/app pair on the Node; an endpoint is exposed only on that app's Route. Creating an annotator or Agentation Process updates stored keys and sibling systemd projections only within its app.
+Start, stop, restart, run, logs, and removal by resource ID use the stored app. The migration to named apps assigns `web` to existing Instance records and definitions; Node records keep null. A Project update cannot remove an app that a definition names; it returns `project.app_in_use`.
 
-Instance-wide lifecycle and hibernation still operate on all apps under the shared Instance lock. No consumer selects the first Route.
+Default working directories and environment files use the app's path. An explicit Process working directory still overrides the default; Docker keeps `/app`. Presets take their working directory, origins, certificates, and ports from the same app, and each preset is unique per Instance/app pair. Hibernation still covers every app of the Instance.
 
 ## Runtimes
 
@@ -56,13 +57,13 @@ The systemd unit is `orbit-process-{id}-{name}.service`, and the Docker containe
 
 ## Environment of a systemd Process
 
-The unit sets `PATH` and `NODE_USE_SYSTEM_CA=1`. An Instance Process then reads its selected app's `.env` file: in that app's [application directory](/reference/projects#application-directory) on `app-dev`, or in the production home for supported single-app production. With app path `apps/site`, the default working directory is `<checkout>/apps/site` in development or `<production-home>/current/apps/site` in production. App path `.` keeps the checkout or release root. An explicit working directory overrides this default; Docker's `/app` default and Node Process defaults stay unchanged.
+The unit sets `PATH` and `NODE_USE_SYSTEM_CA=1`. An Instance Process then reads its app's `.env` file: in that app's [application directory](/reference/projects#application-directory) on `app-dev`, or in the production home on `app-prod`. With app path `apps/site`, the default working directory is `<checkout>/apps/site` in development, or `<production-home>/current/apps/site` for a Laravel app in production. App path `.` keeps the checkout or release root. An explicit working directory overrides this default; Docker's `/app` default and Node Process defaults stay unchanged.
 
 A Process can also store an environment map in its specification. The unit receives each pair as an `Environment=` directive, never on `ExecStart`. The unit file under `/etc/systemd/system` is written with mode `0644`, so these values sit in plain text that every local user on the Node can read. For the proxycli collector that includes its management key and tokens. WireGuard membership and Node access are the security boundary. Gateway-owned features store such a map, for example the [proxycli](/reference/proxycli) collector. The public create API does not accept one for systemd.
 
 The derived keys always win: `PATH`, `NODE_USE_SYSTEM_CA`, `VITE_DEV_SERVER_CERT`, `VITE_DEV_SERVER_KEY`, the `ORBIT_DEV_SERVER_*` keys, the Agentation keys, and the SSR keys when the Instance has an SSR port.
 
-A development Process also receives `VITE_DEV_SERVER_CERT` and `VITE_DEV_SERVER_KEY`, the paths of its app's certificate files under `~/.orbit/certificates/app-instance-{id}-app-{app}/current/`. The `vp-dev` preset does not receive them. When its selected app has a Route, it receives `ORBIT_DEV_SERVER_ORIGIN`, `ORBIT_DEV_SERVER_HOST`, and `ORBIT_DEV_SERVER_PATH` for the [development-server endpoint](/reference/routes#development-server-endpoint), and `ORBIT_DEV_SERVER_PORT` only when `vite_port` is assigned. It also receives the Agentation keys when it has an Agentation port, and `ORBIT_SSR_PORT` and `INERTIA_SSR_URL` when the Instance has an [assigned SSR port](/reference/assigned-ssr-ports), with or without a Route. These derived values are not secret. The unit carries them both as `Environment=` directives and on `ExecStart` through `/usr/bin/env`.
+A development Process also receives `VITE_DEV_SERVER_CERT` and `VITE_DEV_SERVER_KEY`, the paths of its app's certificate files under `~/.orbit/certificates/app-instance-{id}-app-{app}/current/`. An Instance created before named apps can keep `app-instance-{id}` until Orbit moves it to the app identity. The `vp-dev` preset does not receive them. When its app has a Route, it receives `ORBIT_DEV_SERVER_ORIGIN`, `ORBIT_DEV_SERVER_HOST`, and `ORBIT_DEV_SERVER_PATH` for the [development-server endpoint](/reference/routes#development-server-endpoint), and `ORBIT_DEV_SERVER_PORT` only when `vite_port` is assigned. It also receives the Agentation keys when it has an Agentation port, and `ORBIT_SSR_PORT` and `INERTIA_SSR_URL` when the Instance has an [assigned SSR port](/reference/assigned-ssr-ports), with or without a Route. These derived values are not secret. The unit carries them both as `Environment=` directives and on `ExecStart` through `/usr/bin/env`.
 
 ## Presets
 
@@ -118,16 +119,6 @@ The Gateway holds one runtime lock for each Process while it reads the record, c
 Create, start, and restart of an Instance Process first take the Instance's operation lock. A competing request waits up to 30 seconds, or the rest of its command deadline, and then gets `process.operation_busy`. Node Processes skip that lock. Lifecycle commands that contend for the Instance lifecycle lock return `instance.lifecycle_busy` (409, with `details.outcome` set to `busy`); retry after the other lifecycle operation finishes.
 
 Systemd replacement installs a checked candidate unit and restores the earlier unit when activation fails. Docker replacement keeps or restores the earlier container.
-
-## Candidate path preparation
-
-Project app-list and Instance override updates pass explicit internal candidate targets to native Process renderers and installers while public app maps remain unchanged. The shared worker adapter freezes owner, app, Process ID and specification fingerprints and validates every affected Process and preset before mutation. It snapshots owned units, preset files, protections and actual runtime state through [protected receipts](/reference/projects#protected-step-and-receipt-contract). Process add/start/restart/stop/remove and Instance cascade entrypoints refuse persisted foreign app owners through the existing admission and runtime locks, even after the original worker exits; unrelated Process errors and lock ordering remain unchanged.
-
-Preparation stops affected running Processes, rewrites derived environment paths, preset files and default working directories, and retains explicit working directories. App Route origins, certificate scopes, port identities, preset ownership and watcher-to-HTTP Process IDs do not change for retained apps. Sibling apps' artifacts are untouched. The adapter uses existing owned-file markers and native installers, never public-row staging to redirect a target resolver.
-
-Desired Process state and observed running/stopped/sleeping state are separate snapshot facts. After installation, restore recorded state against the candidate before publication; rollback restores it against the old context. Neither path starts a sleeping Process or wakes cold dependencies, even if its desired state is running. A stopped or failed observed runtime is not inferred to have been running from desired state. Stop/write/reload/state-restoration and cleanup each have committed intents and stable receipts; after interruption or a lost success response, retries inspect completion without restarting an already restored runtime. Foreign artifacts stop restore/cleanup rather than being overwritten.
-
-Prepublication recovery restores exact owned artifact protections and old targets; postpublication recovery verifies candidate targets and cleans forward. The parent journal alone publishes maps/profiles. The worker adapter includes complete native Process and [Schedule](/reference/schedules#candidate-path-preparation) preparation and recovery before the lifecycle integrations start; later integrations do not supply missing installers or guards.
 
 ## Project definitions
 

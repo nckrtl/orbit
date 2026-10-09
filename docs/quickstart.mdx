@@ -3,7 +3,7 @@ title: "Quickstart"
 description: "Hand this page to your coding agent and follow along. It installs a Gateway, adds a development Node, and opens your first Project at its own private HTTPS address."
 ---
 
-Orbit is built to be run by your coding agent. This page is written for both of you. Your agent reads it and does the work. You read it to know what happens, what your agent needs from you, and how to check the result. At the end you have a Gateway, one development Node, and a Project app at `https://web.hello.test`.
+Orbit is built to be run by your coding agent. This page is written for both of you. Your agent reads it and does the work. You read it to know what happens, what your agent needs from you, and how to check the result. At the end you have a Gateway, one development Node, and a Project at `https://web.hello.test`.
 
 ## Hand this page to your agent
 
@@ -136,7 +136,7 @@ Check each checkpoint before you continue to the next step.
   </Step>
 
   <Step title="Use Orbit DNS on the Gateway" titleSize="h2">
-    Nodes receive Orbit DNS automatically. The Gateway itself does not, so point its resolver at the Gateway's WireGuard address. This lets the Gateway resolve `web.hello.test` when you create the app.
+    Nodes receive Orbit DNS automatically. The Gateway itself does not, so point its resolver at the Gateway's WireGuard address. This lets the Gateway resolve `web.hello.test` later.
 
     ```bash Gateway machine · orbit
     sudo install -d /etc/systemd/resolved.conf.d
@@ -210,18 +210,18 @@ Check each checkpoint before you continue to the next step.
     A Project records one repository. An Instance is a checkout of that Project on one Node, with its own hostname. This guide uses MDN's public learning repository because its static page needs no dependencies, application key, or database. The user's own application comes after this page. For a private repository, keep credentials out of the URL and set up Git access on the Gateway and the Node first.
 
     ```bash Gateway machine · orbit
-    orbit project:create hello https://github.com/mdn/learning-area.git \
+    orbit project:create hello monorepo https://github.com/mdn/learning-area.git \
       --default-branch=main --apps='[{"name":"web","path":"html/introduction-to-html","web_root":"getting-started","type":"monorepo"}]'
     orbit instance:create <PROJECT_ID> <NODE_ID> default
     ```
 
-    `project:create` returns the Project ID; use it with the Node ID from the previous step. Orbit clones the repository on the Node, publishes the Route, and prints the URL. App `web` on Instance `default` gets `web.hello.test`; a named Instance gets `<app>.<instance>.<project>.test`.
+    `project:create` returns the Project ID; use it with the Node ID from the previous step. Orbit clones the repository on the Node, publishes the Route, and prints the URL. The generated hostname starts with the app name. App `web` of the `default` Instance gets `web.hello.test`; any other Instance name gives `web.<name>.hello.test`.
 
     <Note>
     Active means Orbit prepared the source, runtime, and Route. For a real application, `composer install`, an application key, and a database are the next step. The [Applications guide](/domains/applications) explains that boundary.
     </Note>
 
-    **Checkpoint:** `instance:create` returns app `web` at `https://web.hello.test` and the Instance is active. Record the instance ID.
+    **Checkpoint:** `instance:create` returns `https://web.hello.test` and the Instance is active. Record the instance ID.
   </Step>
 
   <Step title="Open the page" titleSize="h2">

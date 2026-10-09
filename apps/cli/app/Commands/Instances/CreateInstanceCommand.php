@@ -7,6 +7,7 @@ namespace App\Commands\Instances;
 use App\Commands\GatewayCommand;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
+use App\Support\NamedAppOptions;
 use Orbit\Sdk\Requests\Instances\CreateInstanceRequest;
 use Orbit\Sdk\Responses\Instances\InstanceResponse;
 
@@ -19,7 +20,7 @@ final class CreateInstanceCommand extends GatewayCommand
         {project : Numeric Project ID}
         {node : Numeric node ID}
         {name : Instance name; default is reserved for the default development source}
-        {--root= : Optional relative web-root override}
+        {--app-overrides= : JSON object of app path and web root overrides, keyed by app name}
         {--domain= : Optional explicit Route domain}
         {--branch= : Optional explicit source branch}
         {--database-server= : Database server that gets the new Instance database before setup}
@@ -56,6 +57,16 @@ HELP;
             return self::FAILURE;
         }
 
+        $overridesOption = $this->stringOption('app-overrides');
+        $overrides = $overridesOption === null ? null : NamedAppOptions::overrides($overridesOption);
+
+        if ($overridesOption !== null && $overrides === null) {
+            return $this->renderGatewayFailure(
+                'instance.app_overrides_invalid',
+                'Pass --app-overrides as a JSON object keyed by app name, each with path and web_root.',
+            );
+        }
+
         $connector = $this->gatewayConnector($repository, $connectors);
 
         if ($connector === null) {
@@ -68,7 +79,7 @@ HELP;
                 projectId: $projectId,
                 nodeId: $nodeId,
                 name: $name,
-                root: $this->stringOption('root'),
+                appOverrides: $overrides,
                 domain: $this->stringOption('domain'),
                 branch: $this->stringOption('branch'),
                 databaseServer: $this->stringOption('database-server'),

@@ -126,7 +126,10 @@ final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
             ->orderBy('id')
             ->with(['project', 'node.roles'])
             ->get()
-            ->map(static fn (Instance $instance): string => $instance->applicationDirectory())
+            ->flatMap(static fn (Instance $instance): array => array_map(
+                static fn (array $app): string => $instance->applicationDirectory($app['name']),
+                $instance->effectiveApps(),
+            ))
             ->filter(static fn (string $path): bool => str_starts_with($path, $root.'/') && ! str_contains($path, '/..'))
             ->values()
             ->all();

@@ -15,7 +15,7 @@ use App\Support\Console\ConsoleWriter;
 use App\Support\Console\ProgressState;
 use App\Support\Console\PromptAborted;
 use App\Support\Console\TerminalText;
-use App\Support\GatewayFailureRenderer;
+use App\Support\NamedAppOptions;
 use Laravel\Prompts\ConfirmPrompt;
 use Orbit\Sdk\Requests\Instances\RegisterInstanceRequest;
 use Orbit\Sdk\Responses\Instances\InstanceRegistrationResponse;
@@ -28,7 +28,7 @@ final class RegisterInstanceCommand extends GatewayCommand
         {--include-worktrees : Adopt the checkout and every linked worktree}
         {--project= : Existing numeric Project ID}
         {--name= : Optional non-default Instance name}
-        {--root= : Relative web-root override for this Instance}
+        {--app-overrides= : JSON object of app path and web root overrides, keyed by app name}
         {--domain= : Optional explicit Route domain}
         {--yes : Confirm source ownership transfer without prompting}
         {--setup : Run the Project setup steps after adoption}
@@ -88,7 +88,7 @@ final class RegisterInstanceCommand extends GatewayCommand
                 includeWorktrees: $this->option('include-worktrees') === true,
                 projectId: $values['projectId'],
                 instanceName: $this->stringOption('name'),
-                root: $values['root'],
+                appOverrides: $values['appOverrides'],
                 domain: $this->stringOption('domain'),
                 setup: $this->option('setup') === true,
             ),
@@ -113,7 +113,7 @@ final class RegisterInstanceCommand extends GatewayCommand
             'Project' => "{$response->project->slug} (#{$response->project->id})",
             'Source layout' => $instance->sourceLayout,
             'Managed path' => $instance->checkoutPath,
-            'Effective root' => $instance->effectiveRoot,
+            'Apps' => NamedAppOptions::describeAll($instance->apps),
             'Git state' => $instance->detached ? 'detached' : $instance->selectedBranch,
             'Commit' => $instance->startingCommit,
             'Route domain' => $instance->domain,
@@ -128,7 +128,7 @@ final class RegisterInstanceCommand extends GatewayCommand
      * Registration adopts a source for an existing Project only, so the CLI sends no Project values
      * ([Projects](/reference/projects#registration-needs-a-project)).
      *
-     * @return array{projectId: ?int, root: ?string}|null
+     * @return array{projectId: ?int, appOverrides: array<string, array{path: string, web_root: string|null}>|null}|null
      */
     private function requestedValues(): ?array
     {
@@ -143,17 +143,19 @@ final class RegisterInstanceCommand extends GatewayCommand
             return null;
         }
 
-        $root = $this->stringOption('root');
+        $overridesOption = $this->stringOption('app-overrides');
+        $overrides = $overridesOption === null ? null : NamedAppOptions::overrides($overridesOption);
 
-        if ($root !== null && self::rootError($root) !== null) {
-            GatewayFailureRenderer::write($this, 'validation.failed', 'The request data is invalid.', details: [
-                'root' => ['The root must be a normalized relative web path.'],
-            ]);
+        if ($overridesOption !== null && $overrides === null) {
+            $this->renderGatewayFailure(
+                'instance.app_overrides_invalid',
+                'Pass --app-overrides as a JSON object keyed by app name, each with path and web_root.',
+            );
 
             return null;
         }
 
-        return ['projectId' => is_int($projectIdValue) ? $projectIdValue : null, 'root' => $root];
+        return ['projectId' => is_int($projectIdValue) ? $projectIdValue : null, 'appOverrides' => $overrides];
     }
 
     private function confirmOwnership(GitRegistrationFacts $facts): bool
@@ -180,13 +182,5 @@ final class RegisterInstanceCommand extends GatewayCommand
         $this->renderGatewayFailure('instance.registration_cancelled', 'Registration was cancelled.');
 
         return false;
-    }
-
-    private static function rootError(string $root): ?string
-    {
-        $valid = $root !== '' && strlen($root) <= 255 && array_all(explode('/', $root),
-            static fn (string $part): bool => $part !== '' && $part !== '.' && $part !== '..' && preg_match('/\\A[A-Za-z0-9._-]+\\z/D', $part) === 1);
-
-        return $valid ? null : 'Enter a normalized relative web path.';
     }
 }

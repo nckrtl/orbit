@@ -37,7 +37,7 @@ A Schedule runs one command on a native systemd timer for a Node or an Instance.
 
 Every command accepts `--json`. Output shows `desired_timer_state` apart from the lifecycle `status`, and every result includes the request ID. `schedule:destroy` asks for confirmation, and the default is No.
 
-Instance Schedules and Project definitions store an `app` name; Node Schedules store null. Create and definition update accept `--app=NAME`; list accepts it as an optional filter. Omission on create/update resolves the sole app or returns `app.required`; an unknown app returns `app.not_found`, and Node ownership rejects a selector with `app.selector_unsupported`. JSON includes the stored app. API and MCP use `app`; SDK uses `$app`. Resource-ID operations use the stored app and reject a selector override. [Execution context](/reference/schedules#execution-context) owns working-directory rules.
+Instance Schedules and Project definitions store an `app` name; Node Schedules store null. `schedule:create` and definition `schedule:update` accept `--app=NAME`. Omission resolves the sole app; on a Project with several apps it returns `app.required`. An unknown name returns `app.not_found`, and a Node Schedule refuses `--app` with `app.selector_unsupported`. JSON includes the stored app. API and MCP use `app`; the SDK uses `$app`. Operations on an existing Schedule use its stored app. [Execution context](/reference/schedules#execution-context) describes the working directory.
 
 ## orbit schedule:create
 
@@ -56,7 +56,7 @@ orbit schedule:create <name> (--node=ID | --instance=ID | --project=ID --for=pro
 | `--node=ID` | none | Positive Node ID. |
 | `--instance=ID` | none | Positive Instance ID. |
 | `--project=ID` | none | Numeric Project ID for a definition. |
-| `--app=NAME` | sole app | App within the Instance or definition Project; prohibited for a Node Schedule. |
+| `--app=NAME` | sole app | App within the Instance or definition Project. Refused for a Node Schedule. |
 | `--for=production` | none | Definition environments. Required with `--project`. Only definitions for `production` are copied. |
 | `--calendar=CALENDAR` | none | A systemd calendar expression of at most 255 printable ASCII bytes, such as `daily`, `hourly`, or `Mon..Fri 02:00`. |
 | `--command=COMMAND` | none | One non-empty line of at most 4,096 bytes. |
@@ -76,7 +76,7 @@ orbit schedule:create hourly-report --project=1 --for=production --calendar=hour
 List the Schedules whose target Node you may address, without command text, or the definitions of one Project.
 
 ```bash
-orbit schedule:list [--project=ID] [--app=NAME] [--json]
+orbit schedule:list [--project=ID] [--json]
 ```
 
 ## orbit schedule:show

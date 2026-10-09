@@ -50,7 +50,9 @@ final readonly class RemoteInstanceLogReader implements InstanceLogReader
 
     private function checkout(Instance $instance): string
     {
-        $path = StoragePath::tryParse($instance->source_is_laravel === true ? $instance->applicationDirectory() : $instance->checkout_path);
+        // Logs have no app selector yet; a Project with several apps returns app.required.
+        $app = $instance->appConfiguration()['name'];
+        $path = StoragePath::tryParse($instance->runtimeForApp($app)['laravel'] === true ? $instance->applicationDirectory($app) : $instance->checkout_path);
 
         if ($path === null) {
             throw new ResourceOperationException(

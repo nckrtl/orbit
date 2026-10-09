@@ -195,6 +195,7 @@ return [
     '0193' => ['0193-run-task-agents-as-a-dedicated-user', '0193-record-development-branch-renames'],
     '0194' => ['0194-respond-to-github-review-feedback'],
     '0195' => ['0195-request-topologies-for-review-with-an-operator-container'],
+    '0196' => ['0196-derive-application-directory-from-web-root'],
     '0197' => ['0197-native-project-documents-with-private-s3-storage'],
     '0199' => ['0199-post-direction-requests-to-opsbot-immediately'],
     '0201' => ['0201-release-the-gateway-automatically-from-green-main'],

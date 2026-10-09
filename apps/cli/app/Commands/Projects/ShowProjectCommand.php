@@ -9,6 +9,7 @@ use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use App\Support\Console\ConsoleWriter;
 use App\Support\Console\PromptAborted;
+use App\Support\NamedAppOptions;
 use Orbit\Sdk\Requests\Instances\ListInstancesRequest;
 use Orbit\Sdk\Requests\Projects\ShowProjectRequest;
 use Orbit\Sdk\Responses\Instances\InstancesResponse;
@@ -64,7 +65,7 @@ final class ShowProjectCommand extends GatewayCommand
             'Repository' => $project->repositoryUrl,
             'Source access' => $project->sourceAccess,
             'Default branch' => $project->defaultBranch,
-            'Web root' => $project->root,
+            'Apps' => NamedAppOptions::describeAll($project->apps),
             ...($project->taskCompute === null ? [] : ['Task compute' => $project->taskCompute]),
             'Task check' => $project->taskCheck,
             'Task workspace routed' => $project->taskWorkspaceRouted,

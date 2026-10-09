@@ -8,6 +8,7 @@ use App\Commands\GatewayCommand;
 use App\Commands\Projects\Concerns\ParsesTaskWorkspaceRouted;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
+use App\Support\NamedAppOptions;
 use Orbit\Sdk\Requests\Projects\UpdateProjectRequest;
 use Orbit\Sdk\Responses\Projects\ProjectResponse;
 
@@ -23,7 +24,7 @@ final class UpdateProjectCommand extends GatewayCommand
         {--repository= : New repository access URL}
         {--source-access= : How Orbit reads a private github.com repository: github_app or gh_cli}
         {--default-branch= : New stored default branch}
-        {--root= : New repository-relative root; package types may use .}
+        {--apps= : JSON list that replaces every app; only while the Project has no Instances}
         {--task-check= : New task check command for task baselines and handoffs}
         {--clear-task-check : Remove the task check command so tasks run no check command}
         {--task-workspace-routed= : Change routing for future task workspaces (true or false)}
@@ -51,7 +52,15 @@ final class UpdateProjectCommand extends GatewayCommand
         $repositoryUrl = $this->stringOption('repository');
         $sourceAccess = $this->stringOption('source-access');
         $defaultBranch = $this->stringOption('default-branch');
-        $root = $this->stringOption('root');
+        $appsOption = $this->stringOption('apps');
+        $apps = $appsOption === null ? null : NamedAppOptions::apps($appsOption);
+
+        if ($appsOption !== null && $apps === null) {
+            return $this->renderGatewayFailure(
+                'project.apps_invalid',
+                'Pass --apps as a JSON list of apps, each with name, path, web_root and type.',
+            );
+        }
         $taskCheck = $this->stringOption('task-check');
         $clearTaskCheck = $this->option('clear-task-check') === true;
 
@@ -122,7 +131,7 @@ final class UpdateProjectCommand extends GatewayCommand
             );
         }
 
-        if ($type === null && $slug === null && $repositoryUrl === null && $sourceAccess === null && $defaultBranch === null && $root === null && $taskCheck === null && ! $clearTaskCheck && $taskWorkspaceRouted['value'] === null && $taskCompute === null
+        if ($type === null && $slug === null && $repositoryUrl === null && $sourceAccess === null && $defaultBranch === null && $apps === null && $taskCheck === null && ! $clearTaskCheck && $taskWorkspaceRouted['value'] === null && $taskCompute === null
             && ! $reviewAndMergeProvided && $mergeCheck === null && ! $clearMergeCheck) {
             return $this->renderGatewayFailure(
                 'project.update_required',
@@ -144,7 +153,7 @@ final class UpdateProjectCommand extends GatewayCommand
                 slug: $slug,
                 repositoryUrl: $repositoryUrl,
                 defaultBranch: $defaultBranch,
-                root: $root,
+                apps: $apps,
                 taskCheck: $clearTaskCheck ? null : $taskCheck,
                 taskCheckProvided: $clearTaskCheck || $taskCheck !== null,
                 sourceAccess: $sourceAccess,

@@ -527,7 +527,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'project:list' => [[], ['json' => false]],
         'project:create' => [
             ['slug', 'type', 'repository'],
-            ['name' => null, 'source-access' => null, 'default-branch' => null, 'root' => null, 'task-check' => null, 'task-workspace-routed' => null,
+            ['name' => null, 'source-access' => null, 'default-branch' => null, 'apps' => null, 'task-check' => null, 'task-workspace-routed' => null,
                 'task-compute' => null, 'json' => false],
         ],
         'project:destroy' => [['project'], ['yes' => false, 'json' => false]],
@@ -541,7 +541,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'project:show' => [['project'], ['json' => false]],
         'project:update' => [
             ['project'],
-            ['type' => null, 'slug' => null, 'repository' => null, 'source-access' => null, 'default-branch' => null, 'root' => null, 'task-check' => null, 'clear-task-check' => false, 'task-workspace-routed' => null,
+            ['type' => null, 'slug' => null, 'repository' => null, 'source-access' => null, 'default-branch' => null, 'apps' => null, 'task-check' => null, 'clear-task-check' => false, 'task-workspace-routed' => null,
                 'task-compute' => null, 'review-and-merge' => null, 'merge-check' => null, 'clear-merge-check' => false, 'json' => false],
         ],
         'cluster:list' => [[], ['json' => false]],
@@ -657,7 +657,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'instance:create' => [
             ['project', 'node', 'name'],
             [
-                'root' => null,
+                'app-overrides' => null,
                 'domain' => null,
                 'branch' => null,
                 'database-server' => null,
@@ -709,7 +709,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
                 'include-worktrees' => false,
                 'project' => null,
                 'name' => null,
-                'root' => null,
+                'app-overrides' => null,
                 'domain' => null,
                 'yes' => false,
                 'setup' => false,
@@ -832,6 +832,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
                 'preset' => null,
                 'node' => null,
                 'project' => null,
+                'app' => null,
                 'for' => null,
                 'runtime' => 'systemd',
                 'command' => [],
@@ -858,6 +859,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             ['name'],
             [
                 'project' => null,
+                'app' => null,
                 'for' => null,
                 'runtime' => 'systemd',
                 'command' => [],
@@ -897,6 +899,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             'node' => null,
             'instance' => null,
             'project' => null,
+            'app' => null,
             'for' => null,
             'calendar' => null,
             'command' => null,
@@ -913,6 +916,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             'name',
         ], [
             'project' => null,
+            'app' => null,
             'for' => null,
             'calendar' => null,
             'command' => null,

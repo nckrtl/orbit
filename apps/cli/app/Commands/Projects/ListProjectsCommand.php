@@ -10,6 +10,7 @@ use App\Services\GatewayConnectorFactory;
 use App\Support\Console\ConsoleWriter;
 use App\Support\Console\PromptAborted;
 use Orbit\Sdk\Requests\Projects\ListProjectsRequest;
+use Orbit\Sdk\Responses\Projects\ProjectAppResponse;
 use Orbit\Sdk\Responses\Projects\ProjectsResponse;
 
 final class ListProjectsCommand extends GatewayCommand
@@ -43,7 +44,7 @@ final class ListProjectsCommand extends GatewayCommand
             return self::SUCCESS;
         }
 
-        $headers = ['ID', 'Name', 'Slug', 'Type', 'Repository', 'Default branch', 'Web root'];
+        $headers = ['ID', 'Name', 'Slug', 'Type', 'Repository', 'Default branch', 'Apps'];
         $rows = [];
         foreach ($response->projects as $project) {
             $rows[$project->id] = [
@@ -53,7 +54,7 @@ final class ListProjectsCommand extends GatewayCommand
                 $project->type,
                 $project->repositoryUrl,
                 $project->defaultBranch ?? '—',
-                $project->root ?? '—',
+                implode(', ', array_map(static fn (ProjectAppResponse $app): string => $app->name, $project->apps)) ?: '—',
             ];
         }
 

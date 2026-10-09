@@ -36,7 +36,7 @@ Select an active Linux Node with an active `app-dev` role. The name `default` is
 
 ```bash
 orbit instance:create <project> <node> default
-orbit instance:create <project> <node> feature-one --branch=release --app-domains='{"web":"feature.example.test"}'
+orbit instance:create <project> <node> feature-one --branch=release --domain=feature.example.test
 ```
 
 The Gateway clones the repository to `<apps-root>/<project-slug>/<name>`. It reads the repository with the Project's [source access](/reference/projects#source-access). A `gh_cli` Project needs no GitHub login on the Node. The [apps root](/reference/node-settings) comes from the Node settings. The name decides the path and the generated domain. The branch is a separate choice.
@@ -57,7 +57,7 @@ A fresh reservation records a unique source preparation ID before remote work. P
 
 Cleanup and retry require that receipt when a new reservation's directory exists. A lost successful preparation response can be recovered from the receipt. An interruption before the receipt is written retains the unconfirmed directory and reports incomplete cleanup; retry and forced removal neither adopt nor delete it. Legacy reserved rows without preparation evidence cannot adopt existing source on retry. Matching origin and account ownership alone do not prove that an attempt owns a checkout.
 
-An interruption or incomplete cleanup can leave a pre-activation Instance. An identical retry resumes at the first unfinished state. The retry must name the same Project, Node, app override map, domain map and branch override. A retry that changes one of them returns `instance.placement_conflict`. When cleanup cannot finish, the original error includes `details.cleanup = "incomplete"`, the Instance identity, and a recovery command. An identical retry of a create whose cleanup started first finishes that cleanup, then creates the Instance afresh. [Pre-activation removal](/reference/instance-removal#pre-activation-removal) accepts these states without weakening the source ownership guards.
+An interruption or incomplete cleanup can leave a pre-activation Instance. An identical retry resumes at the first unfinished state. The retry must name the same Project, Node, app override map, and branch override. A retry that changes one of them returns `instance.placement_conflict`. When cleanup cannot finish, the original error includes `details.cleanup = "incomplete"`, the Instance identity, and a recovery command. An identical retry of a create whose cleanup started first finishes that cleanup, then creates the Instance afresh. [Pre-activation removal](/reference/instance-removal#pre-activation-removal) accepts these states without weakening the source ownership guards.
 
 After activation, you can commit and move `HEAD`. The starting commit stays as it is. The recorded branch changes only through [recording a renamed branch](#record-a-renamed-branch), or when a Project default-branch update switches a `default` Instance without `branch_override`. Keep the recorded branch checked out. [Removal](/reference/instance-removal#checks-before-removal) refuses a checkout on another branch with `instance.source_branch_mismatch`, also with `--force`. [Cloning](/reference/instance-cloning#candidate-rules) refuses such a candidate with `instance.clone_candidate_branch_invalid`.
 
@@ -142,20 +142,20 @@ Rename the Git branch in the checkout first, then tell Orbit what is already che
 ```bash
 git branch -m t3code/login-redirect
 orbit instance:rename <instance> --branch=t3code/login-redirect
-orbit instance:rename <instance> --branch=t3code/login-redirect --app=web --domain=login-redirect.orbit-website.test
+orbit instance:rename <instance> --branch=t3code/login-redirect --domain=login-redirect.orbit-website.test
 ```
 
-The API is `POST /api/v1/instances/{instance}/rename` with optional `branch`, `domain` and app selector `app`; branch or domain is required. The MCP tool is `instance-rename`. Send `instance` and at least one of `branch` or `domain`. It has no app selector yet. App is prohibited without a domain; domain changes require an app selector unless the Project has one app. All forms return the same Instance representation as `instance:show`. Only an active development checkout is eligible, not a linked worktree or production Instance. The Instance ID, name, path, layout, starting commit, and placement stay the same.
+The API is `POST /api/v1/instances/{instance}/rename` with optional `branch` and `domain` strings; at least one nonempty value is required. The MCP tool is `instance-rename`. Send `instance` and at least one of `branch` or `domain`. There is no app selector, so a domain change on a Project with several apps returns `app.required`. All forms return the same Instance representation as `instance:show`. Only an active development checkout is eligible, not a linked worktree or production Instance. The Instance ID, name, path, layout, starting commit, and placement stay the same.
 
 For a supplied branch, Orbit reads the checkout locally on its Node. Symbolic `HEAD` must already name that exact branch, or the request returns `instance.branch_not_checked_out` without changing anything. Orbit checks source identity but never contacts origin, changes Git refs, switches the checkout, or renames the branch itself. Dirty or unpublished source is allowed for this recording operation.
 
 A changed branch becomes both `selected_branch` and `branch_override`. This pins even a `default` Instance to the explicit selection. Supplying the already recorded branch is a no-op that preserves the existing override. Domain-only rename leaves both branch fields alone. Removal, cloning, and Doctor then check the newly recorded branch; normal removal still requires clean, published source.
 
-A supplied domain moves only the selected app's authoritative single-target Project Route through [Route replacement](/reference/routes#change-an-instance-route-domain), including a generated Route. Laravel's stored `APP_URL`, `.env`, and cached config follow the new URL. All supplied fields and the domain's availability are checked before mutation. A combined request with a wrong branch or occupied domain changes neither record. The branch record changes only after any requested domain convergence succeeds.
+A supplied domain moves the app's own single-target Project Route through [Route replacement](/reference/routes#change-an-instance-route-domain), including a generated Route. Laravel's stored `APP_URL`, `.env`, and cached config follow the new URL. All supplied fields and the domain's availability are checked before mutation. A combined request with a wrong branch or occupied domain changes neither record. The branch record changes only after any requested domain convergence succeeds.
 
 An identical retry after a completed rename returns the Instance without creating an additional Route, including when the caller lost the success response. Incomplete Route replacements follow [Route recovery](/reference/routes#resume-or-refuse-a-change). If a full rollback before cutover deleted the failed replacement, an identical retry can reserve a fresh replacement; the changed branch is still recorded only after domain convergence succeeds.
 
-Another lifecycle owner returns `instance.lifecycle_busy`, including contention from the environment owner. A different app, domain or branch presence/value during replacement recovery returns `route.domain_change_conflict`, as defined by the [rename retry identity](/reference/routes#change-an-instance-route-domain). This includes requesting the original domain before or after cutover: the retained replacement owns its destination, so the original domain is not a no-op. That refusal changes neither the recorded branch nor stored or application environment values.
+Another lifecycle owner returns `instance.lifecycle_busy`, including contention from the environment owner. A different domain while replacement recovery is incomplete returns `route.domain_change_conflict`. This includes requesting the original domain before or after cutover: the retained replacement owns its destination, so the original domain is not a no-op. That refusal changes neither the recorded branch nor stored or application environment values.
 
 Infrastructure failure can leave Route recovery work before or after cutover, so inspect the Route and repeat the same request. [instance:rename](/cli/instance#orbit-instancerename) lists the inputs, output, and refusal codes. [Development branch reconciliation](#development-branch-reconciliation) explains the reasons and alternatives.
 
@@ -173,7 +173,7 @@ Registration transfers ownership of the source to Orbit. Orbit moves the source 
 
 The CLI reads the stored `remote.origin.url` of the checkout. It sends no request for a directory outside Git or for an unsafe origin. A safe origin is `https://` without a user or password, `ssh://` without a password, or `git@host:path`. Any other scheme, a query, a fragment, whitespace, or a control character is unsafe.
 
-The Gateway finds the Project by [repository identity](/reference/projects#repository-identity), or uses `--project`. Registration never creates a Project or infers a nested web root. It inherits the Project app list unless `--app-overrides=JSON` supplies a path/web-root map. `--app-domains=JSON` supplies explicit domains by app name; omitted serving names generate domains. Registration and creation use the same map validation and retry identity. When no Project owns the repository, the Gateway returns `instance.project_missing` and changes nothing. Create the Project with [`project:create`](/cli/project#orbit-projectcreate) first.
+The Gateway finds the Project by [repository identity](/reference/projects#repository-identity), or uses `--project`. Registration never creates a Project or infers a nested web root. It inherits the Project app list unless `--app-overrides=JSON` supplies a path and web-root map. Registration and creation validate the map the same way. When no Project owns the repository, the Gateway returns `instance.project_missing` and changes nothing. Create the Project with [`project:create`](/cli/project#orbit-projectcreate) first.
 
 The Gateway then inspects the source on the caller's Node. It trusts none of the facts the CLI sends.
 
@@ -194,17 +194,17 @@ Interactive registration asks for default-No consent that names the source. JSON
 
 ## Provision the application endpoint
 
-Before source preparation, the Gateway assigns every app a [Vite port](/reference/assigned-vite-ports), assigns the Instance an [SSR port](/reference/assigned-ssr-ports), and reserves a Route for every [serving app](/reference/projects#project-types). Null web root can serve the app directory itself; only a package with path `.` and null web root is non-serving. `--app-domains=JSON` supplies explicit domains by app name; omitted names generate domains from the Cluster or Node TLD. Non-serving packages and task workspaces whose recorded mode is unrouted get no serving Routes. [Routes](/reference/routes#select-a-domain-and-scope) owns the map and generated-name rules.
+Before source preparation, the Gateway assigns the Instance an [SSR port](/reference/assigned-ssr-ports). It gives each [serving app](/reference/projects#project-types) a [Vite port](/reference/assigned-vite-ports) and reserves a Route for it. `--domain` sets an explicit domain on a single-app Project; on a Project with several apps it returns `app.required`. Otherwise each domain is generated from the Cluster or Node TLD and starts with the app name, as [Routes](/reference/routes#select-a-domain-and-scope) describes. Non-serving packages and unrouted task workspaces get no Route.
 
 After the source is ready, the Gateway continues in this order:
 
-1. It inspects each serving app's source and records its [PHP version](/reference/php-runtime#select-the-php-version) and Laravel flag in its own source profile.
+1. It inspects each app's source and records that app's [PHP version](/reference/php-runtime#select-the-php-version) and whether it is Laravel. This pair is the app's source profile.
 2. For each Laravel app with a Route, it sets that app's `APP_URL` to its own Route URL. See [Laravel application URL](#laravel-application-url).
-3. It publishes each app's Route, certificates, Caddy site, firewall rules and private DNS records.
-4. It marks the Instance active only after every required app Route is active.
+3. It publishes each app's Route, certificates, Caddy site, firewall rules, and private DNS records.
+4. It marks the Instance active after every app Route is active.
 5. It runs the Project [setup steps](/reference/instance-setup).
 
-An app without a Route skips URL and serving preparation; an unrouted task workspace also skips source classification. Orbit never scans sibling directories to choose a monorepo application. An identical retry resumes each app's unfinished step. After source classification, retry re-inspects that same app: changed PHP version or Laravel evidence returns `app-dev.source_evidence_changed`. [Instance runtime output](/reference/projects#instance-app-runtime-output) fixes the app-keyed profile and endpoint representation.
+An app without a Route skips steps 2 and 3. An Instance without any Route becomes `active`, runs setup, and stays healthy without a visitable endpoint. An identical retry resumes each app's unfinished step. If an app's PHP version or Laravel flag changed after its first inspection, the retry returns `app-dev.source_evidence_changed`. [Instance app output](/reference/projects#instance-app-output) describes the apps in Instance responses.
 
 A failed setup step during `instance:create` runs the teardown steps and removes the new Instance. See [Run setup](/reference/instance-setup#run-setup).
 
@@ -250,7 +250,7 @@ A Project can have one production Instance per `app-prod` Node. Each production 
 
 ## Set the web root
 
-An Instance inherits each Project app's path and web root. Configure the list with `project:update --apps=JSON`, or set the development Instance's map with `instance:update --app-overrides=JSON`. [Projects](/reference/projects#application-directory) owns path validation and [override update recovery](/reference/projects#instance-override-update-lifecycle). Serving web roots are relative to app paths; production uses its sole app inside the selected release. The removed `root` field has no supported flag or alias.
+An Instance inherits each Project app's path and web root. Set the Project's list with `project:create --apps=JSON`. Override an Instance's paths with `--app-overrides=JSON` on `instance:create` or `instance:register`; the map is fixed after that. The Project's list changes only while it has no Instances; see [Change apps](/reference/projects#change-apps). [Projects](/reference/projects#application-directory) owns path validation. A web root is relative to its app path. Production supports a Project with one app, which resolves inside the selected release.
 
 ## Input boundary
 

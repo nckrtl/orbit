@@ -21,6 +21,7 @@ final class UpdateProcessCommand extends ProcessCommand
     protected $signature = 'process:update
         {name : Process definition name}
         {--project= : Numeric Project ID}
+        {--app= : App name; required when the Project has several apps}
         {--for= : Comma-separated definition environments}
         {--runtime=systemd : systemd or docker}
         {--command=* : One command argument; repeat for each argv item}
@@ -155,6 +156,7 @@ final class UpdateProcessCommand extends ProcessCommand
         try {
             $definition = json_encode(
                 [
+                    ...($this->stringOption('app') === null ? [] : ['app' => $this->stringOption('app')]),
                     'name' => $name,
                     'environments' => $environments,
                     'spec' => $spec,
