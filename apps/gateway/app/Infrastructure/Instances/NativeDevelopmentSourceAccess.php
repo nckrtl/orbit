@@ -7,6 +7,7 @@ namespace App\Infrastructure\Instances;
 use App\Domain\Instances\DevelopmentSourceAccess;
 use App\Domain\Instances\ProjectSandboxRuntimeGuard;
 use App\Infrastructure\AppDev\DevelopmentSite;
+use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Models\Instance;
 use Illuminate\Support\Collection;
@@ -52,9 +53,7 @@ final readonly class NativeDevelopmentSourceAccess implements DevelopmentSourceA
             return collect();
         }
 
-        // A checkout owned by an app projection keeps its protected access; the projection's
-        // preparing owner adds its candidate roots.
-        return new AppProjectionServingAccess($this->ssh)->forNode($instance->node)
+        return new DevelopmentSiteRepository()->forNode($instance->node)
             ->filter(static fn (DevelopmentSite $site): bool => $site->checkoutPath === $checkout
                 || str_starts_with($site->checkoutPath, $checkout.'/'))
             ->values();

@@ -13,7 +13,6 @@ use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
-use App\Models\InstanceAppProjection;
 use App\Models\Node;
 use App\Models\Route;
 use Illuminate\Database\Eloquent\Collection;
@@ -23,25 +22,7 @@ final readonly class InstanceEnvironmentContextResolver
     public function resolve(Instance $instance, bool $requireActiveNode, bool $lockRoute = false, ?string $app = null): InstanceEnvironmentContext
     {
         ProjectSandboxRuntimeGuard::assertRuntime($instance);
-        InstanceAppProjection::assertAvailable([$instance->id]);
 
-        return $this->publishedContext($instance, $requireActiveNode, $lockRoute, $app);
-    }
-
-    /** Only the recorded owner may inspect its still-published environment configuration. */
-    public function resolveForProjection(Instance $instance, string $projectionId, string $app): InstanceEnvironmentContext
-    {
-        $projection = InstanceAppProjection::query()->find($projectionId);
-        if (! $projection instanceof InstanceAppProjection || $projection->active_instance_id !== $instance->id
-            || $projection->node_id !== $instance->node_id || $projection->completion !== null) {
-            $this->conflict();
-        }
-
-        return $this->publishedContext($instance, true, true, $app);
-    }
-
-    private function publishedContext(Instance $instance, bool $requireActiveNode, bool $lockRoute, ?string $app): InstanceEnvironmentContext
-    {
         $app = $instance->appConfiguration($app)['name'];
         if ($instance->status !== InstanceState::Active || $instance->provisioning_step !== 'active' || $instance->placementEnvironment() === null) {
             $this->conflict();
@@ -83,7 +64,6 @@ final readonly class InstanceEnvironmentContextResolver
     public function resolveForRouteTransition(Instance $instance, InstanceEnvironmentRouteDomain $domain, bool $requireActiveNode, bool $lockRoute = false, ?string $app = null): InstanceEnvironmentContext
     {
         InstanceSandboxGuard::assertHostOperation($instance);
-        InstanceAppProjection::assertAvailable([$instance->id]);
         $app = $instance->appConfiguration($app)['name'];
         if ($instance->status !== InstanceState::Active || ! in_array($instance->placementEnvironment(), ['development', 'production'], true) || $instance->provisioning_step !== 'active' || ! is_bool($instance->runtimeForApp($app)['laravel'])) {
             $this->conflict();

@@ -4,12 +4,10 @@ declare(strict_types=1);
 
 namespace App\Actions\Schedules;
 
-use App\Actions\Instances\AdmitInstanceAppMutationAction;
 use App\Domain\Schedules\ScheduleErrorCode;
 use App\Domain\Schedules\ScheduleRuntimeManager;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Models\Instance;
 use App\Models\Schedule;
 use SensitiveParameter;
 
@@ -18,13 +16,6 @@ final readonly class RunScheduleAction
     public function __construct(private ScheduleRuntimeManager $runtime) {}
 
     public function execute(#[SensitiveParameter] Schedule $schedule): Schedule
-    {
-        $ids = Instance::isMorphType($schedule->target_type) ? [$schedule->target_id] : [];
-
-        return app(AdmitInstanceAppMutationAction::class)->execute($ids, fn (): Schedule => $this->executeOwned($schedule));
-    }
-
-    private function executeOwned(#[SensitiveParameter] Schedule $schedule): Schedule
     {
         if ($schedule->status !== LifecycleStatus::Active) {
             throw new ResourceOperationException(

@@ -7,7 +7,6 @@ namespace App\Infrastructure\AppDev;
 use App\Actions\Instances\MigrateAppRuntimeAction;
 use App\Domain\Analytics\AnalyticsTrackingUpstream;
 use App\Domain\Instances\InstanceState;
-use App\Domain\Projects\ProjectType;
 use App\Domain\Routes\ClusterRouterTransition;
 use App\Domain\Routes\CustomProxyUpstream;
 use App\Domain\Routes\PublicRouteEligibility;
@@ -15,7 +14,6 @@ use App\Domain\Routes\RouteCertificateStaging;
 use App\Domain\Routes\RouteKind;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
-use App\Infrastructure\Instances\CommittedAppServingView;
 use App\Infrastructure\Routes\IngressSiteRepository;
 use App\Models\AppRuntimeMigration;
 use App\Models\Instance;
@@ -76,7 +74,6 @@ final readonly class DevelopmentSiteRepository
                 // replacement serves nothing: its rollback marks it failed before it withdraws the
                 // candidate sites and then removes their certificates.
                 $query->where('sites_published', true)
-                    ->orWhereIn('id', new CommittedAppServingView()->candidateRouteIds())
                     ->orWhere(static function (Builder $query): void {
                         $query
                             ->where('status', RouteStatus::Pending->value)
@@ -220,9 +217,8 @@ final readonly class DevelopmentSiteRepository
             ->targets
             ->map(static fn (RouteTarget $targetRow): Instance => $targetRow->instance)
             ->filter(
-                fn (Instance $target): bool => (
-                    new CommittedAppServingView()->app($target, $route->app) !== null
-                    && is_string($target->node->wireguard_ip)
+                static fn (Instance $target): bool => (
+                    is_string($target->node->wireguard_ip)
                     && in_array(
                         $target->status,
                         [InstanceState::SourceResolved, InstanceState::Active],
@@ -231,9 +227,6 @@ final readonly class DevelopmentSiteRepository
                 ),
             )
             ->values();
-        if ($route->targets->isNotEmpty() && $targets->isEmpty()) {
-            return [];
-        }
         // A pending replacement answers from the staging certificates its domain change issues. Each
         // site appears only once the step that writes its certificate has completed.
         $gatesOnSteps = $route->status === RouteStatus::Pending && $route->replaces_route_id !== null;
@@ -491,14 +484,9 @@ final readonly class DevelopmentSiteRepository
             ? "{$instance->production_home}/current"
             : ($instance->development_release_layout ? $instance->checkout_path.'/current' : $instance->checkout_path);
 
-        $view = new CommittedAppServingView()->app($instance, $route->app);
-        if ($view === null) {
-            throw new \LogicException('A withdrawn app cannot render a workload site.');
-        }
-        $app = $view['configuration']['name'];
-        $configuration = $view['configuration'];
-        $runtime = $view['runtime'];
-        $scoped = ! $instance->placedOnAppProd() && $view['scoped'];
+        $app = $instance->appConfiguration($route->app)['name'];
+        $runtime = $instance->runtimeForApp($app);
+        $scoped = ! $instance->placedOnAppProd() && $instance->usesAppRuntimeIdentity($app);
         $scope = $scoped ? "app-instance-{$instance->id}-app-{$app}" : "app-instance-{$instance->id}";
 
         return new DevelopmentSite(
@@ -508,9 +496,9 @@ final readonly class DevelopmentSiteRepository
             app: $scoped ? $app : null,
             instanceId: $instance->id,
             checkoutPath: $checkoutPath,
-            documentRoot: $configuration['web_root'] === null ? $configuration['path'] : ($configuration['path'] === '.' ? $configuration['web_root'] : $configuration['path'].'/'.$configuration['web_root']),
-            applicationPath: $configuration['path'],
-            phpVersion: ProjectType::from($configuration['type'])->isWebServing() || $configuration['type'] === ProjectType::Monorepo->value && $runtime['laravel'] === true ? $runtime['php_version'] : null,
+            documentRoot: $instance->relativeWebRoot($app) ?? '',
+            applicationPath: $instance->applicationPath($app),
+            phpVersion: $instance->servesPhpForApp($app) ? $runtime['php_version'] : null,
             domain: $route->domain,
             environment: $instance->defaultAppEnv(),
             productionUser: $instance->production_user,
@@ -582,7 +570,6 @@ final readonly class DevelopmentSiteRepository
             ->all();
         $addresses = array_values($addresses);
         $localInstance = $local[0];
-        $localSite = $this->instanceSite($localInstance, $route);
 
         return new DevelopmentSite(
             nodeId: $router->id,
@@ -591,9 +578,9 @@ final readonly class DevelopmentSiteRepository
             checkoutPath: $localInstance->placedOnAppProd()
                 ? "{$localInstance->production_home}/current"
                 : ($localInstance->development_release_layout ? $localInstance->checkout_path.'/current' : ($localInstance->checkout_path ?? '')),
-            documentRoot: $localSite->documentRoot,
-            applicationPath: $localSite->applicationPath,
-            phpVersion: $localSite->phpVersion,
+            documentRoot: $localInstance->relativeWebRoot($route->app) ?? '',
+            applicationPath: $localInstance->applicationPath($route->app),
+            phpVersion: $localInstance->servesPhpForApp($localInstance->appConfiguration($route->app)['name']) ? $localInstance->runtimeForApp($route->app)['php_version'] : null,
             domain: $route->domain,
             upstreamAddresses: $addresses,
             environment: $localInstance->defaultAppEnv(),

@@ -12,7 +12,6 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\AppRuntimeMigration;
 use App\Models\Instance;
-use App\Models\InstanceAppProjection;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Route;
@@ -38,7 +37,6 @@ final readonly class ProcessTargetResolver
     public function forAdmission(Instance $instance, ?string $app = null): ProcessTarget
     {
         InstanceSandboxGuard::assertHostOperation($instance);
-        InstanceAppProjection::assertAvailable([$instance->id]);
         AppRuntimeMigration::assertInstanceAvailable($instance);
         $instance->loadMissing('node');
         $this->ensureActiveInstance($instance);
@@ -80,7 +78,6 @@ final readonly class ProcessTargetResolver
     public function forPreparation(Instance $instance, ?string $app = null): ProcessTarget
     {
         InstanceSandboxGuard::assertHostOperation($instance);
-        InstanceAppProjection::assertAvailable([$instance->id]);
         $instance->loadMissing('node');
         $this->ensureLinux($instance->node);
 

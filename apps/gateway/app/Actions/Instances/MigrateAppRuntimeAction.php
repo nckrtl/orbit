@@ -47,7 +47,7 @@ final readonly class MigrateAppRuntimeAction
         }
         $ids = Instance::query()->where('node_id', $node->id)->orderBy('id')->get()->map(static fn (Instance $instance): int => $instance->id)->values()->all();
         $ids = array_values($ids);
-        $this->withEnvironments($ids, fn () => $this->admissions->run($ids, fn () => $this->source->synchronized($node->id, fn () => $this->projection->run(function () use ($node, $ids): void {
+        $this->admissions->run($ids, fn () => $this->source->synchronized($node->id, fn () => $this->withEnvironments($ids, fn () => $this->projection->run(function () use ($node, $ids): void {
             InstanceRename::assertAvailable($ids);
             $migration = AppRuntimeMigration::query()->where('node_id', $node->id)->where('phase', '!=', 'complete')->first();
             if (! $migration instanceof AppRuntimeMigration) {

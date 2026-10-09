@@ -4,11 +4,9 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances\Environment;
 
-use App\Domain\Instances\Apps\AppProjectionIdentity;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
-use App\Models\InstanceAppProjectionStep;
 use App\Models\InstanceEnvironmentValue;
 use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Support\Facades\DB;
@@ -83,27 +81,6 @@ final readonly class InstanceEnvironmentStore
             }
 
             return new InstanceEnvironmentSynchronizationSnapshot($values);
-        });
-    }
-
-    /** App projection permits an empty app, but still verifies its published owner before decryption. */
-    public function projectionSnapshot(InstanceEnvironmentContext $published, InstanceAppProjectionStep $step): InstanceEnvironmentSynchronizationSnapshot
-    {
-        return DB::transaction(function () use ($published, $step): InstanceEnvironmentSynchronizationSnapshot {
-            $recorded = InstanceAppProjectionStep::query()->lockForUpdate()->find($step->id);
-            $instance = Instance::query()->lockForUpdate()->find($published->instanceId);
-            if (! $recorded instanceof InstanceAppProjectionStep || ! $instance instanceof Instance
-                || $recorded->instance_app_projection_id !== $step->instance_app_projection_id || $recorded->receipt_id !== $step->receipt_id
-                || $recorded->plan_digest !== $step->plan_digest || AppProjectionIdentity::digest($recorded->intent) !== AppProjectionIdentity::digest($step->intent)
-                || ($recorded->intent['phase'] ?? null) !== 'prepare' || ($recorded->intent['app'] ?? null) !== $published->app) {
-                $this->conflict();
-            }
-            $current = $this->contexts->resolveForProjection($instance, $step->instance_app_projection_id, $published->app);
-            if (! $published->samePlacement($current)) {
-                $this->conflict();
-            }
-
-            return new InstanceEnvironmentSynchronizationSnapshot($this->storedValues($published));
         });
     }
 

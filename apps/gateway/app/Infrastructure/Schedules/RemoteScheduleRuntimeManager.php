@@ -124,7 +124,7 @@ final readonly class RemoteScheduleRuntimeManager implements ScheduleRuntimeMana
             throw $this->failure('logs-validation', ScheduleErrorCode::LogsFailed, 'The Schedule log limit is invalid.');
         }
 
-        $target = $this->targets->forSchedule($schedule, mutation: false);
+        $target = $this->targets->forSchedule($schedule);
         $result = $this->execute(
             $schedule,
             $target,

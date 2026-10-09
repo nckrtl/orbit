@@ -82,8 +82,8 @@ final readonly class ProjectSandboxRuntimeGuard
         $placement = $state->forNode($instance->node);
         if ($instance->task_workspace_routed !== true || $route->project_id !== $instance->project_id
             || $route->kind !== RouteKind::App || $route->publication !== RoutePublication::Private
-            || $route->provenance !== RouteProvenance::Generated
-            || $route->domain !== $state->generatedDomain($instance->project->slug, $instance->name, $placement->effectiveTld)
+            || $route->provenance !== RouteProvenance::Generated || ! is_string($route->app)
+            || $route->domain !== $state->generatedDomain($instance->project->slug, $instance->name, $placement->effectiveTld, $route->app)
             || $route->node_id !== $placement->nodeId || $route->cluster_id !== $placement->clusterId
             || $route->generation_basis_node_id !== $instance->node_id
             || $route->replaces_route_id !== null || $route->replaced_by_route_id !== null || $route->replacement_step !== null

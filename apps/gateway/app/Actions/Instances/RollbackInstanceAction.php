@@ -18,7 +18,6 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\ProcessCancelledException;
 use App\Models\Instance;
-use App\Models\InstanceAppProjection;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Throwable;
 
@@ -62,7 +61,6 @@ final readonly class RollbackInstanceAction
         string $releaseName,
         DeploymentRequest $request,
     ): DeploymentResult {
-        InstanceAppProjection::assertAvailable([$instance->id]);
         $boundary = DeploymentFailureBoundary::RollbackSelection;
         $release = null;
         $selected = null;

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Actions\Processes;
 
-use App\Actions\Instances\AdmitInstanceAppMutationAction;
 use App\Data\Processes\ProcessData;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
@@ -50,12 +49,15 @@ final readonly class StartProcessAction
         $processId = $process->id;
         $ownerId = $process->owner_id;
 
-        return app(AdmitInstanceAppMutationAction::class)->execute(
+        return $this->admissions->run(
             [$ownerId],
-            fn (): Process => $this->admissions->run([$ownerId], fn (): Process => $this->mutate(
-                Process::query()->whereKey($processId)->whereIn('owner_type', Instance::morphTypes())->where('owner_id', $ownerId)->firstOrFail(),
-            )),
-            'process.operation_busy',
+            fn (): Process => $this->mutate(
+                Process::query()
+                    ->whereKey($processId)
+                    ->whereIn('owner_type', Instance::morphTypes())
+                    ->where('owner_id', $ownerId)
+                    ->firstOrFail(),
+            ),
         );
     }
 

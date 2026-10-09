@@ -47,23 +47,6 @@ final readonly class RemoteAppDevPhpFpmManager implements AppDevPhpFpmManager
         $this->convergeSites($node);
     }
 
-    /** Verify a completed projection without installing packages or reloading shared services. */
-    public function verify(Node $node): void
-    {
-        $account = $this->accounts->resolve($node);
-        $sites = $this->desiredSites($node);
-        $installed = $this->installedProjection($node, $account, $this->workingDirectories($sites));
-        // Convergence publishes no pool for a missing working directory; verify the same view.
-        $sites = $sites->reject(static fn (DevelopmentSite $site): bool => in_array($site->phpWorkingDirectory(), $installed->missingDirectories, true))->values();
-        $versions = array_values(array_unique([...$installed->versions, ...$sites->map(static fn (DevelopmentSite $site): string => $site->phpVersion ?? '')->all()]));
-        foreach ($versions as $version) {
-            $expected = $this->renderer->render($sites->where('phpVersion', $version)->values(), $account);
-            if ($installed->previousConfiguration($version) !== $expected) {
-                throw new RuntimeConvergenceException('php-fpm-verify', 'app.projection_receipt_conflict', 'The installed PHP pools differ from the committed serving view.');
-            }
-        }
-    }
-
     /**
      * The Orbit-rendered pools on the Node that name a missing working directory: installed pools, which
      * stop PHP-FPM from starting, and desired pools, which converge skips.

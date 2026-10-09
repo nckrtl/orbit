@@ -205,7 +205,7 @@ it('enrolls and prepares one owned workspace through initial admission or cloud 
         if ($web) {
             expect($environmentWrites)->toHaveCount(2);
             expect($environmentWrites[1])->toBe($environmentWrites[0]);
-            expect($environmentWrites[0])->toContain('APP_KEY="base64:', 'https://'.$second->name.'.dlf.test');
+            expect($environmentWrites[0])->toContain('APP_KEY="base64:', 'https://web.'.$second->name.'.dlf.test');
             expect($second->routes()->count())->toBe(1);
         }
         expect(Instance::query()->where('task_sandbox_id', $first->task_sandbox_id)->count())->toBe(1);

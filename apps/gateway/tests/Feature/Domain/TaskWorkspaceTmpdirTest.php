@@ -187,8 +187,8 @@ describe('workspace TMPDIR', function (): void {
         ], base_path(), ['TMPDIR' => $temporary]);
         $fixture = json_decode($probe->mustRun()->getOutput(), true, flags: JSON_THROW_ON_ERROR);
 
-        expect($fixture['path'])->toStartWith(realpath('/tmp').'/ot-')->not->toBe($temporary);
-        expect($fixture['mode'])->toBe(0711);
+        expect($fixture['path'])->toStartWith(realpath('/tmp').'/orbit-gateway-tests-')->not->toBe($temporary);
+        expect($fixture['mode'])->toBe(0755);
         expect($temporary)->toStartWith(realpath('/tmp').'/orbit-check-'.posix_geteuid().'-');
         expect(fileowner($temporary))->toBe(posix_geteuid());
         expect(fileperms($temporary) & 0777)->toBe(0711);

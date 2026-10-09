@@ -11,10 +11,8 @@ use App\Domain\Instances\ProjectSandboxRuntimeGuard;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Infrastructure\Caddy\CaddyPublicationLock;
-use App\Infrastructure\Instances\CommittedAppServingView;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Instance;
-use App\Models\InstanceAppProjection;
 use App\Models\InstanceTransfer;
 use App\Models\Node;
 use App\Models\Route;
@@ -211,16 +209,8 @@ final readonly class RemoteAppDevCertificateManager
         if ($instance->placedOnAppProd()) {
             return "app-instance-{$instance->id}".($staging ? '-hostname-change' : '');
         }
-        $projection = InstanceAppProjection::query()->where('active_instance_id', $instance->id)->first();
-        $resources = $projection === null ? [] : new CommittedAppServingView()->resources($projection);
-        if ($projection !== null && is_string($app) && isset($resources[$app])) {
-            $name = $app;
-            $scoped = $resources[$app]['app_identity'];
-        } else {
-            $name = $instance->appConfiguration($app)['name'];
-            $scoped = $instance->usesAppRuntimeIdentity($name);
-        }
-        if (! $scoped) {
+        $name = $instance->appConfiguration($app)['name'];
+        if (! $instance->usesAppRuntimeIdentity($name)) {
             return "app-instance-{$instance->id}".($staging ? '-hostname-change' : '');
         }
 

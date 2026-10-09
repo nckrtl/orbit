@@ -29,7 +29,7 @@ it('prepares a private preview through native provisioning only on the enrolled 
     $configuration = mock(DevelopmentInstanceConfigurator::class);
     $configuration->shouldReceive('inspect')->once()->andReturn(new DevelopmentSourceProfile('8.5', true));
     $configuration->shouldReceive('configureLaravelUrl')->once()
-        ->withArgs(fn (Instance $instance, string $url): bool => $instance->node_id === $workspace->node_id && $url === 'https://'.$workspace->name.'.dlf.test');
+        ->withArgs(fn (Instance $instance, string $url, ?string $app = null): bool => $instance->node_id === $workspace->node_id && $url === 'https://web.'.$workspace->name.'.dlf.test');
     mock(DevelopmentRouteProjector::class)->shouldReceive('converge')->once()->andReturnUsing(function ($instance, $route) use ($workspace): void {
         ProjectSandboxRuntimeGuard::assertRuntime($instance, $route);
         expect($instance->node_id)->toBe($workspace->node_id);
@@ -45,7 +45,7 @@ it('prepares a private preview through native provisioning only on the enrolled 
     expect($result->ssr_port)->toBe(13714);
     $this->assertDatabaseHas('ssr_port_assignments', ['instance_id' => $result->id, 'node_id' => $workspace->node_id, 'port' => 13714]);
     expect($result->routes()->count())->toBe(1);
-    expect($result->routes()->first()->domain)->toBe($workspace->name.'.dlf.test');
+    expect($result->routes()->first()->domain)->toBe('web.'.$workspace->name.'.dlf.test');
     expect($result->routes()->first()->publication->value)->toBe('private');
     expect(fn () => InstanceSandboxGuard::assertHostOperation($result))->toThrow(ResourceOperationException::class);
 })->with(['incus', 'upcloud']);

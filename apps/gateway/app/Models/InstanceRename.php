@@ -36,7 +36,6 @@ final class InstanceRename extends Model
      */
     public static function assertAvailable(array $instanceIds, ?self $owner = null, ?Route $route = null, ?string $domain = null): void
     {
-        InstanceAppProjection::assertAvailable($instanceIds);
         foreach (self::query()->whereIn('instance_id', $instanceIds)->where('phase', '!=', 'complete')->get() as $journal) {
             if ($owner !== null && $journal->id === $owner->id && $journal->phase === 'requested'
                 && count($instanceIds) === 1 && $route !== null && $route->app === $journal->app

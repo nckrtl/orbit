@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Actions\Processes;
 
-use App\Actions\Instances\AdmitInstanceAppMutationAction;
 use App\Data\Processes\AddProcessData;
 use App\Data\Processes\ProcessData;
 use App\Domain\AppDev\AgentationPortAllocator;
@@ -78,10 +77,9 @@ final readonly class AddProcessAction
         $this->targets->resolve($data->targetType, $data->targetId, $data->app);
         $ownerIds = $data->targetType === ProcessTargetType::Instance ? [$data->targetId] : [];
 
-        return app(AdmitInstanceAppMutationAction::class)->execute(
+        return $this->admissions->run(
             $ownerIds,
-            fn (): array => $this->admissions->run($ownerIds, fn (): array => $this->executeOwned($data)),
-            'process.operation_busy',
+            fn (): array => $this->executeOwned($data),
         );
     }
 
