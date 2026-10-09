@@ -319,9 +319,12 @@ Orbit task workspaces are linked worktrees of Orbit's `default` repository, star
 The worker uses `git` and the GitHub CLI with the login of the user who runs it. That `gh` login needs read access to the repository and its Actions. For each batch of requests, the worker:
 
 1. fetches `main` from `origin`;
-2. reads the newest 30 finished `CI` runs on `main` of the origin repository: pushes, nightly runs, and manual runs. It ignores pull request runs and runs from forks;
-3. reads the conclusions of each project's jobs in those runs. The Gateway has two jobs, `Gateway` and `Gateway privileged`. The other projects have one job each;
-4. downloads the artifacts of the newest commit on which the project's jobs passed, validates them, and publishes the graph and the quality caches. It skips the download when the store already holds that commit.
+2. reads the newest 30 finished `CI` runs on `main`: pushes, nightly runs, and manual runs;
+3. reads the conclusions of each project's jobs in those runs;
+4. finds the newest commit on which the project's jobs passed;
+5. downloads, checks, and publishes that commit's graph and quality caches, unless the store already holds them.
+
+The worker ignores pull request runs and runs from forks. The Gateway has two jobs, `Gateway` and `Gateway privileged`. The other projects have one job each.
 
 Before it publishes, the worker checks that:
 
@@ -332,7 +335,9 @@ Before it publishes, the worker checks that:
 
 The published graph keeps the fingerprint that CI recorded, and its runner identity comes from the lock file and `tests/Pest.php` at the tested commit. A quality publication records the lock file and tool configuration at the tested commit, and the PHP minor version of the CI job. The worker deletes the downloads after each batch.
 
-Requests stay in `requests.json` until the worker records their outcome, so an interrupted worker leaves them pending. Repeated requests for the same target combine. The worker runs a frozen copy of `bin/tia-cache` as `origin/main` of the store's repository holds it, never the caller's copy. So a clone of an unmerged change only records requests, and it cannot change how the shared store is maintained. Without the tool on that `main`, no worker starts. The worker runs in a new session, so removing the calling worktree does not stop it. It runs at reduced CPU priority, and each command stops after 10 minutes. After each batch, it deletes the run logs that no recorded result names. It removes variables that start with `ORBIT_`, `APP_`, or `DB_`, and `DATABASE_URL`, `CACHE_STORE`, `SESSION_DRIVER`, and `QUEUE_CONNECTION`, from the commands it runs. It keeps `TMPDIR`, `TMP`, and `TEMP`.
+The worker runs a frozen copy of `bin/tia-cache` as `origin/main` of the store's repository holds it, never the caller's copy. So a clone of an unmerged change only records requests, and it cannot change how the shared store is maintained. Without the tool on that `main`, no worker starts.
+
+Requests stay in `requests.json` until the worker records their outcome, so an interrupted worker leaves them pending. Repeated requests for the same target combine. The worker runs in a new session, so removing the calling worktree does not stop it. It runs at reduced CPU priority, and each command stops after 10 minutes. After each batch, it deletes the run logs that no recorded result names. It removes variables that start with `ORBIT_`, `APP_`, or `DB_`, and `DATABASE_URL`, `CACHE_STORE`, `SESSION_DRIVER`, and `QUEUE_CONNECTION`, from the commands it runs. It keeps `TMPDIR`, `TMP`, and `TEMP`.
 
 For Orbit, the store lives under the stable `default` repository's `.git/orbit-tia/v1` on `/fast`. Register it with `bin/tia-cache register --repository=/fast/apps/orbit/default`. The managed user that owns the store runs the worker, so its `gh` login must read `nckrtl/orbit`.
 
@@ -350,7 +355,7 @@ Every cache command accepts `--repository=PATH`. `seed` and `refresh` accept rep
 
 ### Failures on main
 
-`bin/tia-cache status --json --remote` reports the remote `main`, whether a worker holds the lock, the pending requests, which projects have a graph publication at that `main` in `current`, each project's last result with log paths, the failed projects in `failures`, the open correctness failures, whether a refresh is `needed`, and `refresh_log`. A successful status command reports state. It does not mean that main passes.
+`bin/tia-cache status --json --remote` reads the remote `main` and prints the maintenance state. `current` names the projects whose graph publication is at that `main`. The output also has the worker lock state, the pending requests, each project's last result with log paths, the failed projects in `failures`, the open correctness failures, whether a refresh is `needed`, and `refresh_log`. A successful status command reports state. It does not mean that main passes.
 
 The worker sorts failures into two kinds.
 
@@ -413,7 +418,9 @@ A feature graph can hold unmerged code, failed tests, or working edits, so it ca
 
 ### Only main CI publishes
 
-CI already tests every `main` commit, so its graphs and quality caches cost nothing extra. A deployment never runs a test suite. Running the suites on a development machine to fill the store is a rejected alternative. It repeated the work of CI, competed with other agents for the processors, and inside a deployment it exceeded the deployment's deadline. Its results also depended on the host: a test that passes in CI failed on a host with other file ACLs, and that failure held merges as a correctness failure on main. Publishing the caches of a clean bootstrap on `main` is rejected for the same reason, and because two producers would race for one store.
+CI already tests every `main` commit, so its graphs and quality caches cost nothing extra. A deployment never runs a test suite.
+
+Running the suites on a development machine to fill the store is a rejected alternative. It repeated the work of CI, competed with other agents for the processors, and inside a deployment it exceeded the deployment's deadline. Its results also depended on the host: a test that passes in CI failed on a host with other file ACLs, and that failure held merges as a correctness failure on main. Publishing the caches of a clean bootstrap on `main` is rejected for the same reason, and because two producers would race for one store.
 
 Pest's own baselined mode fetches one artifact per repository with `gh`. Orbit has one artifact per Composer project and a store that many worktrees share, so the worker imports the artifacts into that store instead. A separate cache service is also rejected, because GitHub already keeps the artifacts and linked worktrees already share one store.
 
