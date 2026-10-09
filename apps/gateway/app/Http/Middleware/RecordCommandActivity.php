@@ -607,6 +607,16 @@ final readonly class RecordCommandActivity
             return [];
         }
 
+        if ($command === 't3:environment:register') {
+            // The admin pairing link never enters Activity.
+            return $this->inputSanitizer->sanitizeProperties($request->only(['environment_id', 'label', 'url']));
+        }
+
+        if ($command === 't3:profile:settings:update') {
+            // A settings document can hold workspace pictures; Activity keeps the version it replaced.
+            return $this->inputSanitizer->sanitizeProperties($request->only(['version']));
+        }
+
         if (
             in_array($command, [
                 'project:dev-deploy-step:create',
