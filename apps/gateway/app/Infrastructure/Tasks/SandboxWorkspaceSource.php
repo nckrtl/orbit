@@ -57,10 +57,6 @@ final readonly class SandboxWorkspaceSource
         if (($this->execute($workspace, ['operation' => 'initialize', ...$request])['initialized'] ?? null) !== true) {
             throw new TaskPullRequestException('The sandbox source could not be initialized.');
         }
-        if ($workspace->taskSandbox->provider === 'incus' && $group->project->slug === 'orbit'
-            && ($this->execute($workspace, ['operation' => 'github_dns', ...$request])['ready'] ?? null) !== true) {
-            throw new TaskPullRequestException('The sandbox GitHub DNS bootstrap is unavailable.');
-        }
         $this->fetcher->fetchForTurn($group);
         $result = $this->execute($workspace, ['operation' => 'checkout', ...$request]);
         $commit = $result['starting_commit'] ?? null;
@@ -77,12 +73,11 @@ final readonly class SandboxWorkspaceSource
      */
     private function execute(Instance $workspace, array $request): array
     {
-        $name = $request['operation'] === 'github_dns' ? 'guest-github-dns.py' : 'guest-workspace-source.py';
-        $program = file_get_contents(resource_path('compute/'.$name));
+        $program = file_get_contents(resource_path('compute/guest-workspace-source.py'));
         if (! is_string($program)) {
             throw new TaskPullRequestException('The sandbox source program is unavailable.');
         }
-        $result = $this->guest->execute($workspace, new RemoteCommand([...($request['operation'] === 'github_dns' ? ['sudo', '-n'] : []), 'python3', '-I', '-c', $program],
+        $result = $this->guest->execute($workspace, new RemoteCommand(['python3', '-I', '-c', $program],
             input: json_encode($request, JSON_THROW_ON_ERROR), timeout: 180, maxOutputBytes: 8192), 'sandbox-source', 'tasks.source_failed');
         $data = json_decode($result->stdout, true, flags: JSON_THROW_ON_ERROR);
         if ($result->truncated || ! is_array($data) || array_is_list($data)) {
