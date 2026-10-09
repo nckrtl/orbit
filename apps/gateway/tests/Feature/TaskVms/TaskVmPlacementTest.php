@@ -26,7 +26,7 @@ function task_vm_group(Project $project, TaskCompute $compute = TaskCompute::Vm)
     return Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Work', 'brief' => 'Work', 'status' => 'todo', 'task_compute' => $compute]);
 }
 
-function task_vm_row(Task $group, Node $host, ?Node $node, TaskVmState $state = TaskVmState::Ready, string $wireguardIp = '10.44.64.10'): TaskVm
+function task_vm_row(Task $group, Node $host, ?Node $node, TaskVmState $state = TaskVmState::Ready, string $wireguardIp = '10.44.0.130'): TaskVm
 {
     return TaskVm::query()->create([
         'group_id' => $group->id, 'host_node_id' => $host->id, 'node_id' => $node?->id, 'provider' => 'incus',
