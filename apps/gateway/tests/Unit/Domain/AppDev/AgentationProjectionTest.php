@@ -72,6 +72,7 @@ function agentation_projection_instance(string $name): Instance
         'name' => 'Agentation '.$name,
         'slug' => 'agentation-'.$name,
         'repository_url' => 'git@example.test:agentation-'.$name.'.git',
+        'apps' => fixture_apps(null),
     ]);
 
     return Instance::query()->create([

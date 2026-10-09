@@ -434,6 +434,7 @@ function middleware_app(string $slug): Project
         'name' => $slug,
         'slug' => $slug,
         'repository_url' => 'https://example.test/'.$slug.'.git',
+        'apps' => fixture_apps(null),
     ]);
 }
 

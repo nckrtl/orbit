@@ -47,7 +47,7 @@ it('finds at most one App from equivalent checkout origins', function (
         'slug' => 'acme',
         'repository_url' => $storedRepository,
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
 
     expect(Project::findByRepositoryOrigin($checkoutOrigin))

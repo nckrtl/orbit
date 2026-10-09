@@ -14,12 +14,10 @@ use App\Domain\Instances\Environment\InstanceEnvironmentWriteResult;
 use App\Domain\Instances\Environment\InstanceOperationPreflight;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
-use App\Domain\Nodes\RoleName;
 use App\Domain\Projects\ProjectUpdateProjectionMutator;
 use App\Domain\Projects\ProjectUpdateStatus;
 use App\Domain\Routes\RouteDomainProjector;
 use App\Domain\Routes\RouteStatus;
-use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\Projects\NativeProjectUpdateProjectionMutator;
@@ -38,7 +36,6 @@ function orb101_update_data(
     ?string $slug = null,
     ?string $repositoryUrl = null,
     ?string $defaultBranch = null,
-    ?string $root = null,
 ): UpdateProjectData {
     return new UpdateProjectData(
         typeProvided: false,
@@ -49,8 +46,6 @@ function orb101_update_data(
         repositoryUrl: $repositoryUrl,
         defaultBranchProvided: $defaultBranch !== null,
         defaultBranch: $defaultBranch,
-        rootProvided: $root !== null,
-        root: $root,
     );
 }
 
@@ -334,72 +329,6 @@ describe('UpdateProjectAction', function (): void {
             ->toBe('acme.test')
             ->and(ProjectUpdate::query()->latest('id')->first()?->status)
             ->not->toBe(ProjectUpdateStatus::Complete);
-    });
-
-    it('reconciles inherited web roots without deploying production', function (): void {
-        $override = Instance::query()->create([
-            'project_id' => $this->fixture->project->id,
-            'node_id' => $this->fixture->node->id,
-            'name' => 'docs',
-            'environment' => 'development',
-            'source_layout' => InstanceSourceLayout::Checkout->value,
-            'checkout_path' => '/srv/orbit/apps/acme/docs',
-            'root' => 'docs/public',
-            'branch' => 'main',
-            'status' => InstanceState::Active,
-        ]);
-        $productionNode = Node::query()->create([
-            'name' => 'app-prod',
-            'status' => LifecycleStatus::Active,
-            'public_ssh_host' => '192.0.2.81',
-            'wireguard_ip' => '10.44.0.81',
-        ]);
-        $productionNode->roles()->create([
-            'role' => RoleName::AppProd,
-            'status' => LifecycleStatus::Active,
-        ]);
-        $production = Instance::query()->create([
-            'project_id' => $this->fixture->project->id,
-            'node_id' => $productionNode->id,
-            'name' => 'prod',
-            'environment' => 'production',
-            'source_layout' => 'release',
-            'checkout_path' => '/srv/acme/releases/20260915',
-            'production_home' => '/srv/acme',
-            'root' => null,
-            'branch' => 'release',
-            'deployment_branch' => 'release',
-            'starting_commit' => str_repeat('d', 40),
-            'status' => InstanceState::Active,
-        ]);
-
-        app(UpdateProjectAction::class)->execute(
-            $this->fixture->project,
-            orb101_update_data(root: 'web/public'),
-        );
-
-        expect($this->fixture->project->refresh()->root)
-            ->toBe('web/public')
-            ->and($override->refresh()->root)
-            ->toBe('docs/public')
-            ->and($production->refresh()->deployment_branch)
-            ->toBe('release')
-            ->and($production->checkout_path)
-            ->toBe('/srv/acme/releases/20260915')
-            ->and($this->fixture->projections->runtimeProjections)
-            ->toContain([
-                'instance_id' => $this->fixture->defaultInstance->id,
-                'root' => 'web/public',
-                'validated' => true,
-                'preserved_tuning' => true,
-            ])
-            ->and($this->fixture->projections->runtimeProjections)
-            ->toContain([
-                'instance_id' => $production->id,
-                'root' => '/srv/acme/current/web/public',
-                'validated' => true,
-                'preserved_tuning' => true,
-            ]);
     });
 
     it('refuses a conflicting update while one update is incomplete', function (): void {

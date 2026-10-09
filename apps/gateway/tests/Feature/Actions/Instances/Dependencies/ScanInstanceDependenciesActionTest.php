@@ -25,7 +25,7 @@ use function Pest\Laravel\mock;
 
 function dependency_scan_instance(): Instance
 {
-    $project = Project::query()->create(['slug' => 'dependency-scan', 'name' => 'Dependency scan', 'repository_url' => 'https://example.test/scan.git']);
+    $project = Project::query()->create(['slug' => 'dependency-scan', 'name' => 'Dependency scan', 'repository_url' => 'https://example.test/scan.git', 'apps' => fixture_apps(null)]);
     $node = Node::query()->create(['name' => 'dependency-scan', 'public_ssh_host' => '192.0.2.180', 'wireguard_ip' => '10.44.0.2', 'user' => 'orbit', 'status' => 'active']);
     orbit_test_set_app_placement_role($node, false);
 
@@ -256,7 +256,7 @@ describe('coordinated instance dependency scans', function (): void {
         $this->assertDatabaseCount('instance_dependency_observations', 0);
     })->with([
         ['checkout_path', '/home/orbit/other'], ['status', 'reserved'],
-        ['root', 'apps/other/public'], ['source_is_laravel', true],
+        ['app_overrides', fixture_app_overrides('apps/other/public')], ['source_is_laravel', true],
     ]);
 
     it('does not resurrect usage when removal deletes the instance during collection', function (): void {

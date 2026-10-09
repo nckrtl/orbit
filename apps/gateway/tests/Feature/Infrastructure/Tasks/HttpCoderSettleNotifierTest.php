@@ -23,6 +23,7 @@ function coder_settle_group(): Task
         'slug' => 'coder-app',
         'repository_url' => 'git@github.com:nckrtl/orbit.git',
         'default_branch' => 'main',
+        'apps' => fixture_apps(null),
     ]);
 
     return Task::topLevel()->create([

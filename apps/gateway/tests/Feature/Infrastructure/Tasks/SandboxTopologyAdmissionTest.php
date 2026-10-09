@@ -23,7 +23,7 @@ use function Pest\Laravel\mock;
 function topology_admission_fixture(): array
 {
     $host = Node::query()->create(['name' => 'compute', 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.20', 'public_ssh_host' => '192.0.2.20', 'user' => 'orbit']);
-    $project = Project::query()->create(['name' => 'Orbit', 'slug' => 'orbit', 'repository_url' => 'https://github.com/acme/orbit.git', 'default_branch' => 'main']);
+    $project = Project::query()->create(['name' => 'Orbit', 'slug' => 'orbit', 'repository_url' => 'https://github.com/acme/orbit.git', 'default_branch' => 'main', 'apps' => fixture_apps(null)]);
     $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Ready topology', 'brief' => 'Work', 'status' => 'running', 'task_compute' => TaskCompute::Vm]);
     $task = Task::query()->create(['parent_id' => $group->id, 'title' => 'Turn', 'brief' => 'Work', 'position' => 1, 'status' => 'running']);
     $sandbox = TaskSandbox::query()->create(['id' => 'ca656ccf-240d-476c-90f1-cf70f9dd7a12', 'group_id' => $group->id, 'provider' => 'incus', 'name' => 'ot-0a68f778a3',

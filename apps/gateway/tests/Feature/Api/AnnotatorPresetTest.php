@@ -27,7 +27,7 @@ beforeEach(function (): void {
     $node->roles()->create(['role' => 'app-dev', 'status' => LifecycleStatus::Active]);
     $this->node = $this->markAsGateway($node);
     $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip]);
-    $project = Project::query()->create(['name' => 'Annotations', 'slug' => 'annotations', 'repository_url' => 'git@example.test:annotations.git']);
+    $project = Project::query()->create(['name' => 'Annotations', 'slug' => 'annotations', 'repository_url' => 'git@example.test:annotations.git', 'apps' => fixture_apps(null)]);
     $this->instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'main', 'environment' => 'development', 'checkout_path' => '/home/orbit/apps/annotations', 'source_is_laravel' => false, 'provisioning_step' => 'active', 'status' => 'active']);
     $this->payload = ['target_type' => 'instance', 'target_id' => $this->instance->id, 'name' => 'annotator', 'preset' => 'annotator', 'start' => true];
 });

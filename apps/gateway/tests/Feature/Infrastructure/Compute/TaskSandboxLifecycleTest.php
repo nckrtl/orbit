@@ -21,7 +21,7 @@ use function Pest\Laravel\mock;
 
 function lifecycle_sandbox(): TaskSandbox
 {
-    $project = Project::query()->create(['name' => 'Orbit', 'slug' => 'orbit', 'repository_url' => 'https://github.com/acme/orbit.git']);
+    $project = Project::query()->create(['name' => 'Orbit', 'slug' => 'orbit', 'repository_url' => 'https://github.com/acme/orbit.git', 'apps' => fixture_apps(null)]);
     $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Lifecycle', 'brief' => 'Work', 'status' => 'todo', 'task_compute' => 'vm']);
 
     return TaskSandbox::query()->create(['id' => (string) Str::uuid(), 'group_id' => $group->id, 'provider' => 'incus', 'name' => 'proof', 'state' => 'reserved', 'desired_power' => 'running', 'spec' => []]);

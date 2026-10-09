@@ -75,7 +75,7 @@ beforeEach(function (): void {
         'slug' => 'clone-domain',
         'repository_url' => 'https://example.test/clone-domain.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $this->candidateNode = orb198_clone_node('candidate', '10.44.20.10');
     $this->candidateNode->roles()->create([
@@ -93,7 +93,6 @@ beforeEach(function (): void {
         'name' => 'candidate',
         'environment' => 'development',
         'checkout_path' => '/srv/orbit/apps/clone-domain',
-        'root' => null,
         'branch' => 'main',
         'source_is_laravel' => true,
         'provisioning_step' => 'active',
@@ -679,7 +678,7 @@ it('refuses a route publication step when the Project no longer requires a Route
         ->toThrow(ResourceOperationException::class);
 
     $this->projection->fail = null;
-    $this->orbitApp->update(['type' => ProjectType::NodePackage, 'root' => null]);
+    $this->orbitApp->update(['type' => ProjectType::NodePackage, 'apps' => fixture_apps(null, ProjectType::NodePackage)]);
 
     expect(fn () => $this->action->execute($this->candidate, $this->data))
         ->toThrow(ResourceOperationException::class, 'The clone preview Route changed.');

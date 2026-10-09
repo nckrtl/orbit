@@ -21,11 +21,11 @@ use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Nodes\Storage\StorageRootResolver;
 use App\Domain\Projects\DevelopmentNodeExclusion;
+use App\Domain\Projects\ProjectApps;
 use App\Domain\Routes\RouteDomain;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\SourceControl\ProjectRoot;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
@@ -102,7 +102,7 @@ final readonly class RegisterInstanceAction
                 ? $facts[0]
                 : $this->primaryFacts($facts, $data->sourcePath);
             $project = $this->resolveProject($primaryFacts, $data);
-            $this->preflightSources($caller, $project, $facts, $retainedPrimary, $data->sourcePath, $data->root);
+            $this->preflightSources($caller, $project, $facts, $retainedPrimary, $data->sourcePath, $this->requestedOverrides($project, $data));
             [$members, $instances] = $this->projectionLock->run(function () use (
                 $caller,
                 $project,
@@ -259,14 +259,17 @@ final readonly class RegisterInstanceAction
         }
     }
 
-    /** @param list<RegistrationSourceFacts> $facts */
+    /**
+     * @param  list<RegistrationSourceFacts>  $facts
+     * @param  array<string, array{path: string, web_root: ?string}>|null  $requestedOverrides
+     */
     private function preflightSources(
         Node $node,
         Project $project,
         array $facts,
         ?Instance $retainedPrimary,
         string $submittedPath,
-        ?string $requestedRoot,
+        ?array $requestedOverrides,
     ): void {
         foreach ($facts as $fact) {
             $instance = Instance::query()
@@ -294,7 +297,7 @@ final readonly class RegisterInstanceAction
                 'project_id' => $project->id,
                 'node_id' => $node->id,
                 'checkout_path' => $path,
-                'root' => $instance instanceof Instance ? $instance->root : $requestedRoot,
+                'app_overrides' => $instance instanceof Instance ? $instance->app_overrides : ($requestedOverrides ?? []),
             ]);
             $candidate->setRelation('project', $project);
             $candidate->setRelation('node', $node);
@@ -536,11 +539,7 @@ final readonly class RegisterInstanceAction
             );
         }
 
-        $root = $data->root ?? $project->root;
-
-        if (! is_string($root) || ! ProjectRoot::isValid($root, $project->type)) {
-            throw new ResourceOperationException('project.root_invalid', 'The Project root is invalid.', 422);
-        }
+        $this->requestedOverrides($project, $data);
 
         return $project;
     }
@@ -561,7 +560,7 @@ final readonly class RegisterInstanceAction
             $this->nodeSettings->fromStored($node->settings),
             $account,
         );
-        $rootOverride = $data->root !== null && $data->root !== $project->root ? $data->root : null;
+        $overrides = $this->requestedOverrides($project, $data);
         $retainedRequestId = Instance::query()
             ->where('node_id', $node->id)
             ->where('registration_original_path', $primary->path)
@@ -623,7 +622,7 @@ final readonly class RegisterInstanceAction
                     $project,
                     $fact,
                     $destination,
-                    $data->root,
+                    $overrides,
                 );
             }
 
@@ -644,7 +643,7 @@ final readonly class RegisterInstanceAction
             ];
         }
 
-        $reserved = DB::transaction(function () use ($proposals, $project, $node, $rootOverride, $requestId, $data): array {
+        $reserved = DB::transaction(function () use ($proposals, $project, $node, $overrides, $requestId, $data): array {
             $reserved = [];
 
             foreach ($proposals as $proposal) {
@@ -677,7 +676,7 @@ final readonly class RegisterInstanceAction
                     'name' => $proposal['name'],
                     'source_layout' => $fact->layout,
                     'checkout_path' => $proposal['destination']->value,
-                    'root' => $rootOverride,
+                    'app_overrides' => $overrides ?? [],
                     'branch' => $fact->branch,
                     'starting_commit' => $fact->commit,
                     ...$this->registrationEvidence(
@@ -1030,12 +1029,23 @@ final readonly class RegisterInstanceAction
         );
     }
 
+    /**
+     * Registration inherits every Project app unless the caller sends an override map.
+     *
+     * @return array<string, array{path: string, web_root: ?string}>|null
+     */
+    private function requestedOverrides(Project $project, RegisterInstanceData $data): ?array
+    {
+        return $data->appOverrides === null ? null : ProjectApps::overrides($project->configuredApps(), $data->appOverrides);
+    }
+
+    /** @param array<string, array{path: string, web_root: ?string}>|null $requestedOverrides */
     private function assertRetry(
         Instance $instance,
         Project $project,
         RegistrationSourceFacts $facts,
         StoragePath $destination,
-        ?string $requestedRoot,
+        ?array $requestedOverrides,
     ): void {
         if (
             $instance->project_id !== $project->id
@@ -1045,8 +1055,8 @@ final readonly class RegisterInstanceAction
             || $instance->registration_source_digest !== null
             && $instance->registration_source_digest !== $facts->sourceDigest
             || $instance->checkout_path !== $destination->value
-            || $requestedRoot !== null
-            && ($instance->root ?? $project->root) !== $requestedRoot
+            || $requestedOverrides !== null
+            && ProjectApps::overrides($project->configuredApps(), $instance->app_overrides ?? []) !== $requestedOverrides
         ) {
             throw $this->conflict(
                 'instance.registration_conflict',

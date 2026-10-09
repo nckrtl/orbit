@@ -48,6 +48,7 @@ function revalidation_fixture(array $deliverables, string $base = 'bbbbbbbbbbbbb
     $project = Project::query()->create([
         'name' => 'Path revalidation', 'slug' => 'path-revalidation',
         'repository_url' => 'git@example.test:revalidation.git', 'default_branch' => 'main',
+        'apps' => fixture_apps(null),
     ]);
     $group = Task::topLevel()->create([
         'project_id' => $project->id, 'title' => 'Revalidate before start', 'brief' => 'Check the actual base.',

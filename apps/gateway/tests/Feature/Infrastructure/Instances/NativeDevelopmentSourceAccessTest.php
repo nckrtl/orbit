@@ -18,10 +18,10 @@ use function Pest\Laravel\mock;
 
 it('grants preview source access only through the verified enrolled Project guest', function (string $provider): void {
     $workspace = $provider === 'incus' ? IncusRuntimeWorkspace::create() : UpCloudRuntimeWorkspace::create();
-    $workspace->project->update(['type' => 'laravel-app', 'root' => 'public']);
-    $workspace->update(['task_workspace_routed' => true, 'root' => 'public', 'selected_php_version' => '8.5', 'status' => InstanceState::SourceResolved]);
+    $workspace->project->update(['type' => 'laravel-app', 'apps' => fixture_apps('public', 'laravel-app')]);
+    $workspace->update(['task_workspace_routed' => true, 'selected_php_version' => '8.5', 'status' => InstanceState::SourceResolved]);
     $route = Route::query()->create(['project_id' => $workspace->project_id, 'cluster_id' => $workspace->node->cluster_id,
-        'generation_basis_node_id' => $workspace->node_id, 'domain' => $workspace->name.'.dlf.test',
+        'generation_basis_node_id' => $workspace->node_id, 'app' => 'web', 'domain' => 'web.'.$workspace->name.'.dlf.test',
         'provenance' => 'generated', 'publication' => 'private', 'status' => 'pending']);
     $route->targets()->create(['instance_id' => $workspace->id, 'position' => 0]);
     $route->publishSites();

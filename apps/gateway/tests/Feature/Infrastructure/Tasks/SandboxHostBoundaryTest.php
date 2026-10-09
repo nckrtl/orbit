@@ -37,7 +37,7 @@ use function Pest\Laravel\mock;
 function host_boundary_workspace(bool $associated): Instance
 {
     $host = Node::query()->create(['name' => 'compute', 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.20', 'public_ssh_host' => '192.0.2.20']);
-    $project = Project::query()->create(['name' => 'Orbit', 'slug' => 'orbit', 'repository_url' => 'https://github.com/acme/orbit.git']);
+    $project = Project::query()->create(['name' => 'Orbit', 'slug' => 'orbit', 'repository_url' => 'https://github.com/acme/orbit.git', 'apps' => fixture_apps(null)]);
     $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Boundary', 'brief' => 'Work', 'status' => 'todo', 'task_compute' => TaskCompute::Vm]);
     $sandbox = TaskSandbox::query()->create(['id' => 'b336b38c-f87c-4406-a13c-82563a1ced57', 'group_id' => $group->id, 'provider' => 'incus', 'name' => 'ot-proof', 'state' => 'running', 'desired_power' => 'running', 'spec' => ['host_id' => $host->id]]);
     $workspace = Instance::query()->create(['project_id' => $project->id, 'node_id' => $host->id, 'name' => 'task-'.$group->id,

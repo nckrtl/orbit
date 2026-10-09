@@ -38,7 +38,7 @@ it('prepares a fresh branch-pinned release without changing current', function (
         new CommandResult(0, "20260911-a1\t".str_repeat('a', 40)."\n", '', 1, false),
     ]);
 
-    $instance->update(['root' => $webRoot]);
+    $instance->update(['app_overrides' => fixture_app_overrides($webRoot)]);
     $release = $deployment->prepare($instance, 'release');
 
     expect($release->name)
@@ -179,7 +179,7 @@ it('publishes one validated release with an atomic current replacement', functio
         str_repeat('b', 40),
     );
 
-    $instance->update(['root' => $webRoot]);
+    $instance->update(['app_overrides' => fixture_app_overrides($webRoot)]);
     $selected = $deployment->activate($instance, $release);
 
     expect($selected)
@@ -207,7 +207,7 @@ it('inspects current and retained releases through owned source and root boundar
         new CommandResult(0, "retained\t".str_repeat('b', 40)."\n", '', 1, false),
     ]);
 
-    $instance->update(['root' => $webRoot]);
+    $instance->update(['app_overrides' => fixture_app_overrides($webRoot)]);
     $selected = $deployment->selected($instance);
     $retained = $deployment->retained($instance, 'retained');
 
@@ -304,7 +304,7 @@ it('reads retained releases from a private SSH working directory', function (boo
     [$deployment, $ssh, $instance] = orb219_remote_deployment([
         new CommandResult(0, "SELECTED\t\nRELEASE\tinitial\t".str_repeat('a', 40)."\n", '', 1, false),
     ]);
-    $instance->update(['root' => $webRoot, 'source_is_laravel' => true]);
+    $instance->update(['app_overrides' => fixture_app_overrides($webRoot), 'source_is_laravel' => true]);
     $deployment->releases($instance);
     $sandbox = sys_get_temp_dir().'/orbit-private-release-list-'.Str::uuid();
     mkdir($sandbox, 0o755);
@@ -373,7 +373,7 @@ it('skips partial directories while executing the retained release listing', fun
     [$deployment, $ssh, $instance] = orb219_remote_deployment([
         new CommandResult(0, "SELECTED\tvalid\nRELEASE\tvalid\t".str_repeat('a', 40)."\n", '', 1, false),
     ]);
-    $instance->update(['root' => $webRoot]);
+    $instance->update(['app_overrides' => fixture_app_overrides($webRoot)]);
     $deployment->releases($instance);
 
     $filesystem = new Filesystem;
@@ -472,8 +472,8 @@ it('rejects traversal before asking the remote host to inspect a release', funct
  */
 it('inspects named app production releases and Doctor expectations for non-serving packages', function (string $type): void {
     [$deployment, $ssh, $instance] = orb219_remote_deployment([new CommandResult(0, "NONE\n", '', 1, false)]);
-    $instance->project->update(['type' => $type, 'root' => '.']);
-    $instance->update(['root' => '.', 'source_is_laravel' => false]);
+    $instance->project->update(['type' => $type, 'apps' => fixture_apps('.', $type)]);
+    $instance->update(['app_overrides' => fixture_app_overrides('.'), 'source_is_laravel' => false]);
 
     expect($deployment->selected($instance))->toBeNull();
     expect($ssh->commands[0]->arguments)->toContain('.');
@@ -525,7 +525,7 @@ function orb219_remote_deployment(array $results): array
         'slug' => 'deployment',
         'repository_url' => 'https://example.test/deployment.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $instance = Instance::query()->create([
         'project_id' => $project->id,
@@ -536,7 +536,7 @@ function orb219_remote_deployment(array $results): array
         'checkout_path' => '/home/orbit-app-1/releases/initial',
         'production_user' => 'orbit-app-1',
         'production_home' => '/home/orbit-app-1',
-        'root' => 'public',
+        'app_overrides' => fixture_app_overrides('public'),
         'branch' => 'main',
         'provisioning_step' => 'active',
         'status' => 'active',

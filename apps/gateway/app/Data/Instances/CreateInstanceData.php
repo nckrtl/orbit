@@ -10,7 +10,7 @@ final readonly class CreateInstanceData
         public int $projectId,
         public int $nodeId,
         public string $name,
-        public ?string $root,
+        public mixed $appOverrides,
         public ?string $domain,
         public ?string $branch,
         public ?string $databaseServer = null,

@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\Schema;
 
 function legacy_per_app_transfer(bool $cutover = false): InstanceTransfer
 {
-    $project = Project::query()->create(['name' => 'Transfer', 'slug' => 'transfer', 'repository_url' => 'https://example.test/transfer.git']);
+    $project = Project::query()->create(['name' => 'Transfer', 'slug' => 'transfer', 'repository_url' => 'https://example.test/transfer.git', 'apps' => fixture_apps(null)]);
     $node = Node::query()->create(['name' => 'migration', 'public_ssh_host' => 'migration.example.test', 'status' => 'active']);
     $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'main', 'checkout_path' => '/srv/orbit/apps/project/main', 'app_runtime' => ['web' => ['annotator_store_identity' => false]]]);
     $instance->processes()->create(['app' => 'web', 'name' => 'annotator', 'runtime' => 'systemd', 'working_directory' => $instance->checkout_path, 'runtime_config' => ['preset' => 'annotator'], 'desired_state' => 'running', 'status' => 'active', 'restart_policy' => 'always']);

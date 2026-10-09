@@ -6,10 +6,12 @@ namespace App\Data\Instances;
 
 use App\Actions\Instances\SelectInstanceSeedAction;
 use App\Data\Nodes\NodeIdentityData;
+use App\Data\Projects\ProjectAppData;
 use App\Data\Projects\ProjectIdentityData;
 use App\Data\Routes\RouteData;
 use App\Domain\AppDev\AnnotatorEndpoint;
 use App\Domain\Instances\Deployment\InstanceDeployStepStore;
+use App\Domain\Projects\ProjectApps;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
 use App\Models\InstanceTransfer;
@@ -17,6 +19,7 @@ use App\Models\Route;
 use Spatie\LaravelData\Attributes\MapOutputName;
 use Spatie\LaravelData\Data;
 use Spatie\LaravelData\Mappers\SnakeCaseMapper;
+use stdClass;
 
 #[MapOutputName(SnakeCaseMapper::class)]
 final class InstanceData extends Data
@@ -32,8 +35,10 @@ final class InstanceData extends Data
         public string $checkoutPath,
         public ?string $productionUser,
         public ?string $productionHome,
-        public ?string $root,
-        public ?string $effectiveRoot,
+        /** @var list<ProjectAppData> */
+        public array $apps,
+        /** Name-keyed path and web root overrides, `{}` when the Instance inherits every app. */
+        public stdClass $appOverrides,
         public ?string $selectedBranch,
         public ?string $branchOverride,
         public ?string $startingCommit,
@@ -90,8 +95,8 @@ final class InstanceData extends Data
             checkoutPath: $instance->checkout_path,
             productionUser: $instance->production_user,
             productionHome: $instance->production_home,
-            root: $instance->root,
-            effectiveRoot: $singleApp ? $instance->effectiveRoot() : null,
+            apps: array_map(ProjectAppData::fromArray(...), $instance->effectiveApps()),
+            appOverrides: (object) ProjectApps::overrides($instance->project->configuredApps(), $instance->app_overrides ?? []),
             selectedBranch: $instance->branch,
             branchOverride: $instance->branch_override,
             startingCommit: $instance->starting_commit,

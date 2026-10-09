@@ -196,7 +196,7 @@ function deployment_domain_fixture(): array
         'slug' => 'deployment-domain',
         'repository_url' => 'https://example.test/deployment-domain.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $nodes = array_map(fn (int $number): Node => Node::query()->create([
         'name' => "deployment-node-{$number}",

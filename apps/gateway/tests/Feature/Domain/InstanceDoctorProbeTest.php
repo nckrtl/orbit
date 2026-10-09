@@ -440,7 +440,7 @@ it('keeps the recorded workspace mode healthy after a rename and a routing chang
         'slug' => $slug,
         'repository_url' => "https://github.com/acme/{$slug}.git",
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
         'task_workspace_routed' => $setting,
     ]);
     $instance = instance_probe_task_workspace(
@@ -986,7 +986,7 @@ function instance_probe_app(): Project
         'slug' => "instance-app-{$number}",
         'repository_url' => "https://github.com/acme/private-instance-{$number}.git",
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
 }
 
@@ -1035,12 +1035,13 @@ function instance_probe_orbit_app(): Project
         'slug' => 'orbit',
         'repository_url' => 'https://github.com/acme/orbit.git',
         'default_branch' => 'main',
+        'apps' => fixture_apps(null),
     ]);
 }
 
 function instance_probe_mark_removing(Instance $instance): void
 {
-    $instance->update(['root' => 'public']);
+    $instance->update(['app_overrides' => fixture_app_overrides('public')]);
     $route = $instance->routes()->firstOrFail();
     $removal = InstanceRemoval::query()->create([
         'id' => (string) Str::uuid(),
@@ -1132,7 +1133,7 @@ function instance_probe_production_instance(Project $project, Node $node): Insta
         'production_php_pool' => "orbit-{$user}",
         'production_php_socket' => "/run/php/{$user}.sock",
         'selected_php_version' => '8.5',
-        'root' => 'public',
+        'app_overrides' => fixture_app_overrides('public'),
         'branch' => 'main',
         'starting_commit' => str_repeat('a', 40),
         'status' => InstanceState::Active,

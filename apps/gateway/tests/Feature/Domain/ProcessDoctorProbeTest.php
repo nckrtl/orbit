@@ -85,6 +85,7 @@ it('compares selected process runtimes in process id order', function (): void {
         'name' => 'App',
         'slug' => 'app',
         'repository_url' => 'git@example.test:app.git',
+        'apps' => fixture_apps(null),
     ]);
     $instance = Instance::query()->create([
         'project_id' => $project->id,
@@ -581,6 +582,7 @@ function doctor_process(
         'name' => fake()->word(),
         'slug' => $slug,
         'repository_url' => "git@example.test:{$slug}.git",
+        'apps' => fixture_apps(null),
     ]);
     $instance = Instance::query()->create([
         'project_id' => $project->id,
@@ -615,6 +617,7 @@ function doctor_app_dev_instance(): array
         'name' => 'Docs',
         'slug' => fake()->unique()->slug(),
         'repository_url' => 'git@example.test:docs.git',
+        'apps' => fixture_apps(null),
     ]);
     $instance = Instance::query()->create([
         'project_id' => $project->id,

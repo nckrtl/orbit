@@ -15,7 +15,7 @@ function named_app_project(array $attributes = []): Project
 {
     return Project::query()->create([...[
         'name' => 'Named apps', 'slug' => 'named-apps',
-        'repository_url' => 'https://example.test/named-apps.git', 'root' => 'public',
+        'repository_url' => 'https://example.test/named-apps.git', 'apps' => fixture_apps('public'),
     ], ...$attributes]);
 }
 
@@ -75,9 +75,9 @@ it('requires a nonempty named app list with all four fields', function (array $a
 ]);
 
 it('migrates each legacy root and explicit override independently to a named app without losing other state', function (string $root, string $type, string $path, ?string $webRoot, ?string $override, array $expectedOverride): void {
-    $project = named_app_project(['root' => $root, 'type' => $type]);
+    $project = named_app_project(['type' => $type, 'apps' => fixture_apps($root, $type)]);
     $node = Node::query()->create(['name' => 'named-app-node', 'status' => 'active', 'platform' => 'linux', 'public_ssh_host' => 'node.example.test']);
-    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'default', 'checkout_path' => '/srv/repo', 'root' => $override, 'status' => 'active']);
+    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'default', 'checkout_path' => '/srv/repo', 'app_overrides' => fixture_app_overrides($override), 'status' => 'active']);
     $migration = require database_path('migrations/2026_10_21_000000_add_named_apps_to_projects.php');
     // The predecessor schema cannot retain guards installed by its dependent runtime migration.
     $runtimeGuards = DB::table('sqlite_master')->where('type', 'trigger')->get(['name', 'sql'])->filter(static fn ($trigger): bool => str_contains($trigger->sql, 'projects.apps') || str_contains($trigger->sql, 'SELECT apps FROM projects') || str_contains($trigger->sql, 'app_overrides'));
@@ -86,6 +86,11 @@ it('migrates each legacy root and explicit override independently to a named app
     }
     Schema::table('projects', fn ($table) => $table->dropColumn('apps'));
     Schema::table('instances', fn ($table) => $table->dropColumn('app_overrides'));
+    // The predecessor schema stored one root per Project and an optional Instance root override.
+    Schema::table('projects', fn ($table) => $table->string('root')->nullable());
+    Schema::table('instances', fn ($table) => $table->string('root')->nullable());
+    DB::table('projects')->where('id', $project->id)->update(['root' => $root]);
+    DB::table('instances')->where('id', $instance->id)->update(['root' => $override]);
     $beforeProject = (array) DB::table('projects')->find($project->id);
     $beforeInstance = (array) DB::table('instances')->find($instance->id);
 
@@ -101,6 +106,8 @@ it('migrates each legacy root and explicit override independently to a named app
         expect($afterInstance)->toBe($beforeInstance);
     } finally {
         $migration->up();
+        Schema::table('projects', fn ($table) => $table->dropColumn('root'));
+        Schema::table('instances', fn ($table) => $table->dropColumn('root'));
         foreach ($runtimeGuards as $trigger) {
             DB::statement($trigger->sql);
         }
@@ -154,7 +161,6 @@ it('refuses an invalid named app override before saving it', function (mixed $ov
     'wrong type' => [['site' => ['path' => 1, 'web_root' => 'public']], 'instance.app_overrides_invalid'],
     'traversal' => [['site' => ['path' => '../site', 'web_root' => 'public']], 'instance.app_overrides_invalid'],
     'duplicate effective path' => [['site' => ['path' => 'packages/client', 'web_root' => 'public']], 'project.app_path_conflict'],
-    'null map' => [null, 'instance.app_overrides_invalid'],
 ]);
 
 it('requires a named app selector on several apps and refuses unknown names', function (): void {
@@ -176,22 +182,27 @@ it('requires a named app selector on several apps and refuses unknown names', fu
     expect($instance->applicationPath('client'))->toBe('packages/client');
 });
 
-it('refuses rollback that would discard changed named app configuration', function (): void {
+it('refuses to restore a root for apps that one root cannot describe', function (): void {
     named_app_project(['apps' => [['name' => 'site', 'path' => 'apps/site', 'web_root' => 'public', 'type' => 'laravel-app']]]);
-    $migration = require database_path('migrations/2026_10_21_000000_add_named_apps_to_projects.php');
+    $migration = require database_path('migrations/2026_10_21_000005_remove_project_and_instance_roots.php');
 
-    expect(fn () => $migration->down())->toThrow(RuntimeException::class, 'Cannot discard named apps');
-    expect(Schema::hasColumn('projects', 'apps'))->toBeTrue();
-    expect(Schema::hasColumn('instances', 'app_overrides'))->toBeTrue();
+    expect(fn () => $migration->down())->toThrow(RuntimeException::class, 'Only a Project with the single app [web] has a root.');
+    expect(Schema::hasColumn('projects', 'root'))->toBeFalse();
+    expect(Schema::hasColumn('instances', 'root'))->toBeFalse();
 });
 
-it('refuses rollback that would discard an explicit named app override', function (): void {
+it('restores the single app and an explicit override as roots on rollback', function (): void {
     $project = named_app_project();
     $node = Node::query()->create(['name' => 'rollback-node', 'status' => 'active', 'platform' => 'linux', 'public_ssh_host' => 'node.example.test']);
-    Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'default', 'checkout_path' => '/srv/repo', 'app_overrides' => ['web' => ['path' => 'apps/preview', 'web_root' => 'public']]]);
-    $migration = require database_path('migrations/2026_10_21_000000_add_named_apps_to_projects.php');
+    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'default', 'checkout_path' => '/srv/repo', 'app_overrides' => ['web' => ['path' => 'apps/preview', 'web_root' => 'public']]]);
+    $migration = require database_path('migrations/2026_10_21_000005_remove_project_and_instance_roots.php');
 
-    expect(fn () => $migration->down())->toThrow(RuntimeException::class, 'Cannot discard named app overrides');
-    expect(Schema::hasColumn('projects', 'apps'))->toBeTrue();
-    expect(Schema::hasColumn('instances', 'app_overrides'))->toBeTrue();
+    $migration->down();
+    try {
+        expect(DB::table('projects')->where('id', $project->id)->value('root'))->toBe('public');
+        expect(DB::table('instances')->where('id', $instance->id)->value('root'))->toBe('apps/preview/public');
+    } finally {
+        $migration->up();
+    }
+    expect(Schema::hasColumn('projects', 'root'))->toBeFalse();
 });

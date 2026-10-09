@@ -98,6 +98,7 @@ function drop_public_publication_app_route(
         'name' => $name,
         'slug' => $name,
         'repository_url' => "https://example.test/{$name}.git",
+        'apps' => fixture_apps(null),
     ]);
     $instance = Instance::query()->create([
         'project_id' => $project->id,
@@ -142,6 +143,7 @@ function drop_public_publication_private_route(Cluster $cluster): Route
         'name' => 'Private',
         'slug' => 'private-cutover',
         'repository_url' => 'https://example.test/private-cutover.git',
+        'apps' => fixture_apps(null),
     ]);
     $workload = drop_public_publication_node($cluster, 'private-prod', RoleName::AppProd);
     $instance = Instance::query()->create([

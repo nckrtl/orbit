@@ -1532,6 +1532,7 @@ function app_dev_runtime_models(
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'git@github.com:acme/site.git',
+        'apps' => fixture_apps(null),
     ]);
     $gateway = Node::query()->create([
         'name' => 'gateway',
@@ -1557,7 +1558,7 @@ function app_dev_supported_app_instance(
         'name' => $name,
         'checkout_path' => "/home/orbit/apps/acme/{$name}",
         'selected_php_version' => $phpVersion,
-        'root' => 'public',
+        'app_overrides' => fixture_app_overrides('public'),
         'status' => InstanceState::Active,
     ]);
 }
@@ -1627,14 +1628,14 @@ function orb173_dns_projection_route(
         'name' => ucfirst($name),
         'slug' => $name,
         'repository_url' => "https://example.test/{$name}.git",
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $instance = Instance::query()->create([
         'project_id' => $project->id,
         'node_id' => $workload->id,
         'name' => 'default',
         'checkout_path' => "/home/orbit/apps/{$name}",
-        'root' => 'public',
+        'app_overrides' => fixture_app_overrides('public'),
         'branch' => 'main',
         'starting_commit' => str_repeat($name === 'first' ? 'a' : 'b', 40),
         'selected_php_version' => '8.5',

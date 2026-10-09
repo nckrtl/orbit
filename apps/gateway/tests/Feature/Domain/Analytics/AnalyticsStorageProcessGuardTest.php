@@ -56,7 +56,7 @@ describe(AnalyticsStorageProcessGuard::class, function (): void {
 
     it('refuses a Process that no Node owns', function (): void {
         $storage = analytics_storage_processes();
-        $project = Project::query()->create(['name' => 'shop', 'slug' => 'shop', 'repository_url' => 'git@example.test:shop.git']);
+        $project = Project::query()->create(['name' => 'shop', 'slug' => 'shop', 'repository_url' => 'git@example.test:shop.git', 'apps' => fixture_apps(null)]);
         $storage['postgres']->update(['owner_type' => Project::class, 'owner_id' => $project->id]);
 
         expect(fn () => new AnalyticsStorageProcessGuard()->assert($storage['postgres']->id, $storage['clickhouse']->id))

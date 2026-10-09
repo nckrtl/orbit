@@ -42,7 +42,6 @@ use Illuminate\Support\Carbon;
  * @property string|null $production_php_socket
  * @property array<string, array{path: string, web_root: ?string}>|null $app_overrides
  * @property array<string, array{php_version?: ?string, laravel?: ?bool, vite_port?: ?int, agentation_port?: ?int, annotator_port?: ?int, step?: string, app_identity?: bool, app_identity_ready?: bool, vite_environment_identity?: bool, annotator_store_identity?: bool}>|null $app_runtime
- * @property string|null $root
  * @property string|null $branch
  * @property string|null $deployment_branch
  * @property string|null $branch_override
@@ -137,7 +136,6 @@ final class Instance extends Model
         'production_php_service',
         'production_php_pool',
         'production_php_socket',
-        'root',
         'app_overrides',
         'app_runtime',
         'branch',
@@ -205,13 +203,10 @@ final class Instance extends Model
                 ];
                 $instance->app_runtime = $runtime;
             }
+            // An Instance without overrides inherits every Project app.
+            $instance->app_overrides ??= [];
             if ($instance->isDirty('app_overrides')) {
-                ProjectApps::effective($instance->project->configuredApps(), $instance->app_overrides);
-            } elseif ($instance->app_overrides === null || $instance->isDirty('root')) {
-                // Expand-only bridge for existing Instance root writers.
-                $overrides = $instance->legacyOverrides();
-                ProjectApps::effective($instance->project->configuredApps(), $overrides);
-                $instance->app_overrides = $overrides;
+                $instance->app_overrides = ProjectApps::overrides($instance->project->configuredApps(), $instance->app_overrides);
             }
         });
     }
@@ -459,9 +454,6 @@ final class Instance extends Model
 
     public function relativeWebRoot(?string $app = null): ?string
     {
-        if (! $this->hasNamedApps() && $this->app_overrides === null && $app === null) {
-            return $this->root ?? $this->project->root;
-        }
         $configuration = $this->appConfiguration($app);
 
         if (! ProjectApps::isServing($configuration)) {
@@ -477,37 +469,11 @@ final class Instance extends Model
         return $this->relativeWebRoot() ?? $this->applicationPath();
     }
 
-    /** @return array<string, array{path: string, web_root: ?string}> */
-    private function legacyOverrides(): array
+    public function effectiveRoot(): string
     {
-        $original = $this->getOriginal('app_overrides');
-        $originalRoot = $this->getOriginal('root');
-        if ($originalRoot !== null && ! is_string($originalRoot)) {
-            throw new ResourceOperationException('instance.app_overrides_invalid', 'The retained legacy Instance root is invalid.');
-        }
-        $expected = $originalRoot === null ? [] : ['web' => ProjectApps::fromRoot($originalRoot)];
-        $apps = $this->project->configuredApps();
-        if (($original !== null && $original !== $expected) || count($apps) !== 1 || $apps[0]['name'] !== 'web') {
-            if ($this->root === null && ! $this->isDirty('root')) {
-                return $this->app_overrides ?? [];
-            }
-            throw new ResourceOperationException('instance.app_overrides_invalid', 'Legacy root writes cannot replace named app overrides.');
-        }
-        if ($this->root !== null) {
-            ProjectApps::legacy($this->root, ProjectType::from($apps[0]['type']));
-        }
+        $root = $this->sourceRoot();
 
-        return $this->root === null ? [] : ['web' => ProjectApps::fromRoot($this->root)];
-    }
-
-    public function effectiveRoot(): ?string
-    {
-        $root = $this->relativeWebRoot();
-        if ($root === null && ($this->root ?? $this->project->root) === '.') {
-            $root = '.';
-        }
-
-        if ($this->placementEnvironment() === 'production' && is_string($this->production_home) && is_string($root)) {
+        if ($this->placementEnvironment() === 'production' && is_string($this->production_home)) {
             return "{$this->production_home}/current/{$root}";
         }
 
@@ -516,18 +482,13 @@ final class Instance extends Model
 
     public function removalRoot(): string
     {
-        return count($this->effectiveApps()) === 1 ? ($this->effectiveRoot() ?? $this->applicationPath()) : '.';
+        return count($this->effectiveApps()) === 1 ? $this->effectiveRoot() : '.';
     }
 
     /** @return list<array{name: string, path: string, web_root: ?string, type: string}> */
     public function effectiveApps(): array
     {
-        $overrides = $this->app_overrides;
-        if ($overrides === null || (! $this->isDirty('app_overrides') && $this->isDirty('root'))) {
-            $overrides = $this->legacyOverrides();
-        }
-
-        return ProjectApps::effective($this->project->configuredApps(), $overrides);
+        return ProjectApps::effective($this->project->configuredApps(), $this->app_overrides ?? []);
     }
 
     /** @return array{name: string, path: string, web_root: ?string, type: string} */
@@ -548,13 +509,6 @@ final class Instance extends Model
 
     public function applicationPath(?string $app = null): string
     {
-        // Unsaved legacy fixtures and pre-expand projections retain their previous derivation.
-        if (! $this->hasNamedApps() && $this->app_overrides === null && $app === null) {
-            $relative = ApplicationDirectory::resolve('', $this->root ?? $this->project->root);
-
-            return $relative === '' ? '.' : ltrim($relative, '/');
-        }
-
         return $this->appConfiguration($app)['path'];
     }
 
@@ -567,22 +521,9 @@ final class Instance extends Model
         return ApplicationDirectory::resolvePath($base, $this->applicationPath($app));
     }
 
-    private function hasNamedApps(): bool
-    {
-        $project = $this->getRelationValue('project');
-
-        return $project instanceof Project && $project->apps !== null;
-    }
-
     public function dependencyDirectory(): string
     {
-        if ($this->source_is_laravel === true || $this->hasNamedApps() || $this->project->type->isWebServing()) {
-            return $this->applicationDirectory();
-        }
-
-        return $this->placementEnvironment() === 'production' && is_string($this->production_home)
-            ? "{$this->production_home}/current"
-            : $this->checkout_path;
+        return $this->applicationDirectory();
     }
 
     public function placementEnvironment(): ?string

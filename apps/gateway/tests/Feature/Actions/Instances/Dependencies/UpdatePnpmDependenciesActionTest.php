@@ -17,6 +17,7 @@ use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Symfony\Component\Process\Process;
 
@@ -32,12 +33,12 @@ function pnpm_update_instance(bool $production = false, string $path = '/home/or
         'checkout_path' => $path,
         'production_user' => $production ? 'app_sample' : null,
         'production_home' => $production ? '/home/app_sample' : null,
-        'root' => 'public',
         'source_is_laravel' => true,
     ]);
     $node = new Node(['user' => 'orbit', 'wireguard_ip' => '10.44.0.2']);
     orbit_test_set_app_placement_role($node, $production);
     $instance->setRelation('node', $node);
+    $instance->setRelation('project', new Project(['apps' => fixture_apps('public')]));
 
     return $instance;
 }
@@ -138,7 +139,7 @@ function pnpm_update_probe_present(string $version = '0.3.0', string $vpPath = P
 describe('bounded Vite+ pnpm dependency updates', function (): void {
     it('probes and updates the configured application directory', function (string $root, string $suffix): void {
         $instance = pnpm_update_instance();
-        $instance->root = $root;
+        $instance->setRelation('project', new Project(['apps' => fixture_apps($root)]));
         $path = '/home/orbit/project'.$suffix;
         pnpm_update_ssh([
             [fn (SshConnection $connection, RemoteCommand $command): bool => pnpm_update_probe_command($command, $path), pnpm_update_probe_present()],

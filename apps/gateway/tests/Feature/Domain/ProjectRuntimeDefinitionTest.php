@@ -330,7 +330,7 @@ function domain_runtime_definition_app(string $slug): Project
         'slug' => $slug,
         'repository_url' => "https://example.test/{$slug}.git",
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
 }
 

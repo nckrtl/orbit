@@ -36,6 +36,7 @@ final class ProcessData extends Data
         /** Resident memory in bytes, null when unavailable — never zero for "not running". */
         public ?int $memoryBytes = null,
         public ?string $user = null,
+        public ?string $app = null,
     ) {}
 
     public static function fromModel(
@@ -65,6 +66,7 @@ final class ProcessData extends Data
             cpu: $cpu,
             memoryBytes: $memoryBytes,
             user: ValidatedData::nullableString($process->runtime_config['user'] ?? null),
+            app: $process->app,
         );
     }
 

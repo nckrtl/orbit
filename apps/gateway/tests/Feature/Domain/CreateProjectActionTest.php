@@ -15,7 +15,7 @@ it('rejects an unsafe repository origin before app persistence', function (): vo
         type: ProjectType::LaravelApp,
         repositoryUrl: "ssh://git:{$sentinel}@example.test/acme/site.git",
         defaultBranch: 'main',
-        root: 'public',
+        apps: fixture_apps('public'),
     );
 
     expect(fn (): array => app(CreateProjectAction::class)->execute($data))

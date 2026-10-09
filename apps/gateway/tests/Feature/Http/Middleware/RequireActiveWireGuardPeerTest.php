@@ -338,7 +338,7 @@ it('allows Gateway-scoped app creation from an active Gateway peer', function ()
             'type' => 'laravel-app',
             'repository_url' => 'https://github.com/acme/site.git',
             'default_branch' => 'main',
-            'root' => 'public',
+            'apps' => fixture_apps('public', 'laravel-app'),
         ]);
 
     $response->assertCreated();
@@ -364,6 +364,7 @@ function peer_boundary_process(Node $node): Process
         'name' => 'Private App',
         'slug' => 'private-app',
         'repository_url' => 'https://example.test/private.git',
+        'apps' => fixture_apps(null),
     ]);
     $instance = Instance::query()->create([
         'project_id' => $project->id,

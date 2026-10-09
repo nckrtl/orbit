@@ -74,6 +74,7 @@ beforeEach(function (): void {
         'name' => 'Docs',
         'slug' => 'docs',
         'repository_url' => 'git@example.test:docs.git',
+        'apps' => fixture_apps(null),
     ]);
     $this->instance = Instance::query()->create([
         'project_id' => $project->id,

@@ -29,7 +29,7 @@ function orb350_deployment_recorder_instance(): Instance
         'slug' => 'deployment-recorder',
         'repository_url' => 'https://example.test/deployment-recorder.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
 
     return Instance::query()->create([
@@ -41,7 +41,7 @@ function orb350_deployment_recorder_instance(): Instance
         'checkout_path' => '/home/orbit-app-1/releases/initial',
         'production_user' => 'orbit-app-1',
         'production_home' => '/home/orbit-app-1',
-        'root' => 'public',
+        'app_overrides' => fixture_app_overrides('public'),
         'branch' => 'main',
         'provisioning_step' => 'active',
         'status' => 'active',

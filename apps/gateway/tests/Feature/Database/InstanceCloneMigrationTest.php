@@ -205,7 +205,7 @@ function clone_migration_parents(string $suffix, ?Project $project = null): arra
         'slug' => "clone-migration-{$suffix}",
         'repository_url' => "https://example.test/clone-migration-{$suffix}.git",
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
 
     return [$project, $node];

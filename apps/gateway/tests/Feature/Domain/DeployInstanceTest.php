@@ -83,7 +83,7 @@ it('captures one configuration and preserves the complete deployment order', fun
 
 it('reconciles PHP after deployment and rollback select the release and before cache refresh', function (string $root): void {
     $instance = orb219_deployment_instance([], php: true);
-    $instance->update(['root' => $root]);
+    $instance->update(['app_overrides' => fixture_app_overrides($root)]);
     $trace = new Orb219DeploymentTrace(firstDeployment: true);
     [$deploy, $rollback] = orb219_actions($trace);
 
@@ -478,7 +478,7 @@ function orb219_deployment_instance(array $steps, bool $php = false): Instance
         'slug' => 'deployment',
         'repository_url' => 'https://example.test/deployment.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
 
     $instance = Instance::query()->create([
@@ -490,7 +490,7 @@ function orb219_deployment_instance(array $steps, bool $php = false): Instance
         'checkout_path' => '/home/orbit-app-1/releases/initial',
         'production_user' => 'orbit-app-1',
         'production_home' => '/home/orbit-app-1',
-        'root' => 'public',
+        'app_overrides' => fixture_app_overrides('public'),
         'branch' => 'main',
         'selected_php_version' => $php ? '8.5' : null,
         'source_is_laravel' => $php,

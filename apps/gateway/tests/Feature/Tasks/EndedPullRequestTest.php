@@ -45,6 +45,7 @@ function ended_pr_group(string $state, string $status = 'running'): Task
     $project = Project::query()->create([
         'name' => 'ORB-152', 'slug' => 'orb-152',
         'repository_url' => 'https://github.com/acme/orbit.git', 'default_branch' => 'main',
+        'apps' => fixture_apps(null),
     ]);
     $group = Task::topLevel()->create([
         'project_id' => $project->id, 'title' => 'Early merge', 'brief' => 'Keep the remaining work.',

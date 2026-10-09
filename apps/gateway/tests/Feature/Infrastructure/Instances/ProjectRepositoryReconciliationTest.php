@@ -80,8 +80,6 @@ function orb101_repository_data(string $url): UpdateProjectData
         repositoryUrl: $url,
         defaultBranchProvided: false,
         defaultBranch: null,
-        rootProvided: false,
-        root: null,
     );
 }
 

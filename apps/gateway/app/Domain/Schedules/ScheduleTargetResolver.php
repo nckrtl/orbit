@@ -21,7 +21,7 @@ final readonly class ScheduleTargetResolver
         private ScheduleRuntimeAccountResolver $accounts,
     ) {}
 
-    public function resolve(ScheduleTargetType $type, int $id): ScheduleTarget
+    public function resolve(ScheduleTargetType $type, int $id, ?string $app = null): ScheduleTarget
     {
         if ($id < 1) {
             $this->invalid();
@@ -29,9 +29,12 @@ final readonly class ScheduleTargetResolver
 
         try {
             return match ($type) {
-                ScheduleTargetType::Node => $this->node(Node::query()->findOrFail($id)),
+                ScheduleTargetType::Node => $app === null
+                    ? $this->node(Node::query()->findOrFail($id))
+                    : throw new ResourceOperationException('app.selector_unsupported', 'A Node Schedule has no app.', 422),
                 ScheduleTargetType::Instance => $this->instance(
                     Instance::query()->with('node')->findOrFail($id),
+                    app: $app,
                 ),
             };
         } catch (ModelNotFoundException) {
@@ -42,7 +45,7 @@ final readonly class ScheduleTargetResolver
     public function forSchedule(#[SensitiveParameter] Schedule $schedule): ScheduleTarget
     {
         $type = $this->typeForModel($schedule->target_type);
-        $target = $this->resolve($type, $schedule->target_id);
+        $target = $this->resolve($type, $schedule->target_id, $schedule->app);
 
         if ($target->node->id !== $schedule->host_node_id) {
             $this->unavailable();
@@ -72,7 +75,7 @@ final readonly class ScheduleTargetResolver
             $this->unavailable();
         }
 
-        $target = $this->instance($instance, requireActive: false);
+        $target = $this->instance($instance, requireActive: false, app: $schedule->app);
 
         if ($target->node->id !== $schedule->host_node_id) {
             $this->unavailable();
@@ -94,6 +97,7 @@ final readonly class ScheduleTargetResolver
                 ScheduleTargetType::Instance => $this->instance(
                     Instance::query()->with('node')->findOrFail($schedule->target_id),
                     requireActive: false,
+                    app: $schedule->app,
                 ),
             };
         } catch (ModelNotFoundException) {
@@ -141,7 +145,7 @@ final readonly class ScheduleTargetResolver
         );
     }
 
-    private function instance(Instance $instance, bool $requireActive = true): ScheduleTarget
+    private function instance(Instance $instance, bool $requireActive = true, ?string $app = null): ScheduleTarget
     {
         InstanceSandboxGuard::assertHostOperation($instance);
         $instance->loadMissing('node');
@@ -158,7 +162,7 @@ final readonly class ScheduleTargetResolver
         if ($instance->placedOnAppDev()) {
             $account = $this->account($instance->node, $instance->node->user);
             $this->assertAccount($account, $instance->node);
-            $workingDirectory = $instance->source_is_laravel === true ? $instance->applicationDirectory() : $instance->checkout_path;
+            $workingDirectory = $instance->runtimeForApp($app)['laravel'] === true ? $instance->applicationDirectory($app) : $instance->checkout_path;
             $loginShell = true;
         } elseif ($instance->placedOnAppProd()) {
             $user = $instance->production_user;
@@ -179,7 +183,7 @@ final readonly class ScheduleTargetResolver
             }
 
             $account = new ScheduleRuntimeAccount($user, $account->group, $home, '/bin/bash');
-            $workingDirectory = $instance->source_is_laravel === true ? $instance->applicationDirectory() : "{$home}/current";
+            $workingDirectory = $instance->runtimeForApp($app)['laravel'] === true ? $instance->applicationDirectory($app) : "{$home}/current";
             $loginShell = false;
         } else {
             $this->unavailable();

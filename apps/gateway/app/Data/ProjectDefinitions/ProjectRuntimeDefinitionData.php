@@ -21,6 +21,7 @@ final class ProjectRuntimeDefinitionData extends Data
     public function __construct(
         public string $id,
         public int $projectId,
+        public ?string $app,
         public string $name,
         public array $environments,
         public array $spec,
@@ -40,6 +41,7 @@ final class ProjectRuntimeDefinitionData extends Data
         return new self(
             id: $definition->id,
             projectId: $definition->project_id,
+            app: $definition->app,
             name: $definition->name,
             environments: $definition->environments,
             spec: $spec,

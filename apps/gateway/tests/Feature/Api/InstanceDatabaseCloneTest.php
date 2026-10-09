@@ -136,7 +136,7 @@ beforeEach(function (): void {
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/site.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $this->default = Instance::query()->create([
         'project_id' => $this->project->id,

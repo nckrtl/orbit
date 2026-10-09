@@ -18,6 +18,7 @@ final readonly class ReplaceScheduleDefinitionAction
     ): ScheduleDefinition {
         try {
             $definition->update([
+                'app' => $definition->project->appName($data->app ?? $definition->app, 'definition'),
                 'name' => $data->name,
                 'environments' => $data->environments,
                 'spec' => $data->spec,

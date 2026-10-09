@@ -507,7 +507,7 @@ function public_edge_route(Cluster $cluster, Node $workload): Route
         'slug' => "shop-{$number}",
         'repository_url' => "https://git.example.test/acme/shop-{$number}.git",
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $user = "orbit-app-{$project->id}";
     $instance = Instance::query()->create([
@@ -521,7 +521,7 @@ function public_edge_route(Cluster $cluster, Node $workload): Route
         'production_php_service' => "orbit-{$user}-php8.5-fpm.service",
         'production_php_pool' => "orbit-{$user}",
         'production_php_socket' => "/run/php/{$user}.sock",
-        'root' => 'public',
+        'app_overrides' => fixture_app_overrides('public'),
         'branch' => 'main',
         'starting_commit' => str_repeat('a', 40),
         'selected_php_version' => '8.5',

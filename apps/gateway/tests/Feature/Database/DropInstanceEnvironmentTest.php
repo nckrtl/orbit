@@ -31,6 +31,7 @@ it('derives Instance placement from Node roles and restores the column and const
             'slug' => 'placement',
             'repository_url' => 'https://example.test/placement.git',
             'default_branch' => 'main',
+            'apps' => fixture_apps(null),
         ]);
         $node = Node::query()->create([
             'name' => 'placement-prod',
@@ -103,6 +104,7 @@ it('rolls back the restored column and trigger rewrites when down fails and can 
             'name' => 'Atomic rollback',
             'slug' => 'atomic-rollback',
             'repository_url' => 'https://example.test/atomic-rollback.git',
+            'apps' => fixture_apps(null),
         ]);
         $node = Node::query()->create([
             'name' => 'atomic-rollback-prod',
@@ -188,6 +190,7 @@ it('rolls back trigger rewrites when an injected migration failure interrupts tr
             'name' => 'Atomic placement',
             'slug' => 'atomic-placement',
             'repository_url' => 'https://example.test/atomic-placement.git',
+            'apps' => fixture_apps(null),
         ]);
         $node = Node::query()->create([
             'name' => 'atomic-placement-prod',
@@ -272,6 +275,7 @@ it('refuses to drop the column when an Instance has no active or removing matchi
             'slug' => 'unplaced',
             'repository_url' => 'https://example.test/unplaced.git',
             'default_branch' => 'main',
+            'apps' => fixture_apps(null),
         ]);
         $node = Node::query()->create([
             'name' => 'unplaced-node',

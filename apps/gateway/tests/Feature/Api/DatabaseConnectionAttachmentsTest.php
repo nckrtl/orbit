@@ -328,7 +328,7 @@ function database_attachment_fixture(): array
         'slug' => 'environment-api',
         'repository_url' => 'https://example.test/environment-api.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $instance = Instance::query()->create([
         'project_id' => $project->id,

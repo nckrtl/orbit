@@ -24,8 +24,15 @@
                 "checkout_path": "/srv/orbit/apps/acme/dev",
                 "production_user": null,
                 "production_home": null,
-                "root": null,
-                "effective_root": "public",
+                "apps": [
+                    {
+                        "name": "web",
+                        "path": ".",
+                        "web_root": "public",
+                        "type": "laravel-app"
+                    }
+                ],
+                "app_overrides": {},
                 "selected_branch": "dev",
                 "branch_override": null,
                 "starting_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",

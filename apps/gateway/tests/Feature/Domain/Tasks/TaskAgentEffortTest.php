@@ -60,6 +60,7 @@ function effort_task(): Task
     $project = Project::query()->create([
         'name' => 'effort', 'slug' => 'effort',
         'repository_url' => 'git@example.test:effort.git', 'default_branch' => 'main',
+        'apps' => fixture_apps(null),
     ]);
     $node = Node::query()->create([
         'name' => 'effort-node', 'platform' => 'linux', 'status' => 'active',

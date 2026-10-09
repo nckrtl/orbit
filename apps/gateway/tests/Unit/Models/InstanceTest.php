@@ -12,11 +12,11 @@ use Tests\TestCase;
 
 uses(TestCase::class);
 
-it('keeps non-Laravel dependency trees at repository scope and uses the effective Laravel root', function (ProjectType $type, ?bool $laravel, ?string $override, string $expected): void {
-    $project = new Project(['type' => $type, 'root' => 'apps/site/public']);
+it('resolves dependency trees in the effective app directory', function (ProjectType $type, ?bool $laravel, ?string $override, string $expected): void {
+    $project = new Project(['type' => $type, 'apps' => fixture_apps('apps/site/public', $type)]);
     $node = new Node;
     $node->setRelation('roles', collect([new NodeRole(['role' => RoleName::AppDev])]));
-    $instance = new Instance(['checkout_path' => '/srv/repository', 'root' => $override, 'source_is_laravel' => $laravel]);
+    $instance = new Instance(['checkout_path' => '/srv/repository', 'app_overrides' => fixture_app_overrides($override), 'source_is_laravel' => $laravel]);
     $instance->setRelation('project', $project);
     $instance->setRelation('node', $node);
 
@@ -25,15 +25,15 @@ it('keeps non-Laravel dependency trees at repository scope and uses the effectiv
     'Laravel inherited' => [ProjectType::LaravelApp, null, null, '/srv/repository/apps/site'],
     'Laravel override public' => [ProjectType::LaravelApp, true, 'public', '/srv/repository'],
     'Laravel monorepo' => [ProjectType::Monorepo, true, null, '/srv/repository/apps/site'],
-    'unclassified monorepo' => [ProjectType::Monorepo, null, null, '/srv/repository'],
-    'package' => [ProjectType::LaravelPackage, false, null, '/srv/repository'],
+    'unclassified monorepo' => [ProjectType::Monorepo, null, null, '/srv/repository/apps/site'],
+    'package' => [ProjectType::LaravelPackage, false, null, '/srv/repository/apps/site'],
     'Symfony inherited' => [ProjectType::SymfonyApp, false, null, '/srv/repository/apps/site'],
 ]);
 
 it('requires a Route and serves PHP for web-serving project types only', function (ProjectType $type, bool $serving): void {
     $instance = new Instance(['checkout_path' => '/srv/repository', 'source_is_laravel' => false]);
     // A package with a web root is a serving app; only path `.` with no web root is non-serving.
-    $instance->setRelation('project', new Project(['type' => $type, 'root' => $serving ? 'public' : '.']));
+    $instance->setRelation('project', new Project(['type' => $type, 'apps' => fixture_apps($serving ? 'public' : '.', $type)]));
 
     expect($instance->requiresRoute())->toBe($serving)
         ->and($instance->servesPhp())->toBe($serving);
@@ -45,7 +45,7 @@ it('requires a Route and serves PHP for web-serving project types only', functio
 ]);
 
 it('resolves the application directory from the inherited web root', function (?string $root, string $suffix): void {
-    $project = new Project(['root' => $root]);
+    $project = new Project(['apps' => fixture_apps($root, $root === '.' ? ProjectType::LaravelPackage : ProjectType::LaravelApp)]);
     $node = new Node;
     $node->setRelation('roles', collect([new NodeRole(['role' => RoleName::AppDev])]));
     $instance = new Instance(['checkout_path' => '/srv/checkouts/site', 'production_home' => '/srv/production/site']);
@@ -65,7 +65,7 @@ it('resolves the application directory from the inherited web root', function (?
 ]);
 
 it('resolves the production application directory through current rather than the selected checkout', function (?string $root, string $suffix): void {
-    $project = new Project(['root' => $root]);
+    $project = new Project(['apps' => fixture_apps($root, $root === '.' ? ProjectType::LaravelPackage : ProjectType::LaravelApp)]);
     $node = new Node;
     $node->setRelation('roles', collect([new NodeRole(['role' => RoleName::AppProd])]));
     $instance = new Instance([
@@ -84,12 +84,12 @@ it('resolves the production application directory through current rather than th
     'unset root' => [null, ''],
 ]);
 
-it('uses the Instance override for the application directory without changing the stored roots', function (RoleName $role, string $expected): void {
-    $project = new Project(['root' => 'apps/other/public']);
+it('uses the Instance override for the application directory without changing the stored apps', function (RoleName $role, string $expected): void {
+    $project = new Project(['apps' => fixture_apps('apps/other/public')]);
     $node = new Node;
     $node->setRelation('roles', collect([new NodeRole(['role' => $role])]));
     $instance = new Instance([
-        'root' => 'server/web/public',
+        'app_overrides' => fixture_app_overrides('server/web/public'),
         'checkout_path' => '/srv/checkouts/site',
         'production_home' => '/srv/production/site',
     ]);
@@ -97,8 +97,8 @@ it('uses the Instance override for the application directory without changing th
     $instance->setRelation('node', $node);
 
     expect($instance->applicationDirectory())->toBe($expected);
-    expect($instance->root)->toBe('server/web/public');
-    expect($project->root)->toBe('apps/other/public');
+    expect($instance->app_overrides)->toBe(fixture_app_overrides('server/web/public'));
+    expect($project->apps)->toBe(fixture_apps('apps/other/public'));
 })->with([
     'development' => [RoleName::AppDev, '/srv/checkouts/site/server/web'],
     'production' => [RoleName::AppProd, '/srv/production/site/current/server/web'],

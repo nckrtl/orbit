@@ -49,6 +49,11 @@ function run_legacy_schema_migration(object $migration, string $direction): mixe
         || str_contains($file, 'drop_public_publication_from_routes.php');
     $rename = require database_path('migrations/2026_10_04_000000_rename_app_domain_to_project_and_instance.php');
     $flipped = false;
+    // Earlier migrations still read the Project and Instance roots that named apps replaced. The
+    // restored columns stay for the rest of the test; its database transaction discards them.
+    if (! $isRename && ! $runsOnCurrentSchema && Schema::hasTable('projects') && ! Schema::hasColumn('projects', 'root')) {
+        restore_legacy_project_roots();
+    }
 
     if (! $isRename && ! $runsOnCurrentSchema && Schema::hasTable('projects') && ! Schema::hasTable('apps')) {
         $rename->renameSchema(false);
@@ -75,4 +80,10 @@ function run_legacy_schema_migration(object $migration, string $direction): mixe
             $rename->renameSchema(true);
         }
     }
+}
+
+/** Puts back the Project and Instance roots, and the removal guard that reads them, for historical migrations. */
+function restore_legacy_project_roots(): void
+{
+    (require database_path('migrations/2026_10_21_000005_remove_project_and_instance_roots.php'))->down();
 }

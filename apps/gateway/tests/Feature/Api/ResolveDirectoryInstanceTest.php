@@ -15,7 +15,7 @@ function directory_resolution_fixture(): array
     $caller = Node::query()->create(['name' => 'directory-caller', 'public_ssh_host' => '192.0.2.80', 'wireguard_ip' => '10.44.0.80', 'user' => 'orbit', 'status' => 'active']);
     orbit_test_set_app_placement_role($caller, false);
     $caller->accessibleNodes()->attach($caller);
-    $project = Project::query()->create(['name' => 'Directory', 'slug' => 'directory', 'repository_url' => 'https://example.test/app.git']);
+    $project = Project::query()->create(['name' => 'Directory', 'slug' => 'directory', 'repository_url' => 'https://example.test/app.git', 'apps' => fixture_apps(null)]);
     $instance = $project->instances()->create(['node_id' => $caller->id, 'name' => 'fixture', 'environment' => 'development', 'status' => 'active', 'checkout_path' => '/home/orbit/project']);
     mock(SshExecutor::class)->shouldNotReceive('execute');
 

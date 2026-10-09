@@ -52,7 +52,7 @@ beforeEach(function (): void {
 
 function domain_documents_project(string $slug = 'documents'): Project
 {
-    return Project::query()->create(['name' => $slug, 'slug' => $slug, 'repository_url' => 'https://github.com/example/'.$slug.'.git']);
+    return Project::query()->create(['name' => $slug, 'slug' => $slug, 'repository_url' => 'https://github.com/example/'.$slug.'.git', 'apps' => fixture_apps(null)]);
 }
 
 /** @return object{objects: array<string, string>, calls: array, fail: bool, corrupt: bool, afterPut: Closure|null, beforePut: Closure|null, requests: array} */

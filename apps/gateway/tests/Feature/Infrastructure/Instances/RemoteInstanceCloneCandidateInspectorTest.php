@@ -370,7 +370,7 @@ function orb198_clone_candidate(string $environment = 'development'): Instance
         'slug' => 'acme-clone-candidate',
         'repository_url' => 'ssh://git@example.test/acme.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $production = $environment === 'production';
 

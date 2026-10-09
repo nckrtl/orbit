@@ -679,8 +679,8 @@ function orb181_removal_projector(
 
 it('withdraws a parked Project sandbox preview through native projection without reaching its guest', function (): void {
     $workspace = IncusRuntimeWorkspace::create();
-    $workspace->project->update(['type' => 'laravel-app', 'root' => 'public']);
-    $workspace->update(['task_workspace_routed' => true, 'root' => 'public', 'starting_commit' => str_repeat('a', 40)]);
+    $workspace->project->update(['type' => 'laravel-app', 'apps' => fixture_apps('public', 'laravel-app')]);
+    $workspace->update(['task_workspace_routed' => true, 'starting_commit' => str_repeat('a', 40)]);
     $route = app(CreateRouteAction::class)->ensureForInstance($workspace, null);
     $route->update(['status' => RouteStatus::Active, 'sites_published' => true]);
     $workspace->update(['status' => InstanceState::Active]);
@@ -738,7 +738,7 @@ function orb181_projector_app(string $suffix): Project
         'slug' => "acme-{$suffix}",
         'repository_url' => "https://example.test/acme-{$suffix}.git",
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
 }
 
@@ -779,7 +779,7 @@ function orb181_projector_instance(
         'name' => $name,
         'environment' => $environment,
         'checkout_path' => "/home/orbit/apps/{$project->slug}/{$name}",
-        'root' => 'public',
+        'app_overrides' => fixture_app_overrides('public'),
         'branch' => 'main',
         'starting_commit' => str_repeat('a', 40),
         'selected_php_version' => '8.5',

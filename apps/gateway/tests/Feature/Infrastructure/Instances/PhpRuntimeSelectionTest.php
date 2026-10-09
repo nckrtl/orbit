@@ -210,6 +210,7 @@ function orb170_source_configurator(ProjectType $type, string $composer, string 
         'slug' => 'acme-'.$suffix,
         'type' => $type,
         'repository_url' => 'https://example.test/acme-'.$suffix.'.git',
+        'apps' => fixture_apps(null, $type),
     ]);
     $instance = Instance::query()->create([
         'project_id' => $project->id,

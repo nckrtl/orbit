@@ -22,7 +22,6 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\GitRepositoryOrigin;
-use App\Domain\SourceControl\ProjectRoot;
 use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\InstanceProvisionFailure;
 use App\Domain\Tasks\InstanceProvisioning;
@@ -147,7 +146,6 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
                 'source_layout' => InstanceSourceLayout::Checkout,
                 'source_prepare_id' => (string) Str::uuid(),
                 'checkout_path' => $checkout->value,
-                'root' => $visitable ? $group->project->root : null,
                 'branch_override' => $name,
                 'task_workspace_routed' => $visitable,
                 'status' => InstanceState::Reserved,
@@ -187,7 +185,6 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
         }
 
         return $workspace->status === InstanceState::Active
-            || (is_string($workspace->root) && $workspace->root !== '')
             || $workspace->routes()->exists();
     }
 
@@ -321,10 +318,6 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
 
         if (! GitRepositoryOrigin::isValid($project->repository_url)) {
             return new InstanceProvisionFailure('Project repository is missing or invalid.');
-        }
-
-        if ($visitable && (! is_string($project->root) || ! ProjectRoot::isValid($project->root, $project->type))) {
-            return new InstanceProvisionFailure('Routed workspace Project root is missing or invalid.');
         }
 
         return null;

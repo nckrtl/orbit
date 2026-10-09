@@ -52,14 +52,14 @@ it('projects a Node-scoped Route to the workload WireGuard address', function ()
         'name' => 'Solo',
         'slug' => 'solo',
         'repository_url' => 'https://example.test/solo.git',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $instance = Instance::query()->create([
         'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'default',
         'checkout_path' => '/home/orbit/apps/solo',
-        'root' => 'public',
+        'app_overrides' => fixture_app_overrides('public'),
         'branch' => 'main',
         'starting_commit' => str_repeat('c', 40),
         'selected_php_version' => '8.5',
@@ -392,14 +392,14 @@ function orb258_cluster_route(): Route
         'name' => 'Clustered',
         'slug' => 'clustered',
         'repository_url' => 'https://example.test/clustered.git',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $instance = Instance::query()->create([
         'project_id' => $project->id,
         'node_id' => $workload->id,
         'name' => 'default',
         'checkout_path' => '/home/orbit/apps/clustered',
-        'root' => 'public',
+        'app_overrides' => fixture_app_overrides('public'),
         'branch' => 'main',
         'starting_commit' => str_repeat('d', 40),
         'selected_php_version' => '8.5',

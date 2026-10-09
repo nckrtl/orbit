@@ -135,6 +135,7 @@ function tick_group(): Task
         'repository_url' => 'git@example.test:tick.git',
         'default_branch' => 'main',
         'task_check' => 'composer check',
+        'apps' => fixture_apps(null),
     ]);
     $node = Node::query()->create([
         'name' => 'tick-node',
@@ -2674,6 +2675,7 @@ it('records a legacy turn read failure without skipping the other group', functi
         'name' => 'tick-review-legacy', 'slug' => 'tick-review-legacy',
         'repository_url' => 'git@example.test:tick-review-legacy.git', 'default_branch' => 'main',
         'task_check' => 'composer check',
+        'apps' => fixture_apps(null),
     ]);
     $node = Node::query()->create([
         'name' => 'tick-review-legacy-node', 'status' => LifecycleStatus::Active, 'platform' => 'linux',
@@ -6998,6 +7000,7 @@ function tick_baseline_group(string $slug, ?string $taskCheck, array $steps, str
         'repository_url' => "git@example.test:{$slug}.git",
         'default_branch' => 'main',
         'task_check' => $taskCheck,
+        'apps' => fixture_apps(null),
     ]);
     $node = Node::query()->create([
         'name' => $slug.'-node',

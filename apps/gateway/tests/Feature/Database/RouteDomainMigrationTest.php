@@ -59,6 +59,7 @@ it('preserves populated application endpoints and migrates them to domain', func
         'name' => 'Shop',
         'slug' => 'shop',
         'repository_url' => 'https://example.test/shop.git',
+        'apps' => fixture_apps(null),
     ]);
     $node = Node::query()->create([
         'name' => 'shop-node',
@@ -109,6 +110,7 @@ it('refuses before schema mutation when a Route hostname change is incomplete', 
         'name' => 'Refuse',
         'slug' => 'refuse',
         'repository_url' => 'https://example.test/refuse.git',
+        'apps' => fixture_apps(null),
     ]);
     $node = Node::query()->create([
         'name' => 'refuse-node',
@@ -174,6 +176,7 @@ it('rewrites encrypted environment references to the domain placeholder', functi
         'name' => 'Env',
         'slug' => 'env',
         'repository_url' => 'https://example.test/env.git',
+        'apps' => fixture_apps(null),
     ]);
     $node = Node::query()->create([
         'name' => 'env-node',
@@ -203,6 +206,7 @@ it('repairs after an injected failure and retries the domain migration forward',
         'name' => 'Retry',
         'slug' => 'retry',
         'repository_url' => 'https://example.test/retry.git',
+        'apps' => fixture_apps(null),
     ]);
     $node = Node::query()->create([
         'name' => 'retry-node',

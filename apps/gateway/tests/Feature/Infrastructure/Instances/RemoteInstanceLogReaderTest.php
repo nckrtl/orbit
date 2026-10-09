@@ -58,12 +58,12 @@ it('reads bounded whole lines from the application directory for one-shot and li
         },
     );
     $node = Node::query()->create(['name' => 'app-dev', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'public_ssh_host' => '192.0.2.40', 'user' => 'orbit', 'wireguard_ip' => '10.44.0.40']);
-    $project = Project::query()->create(['name' => 'Shop', 'slug' => 'shop', 'repository_url' => 'git@example.test:shop.git', 'default_branch' => 'main']);
+    $project = Project::query()->create(['name' => 'Shop', 'slug' => 'shop', 'repository_url' => 'git@example.test:shop.git', 'default_branch' => 'main', 'apps' => fixture_apps(null)]);
     $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'main', 'checkout_path' => '/home/orbit/apps/shop/main', 'status' => 'active']);
 
     $node->roles()->create(['role' => $production ? 'app-prod' : 'app-dev', 'status' => LifecycleStatus::Active]);
     $instance->update([
-        'root' => $root,
+        'app_overrides' => fixture_app_overrides($root),
         'source_is_laravel' => true,
         ...($production ? ['checkout_path' => '/home/shop/releases/initial', 'production_home' => '/home/shop', 'production_user' => 'shop'] : []),
     ]);

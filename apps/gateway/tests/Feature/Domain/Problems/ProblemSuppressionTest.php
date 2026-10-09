@@ -483,6 +483,7 @@ function problem_suppression_project(): Project
         'slug' => 'orbit',
         'repository_url' => 'https://example.test/orbit.git',
         'default_branch' => 'main',
+        'apps' => fixture_apps(null),
     ]);
 }
 

@@ -108,7 +108,7 @@ describe('Cluster lifecycle', function (): void {
             'slug' => 'acme',
             'repository_url' => 'https://example.test/acme.git',
             'default_branch' => 'main',
-            'root' => 'public',
+            'apps' => fixture_apps('public'),
         ]);
         $instance = Instance::query()->create([
             'project_id' => $project->id,

@@ -82,6 +82,7 @@ function store_route_site_transitions_route(Node $node, string $name, RouteStatu
         'name' => $name,
         'slug' => "backfill-{$name}",
         'repository_url' => "https://example.test/{$name}.git",
+        'apps' => fixture_apps(null),
     ]);
     $instance = Instance::query()->create([
         'project_id' => $project->id,

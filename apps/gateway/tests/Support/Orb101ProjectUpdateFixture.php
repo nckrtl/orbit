@@ -67,7 +67,7 @@ final class Orb101ProjectUpdateFixture
             'slug' => 'acme',
             'repository_url' => 'git@github.com:acme/site.git',
             'default_branch' => 'main',
-            'root' => 'public',
+            'apps' => fixture_apps('public'),
         ]);
         $default = Instance::query()->create([
             'project_id' => $project->id,

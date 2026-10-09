@@ -16,6 +16,7 @@ use App\Models\Route;
 use App\Models\Task;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 require_once __DIR__.'/../../Support/RuntimeGuardIsolation.php';
 use Illuminate\Support\Str;
@@ -171,6 +172,7 @@ it('does not reconcile sources when an update only changes task workspace routin
 });
 
 it('seeds legacy orbit Projects unrouted, preserves task checks, and backfills workspace mode from state and Routes', function (): void {
+    restore_legacy_project_roots();
     $node = Node::query()->create([
         'name' => 'routing-node',
         'status' => LifecycleStatus::Active,
@@ -183,7 +185,7 @@ it('seeds legacy orbit Projects unrouted, preserves task checks, and backfills w
         'type' => ProjectType::Monorepo,
         'repository_url' => 'https://github.com/orbit/orbit.git',
         'default_branch' => 'main',
-        'root' => 'apps/web/public',
+        'apps' => fixture_apps('apps/web/public', ProjectType::Monorepo),
         'task_check' => 'composer check',
     ]);
     $shop = Project::query()->create([
@@ -191,7 +193,7 @@ it('seeds legacy orbit Projects unrouted, preserves task checks, and backfills w
         'slug' => 'shop',
         'repository_url' => 'https://github.com/acme/shop.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
         'task_check' => 'vp run check',
     ]);
     $plain = Project::query()->create([
@@ -199,7 +201,7 @@ it('seeds legacy orbit Projects unrouted, preserves task checks, and backfills w
         'slug' => 'plain',
         'repository_url' => 'https://github.com/acme/plain.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
         'task_check' => null,
     ]);
 
@@ -214,7 +216,7 @@ it('seeds legacy orbit Projects unrouted, preserves task checks, and backfills w
         'node_id' => $node->id,
         'name' => 'default',
         'checkout_path' => '/srv/orbit/apps/shop/default',
-        'root' => 'public',
+        'app_overrides' => fixture_app_overrides('public'),
         'status' => 'active',
     ]);
     $ordinaryRoute = Route::query()->create([
@@ -294,7 +296,7 @@ it('seeds legacy orbit Projects unrouted, preserves task checks, and backfills w
 });
 
 /**
- * @return array{slug: string, type: string, repository_url: string, default_branch: string, root: string}
+ * @return array{slug: string, type: string, repository_url: string, default_branch: string, apps: list<array{name: string, path: string, web_root: ?string, type: string}>}
  */
 function routing_project_payload(string $slug): array
 {
@@ -303,7 +305,7 @@ function routing_project_payload(string $slug): array
         'type' => ProjectType::LaravelApp->value,
         'repository_url' => 'https://github.com/acme/'.$slug.'.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ];
 }
 
@@ -314,7 +316,7 @@ function routing_task_workspace(Project $project, Node $node, string $status, ?s
         'node_id' => $node->id,
         'name' => 'pending-'.Str::uuid()->toString(),
         'checkout_path' => '/srv/orbit/apps/'.$project->slug.'/'.Str::uuid()->toString(),
-        'root' => $root,
+        'app_overrides' => fixture_app_overrides($root),
         'status' => $withRoute ? 'active' : $status,
     ]);
     $task = Task::topLevel()->create([
@@ -331,6 +333,10 @@ function routing_task_workspace(Project $project, Node $node, string $status, ?s
     }
 
     $instance->update($attributes);
+    if ($root !== null && Schema::hasColumn('instances', 'root')) {
+        // The historical routing migration reads the legacy root a routed workspace carried.
+        DB::table('instances')->where('id', $instance->id)->update(['root' => $root]);
+    }
     $task->taskable()->associate($instance);
     $task->save();
 

@@ -20,7 +20,7 @@ beforeEach(function (): void {
     $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.1']);
     $this->project = Project::query()->create([
         'name' => 'Acme', 'slug' => 'acme', 'repository_url' => 'https://example.test/acme.git',
-        'default_branch' => 'main', 'root' => 'public',
+        'default_branch' => 'main', 'apps' => fixture_apps('public'),
     ]);
     $this->url = "/api/v1/projects/{$this->project->id}/dev-deploy-steps";
 });
@@ -60,7 +60,7 @@ describe('Project development deploy steps', function (): void {
         foreach (['setup-steps', 'teardown-steps', 'dev-deploy-steps'] as $list) {
             $this->postJson("/api/v1/projects/{$this->project->id}/{$list}", ['name' => 'install', 'command' => $list])->assertCreated();
         }
-        $other = Project::query()->create(['name' => 'Other', 'slug' => 'other', 'repository_url' => 'https://example.test/other.git', 'default_branch' => 'main']);
+        $other = Project::query()->create(['name' => 'Other', 'slug' => 'other', 'repository_url' => 'https://example.test/other.git', 'default_branch' => 'main', 'apps' => fixture_apps(null)]);
         $this->getJson("/api/v1/projects/{$other->id}/dev-deploy-steps")->assertOk()->assertJsonCount(0, 'data');
         $this->patchJson("/api/v1/projects/{$other->id}/dev-deploy-steps/install", ['required' => false])->assertNotFound();
         $this->deleteJson("/api/v1/projects/{$other->id}/dev-deploy-steps/install")->assertNotFound();

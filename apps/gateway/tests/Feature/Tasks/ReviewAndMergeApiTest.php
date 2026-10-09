@@ -28,6 +28,7 @@ function review_merge_api_project(array $attributes = []): Project
     return Project::query()->create([
         'name' => 'Shop', 'slug' => 'shop', 'repository_url' => 'https://github.com/acme/shop.git', 'default_branch' => 'main',
         ...$attributes,
+        'apps' => fixture_apps(null),
     ]);
 }
 

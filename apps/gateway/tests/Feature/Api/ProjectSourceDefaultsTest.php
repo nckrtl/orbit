@@ -69,25 +69,25 @@ it('stores explicit source defaults and returns them through every App response'
         'type' => 'laravel-app',
         'repository_url' => 'https://github.com/acme/site.git',
         'default_branch' => 'stable',
-        'root' => 'web/public',
+        'apps' => fixture_apps('web/public', 'laravel-app'),
     ]);
 
     $created
         ->assertCreated()
         ->assertJsonPath('data.repository_url', 'https://github.com/acme/site.git')
         ->assertJsonPath('data.default_branch', 'stable')
-        ->assertJsonPath('data.root', 'web/public');
+        ->assertJsonPath('data.apps', fixture_apps('web/public'));
     $projectId = $created->json('data.id');
     $this
         ->getJson('/api/v1/projects')
         ->assertOk()
         ->assertJsonPath('data.0.default_branch', 'stable')
-        ->assertJsonPath('data.0.root', 'web/public');
+        ->assertJsonPath('data.0.apps', fixture_apps('web/public'));
     $this
         ->getJson("/api/v1/projects/{$projectId}")
         ->assertOk()
         ->assertJsonPath('data.default_branch', 'stable')
-        ->assertJsonPath('data.root', 'web/public');
+        ->assertJsonPath('data.apps', fixture_apps('web/public'));
 
     expect($this->branches->resolvedRepositories)
         ->toBeEmpty()
@@ -96,11 +96,11 @@ it('stores explicit source defaults and returns them through every App response'
             'repository' => 'https://github.com/acme/site.git',
             'branch' => 'stable',
         ]])
-        ->and(Project::query()->sole()->only(['repository_url', 'default_branch', 'root']))
+        ->and(Project::query()->sole()->only(['repository_url', 'default_branch', 'apps']))
         ->toBe([
             'repository_url' => 'https://github.com/acme/site.git',
             'default_branch' => 'stable',
-            'root' => 'web/public',
+            'apps' => fixture_apps('web/public'),
         ]);
 });
 
@@ -110,7 +110,7 @@ it('resolves an omitted default branch once and returns the existing Project on 
         'slug' => 'acme',
         'type' => 'laravel-app',
         'repository_url' => 'https://github.com/acme/site.git',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ];
 
     $created = $this
@@ -139,7 +139,7 @@ it('rejects conflicting creation identity without mutation or remote access', fu
         'type' => 'laravel-app',
         'repository_url' => 'https://github.com/acme/site.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ];
 
     $this->postJson('/api/v1/projects', $payload)->assertCreated();
@@ -156,13 +156,13 @@ it('rejects conflicting creation identity without mutation or remote access', fu
             'name',
             'repository_url',
             'default_branch',
-            'root',
+            'apps',
         ]))
         ->toBe([
             'name' => 'Acme',
             'repository_url' => 'https://github.com/acme/site.git',
             'default_branch' => 'main',
-            'root' => 'public',
+            'apps' => fixture_apps('public'),
         ])
         ->and($this->branches->verifiedBranches)
         ->toBeEmpty();
@@ -172,7 +172,7 @@ it('rejects conflicting creation identity without mutation or remote access', fu
         'repository_url' => 'ssh://git@github.com/acme/site.git',
     ]],
     'default branch' => [['default_branch' => 'stable']],
-    'root' => [['root' => 'web']],
+    'apps' => [['apps' => fixture_apps('web')]],
     'name' => [['name' => 'Renamed']],
 ]);
 
@@ -183,17 +183,16 @@ it('returns null source defaults truthfully for a legacy App', function (): void
         'type' => 'laravel-app',
         'repository_url' => 'https://github.com/acme/legacy.git',
         'default_branch' => null,
-        'root' => null,
+        'apps' => fixture_apps(null, 'laravel-app'),
     ]);
 
     $this
         ->getJson("/api/v1/projects/{$project->id}")
         ->assertOk()
         ->assertJsonPath('data.default_branch', null)
-        ->assertJsonPath('data.root', null);
+        ->assertJsonPath('data.apps', fixture_apps('public'));
 
-    expect($project->refresh()->only(['default_branch', 'root']))
-        ->toBe(['default_branch' => null, 'root' => null]);
+    expect($project->refresh()->default_branch)->toBeNull();
 });
 
 it('rejects invalid or incomplete source defaults without persistence', function (array $payload): void {
@@ -205,9 +204,9 @@ it('rejects invalid or incomplete source defaults without persistence', function
         'slug' => 'acme',
         'type' => 'laravel-app',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]],
-    'missing root' => [[
+    'missing apps' => [[
         'slug' => 'acme',
         'type' => 'laravel-app',
         'repository_url' => 'https://github.com/acme/site.git',
@@ -218,42 +217,42 @@ it('rejects invalid or incomplete source defaults without persistence', function
         'type' => 'laravel-app',
         'repository_url' => 'https://github.com/acme/site.git',
         'default_branch' => '../main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]],
-    'absolute root' => [[
+    'absolute app path' => [[
         'slug' => 'acme',
         'type' => 'laravel-app',
         'repository_url' => 'https://github.com/acme/site.git',
         'default_branch' => 'main',
-        'root' => '/public',
+        'apps' => [['name' => 'web', 'path' => '/public', 'web_root' => null, 'type' => 'laravel-app']],
     ]],
-    'traversing root' => [[
+    'traversing app path' => [[
         'slug' => 'acme',
         'type' => 'laravel-app',
         'repository_url' => 'https://github.com/acme/site.git',
         'default_branch' => 'main',
-        'root' => '../public',
+        'apps' => [['name' => 'web', 'path' => '../public', 'web_root' => null, 'type' => 'laravel-app']],
     ]],
     'leading dot segment' => [[
         'slug' => 'acme',
         'type' => 'laravel-app',
         'repository_url' => 'https://github.com/acme/site.git',
         'default_branch' => 'main',
-        'root' => './public',
+        'apps' => [['name' => 'web', 'path' => './public', 'web_root' => null, 'type' => 'laravel-app']],
     ]],
     'nested dot segment' => [[
         'slug' => 'acme',
         'type' => 'laravel-app',
         'repository_url' => 'https://github.com/acme/site.git',
         'default_branch' => 'main',
-        'root' => 'public/./assets',
+        'apps' => [['name' => 'web', 'path' => 'public/./assets', 'web_root' => null, 'type' => 'laravel-app']],
     ]],
-    'empty root' => [[
+    'empty app path' => [[
         'slug' => 'acme',
         'type' => 'laravel-app',
         'repository_url' => 'https://github.com/acme/site.git',
         'default_branch' => 'main',
-        'root' => '',
+        'apps' => [['name' => 'web', 'path' => '', 'web_root' => null, 'type' => 'laravel-app']],
     ]],
 ]);
 
@@ -264,7 +263,7 @@ it('rejects an unavailable explicit or default branch with one stable error', fu
         'slug' => 'acme',
         'type' => 'laravel-app',
         'repository_url' => $repository,
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ];
 
     if ($defaultBranch !== null) {
@@ -308,7 +307,7 @@ it('returns 422 without persistence when the remote default branch is malformed 
             'slug' => 'acme',
             'type' => 'laravel-app',
             'repository_url' => 'https://github.com/acme/site.git',
-            'root' => 'public',
+            'apps' => fixture_apps('public', 'laravel-app'),
         ])
         ->assertUnprocessable()
         ->assertJsonPath('error.code', 'project.default_branch_unavailable');
@@ -326,9 +325,9 @@ it('rejects unsupported and duplicate App source keys', function (string $body):
     expect(Project::query()->count())->toBe(0);
 })->with([
     'unsupported key' => [
-        '{"slug":"acme","repository_url":"https://github.com/acme/site.git","default_branch":"main","root":"public","command":"id"}',
+        '{"slug":"acme","repository_url":"https://github.com/acme/site.git","default_branch":"main","apps":[{"name":"web","path":".","web_root":"public","type":"laravel-app"}],"command":"id"}',
     ],
     'duplicate repository' => [
-        '{"slug":"acme","repository_url":"https://github.com/acme/site.git","repository_url":"https://github.com/acme/other.git","default_branch":"main","root":"public"}',
+        '{"slug":"acme","repository_url":"https://github.com/acme/site.git","repository_url":"https://github.com/acme/other.git","default_branch":"main","apps":[{"name":"web","path":".","web_root":"public","type":"laravel-app"}]}',
     ],
 ]);

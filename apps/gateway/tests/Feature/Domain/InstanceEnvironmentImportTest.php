@@ -97,7 +97,7 @@ function empty_app_key_import_fixture(bool $production, string $contents): Insta
         'slug' => 'empty-key',
         'repository_url' => 'https://example.test/empty-key.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $instance = Instance::query()->create([
         'project_id' => $project->id,

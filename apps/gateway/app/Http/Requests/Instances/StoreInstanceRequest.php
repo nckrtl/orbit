@@ -5,10 +5,8 @@ declare(strict_types=1);
 namespace App\Http\Requests\Instances;
 
 use App\Data\Instances\CreateInstanceData;
-use App\Domain\Projects\ProjectType;
 use App\Domain\Routes\RouteDomain;
 use App\Domain\SourceControl\GitBranchName;
-use App\Domain\SourceControl\ProjectRoot;
 use App\Http\Requests\TopLevelJsonObjectInspector;
 use App\Models\Node;
 use App\Models\Project;
@@ -33,7 +31,10 @@ final class StoreInstanceRequest extends FormRequest
                 'max:63',
                 'regex:/\A[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\z/',
             ],
-            'root' => ['sometimes', 'string', 'max:255'],
+            'app_overrides' => ['sometimes', 'array'],
+            'app_overrides.*' => ['array:path,web_root'],
+            'app_overrides.*.path' => ['required', 'string', 'max:255'],
+            'app_overrides.*.web_root' => ['present', 'nullable', 'string', 'max:255'],
             'domain' => ['sometimes', 'string', 'max:253'],
             'branch' => ['sometimes', 'string', 'max:255'],
             'database_server' => ['sometimes', 'string', 'max:63', 'regex:/\A[a-z0-9]+(?:-[a-z0-9]+)*\z/D'],
@@ -44,9 +45,11 @@ final class StoreInstanceRequest extends FormRequest
     public function validationData(): array
     {
         try {
+            app(TopLevelJsonObjectInspector::class)->refuseRemoved($this->getContent(), 'root', 'app_overrides');
+
             return app(TopLevelJsonObjectInspector::class)->inspect(
                 $this->getContent(),
-                ['project_id', 'node_id', 'name', 'root', 'domain', 'branch', 'database_server'],
+                ['project_id', 'node_id', 'name', 'app_overrides', 'domain', 'branch', 'database_server'],
             );
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
@@ -58,14 +61,6 @@ final class StoreInstanceRequest extends FormRequest
     {
         return [function (Validator $validator): void {
             $data = $validator->getData();
-            $root = $data['root'] ?? null;
-
-            $projectId = self::integerId($data['project_id'] ?? null);
-            $project = $projectId === null ? null : Project::query()->find($projectId);
-
-            if (is_string($root) && ! ProjectRoot::isValid($root, $project instanceof Project ? $project->type : ProjectType::LaravelApp)) {
-                $validator->errors()->add('root', 'The root must be a normalized relative Project path.');
-            }
 
             $domain = $data['domain'] ?? null;
 
@@ -90,7 +85,7 @@ final class StoreInstanceRequest extends FormRequest
             projectId: $this->resolvedProjectId($validated),
             nodeId: self::integerId($validated['node_id']) ?? throw new UnexpectedValueException('A validated Node identifier must be an integer.'),
             name: ValidatedData::string($validated['name'] ?? null),
-            root: is_string($validated['root'] ?? null) ? $validated['root'] : null,
+            appOverrides: $validated['app_overrides'] ?? null,
             domain: is_string($validated['domain'] ?? null)
                 ? RouteDomain::normalize($validated['domain'])
                 : null,

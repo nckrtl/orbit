@@ -37,7 +37,7 @@ it('refuses unrelated Node ownership and live workspace references before remova
         'role' => $workspace->node->roles()->create(['role' => 'app-prod', 'status' => 'active']),
         'workspace' => Instance::query()->create(['project_id' => $workspace->project_id, 'node_id' => $workspace->node_id, 'name' => 'foreign', 'checkout_path' => '/other']),
         'branch' => $workspace->update(['branch_override' => 'main']),
-        'route intent' => $workspace->update(['task_workspace_routed' => true, 'root' => 'foreign']),
+        'route intent' => $workspace->update(['task_workspace_routed' => true, 'app_overrides' => fixture_app_overrides('foreign')]),
     };
 
     expect(fn () => app(ProjectSandboxFleetRemoval::class)->assertRemovable($sandbox->fresh()))->toThrow(ComputeException::class);
@@ -60,8 +60,8 @@ it('removes the exclusive workspace, native role and peer before hub policy, and
     $node = $workspace->node;
     $route = null;
     if ($preview) {
-        $workspace->project->update(['type' => 'laravel-app', 'root' => 'public']);
-        $workspace->update(['task_workspace_routed' => true, 'root' => 'public']);
+        $workspace->project->update(['type' => 'laravel-app', 'apps' => fixture_apps('public', 'laravel-app')]);
+        $workspace->update(['task_workspace_routed' => true]);
         $route = app(CreateRouteAction::class)->ensureForInstance($workspace, null);
         $route->update(['status' => RouteStatus::Active, 'sites_published' => true]);
         $workspace->update(['status' => InstanceState::Active, 'starting_commit' => str_repeat('a', 40)]);
@@ -142,8 +142,8 @@ it('removes the exclusive workspace, native role and peer before hub policy, and
 
 it('keeps the Route, Instance, and both fleet ownership records when preview withdrawal fails', function (): void {
     $workspace = IncusRuntimeWorkspace::create();
-    $workspace->project->update(['type' => 'laravel-app', 'root' => 'public']);
-    $workspace->update(['task_workspace_routed' => true, 'root' => 'public']);
+    $workspace->project->update(['type' => 'laravel-app', 'apps' => fixture_apps('public', 'laravel-app')]);
+    $workspace->update(['task_workspace_routed' => true]);
     $route = app(CreateRouteAction::class)->ensureForInstance($workspace, null);
     $sandbox = $workspace->taskSandbox;
     $sandbox->forceFill(['desired_power' => 'destroyed', 'model_key' => null])->save();
@@ -161,8 +161,8 @@ it('keeps the Route, Instance, and both fleet ownership records when preview wit
 
 it('refuses changed private preview targets before cleanup changes power or revokes credentials', function (string $fault): void {
     $workspace = IncusRuntimeWorkspace::create();
-    $workspace->project->update(['type' => 'laravel-app', 'root' => 'public']);
-    $workspace->update(['task_workspace_routed' => true, 'root' => 'public']);
+    $workspace->project->update(['type' => 'laravel-app', 'apps' => fixture_apps('public', 'laravel-app')]);
+    $workspace->update(['task_workspace_routed' => true]);
     $route = app(CreateRouteAction::class)->ensureForInstance($workspace, null);
     if ($fault === 'foreign target') {
         $route->targets()->delete();
@@ -184,8 +184,8 @@ it('refuses changed private preview targets before cleanup changes power or revo
 
 it('resumes partial active preview withdrawal from the same native journal without deleting source', function (): void {
     $workspace = IncusRuntimeWorkspace::create();
-    $workspace->project->update(['type' => 'laravel-app', 'root' => 'public']);
-    $workspace->update(['task_workspace_routed' => true, 'root' => 'public', 'starting_commit' => str_repeat('a', 40)]);
+    $workspace->project->update(['type' => 'laravel-app', 'apps' => fixture_apps('public', 'laravel-app')]);
+    $workspace->update(['task_workspace_routed' => true, 'starting_commit' => str_repeat('a', 40)]);
     $route = app(CreateRouteAction::class)->ensureForInstance($workspace, null);
     $route->update(['status' => RouteStatus::Active, 'sites_published' => true]);
     $workspace->update(['status' => InstanceState::Active]);

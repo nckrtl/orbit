@@ -19,8 +19,6 @@ final readonly class UpdateProjectData
         public ?string $repositoryUrl,
         public bool $defaultBranchProvided,
         public ?string $defaultBranch,
-        public bool $rootProvided,
-        public ?string $root,
         public ?string $code = null,
         public bool $taskCheckProvided = false,
         public ?string $taskCheck = null,
@@ -33,6 +31,8 @@ final readonly class UpdateProjectData
         public bool $reviewAndMerge = false,
         public bool $mergeCheckProvided = false,
         public ?string $mergeCheck = null,
+        public bool $appsProvided = false,
+        public mixed $apps = null,
     ) {}
 
     public function hasChanges(): bool
@@ -42,7 +42,7 @@ final readonly class UpdateProjectData
             || $this->slugProvided
             || $this->repositoryUrlProvided
             || $this->defaultBranchProvided
-            || $this->rootProvided
+            || $this->appsProvided
             || $this->taskCheckProvided
             || $this->sourceAccessProvided
             || $this->taskWorkspaceRoutedProvided
@@ -62,10 +62,13 @@ final readonly class UpdateProjectData
     {
         return $this->slugProvided
             || $this->repositoryUrlProvided
-            || $this->defaultBranchProvided
-            || $this->rootProvided;
+            || $this->defaultBranchProvided;
     }
 
+    /**
+     * Identifies a journaled source update. The app list never joins that journal, and the
+     * retired `root` slot stays null so incomplete updates keep their recorded fingerprint.
+     */
     public function fingerprint(): string
     {
         return hash('sha256', json_encode([
@@ -74,7 +77,7 @@ final readonly class UpdateProjectData
             'slug' => $this->slugProvided ? $this->slug : null,
             'repository_url' => $this->repositoryUrlProvided ? $this->repositoryUrl : null,
             'default_branch' => $this->defaultBranchProvided ? $this->defaultBranch : null,
-            'root' => $this->rootProvided ? $this->root : null,
+            'root' => null,
             'task_check' => $this->taskCheckProvided ? $this->taskCheck : null,
             'source_access' => $this->sourceAccessProvided ? $this->sourceAccess?->value : null,
             'task_workspace_routed' => $this->taskWorkspaceRoutedProvided ? $this->taskWorkspaceRouted : null,
@@ -86,7 +89,7 @@ final readonly class UpdateProjectData
                 $this->slugProvided,
                 $this->repositoryUrlProvided,
                 $this->defaultBranchProvided,
-                $this->rootProvided,
+                false,
                 $this->taskCheckProvided,
                 $this->sourceAccessProvided,
                 $this->taskWorkspaceRoutedProvided,

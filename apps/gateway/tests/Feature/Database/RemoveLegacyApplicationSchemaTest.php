@@ -84,7 +84,7 @@ function operator_prepared_supported_graph(): array
         'slug' => 'acme',
         'repository_url' => 'git@github.com:acme/site.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $instance = Instance::query()->create([
         'project_id' => $project->id,

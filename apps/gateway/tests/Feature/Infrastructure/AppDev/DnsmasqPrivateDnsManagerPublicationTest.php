@@ -225,14 +225,14 @@ function orb260_published_cluster(): array
         'name' => 'Published',
         'slug' => 'published',
         'repository_url' => 'https://example.test/published.git',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $instance = Instance::query()->create([
         'project_id' => $project->id,
         'node_id' => $member->id,
         'name' => 'default',
         'checkout_path' => '/home/orbit/apps/published',
-        'root' => 'public',
+        'app_overrides' => fixture_app_overrides('public'),
         'branch' => 'main',
         'starting_commit' => str_repeat('a', 40),
         'selected_php_version' => '8.5',

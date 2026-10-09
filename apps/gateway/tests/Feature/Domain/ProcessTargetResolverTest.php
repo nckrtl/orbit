@@ -46,7 +46,7 @@ it('derives development placement from the Instance', function (): void {
 });
 
 it('uses the Laravel application directory for Instance process defaults and environment', function (string $root, bool $laravel, string $suffix, string $placement): void {
-    $changes = ['root' => $root, 'source_is_laravel' => $laravel];
+    $changes = ['app_overrides' => fixture_app_overrides($root), 'source_is_laravel' => $laravel];
     if ($placement === 'production') {
         $changes += ['checkout_path' => '/home/orbit-docs/releases/initial', 'production_home' => '/home/orbit-docs', 'production_user' => 'orbit-docs'];
     }
@@ -67,7 +67,7 @@ it('uses the Laravel application directory for Instance process defaults and env
 ]);
 
 it('renders vp dev queue and Horizon units in the nested app while retaining explicit overrides', function (array $command, ?string $preset, ?string $directory, string $expectedDirectory, string $expectedCommand): void {
-    $instance = process_target_instance('development', ['root' => 'server/web/public', 'source_is_laravel' => true]);
+    $instance = process_target_instance('development', ['app_overrides' => fixture_app_overrides('server/web/public'), 'source_is_laravel' => true]);
     $target = app(ProcessTargetResolver::class)->resolve(ProcessTargetType::Instance, $instance->id);
     $data = new AddProcessData(
         targetType: ProcessTargetType::Instance, targetId: $instance->id, name: 'worker',
@@ -269,6 +269,7 @@ function process_target_instance(string $environment = 'development', array $att
         'name' => 'Docs',
         'slug' => 'docs',
         'repository_url' => 'https://example.test/docs.git',
+        'apps' => fixture_apps(null),
     ]);
     $node = Node::query()->create([
         'name' => "{$environment}-node",

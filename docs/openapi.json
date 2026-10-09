@@ -5837,10 +5837,30 @@
                     "maxLength": 63,
                     "description": "Instance name; default is reserved for the default development source"
                   },
-                  "root": {
-                    "type": "string",
-                    "maxLength": 255,
-                    "description": "Optional relative web-root override"
+                  "app_overrides": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "object",
+                      "properties": {
+                        "path": {
+                          "type": "string",
+                          "maxLength": 255
+                        },
+                        "web_root": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "maxLength": 255
+                        }
+                      },
+                      "required": [
+                        "path",
+                        "web_root"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "description": "JSON object of app path and web root overrides, keyed by app name"
                   },
                   "domain": {
                     "type": "string",
@@ -5990,10 +6010,30 @@
                     "type": "string",
                     "maxLength": 63
                   },
-                  "root": {
-                    "type": "string",
-                    "maxLength": 255,
-                    "description": "Relative web-root override for this Instance"
+                  "app_overrides": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "object",
+                      "properties": {
+                        "path": {
+                          "type": "string",
+                          "maxLength": 255
+                        },
+                        "web_root": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "maxLength": 255
+                        }
+                      },
+                      "required": [
+                        "path",
+                        "web_root"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "description": "JSON object of app path and web root overrides, keyed by app name"
                   },
                   "domain": {
                     "type": "string",
@@ -14764,6 +14804,11 @@
                     "type": "integer",
                     "minimum": 1
                   },
+                  "app": {
+                    "type": "string",
+                    "maxLength": 63,
+                    "description": "App name; required when the Project has several apps"
+                  },
                   "name": {
                     "type": "string",
                     "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$(?![\\s\\S])",
@@ -16094,10 +16139,40 @@
                     "maxLength": 255,
                     "description": "Stored default branch; resolve the remote default when omitted"
                   },
-                  "root": {
-                    "type": "string",
-                    "maxLength": 255,
-                    "description": "Repository-relative root; defaults to . for package types and public otherwise"
+                  "apps": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "maxLength": 63
+                        },
+                        "path": {
+                          "type": "string",
+                          "maxLength": 255
+                        },
+                        "web_root": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "maxLength": 255
+                        },
+                        "type": {
+                          "type": "string",
+                          "maxLength": 32
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "path",
+                        "web_root",
+                        "type"
+                      ]
+                    },
+                    "description": "JSON list of apps, each with name, path, web_root and type"
                   },
                   "task_check": {
                     "type": [
@@ -16124,7 +16199,7 @@
                   "slug",
                   "type",
                   "repository_url",
-                  "root"
+                  "apps"
                 ],
                 "additionalProperties": false
               }
@@ -16211,12 +16286,12 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/projects\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"slug\": \"acme\", \"type\": \"monorepo\", \"repository_url\": \"https://github.com/acme/site.git\", \"root\": \"public\"}'\n"
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/projects\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"slug\": \"acme\", \"type\": \"monorepo\", \"repository_url\": \"https://github.com/acme/site.git\", \"apps\": {\"path\": \"/srv/orbit/apps\"}}'\n"
           },
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Projects\\CreateProjectRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new CreateProjectRequest(\n    slug: 'acme',\n    repositoryUrl: 'https://github.com/acme/site.git',\n    root: 'value',\n))->dto();\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Projects\\CreateProjectRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new CreateProjectRequest(\n    slug: 'acme',\n    repositoryUrl: 'https://github.com/acme/site.git',\n))->dto();\n"
           }
         ]
       }
@@ -16463,10 +16538,40 @@
                     "maxLength": 255,
                     "description": "New stored default branch"
                   },
-                  "root": {
-                    "type": "string",
-                    "maxLength": 255,
-                    "description": "New repository-relative root; package types may use ."
+                  "apps": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "maxLength": 63
+                        },
+                        "path": {
+                          "type": "string",
+                          "maxLength": 255
+                        },
+                        "web_root": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "maxLength": 255
+                        },
+                        "type": {
+                          "type": "string",
+                          "maxLength": 32
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "path",
+                        "web_root",
+                        "type"
+                      ]
+                    },
+                    "description": "JSON list that replaces every app; only while the Project has no Instances"
                   },
                   "task_check": {
                     "type": [
@@ -19495,6 +19600,10 @@
               "schema": {
                 "type": "object",
                 "properties": {
+                  "app": {
+                    "type": "string",
+                    "maxLength": 63
+                  },
                   "name": {
                     "type": "string",
                     "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$(?![\\s\\S])",
@@ -19706,7 +19815,7 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/projects/4/process-definitions\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"name\": \"example\", \"environments\": [\"production\"], \"spec\": {\"runtime\": \"systemd\", \"command\": [\"/usr/bin/php\", \"artisan\", \"queue:work\"]}}'\n"
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/projects/4/process-definitions\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"app\": \"example\", \"name\": \"example\", \"environments\": [\"production\"], \"spec\": {\"runtime\": \"systemd\", \"command\": [\"/usr/bin/php\", \"artisan\", \"queue:work\"]}}'\n"
           },
           {
             "lang": "php",
@@ -19932,6 +20041,10 @@
               "schema": {
                 "type": "object",
                 "properties": {
+                  "app": {
+                    "type": "string",
+                    "maxLength": 63
+                  },
                   "name": {
                     "type": "string",
                     "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$(?![\\s\\S])",
@@ -20121,7 +20234,7 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X PUT \"https://gateway.orbit/api/v1/projects/4/process-definitions/queue\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"name\": \"example\", \"environments\": [\"production\"], \"spec\": {\"runtime\": \"systemd\", \"command\": [\"/usr/bin/php\", \"artisan\", \"queue:work\"]}}'\n"
+            "source": "curl -sS -X PUT \"https://gateway.orbit/api/v1/projects/4/process-definitions/queue\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"app\": \"example\", \"name\": \"example\", \"environments\": [\"production\"], \"spec\": {\"runtime\": \"systemd\", \"command\": [\"/usr/bin/php\", \"artisan\", \"queue:work\"]}}'\n"
           },
           {
             "lang": "php",
@@ -20237,6 +20350,10 @@
               "schema": {
                 "type": "object",
                 "properties": {
+                  "app": {
+                    "type": "string",
+                    "maxLength": 63
+                  },
                   "name": {
                     "type": "string",
                     "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$(?![\\s\\S])",
@@ -20378,7 +20495,7 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/projects/4/schedule-definitions\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"name\": \"example\", \"environments\": [\"production\"], \"spec\": {\"command\": \"/usr/bin/php artisan queue:work\", \"calendar\": \"daily\", \"timeout_seconds\": 3600}}'\n"
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/projects/4/schedule-definitions\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"app\": \"example\", \"name\": \"example\", \"environments\": [\"production\"], \"spec\": {\"command\": \"/usr/bin/php artisan queue:work\", \"calendar\": \"daily\", \"timeout_seconds\": 3600}}'\n"
           },
           {
             "lang": "php",
@@ -20604,6 +20721,10 @@
               "schema": {
                 "type": "object",
                 "properties": {
+                  "app": {
+                    "type": "string",
+                    "maxLength": 63
+                  },
                   "name": {
                     "type": "string",
                     "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$(?![\\s\\S])",
@@ -20723,7 +20844,7 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X PUT \"https://gateway.orbit/api/v1/projects/4/schedule-definitions/hourly-report\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"name\": \"example\", \"environments\": [\"production\"], \"spec\": {\"command\": \"/usr/bin/php artisan queue:work\", \"calendar\": \"daily\", \"timeout_seconds\": 3600}}'\n"
+            "source": "curl -sS -X PUT \"https://gateway.orbit/api/v1/projects/4/schedule-definitions/hourly-report\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"app\": \"example\", \"name\": \"example\", \"environments\": [\"production\"], \"spec\": {\"command\": \"/usr/bin/php artisan queue:work\", \"calendar\": \"daily\", \"timeout_seconds\": 3600}}'\n"
           },
           {
             "lang": "php",
@@ -24224,6 +24345,11 @@
                   "target_id": {
                     "type": "integer",
                     "minimum": 1
+                  },
+                  "app": {
+                    "type": "string",
+                    "maxLength": 63,
+                    "description": "App name; required when the Project has several apps"
                   },
                   "name": {
                     "type": "string",
@@ -29243,17 +29369,36 @@
               "null"
             ]
           },
-          "root": {
-            "type": [
-              "string",
-              "null"
-            ]
+          "apps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProjectApp"
+            }
           },
-          "effective_root": {
-            "type": [
-              "string",
-              "null"
-            ]
+          "app_overrides": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "maxLength": 255
+                },
+                "web_root": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "maxLength": 255
+                }
+              },
+              "required": [
+                "path",
+                "web_root"
+              ],
+              "additionalProperties": false
+            },
+            "description": "Path and web root overrides keyed by app name; empty when the Instance inherits every app."
           },
           "selected_branch": {
             "type": [
@@ -29399,6 +29544,32 @@
             "type": "string"
           }
         }
+      },
+      "ProjectApp": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "web_root": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "path",
+          "web_root",
+          "type"
+        ]
       },
       "Route": {
         "type": "object",
@@ -29725,11 +29896,11 @@
               "null"
             ]
           },
-          "root": {
-            "type": [
-              "string",
-              "null"
-            ]
+          "apps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProjectApp"
+            }
           },
           "task_check": {
             "type": [
@@ -30551,6 +30722,12 @@
               "string",
               "null"
             ]
+          },
+          "app": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -30710,6 +30887,12 @@
           },
           "project_id": {
             "type": "integer"
+          },
+          "app": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "name": {
             "type": "string"
@@ -31163,6 +31346,12 @@
             ]
           },
           "last_run_status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "app": {
             "type": [
               "string",
               "null"

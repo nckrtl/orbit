@@ -39,7 +39,7 @@ it('derives production serving paths through current and resolves PHP roots afte
         'slug' => 'release-layout',
         'repository_url' => 'https://example.test/release-layout.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $instance = Instance::query()->create([
         'project_id' => $project->id,
@@ -114,7 +114,7 @@ it('uses the current-release root instead of a flat production home', function (
         'slug' => 'flat-production',
         'repository_url' => 'https://example.test/flat-production.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $instance = Instance::query()->create([
         'project_id' => $project->id,
@@ -159,7 +159,7 @@ it('authenticates a selected release before publication and clears only its serv
         new CommandResult(0, '', '', 1, false),
     ]);
 
-    $instance->update(['root' => $webRoot]);
+    $instance->update(['app_overrides' => fixture_app_overrides($webRoot)]);
     $layout->validateCurrent($instance);
     $layout->clearCurrent($instance);
 
@@ -252,7 +252,7 @@ function orb216_release_layout_lifecycle(array $results): array
         'slug' => 'release-layout-remote',
         'repository_url' => 'https://example.test/release-layout.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $instance = Instance::query()->create([
         'project_id' => $project->id,

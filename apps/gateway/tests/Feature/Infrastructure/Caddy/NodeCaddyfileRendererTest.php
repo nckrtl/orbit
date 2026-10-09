@@ -147,14 +147,14 @@ describe('site sources', function (): void {
         $ingress->update(['cluster_id' => $cluster->id, 'ssh_host_fingerprint' => 'SHA256:ingress']);
         $ingress->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
         $ingress->roles()->create(['role' => RoleName::Ingress, 'status' => LifecycleStatus::Active, 'cluster_id' => $cluster->id]);
-        $project = Project::query()->create(['name' => 'Shop', 'slug' => 'shop', 'repository_url' => 'https://example.test/shop.git', 'root' => 'public']);
+        $project = Project::query()->create(['name' => 'Shop', 'slug' => 'shop', 'repository_url' => 'https://example.test/shop.git', 'apps' => fixture_apps('public')]);
         $instance = Instance::query()->create([
             'project_id' => $project->id,
             'node_id' => $ingress->id,
             'name' => 'default',
             'environment' => 'production',
             'checkout_path' => '/var/www/shop',
-            'root' => 'public',
+            'app_overrides' => fixture_app_overrides('public'),
             'status' => InstanceState::Active,
         ]);
         $route = Route::query()->create([
@@ -554,13 +554,13 @@ function caddy_build_private_route(Node $router, string $domain): array
     $workload = caddy_build_node("{$domain}-workload", '10.44.0.30');
     $workload->update(['cluster_id' => $cluster->id]);
     $workload->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
-    $project = Project::query()->create(['name' => $domain, 'slug' => str_replace('.', '-', $domain), 'repository_url' => "https://example.test/{$domain}.git", 'root' => 'public']);
+    $project = Project::query()->create(['name' => $domain, 'slug' => str_replace('.', '-', $domain), 'repository_url' => "https://example.test/{$domain}.git", 'apps' => fixture_apps('public')]);
     $instance = Instance::query()->create([
         'project_id' => $project->id,
         'node_id' => $workload->id,
         'name' => 'default',
         'checkout_path' => "/home/orbit/apps/{$domain}",
-        'root' => 'public',
+        'app_overrides' => fixture_app_overrides('public'),
         'selected_php_version' => '8.5',
         'status' => InstanceState::Active,
     ]);

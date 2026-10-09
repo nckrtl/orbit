@@ -398,7 +398,7 @@ it('cascades every forced-set Schedule and preserves another Instance Schedule o
         'slug' => 'other',
         'repository_url' => 'https://example.test/other.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $otherInstance = Instance::query()->create([
         'project_id' => $otherApp->id,
@@ -1370,7 +1370,7 @@ function orb181_coordinator_instance(
         'slug' => $slug,
         'repository_url' => "https://example.test/{$slug}.git",
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public', $withRoute ? ProjectType::LaravelApp : ProjectType::Monorepo),
         'type' => $withRoute ? ProjectType::LaravelApp : ProjectType::Monorepo,
     ]);
     $cluster = $environment === 'production'

@@ -116,7 +116,7 @@ function leftover_runtime_models(): array
         'slug' => 'acme',
         'repository_url' => 'git@example.test:acme.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
 
     return [$node, $project];
@@ -130,7 +130,7 @@ function leftover_runtime_app_instance(Node $node, Project $project): Instance
         'name' => 'default',
         'checkout_path' => '/home/orbit/apps/acme/default',
         'selected_php_version' => '8.5',
-        'root' => 'public',
+        'app_overrides' => fixture_app_overrides('public'),
         'status' => InstanceState::Active,
     ]);
 }

@@ -32,6 +32,7 @@ function task_signer_instance(string $checkout = '/srv/orbit/apps/orbit/task-9')
         'slug' => 'orbit',
         'repository_url' => 'git@example.test:orbit.git',
         'default_branch' => 'main',
+        'apps' => fixture_apps(null),
     ]);
     $node = Node::query()->create([
         'name' => 'signer-node',

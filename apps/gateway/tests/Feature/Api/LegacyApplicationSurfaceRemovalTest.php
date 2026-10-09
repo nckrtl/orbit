@@ -37,7 +37,7 @@ describe('legacy application surface removal', function (): void {
             'slug' => 'acme',
             'repository_url' => 'git@github.com:acme/site.git',
             'default_branch' => 'main',
-            'root' => 'public',
+            'apps' => fixture_apps('public'),
         ]);
         $this->instance = Instance::query()->create([
             'project_id' => $this->orbitApp->id,

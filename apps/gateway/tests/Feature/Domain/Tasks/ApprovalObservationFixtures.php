@@ -25,6 +25,7 @@ final class ApprovalObservationFixtures
         $project = Project::query()->firstOrCreate(['repository_url' => 'https://github.com/acme/orbit.git'], [
             'name' => 'Approval evidence', 'slug' => 'approval-evidence-'.fake()->uuid(),
             'repository_url' => 'https://github.com/acme/orbit.git', 'default_branch' => 'main',
+            'apps' => fixture_apps(null),
         ]);
 
         return Task::topLevel()->create([

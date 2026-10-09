@@ -20,6 +20,7 @@ it('marks only unfinished instance:create rows, never task workspaces or active 
         'name' => 'Shop',
         'slug' => 'shop',
         'repository_url' => 'https://example.test/shop.git',
+        'apps' => fixture_apps(null),
     ]);
     $instance = static fn (string $name, InstanceState $status, ?bool $routed): Instance => Instance::query()->create([
         'project_id' => $project->id,

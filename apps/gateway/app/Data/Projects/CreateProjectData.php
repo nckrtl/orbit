@@ -16,7 +16,7 @@ final readonly class CreateProjectData
         public ProjectType $type,
         public string $repositoryUrl,
         public ?string $defaultBranch,
-        public string $root,
+        public mixed $apps,
         public ?string $code = null,
         public bool $taskCheckProvided = false,
         public ?string $taskCheck = null,

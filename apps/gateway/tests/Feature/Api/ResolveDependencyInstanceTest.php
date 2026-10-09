@@ -16,7 +16,7 @@ function resolution_fixture(): array
 {
     $cluster = Cluster::query()->create(['name' => 'resolution', 'state' => 'active']);
     $caller = Node::query()->create(['name' => 'resolver-caller', 'public_ssh_host' => '192.0.2.80', 'wireguard_ip' => '10.44.0.80', 'user' => 'orbit', 'status' => 'active']);
-    $project = Project::query()->create(['name' => 'Resolve', 'slug' => 'resolve', 'repository_url' => 'https://example.test/resolve.git']);
+    $project = Project::query()->create(['name' => 'Resolve', 'slug' => 'resolve', 'repository_url' => 'https://example.test/resolve.git', 'apps' => fixture_apps(null)]);
     $instances = [];
     foreach ([81, 82] as $octet) {
         $node = Node::query()->create(['name' => 'private-owner-'.$octet, 'public_ssh_host' => '192.0.2.'.$octet, 'wireguard_ip' => '10.44.0.'.$octet, 'user' => 'orbit', 'status' => 'active', 'cluster_id' => $cluster->id]);

@@ -33,7 +33,7 @@ final class UpCloudRuntimeWorkspace
         }
         config(['compute.upcloud.enrollment_enabled' => true, 'compute.upcloud.dev_cluster_id' => $cluster->id,
             'compute.upcloud.model_address' => '10.44.0.3', 'compute.upcloud.model_port' => 8317]);
-        $project = Project::query()->create(['name' => 'DLF', 'slug' => 'dlf', 'repository_url' => 'https://github.com/acme/dlf.git', 'default_branch' => 'main']);
+        $project = Project::query()->create(['name' => 'DLF', 'slug' => 'dlf', 'repository_url' => 'https://github.com/acme/dlf.git', 'default_branch' => 'main', 'apps' => fixture_apps(null)]);
         $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Work', 'brief' => 'Work', 'status' => 'todo', 'task_compute' => TaskCompute::Vm]);
         $id = (string) Str::uuid();
 

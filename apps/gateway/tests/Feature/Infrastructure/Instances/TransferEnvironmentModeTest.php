@@ -31,7 +31,7 @@ describe('TaskCheckWorkerUser', function (): void {
         file_put_contents($checkout.'/database.sqlite-wal', 'selected WAL');
         file_put_contents($checkout.'/database.sqlite-shm', 'selected SHM');
         $node = Node::query()->create(['name' => 'worker-transfer', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'user' => 'orbit', 'public_ssh_host' => '10.44.0.53', 'wireguard_ip' => '10.44.0.53']);
-        $project = Project::query()->create(['name' => 'Shop', 'slug' => 'shop', 'repository_url' => 'git@example.test:shop.git', 'default_branch' => 'main']);
+        $project = Project::query()->create(['name' => 'Shop', 'slug' => 'shop', 'repository_url' => 'git@example.test:shop.git', 'default_branch' => 'main', 'apps' => fixture_apps(null)]);
         $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'dev', 'checkout_path' => $checkout, 'source_layout' => 'worktree', 'status' => 'source_resolved']);
         $source = new LocalInstanceTransferTransport($root)->source();
         $capture = null;
@@ -82,11 +82,11 @@ it('materializes a transferred checkout with an environment that other local use
             'name' => $name, 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'user' => 'orbit',
             'public_ssh_host' => $address, 'wireguard_ip' => $address,
         ]);
-        $project = Project::query()->create(['name' => 'Shop', 'slug' => 'shop', 'repository_url' => 'git@example.test:shop.git', 'default_branch' => 'main']);
+        $project = Project::query()->create(['name' => 'Shop', 'slug' => 'shop', 'repository_url' => 'git@example.test:shop.git', 'default_branch' => 'main', 'apps' => fixture_apps(null)]);
         $instance = Instance::query()->create([
             'project_id' => $project->id, 'node_id' => $node('transfer-from', '10.44.0.51')->id, 'name' => 'dev',
             'checkout_path' => $root.'/'.$name, 'source_layout' => 'checkout', 'status' => 'source_resolved',
-            'root' => $webRoot, 'source_is_laravel' => true,
+            'app_overrides' => fixture_app_overrides($webRoot), 'source_is_laravel' => true,
         ]);
         $source = new LocalInstanceTransferTransport($root)->source();
 

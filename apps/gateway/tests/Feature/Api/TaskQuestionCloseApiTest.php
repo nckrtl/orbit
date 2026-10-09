@@ -27,6 +27,7 @@ function question_close_api_question(): TaskQuestion
     $project = Project::query()->create([
         'name' => 'question-close', 'slug' => 'question-close',
         'repository_url' => 'git@example.test:question-close.git', 'default_branch' => 'main',
+        'apps' => fixture_apps(null),
     ]);
     $group = Task::topLevel()->create([
         'project_id' => $project->id, 'title' => 'Questions', 'brief' => 'Close them.', 'status' => TaskGroupStatus::Running,

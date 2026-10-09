@@ -384,6 +384,7 @@ it('collects fingerprints for one open assistance reason until that request clea
         'slug' => 'problem-collector',
         'repository_url' => 'https://example.test/problem-collector.git',
         'default_branch' => 'main',
+        'apps' => fixture_apps(null),
     ]);
     $task = Task::topLevel()->create([
         'project_id' => $project->id,

@@ -47,6 +47,7 @@ it('stores exclusive Route scope, immutable provenance, basis, and pending lifec
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'https://example.test/acme.git',
+        'apps' => fixture_apps(null),
     ]);
     $node = route_migration_node('one');
     $route = Route::query()->create([
@@ -70,6 +71,7 @@ it('rejects duplicate target Nodes', function (): void {
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'https://example.test/acme.git',
+        'apps' => fixture_apps(null),
     ]);
     $nodeOne = route_migration_node('one');
     $one = route_migration_instance($project, $nodeOne, 'one');
@@ -225,6 +227,7 @@ it('allows target-set failure evidence and empty explicit Cluster Routes', funct
         'name' => 'Vacated',
         'slug' => 'vacated',
         'repository_url' => 'https://example.test/vacated.git',
+        'apps' => fixture_apps(null),
     ]);
     $cluster = Cluster::query()->create(['name' => 'vacated', 'state' => 'active']);
     $empty = Route::query()->create([
@@ -249,6 +252,7 @@ it('enforces multi-target storage with compatible Cluster-scoped production rows
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'https://example.test/acme.git',
+        'apps' => fixture_apps(null),
     ]);
     $cluster = Cluster::query()->create(['name' => 'cluster', 'state' => 'active']);
     $oneNode = route_migration_node('one');
@@ -395,6 +399,7 @@ function route_migration_replacement_pair(string $suffix, bool $activate = true)
         'name' => "Domain {$suffix}",
         'slug' => "domain-{$suffix}",
         'repository_url' => "https://example.test/domain-{$suffix}.git",
+        'apps' => fixture_apps(null),
     ]);
     $node = route_migration_node("domain-{$suffix}");
     $instance = Instance::query()->create([
@@ -430,6 +435,7 @@ function route_migration_production_set(string $suffix, string $environment = 'p
         'name' => "Set {$suffix}",
         'slug' => "set-{$suffix}",
         'repository_url' => "https://example.test/set-{$suffix}.git",
+        'apps' => fixture_apps(null),
     ]);
     $cluster = Cluster::query()->create(['name' => "set-{$suffix}", 'state' => 'active']);
     $oneNode = route_migration_node("{$suffix}-one");

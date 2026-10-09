@@ -26,7 +26,7 @@ describe('retired T3 task history', function (): void {
         $this->markAsGateway($node);
         $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip]);
         $this->postJson('/api/v1/extensions/tasks/enable')->assertOk();
-        $project = Project::query()->create(['name' => 'history', 'slug' => 'history', 'repository_url' => 'git@example.test:history.git', 'default_branch' => 'main']);
+        $project = Project::query()->create(['name' => 'history', 'slug' => 'history', 'repository_url' => 'git@example.test:history.git', 'default_branch' => 'main', 'apps' => fixture_apps(null)]);
         $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Finished T3 work', 'brief' => 'Keep the record.', 'status' => 'completed']);
         $thread = AgentThread::query()->create([
             'task_group_id' => $group->id, 'node_id' => $node->id, 'driver' => 't3', 'runtime_key' => 'node:'.$node->id,

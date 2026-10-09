@@ -23,6 +23,7 @@ final class StoreProcessRequest extends FormRequest
         return [
             'target_type' => ['required', Rule::enum(ProcessTargetType::class)],
             'target_id' => ['required', 'integer', 'min:1'],
+            'app' => ['sometimes', 'string', 'max:63'],
             'name' => [
                 'required',
                 'string',
@@ -170,6 +171,7 @@ final class StoreProcessRequest extends FormRequest
             keepAlive: ($validated['keep_alive'] ?? false) === true,
             preset: isset($validated['preset']) ? $this->string('preset')->toString() : null,
             user: is_string($validated['user'] ?? null) ? $validated['user'] : null,
+            app: is_string($validated['app'] ?? null) ? $validated['app'] : null,
         );
     }
 

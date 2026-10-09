@@ -61,7 +61,7 @@ function tia_http_fixture(?array $runs = null, ?array $artifact = null, ?string 
 
 function tia_project(): Project
 {
-    return new Project(['repository_url' => 'git@github.com:acme/shop.git']);
+    return new Project(['repository_url' => 'git@github.com:acme/shop.git', 'apps' => fixture_apps(null)]);
 }
 
 describe('Gateway GitHub TIA baseline', function (): void {

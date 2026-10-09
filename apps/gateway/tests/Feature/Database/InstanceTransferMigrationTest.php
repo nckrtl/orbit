@@ -19,6 +19,7 @@ it('creates the Instance transfer table and refuses to drop retained evidence', 
         'name' => 'Transfer migration',
         'slug' => 'transfer-migration',
         'repository_url' => 'https://example.test/transfer-migration.git',
+        'apps' => fixture_apps(null),
     ]);
     $node = Node::query()->create([
         'name' => 'transfer-migration',

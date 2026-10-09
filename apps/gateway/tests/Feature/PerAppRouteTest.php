@@ -161,7 +161,7 @@ it('creates a per-app route and isolated PHP pool for every serving app', functi
 });
 
 it('keeps exactly one app-prefixed domain for a single-app default per-app route', function (): void {
-    $project = Project::query()->create(['name' => 'Catalog', 'slug' => 'catalog', 'repository_url' => 'https://example.test/catalog.git', 'root' => 'public']);
+    $project = Project::query()->create(['name' => 'Catalog', 'slug' => 'catalog', 'repository_url' => 'https://example.test/catalog.git', 'apps' => fixture_apps('public')]);
     $node = Node::query()->create(['name' => 'single', 'status' => 'active', 'platform' => 'linux', 'public_ssh_host' => '192.0.2.20', 'wireguard_ip' => '10.44.0.20', 'tld' => 'test']);
     $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'default', 'checkout_path' => '/srv/catalog/default', 'status' => InstanceState::SourceResolved]);
     $first = app(CreateRouteAction::class)->ensureForInstance($instance, null);

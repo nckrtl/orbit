@@ -17,6 +17,7 @@ final readonly class CreateProcessDefinitionAction
     {
         try {
             return $project->processDefinitions()->create([
+                'app' => $data->app,
                 'name' => $data->name,
                 'environments' => $data->environments,
                 'spec' => $data->spec,

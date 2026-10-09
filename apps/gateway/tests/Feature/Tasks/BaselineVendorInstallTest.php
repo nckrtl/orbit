@@ -27,6 +27,7 @@ it('runs configured Project setup before the baseline check without an inferred 
         'repository_url' => 'git@example.test:baseline-vendor-install.git',
         'default_branch' => 'main',
         'task_check' => 'composer check',
+        'apps' => fixture_apps(null),
     ]);
     $node = Node::query()->create([
         'name' => 'baseline-vendor-node',
@@ -88,6 +89,7 @@ it('asks for assistance when baseline setup or the check fails without classifyi
         'repository_url' => 'git@example.test:baseline-install-failure.git',
         'default_branch' => 'main',
         'task_check' => 'composer check',
+        'apps' => fixture_apps(null),
     ]);
     $node = Node::query()->create([
         'name' => 'baseline-failure-node',
@@ -159,6 +161,7 @@ it('keeps a baseline check error failed when the tree changed during the run', f
         'repository_url' => 'git@example.test:baseline-changed-error.git',
         'default_branch' => 'main',
         'task_check' => 'composer check',
+        'apps' => fixture_apps(null),
     ]);
     $node = Node::query()->create([
         'name' => 'baseline-changed-error-node',

@@ -4,6 +4,8 @@ import { useTaskPoll } from "../realtime/polling";
 import { DefinitionPane } from "../definitions/definition-pane";
 import { TasksBoard } from "./Tasks";
 import { ProjectCodeEditor } from "../ui/ProjectCodeEditor";
+import { ProjectApps } from "../ui/ProjectApps";
+import { appsEditable, instanceAppProperties } from "../ui/appRows";
 import { useQuery } from "@tanstack/react-query";
 import { useParams } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
@@ -89,18 +91,28 @@ function ProjectOverview({ fleet, project }: { fleet: Fleet; project: Project })
         <div
             className={`w-full min-w-0 max-w-full flex flex-col md:grid md:h-full md:grid-rows-[auto_minmax(120px,0.8fr)_minmax(0,1fr)_minmax(0,1fr)] ${GAPS}`}
         >
-            <Properties
-                testId="record-properties"
-                properties={[
-                    { name: "Name", value: project.name },
-                    { name: "Slug", value: project.slug },
-                    { name: "Repository", value: project.repository_url },
-                    { name: "Default branch", value: project.default_branch },
-                    { name: "Root", value: project.root },
-                ]}
+            {/* The apps sit beside the properties from md up, and below them on a phone. */}
+            <div
+                className={`w-full min-w-0 max-w-full flex flex-col md:grid md:grid-cols-2 ${GAPS}`}
             >
-                <ProjectCodeEditor key={project.id} project={project} />
-            </Properties>
+                <Properties
+                    testId="record-properties"
+                    properties={[
+                        { name: "Name", value: project.name },
+                        { name: "Slug", value: project.slug },
+                        { name: "Repository", value: project.repository_url },
+                        { name: "Default branch", value: project.default_branch },
+                    ]}
+                >
+                    <ProjectCodeEditor key={project.id} project={project} />
+                </Properties>
+                <ProjectApps
+                    // A saved list remounts the editor, so it starts again from what the Gateway stored.
+                    key={`${project.id}:${JSON.stringify(project.apps)}`}
+                    project={project}
+                    editable={appsEditable(project, fleet.instances, !fleet.loading)}
+                />
+            </div>
             <DefinitionPane
                 projectId={project.id}
                 order={1}
@@ -283,6 +295,7 @@ function InstanceOverview({ fleet, instance }: { fleet: Fleet; instance: Instanc
                         },
                         ...analyticsProperties(analytics),
                         { name: "Checkout", value: instance.checkout_path },
+                        ...instanceAppProperties(instance),
                         { name: "Selected branch", value: instance.selected_branch },
                         { name: "Deploy steps", value: `${instance.deploy_steps.length} steps` },
                     ]}

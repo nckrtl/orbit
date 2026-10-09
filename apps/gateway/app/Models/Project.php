@@ -27,8 +27,7 @@ use SensitiveParameter;
  * @property string $repository_identity
  * @property ProjectSourceAccess $source_access
  * @property string|null $default_branch
- * @property list<array{name: string, path: string, web_root: ?string, type: string}>|null $apps
- * @property string|null $root
+ * @property list<array{name: string, path: string, web_root: ?string, type: string}> $apps
  * @property string|null $task_check
  * @property TaskCompute $task_compute
  * @property bool $task_workspace_routed
@@ -49,7 +48,7 @@ final class Project extends Model
 
     /** @var list<string> */
     #[\Override]
-    protected $fillable = ['name', 'code', 'slug', 'type', 'repository_url', 'source_access', 'default_branch', 'root', 'apps', 'task_check', 'task_workspace_routed', 'task_compute', 'review_and_merge', 'merge_check'];
+    protected $fillable = ['name', 'code', 'slug', 'type', 'repository_url', 'source_access', 'default_branch', 'apps', 'task_check', 'task_workspace_routed', 'task_compute', 'review_and_merge', 'merge_check'];
 
     /** @var list<string> */
     #[\Override]
@@ -58,11 +57,12 @@ final class Project extends Model
     protected static function booted(): void
     {
         self::saving(static function (self $project): void {
-            if ($project->isDirty('apps')) {
-                $project->apps = ProjectApps::validate($project->apps);
-            } elseif ($project->apps === null || $project->isDirty(['root', 'type'])) {
-                // Expand-only bridge for the existing root writers; removed with the old interfaces.
-                $project->apps = ProjectApps::validate($project->configuredApps());
+            // A single-app Project's app keeps the Project type when only the Project type changes.
+            if ($project->exists && $project->isDirty('type') && ! $project->isDirty('apps') && count($project->apps) === 1) {
+                $project->apps = [[...$project->apps[0], 'type' => $project->type->value]];
+            }
+            if ($project->isDirty('apps') || ! $project->exists) {
+                $project->apps = ProjectApps::validate($project->getAttribute('apps'));
             }
         });
 
@@ -132,23 +132,24 @@ final class Project extends Model
     /** @return list<array{name: string, path: string, web_root: ?string, type: string}> */
     public function configuredApps(): array
     {
-        if (! $this->isDirty('apps') && $this->isDirty(['root', 'type'])) {
-            $originalApps = $this->getOriginal('apps');
-            $originalRoot = $this->getOriginal('root');
-            $originalType = $this->getOriginal('type');
-            if ($originalApps !== null) {
-                if (($originalRoot !== null && ! is_string($originalRoot)) || ! $originalType instanceof ProjectType) {
-                    throw new ResourceOperationException('project.apps_invalid', 'The retained legacy Project configuration is invalid.');
-                }
-                if ($originalApps !== ProjectApps::legacy($originalRoot, $originalType)) {
-                    throw new ResourceOperationException('project.apps_invalid', 'Legacy root/type writes cannot replace named app configuration.');
-                }
-            }
+        return $this->apps;
+    }
 
-            return ProjectApps::legacy($this->root, $this->type);
+    /** Resolves an app selector: the sole app when omitted, otherwise an exact app name. */
+    public function appName(?string $app, string $resource): string
+    {
+        $apps = $this->configuredApps();
+        if ($app === null && count($apps) === 1) {
+            return $apps[0]['name'];
+        }
+        if ($app === null) {
+            throw new ResourceOperationException('app.required', "Select an app for the {$resource}; this Project has several apps.");
+        }
+        if (! array_any($apps, static fn (array $configured): bool => $configured['name'] === $app)) {
+            throw new ResourceOperationException('app.not_found', "App [{$app}] does not belong to this Project.");
         }
 
-        return $this->apps ?? ProjectApps::legacy($this->root, $this->type);
+        return $app;
     }
 
     public function isWebServing(): bool

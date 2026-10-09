@@ -41,6 +41,7 @@ function cancellable_task_group(TaskGroupStatus $status, ?string $prUrl = null):
         'slug' => 'cancel-app',
         'repository_url' => 'git@github.com:nckrtl/orbit.git',
         'default_branch' => 'main',
+        'apps' => fixture_apps(null),
     ]);
     $node = Node::query()->create([
         'name' => 'cancel-node',
@@ -516,7 +517,7 @@ function cancel_real_remover(Instance $workspace, bool $refused = false): void
 
 function cancel_pending_route(Instance $workspace): Route
 {
-    $workspace->update(['root' => 'public', 'branch' => $workspace->name, 'starting_commit' => str_repeat('a', 40)]);
+    $workspace->update(['app_overrides' => fixture_app_overrides('public'), 'branch' => $workspace->name, 'starting_commit' => str_repeat('a', 40)]);
     $workspace->node->roles()->create(['role' => 'app-dev', 'status' => LifecycleStatus::Active]);
     $route = Route::query()->create([
         'project_id' => $workspace->project_id,

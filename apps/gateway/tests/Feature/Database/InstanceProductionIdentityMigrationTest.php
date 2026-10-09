@@ -107,7 +107,7 @@ function production_identity_migration_parents(): array
         'slug' => 'production-identity-'.Project::query()->count(),
         'repository_url' => 'https://example.test/production-identity.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
 
     return [$project, $node];

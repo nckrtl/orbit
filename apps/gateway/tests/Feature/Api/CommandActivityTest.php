@@ -428,7 +428,7 @@ it('records project update activity for project create and update targets', func
             'type' => 'laravel-app',
             'repository_url' => 'https://example.test/activity-project.git',
             'default_branch' => 'main',
-            'root' => 'public',
+            'apps' => fixture_apps('public', 'laravel-app'),
         ])
         ->assertCreated();
 
@@ -511,7 +511,7 @@ it('records renamed App Cluster and Route lifecycle command names', function ():
         'type' => 'laravel-app',
         'repository_url' => 'https://example.test/lifecycle.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]))->toBe('project:create');
     $project = Project::query()->where('slug', 'lifecycle')->sole();
     expect($recorded('DELETE', "/api/v1/projects/{$project->id}"))->toBe('project:destroy');
@@ -535,7 +535,7 @@ it('records renamed App Cluster and Route lifecycle command names', function ():
         'slug' => 'lifecycle-route',
         'repository_url' => 'https://example.test/lifecycle-route.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $node = Node::query()->create([
         'name' => 'lifecycle-route-node',
@@ -747,7 +747,7 @@ it('correlates unhandled failures without exposing exception text', function ():
             'type' => 'laravel-app',
             'repository_url' => 'https://github.com/acme/site.git',
             'default_branch' => 'main',
-            'root' => 'public',
+            'apps' => fixture_apps('public', 'laravel-app'),
         ]);
 
     $response
@@ -1669,7 +1669,7 @@ it('records definition commands against the Project instead of a Process or Sche
         'slug' => 'acme',
         'repository_url' => 'https://example.test/acme.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
 
@@ -1805,7 +1805,7 @@ function command_activity_environment_fixture(): array
         'slug' => 'environment-activity',
         'repository_url' => 'https://example.test/environment-activity.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $instance = Instance::query()->create([
         'project_id' => $project->id,

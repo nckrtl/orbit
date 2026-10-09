@@ -18,7 +18,7 @@ function compute_project(): Project
 {
     return Project::query()->create([
         'name' => 'Sandbox', 'slug' => 'sandbox', 'repository_url' => 'https://github.com/acme/sandbox.git',
-        'default_branch' => 'main', 'root' => 'public', 'task_check' => 'true',
+        'default_branch' => 'main', 'apps' => fixture_apps('public'), 'task_check' => 'true',
     ]);
 }
 

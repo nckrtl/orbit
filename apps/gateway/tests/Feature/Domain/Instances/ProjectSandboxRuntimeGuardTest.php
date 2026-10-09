@@ -21,8 +21,8 @@ use function Pest\Laravel\mock;
 
 it('prepares a private preview through native provisioning only on the enrolled Project guest', function (string $provider): void {
     $workspace = $provider === 'incus' ? IncusRuntimeWorkspace::create() : UpCloudRuntimeWorkspace::create();
-    $workspace->project->update(['type' => 'laravel-app', 'root' => 'web']);
-    $workspace->update(['task_workspace_routed' => true, 'root' => 'web', 'status' => InstanceState::SourceResolved]);
+    $workspace->project->update(['type' => 'laravel-app', 'apps' => fixture_apps('web', 'laravel-app')]);
+    $workspace->update(['task_workspace_routed' => true, 'app_overrides' => fixture_app_overrides('web'), 'status' => InstanceState::SourceResolved]);
     mock(VitePortRuntime::class)->shouldReceive('selectPort')->twice()
         ->withArgs(fn (Node $node, int $preferred, array $excluded): bool => $node->id === $workspace->node_id && in_array($preferred, [5173, 13714], true))
         ->andReturnUsing(fn (Node $node, int $preferred, array $excluded): int => $preferred);

@@ -6,6 +6,7 @@ namespace App\Domain\Projects;
 
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\ProjectRoot;
+use App\Models\Project;
 
 /** Named app configuration, independent of repository or runtime discovery. */
 final class ProjectApps
@@ -118,6 +119,55 @@ final class ProjectApps
 
             throw new ResourceOperationException('instance.app_overrides_invalid', $exception->getMessage(), previous: $exception);
         }
+    }
+
+    /**
+     * Apps change only while the Project has no Instances. An app that a definition or Route
+     * still names stays until that reference is removed.
+     *
+     * @param  list<array{name: string, path: string, web_root: ?string, type: string}>  $apps
+     */
+    public static function assertReplaceable(Project $project, array $apps): void
+    {
+        if ($project->instances()->exists()) {
+            throw new ResourceOperationException(
+                errorCode: 'project.apps_locked_by_instances',
+                message: "Project [{$project->slug}] has Instances, so its apps cannot change. Remove its Instances, change the apps, then recreate the Instances.",
+                status: 409,
+            );
+        }
+        $removed = array_values(array_diff(array_column($project->configuredApps(), 'name'), array_column($apps, 'name')));
+        foreach ($removed as $name) {
+            if ($project->processDefinitions()->where('app', $name)->exists()
+                || $project->scheduleDefinitions()->where('app', $name)->exists()
+                || $project->routes()->where('app', $name)->exists()) {
+                throw new ResourceOperationException(
+                    errorCode: 'project.app_in_use',
+                    message: "App [{$name}] is still named by a Process definition, Schedule definition or Route of this Project.",
+                    status: 409,
+                    details: ['app' => $name],
+                );
+            }
+        }
+    }
+
+    /**
+     * Validates an Instance override map against the Project apps and returns it sorted by name.
+     *
+     * @param  list<array{name: string, path: string, web_root: ?string, type: string}>  $apps
+     * @return array<string, array{path: string, web_root: ?string}>
+     */
+    public static function overrides(array $apps, mixed $overrides): array
+    {
+        self::effective($apps, $overrides);
+        $normalized = [];
+        /** @var array<string, array{path: string, web_root: ?string}> $overrides */
+        foreach ($overrides as $name => $override) {
+            $normalized[(string) $name] = ['path' => $override['path'], 'web_root' => $override['web_root']];
+        }
+        ksort($normalized, SORT_STRING);
+
+        return $normalized;
     }
 
     /** @param array{name: string, path: string, web_root: ?string, type: string} $app */

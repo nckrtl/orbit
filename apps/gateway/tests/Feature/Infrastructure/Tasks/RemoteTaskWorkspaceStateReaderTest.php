@@ -29,7 +29,7 @@ describe('task workspace Git state', function (): void {
         new Process(['git', 'init', '--initial-branch=task-test', $repository])->mustRun();
         new Process(['git', '-C', $repository, '-c', 'user.name=Orbit Test', '-c', 'user.email=test@example.test', 'commit', '--allow-empty', '-m', 'fixture'])->mustRun();
         $head = trim(new Process(['git', '-C', $repository, 'rev-parse', 'HEAD'])->mustRun()->getOutput());
-        $instance = new Instance(['root' => $root, 'checkout_path' => $repository, 'source_is_laravel' => true]);
+        $instance = new Instance(['app_overrides' => fixture_app_overrides($root), 'checkout_path' => $repository, 'source_is_laravel' => true]);
         $instance->setRelation('node', new Node(['user' => 'orbit', 'wireguard_ip' => '10.44.0.2']));
         mock(SshKeyProvider::class)->shouldReceive('privateKeyPath')->andReturn('/keys/private');
         mock(KnownHostsStore::class)->shouldReceive('path')->andReturn('/keys/known_hosts');

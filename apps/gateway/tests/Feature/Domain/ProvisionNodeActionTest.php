@@ -348,7 +348,7 @@ describe(ProvisionNodeAction::class, function (): void {
             'slug' => 'acme',
             'repository_url' => 'https://github.com/acme/site.git',
             'default_branch' => 'main',
-            'root' => 'public',
+            'apps' => fixture_apps('public'),
         ]);
         Instance::query()->create([
             'project_id' => $project->id,
@@ -1789,6 +1789,7 @@ describe(ProvisionNodeAction::class, function (): void {
             'name' => 'Orbit',
             'slug' => 'orbit',
             'repository_url' => 'git@example.test:orbit.git',
+            'apps' => fixture_apps(null),
         ]);
         $instance = Instance::query()->create([
             'project_id' => $project->id,
@@ -1973,6 +1974,7 @@ describe(ProvisionNodeAction::class, function (): void {
             'name' => 'Orbit',
             'slug' => 'orbit',
             'repository_url' => 'git@example.test:orbit.git',
+            'apps' => fixture_apps(null),
         ]);
         Instance::query()->create([
             'project_id' => $project->id,

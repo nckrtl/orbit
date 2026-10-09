@@ -27,7 +27,7 @@ use Tests\Support\LifecycleSshExecutor;
 beforeEach(function (): void {
     $this->sandbox = sys_get_temp_dir().'/orbit-lifecycle-'.Str::uuid();
     mkdir($this->sandbox, 0700);
-    $project = Project::query()->create(['name' => 'Lifecycle', 'slug' => 'lifecycle', 'repository_url' => 'https://example.test/lifecycle.git']);
+    $project = Project::query()->create(['name' => 'Lifecycle', 'slug' => 'lifecycle', 'repository_url' => 'https://example.test/lifecycle.git', 'apps' => fixture_apps(null)]);
     $node = Node::query()->create(['name' => 'lifecycle', 'public_ssh_host' => '192.0.2.8', 'wireguard_ip' => '192.0.2.8']);
     $this->instance = Instance::query()->create([
         'project_id' => $project->id, 'node_id' => $node->id, 'name' => 'dev',
@@ -148,7 +148,7 @@ it('copies the synchronized environment files into the active release before set
     chmod($source.'/.env.testing', 0640);
     // The release still has the files its deploy copied.
     file_put_contents($target.'/.env', "DB_DATABASE=stale\n");
-    $this->instance->update(['name' => 'default', 'development_release_layout' => true, 'source_is_laravel' => true, 'root' => $root]);
+    $this->instance->update(['name' => 'default', 'development_release_layout' => true, 'source_is_laravel' => true, 'app_overrides' => fixture_app_overrides($root)]);
     $deployment = Mockery::mock(DevelopmentDeployment::class);
     $deployment->shouldReceive('selected')->once()->andReturn(new DeploymentRelease('20261009120000-active', $release, str_repeat('a', 40)));
     $directory = $application === '' ? '.' : $application;

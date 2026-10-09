@@ -29,7 +29,7 @@ use Tests\Support\AppDevFakeSshExecutor;
 
 it('observes private Route projections without application HTTP checks', function (string $root, string $relative): void {
     [$instance, $route] = private_route_inspector_standalone();
-    $instance->update(['root' => $root]);
+    $instance->update(['app_overrides' => fixture_app_overrides($root)]);
     $ssh = new AppDevFakeSshExecutor([
         new CommandResult(0, "caddy=1\ntls=1\ndns=1\nfirewall=1\nlaravel=1\nphp=1\n", '', 1, false),
     ]);
@@ -186,7 +186,7 @@ function private_route_inspector_standalone(): array
         'slug' => 'private-doctor-app-'.uniqid(),
         'repository_url' => 'https://git.example.test/acme/private-doctor.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $node = Node::query()->create([
         'name' => 'private-doctor-workload-'.uniqid(),

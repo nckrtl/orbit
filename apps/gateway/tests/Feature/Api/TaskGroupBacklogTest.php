@@ -36,6 +36,7 @@ beforeEach(function (): void {
         'slug' => 'backlog-demo',
         'repository_url' => 'git@example.test:backlog-demo.git',
         'default_branch' => 'main',
+        'apps' => fixture_apps(null),
     ]);
     $this->provisioning = new class implements InstanceProvisioning
     {

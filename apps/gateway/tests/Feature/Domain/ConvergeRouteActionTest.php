@@ -1714,7 +1714,7 @@ function cluster_tld_generated_route(): array
         'slug' => 'acme',
         'repository_url' => 'https://example.test/acme.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $instance = Instance::query()->create([
         'project_id' => $project->id,
@@ -1742,7 +1742,7 @@ function route_domain_change_route(bool $laravel, string $environment = 'develop
         'slug' => 'acme',
         'repository_url' => 'https://example.test/acme.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $node = Node::query()->create([
         'name' => 'workload',
@@ -1817,7 +1817,7 @@ function route_domain_change_shared_production_route(): Route
         'slug' => 'shared',
         'repository_url' => 'https://example.test/shared.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $cluster = Cluster::query()->create(['name' => 'shared', 'state' => 'active']);
     $instances = collect(['one', 'two'])->map(function (string $name) use ($project, $cluster): Instance {
@@ -1874,7 +1874,7 @@ function route_untargeted_removal_route(): Route
         'slug' => 'untargeted',
         'repository_url' => 'https://example.test/untargeted.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $node = Node::query()->create([
         'name' => 'untargeted-node',
@@ -1929,7 +1929,7 @@ function route_domain_change_public_route(): Route
         'slug' => 'public',
         'repository_url' => 'https://example.test/public.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $cluster = Cluster::query()->create(['name' => 'public', 'state' => 'active']);
     $node = Node::query()->create([

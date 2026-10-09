@@ -16,6 +16,7 @@ function predecessor_task_group(TaskStatus $predecessorStatus): array
         'slug' => 'predecessor-test',
         'repository_url' => 'git@example.test:predecessor-test.git',
         'default_branch' => 'main',
+        'apps' => fixture_apps(null),
     ]);
     $group = Task::topLevel()->create([
         'project_id' => $project->id,

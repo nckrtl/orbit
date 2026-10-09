@@ -162,7 +162,7 @@ it('links the initial release environment in the application directory', functio
     [$source, $ssh, $instance] = production_source_lifecycle([
         new CommandResult(0, "main\t".str_repeat('a', 40)."\n", '', 1, false),
     ]);
-    $instance->update(['root' => $webRoot]);
+    $instance->update(['app_overrides' => fixture_app_overrides($webRoot)]);
     $source->resolve($instance);
     $program = $ssh->commands[0]->input;
     expect($program)->toContain('ln -s '.$target.' "$release_environment"');
@@ -207,7 +207,7 @@ it('permits an unresolved root and revalidates complete ownership immediately be
         new CommandResult(0, '', '', 1, false),
     ]);
     $instance->update([
-        'root' => 'public',
+        'app_overrides' => fixture_app_overrides('public'),
         'clone_candidate_id' => $instance->id,
     ]);
 
@@ -245,7 +245,7 @@ it('does not require or grant access to an initial document root during direct c
     [$source, $ssh, $instance] = production_source_lifecycle([
         new CommandResult(0, '', '', 1, false),
     ]);
-    $instance->update(['root' => 'dist']);
+    $instance->update(['app_overrides' => fixture_app_overrides('dist')]);
 
     $source->prepareCaddyAccess($instance);
 
@@ -436,7 +436,7 @@ function production_source_shell_fixture(string $webRoot = 'public', string $suf
     [$source, $ssh, $instance] = production_source_lifecycle([
         new CommandResult(0, "NONE\n", '', 1, false),
     ]);
-    $instance->update(['root' => $webRoot]);
+    $instance->update(['app_overrides' => fixture_app_overrides($webRoot)]);
     $source->inspectProfile($instance);
     $root = sys_get_temp_dir().'/orbit-production-source-'.Str::uuid();
     mkdir($root, 0o755);
@@ -488,7 +488,7 @@ it('prepares named app production source and release links for non-serving packa
         new CommandResult(0, "NONE\n", '', 1, false),
         new CommandResult(0, '', '', 1, false),
     ]);
-    $instance->project->update(['type' => $type, 'root' => '.']);
+    $instance->project->update(['type' => $type, 'apps' => fixture_apps('.', $type)]);
     $instance->node->roles()->create(['role' => 'app-prod', 'status' => 'active']);
     $instance->node->unsetRelation('roles');
     $instance->update(['source_layout' => 'release', 'checkout_path' => $instance->production_home.'/releases/initial']);
@@ -545,7 +545,7 @@ function production_source_lifecycle(array $results, ?string $branch = null): ar
         'slug' => 'application',
         'repository_url' => 'https://example.test/application.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $instance = Instance::query()->create([
         'project_id' => $project->id,

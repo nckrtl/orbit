@@ -30,7 +30,6 @@ use App\Domain\Projects\ProjectUpdateProjectionMutator;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\Tasks\InstanceProvisionFailure;
 use App\Domain\Tasks\InstanceProvisionIntent;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
@@ -61,7 +60,7 @@ it('provisions from the Project setting for an orbit slug and another slug', fun
         ->and($instance)->toBeInstanceOf(Instance::class)
         ->and($instance->task_workspace_routed)->toBe($routed)
         ->and($instance->status)->toBe($routed ? InstanceState::Active : InstanceState::SourceResolved)
-        ->and($instance->root)->toBe($routed ? 'public' : null)
+        ->and($instance->app_overrides)->toBe([])
         ->and($instance->routes()->count())->toBe($routed ? 1 : 0)
         ->and($instance->node_id)->toBe($node->id);
     if ($routed) {
@@ -111,7 +110,7 @@ it('finishes a routed workspace that stopped early even after routing is turned 
         'name' => $name,
         'source_layout' => InstanceSourceLayout::Checkout,
         'checkout_path' => '/srv/orbit/apps/orbit/'.$name,
-        'root' => 'public',
+        'app_overrides' => fixture_app_overrides('public'),
         'branch_override' => $name,
         'task_workspace_routed' => true,
         'status' => InstanceState::Reserved,
@@ -234,7 +233,7 @@ it('keeps workspace routes and settled state after a rename and both setting cha
         'name' => 'default',
         'source_layout' => InstanceSourceLayout::Checkout,
         'checkout_path' => '/srv/orbit/apps/shop/default',
-        'root' => 'public',
+        'app_overrides' => fixture_app_overrides('public'),
         'branch' => 'main',
         'starting_commit' => str_repeat('c', 40),
         'status' => InstanceState::Active,
@@ -271,29 +270,6 @@ it('keeps workspace routes and settled state after a rename and both setting cha
         ->and($routedProject->fresh()->slug)->toBe('renamed-shop')
         ->and($unroutedProject->fresh()->slug)->toBe('renamed-orbit');
 });
-
-it('refuses a routed workspace whose root cannot serve and still creates an unrouted one', function (string $slug, ProjectType $type, ?string $root): void {
-    $routed = routing_mode_project($slug, true, $type, $root);
-    routing_mode_node($slug.'-root');
-    routing_mode_bind_boundaries();
-
-    expect(app(TaskWorkspaceProvisioner::class)->provision(InstanceProvisionIntent::for(routing_mode_group($routed))))
-        ->toBeInstanceOf(InstanceProvisionFailure::class)
-        ->and(Instance::query()->where('project_id', $routed->id)->exists())->toBeFalse();
-
-    $unrouted = routing_mode_project($slug.'-plain', false, $type, $root);
-    $instance = app(TaskWorkspaceProvisioner::class)->provision(InstanceProvisionIntent::for(routing_mode_group($unrouted)));
-
-    expect($instance)->toBeInstanceOf(Instance::class)
-        ->and($instance->status)->toBe(InstanceState::SourceResolved)
-        ->and($instance->root)->toBeNull()
-        ->and($instance->routes()->count())->toBe(0)
-        ->and($instance->task_workspace_routed)->toBeFalse();
-})->with([
-    'orbit laravel root dot' => ['orbit', ProjectType::LaravelApp, '.'],
-    'shop laravel missing root' => ['shop', ProjectType::LaravelApp, null],
-    'orbit monorepo root dot' => ['orbit-mono', ProjectType::Monorepo, '.'],
-]);
 
 it('still rejects a Route for an ordinary Instance whose root cannot serve', function (): void {
     $project = routing_mode_project('orbit', false, ProjectType::NodePackage, '.');
@@ -333,7 +309,7 @@ it('removes a routed workspace and an unrouted workspace on cancel', function (s
         'name' => 'default',
         'source_layout' => InstanceSourceLayout::Checkout,
         'checkout_path' => '/srv/orbit/apps/'.$slug.'/default',
-        'root' => 'public',
+        'app_overrides' => fixture_app_overrides('public'),
         'branch' => 'main',
         'starting_commit' => str_repeat('e', 40),
         'status' => InstanceState::Active,
@@ -385,13 +361,10 @@ function routing_mode_project(
         'repository_url' => "git@example.test:{$slug}.git",
         'type' => $type,
         'default_branch' => 'main',
-        'root' => $root === '.' && in_array($type, [ProjectType::LaravelApp, ProjectType::Monorepo], true) ? 'public' : $root,
+        // Without a serving path the Project's only app is a package at the repository root, which cannot serve.
+        'apps' => in_array($root, [null, '.'], true) ? fixture_apps('.', ProjectType::LaravelPackage) : fixture_apps($root, $type),
         'task_workspace_routed' => $routed,
     ]);
-    if ($project->root !== $root) {
-        // These tests intentionally inspect invalid historical roots, not valid model writes.
-        Project::query()->whereKey($project->id)->update(['root' => $root]);
-    }
 
     return $project->refresh();
 }

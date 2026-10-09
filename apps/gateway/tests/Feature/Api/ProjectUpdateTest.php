@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
-use App\Domain\Projects\ProjectType;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Activity;
@@ -96,63 +95,56 @@ describe('app updates', function (): void {
             ->and($lock->runs[0]['stored'])->toBe('composer test');
     });
 
-    it('refuses a Project root update that would expose an inherited Route target root', function (): void {
-        $this->fixture->project->update(['type' => ProjectType::NodePackage]);
+    it('refuses an apps update while the Project has Instances', function (): void {
+        $before = $this->fixture->project->refresh()->apps;
 
         $this
             ->patchJson('/api/v1/projects/'.$this->fixture->project->id, [
-                'root' => '.',
+                'apps' => [...$before, ['name' => 'docs', 'path' => 'docs', 'web_root' => 'public', 'type' => 'laravel-app']],
             ])
             ->assertConflict()
-            ->assertJsonPath('error.code', 'route.target_web_root_unsupported');
+            ->assertJsonPath('error.code', 'project.apps_locked_by_instances')
+            ->assertJsonPath('error.message', "Project [{$this->fixture->project->slug}] has Instances, so its apps cannot change. Remove its Instances, change the apps, then recreate the Instances.");
 
-        expect($this->fixture->project->refresh()->root)
-            ->toBe('public')
-            ->and($this->fixture->defaultInstance->refresh()->root)
-            ->toBeNull()
-            ->and($this->fixture->defaultRoute->targets()->where('instance_id', $this->fixture->defaultInstance->id)->exists())
-            ->toBeTrue();
+        expect($this->fixture->project->refresh()->apps)->toBe($before);
     });
 
-    it('allows an unsupported Project root update when the Route target has its own web-root override', function (): void {
-        $this->fixture->project->update(['type' => ProjectType::NodePackage]);
-        $this->fixture->defaultInstance->update(['root' => 'public']);
-
-        $this
-            ->patchJson('/api/v1/projects/'.$this->fixture->project->id, [
-                'root' => '.',
-            ])
-            ->assertOk()
-            ->assertJsonPath('data.root', '.');
-
-        expect($this->fixture->project->refresh()->root)
-            ->toBe('.')
-            ->and($this->fixture->defaultInstance->refresh()->root)
-            ->toBe('public')
-            ->and($this->fixture->defaultRoute->targets()->where('instance_id', $this->fixture->defaultInstance->id)->exists())
-            ->toBeTrue();
-    });
-
-    it('refuses a Project type update that leaves an inherited Route target with an unsupported root', function (): void {
-        $this->fixture->project->update([
-            'type' => ProjectType::LaravelPackage,
-            'root' => '.',
+    it('replaces the apps of a Project without Instances', function (): void {
+        $project = Project::query()->create([
+            'name' => 'Empty', 'slug' => 'empty', 'repository_url' => 'https://github.com/acme/empty.git',
+            'default_branch' => 'main', 'apps' => fixture_apps('public'),
         ]);
+        $apps = [
+            ['name' => 'web', 'path' => 'apps/site', 'web_root' => 'public', 'type' => 'laravel-app'],
+            ['name' => 'docs', 'path' => 'apps/docs', 'web_root' => 'public', 'type' => 'laravel-app'],
+        ];
 
         $this
-            ->patchJson('/api/v1/projects/'.$this->fixture->project->id, [
-                'type' => ProjectType::NodePackage->value,
-            ])
-            ->assertConflict()
-            ->assertJsonPath('error.code', 'route.target_web_root_unsupported')
-            ->assertJsonPath('error.message', 'A Route targets an Instance that inherits root [.], which is not a web root. Send a web root with the change.');
+            ->patchJson('/api/v1/projects/'.$project->id, ['apps' => $apps])
+            ->assertOk()
+            ->assertJsonPath('data.apps', [$apps[1], $apps[0]]);
 
-        expect($this->fixture->project->refresh()->type)
-            ->toBe(ProjectType::LaravelPackage)
-            ->and($this->fixture->project->root)
-            ->toBe('.')
-            ->and($this->fixture->defaultInstance->refresh()->routeTargets()->exists())
-            ->toBeTrue();
+        expect($project->refresh()->apps)->toBe([$apps[1], $apps[0]])
+            ->and($project->updates()->exists())->toBeFalse();
+    });
+
+    it('keeps an app that a Process definition still names', function (): void {
+        $project = Project::query()->create([
+            'name' => 'Named', 'slug' => 'named', 'repository_url' => 'https://github.com/acme/named.git', 'default_branch' => 'main',
+            'apps' => [
+                ['name' => 'docs', 'path' => 'apps/docs', 'web_root' => 'public', 'type' => 'laravel-app'],
+                ['name' => 'web', 'path' => 'apps/site', 'web_root' => 'public', 'type' => 'laravel-app'],
+            ],
+        ]);
+        $project->processDefinitions()->create(['app' => 'docs', 'name' => 'queue', 'environments' => ['development'], 'spec' => ['runtime' => 'systemd', 'command' => ['/usr/bin/php', 'artisan', 'queue:work']]]);
+
+        $this
+            ->patchJson('/api/v1/projects/'.$project->id, ['apps' => [['name' => 'web', 'path' => 'apps/site', 'web_root' => 'public', 'type' => 'laravel-app']]])
+            ->assertConflict()
+            ->assertJsonPath('error.code', 'project.app_in_use')
+            ->assertJsonPath('error.details.app', 'docs');
+
+        expect(array_column($project->refresh()->apps, 'name'))->toBe(['docs', 'web']);
     });
 
     it('switches inheriting default development instances when default_branch changes', function (): void {
@@ -220,7 +212,7 @@ describe('app updates', function (): void {
             'slug' => 'other',
             'repository_url' => 'git@github.com:acme/other.git',
             'default_branch' => 'main',
-            'root' => 'public',
+            'apps' => fixture_apps('public'),
         ]);
 
         $this
@@ -256,13 +248,11 @@ describe('app updates', function (): void {
             ->patchJson('/api/v1/projects/'.$this->fixture->project->id, [
                 'slug' => 'shop',
                 'default_branch' => 'stable',
-                'root' => 'web/public',
                 'repository_url' => 'https://github.com/acme/site.git',
             ])
             ->assertOk()
             ->assertJsonPath('data.slug', 'shop')
-            ->assertJsonPath('data.default_branch', 'stable')
-            ->assertJsonPath('data.root', 'web/public');
+            ->assertJsonPath('data.default_branch', 'stable');
 
         $production->refresh();
 

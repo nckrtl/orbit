@@ -18,6 +18,7 @@ use Illuminate\Support\Str;
  * @property string $target_type
  * @property int $target_id
  * @property string|null $source_definition_id
+ * @property string|null $app
  * @property int $host_node_id
  * @property string $name
  * @property string $calendar
@@ -47,6 +48,7 @@ final class Schedule extends Model
         'target_type',
         'target_id',
         'source_definition_id',
+        'app',
         'host_node_id',
         'name',
         'calendar',
@@ -67,6 +69,9 @@ final class Schedule extends Model
     protected static function booted(): void
     {
         self::creating(static function (self $schedule): void {
+            if (Instance::isMorphType($schedule->target_type)) {
+                $schedule->app = Instance::query()->findOrFail($schedule->target_id)->appConfiguration($schedule->app)['name'];
+            }
             $id = $schedule->getAttribute('id');
             $schedule->id = is_string($id) && $id !== '' ? $id : (string) Str::uuid();
         });

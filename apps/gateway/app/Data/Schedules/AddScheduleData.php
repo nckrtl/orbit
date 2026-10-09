@@ -18,5 +18,6 @@ final readonly class AddScheduleData
         public string $command,
         public int $timeoutSeconds = 3600,
         public bool $start = true,
+        public ?string $app = null,
     ) {}
 }

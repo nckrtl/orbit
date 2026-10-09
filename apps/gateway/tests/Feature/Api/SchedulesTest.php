@@ -88,6 +88,7 @@ it('adds lists shows and runs bounded Schedule data without changing disabled ti
         'error_code',
         'last_run_at',
         'last_run_status',
+        'app',
     ]);
 
     $this->postJson('/api/v1/schedules', $payload)
@@ -113,6 +114,7 @@ it('adds lists shows and runs bounded Schedule data without changing disabled ti
         'error_code',
         'last_run_at',
         'last_run_status',
+        'app',
     ]);
 
     $this->getJson("/api/v1/schedules/{$scheduleId}")
@@ -350,6 +352,7 @@ function schedules_api_instance(Node $node): Instance
         'name' => 'Reports',
         'slug' => 'reports',
         'repository_url' => 'git@example.test:reports.git',
+        'apps' => fixture_apps(null),
     ]);
 
     return Instance::query()->create([

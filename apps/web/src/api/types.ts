@@ -6,6 +6,8 @@ type Schema<K extends keyof components["schemas"]> = Required<components["schema
 // The Gateway always sends them; Required<> states that once instead of at every read.
 export type Node = Schema<"Node">;
 export type Project = Schema<"Project">;
+/** One named app of a Project: where it lives in the repository, what it serves, and its type. */
+export type ProjectApp = components["schemas"]["ProjectApp"];
 export type ProjectIdentity = { id: number; name: string; slug: string };
 export type Instance = Omit<Schema<"Instance">, "project" | "node" | "deploy_steps"> & {
     project: ProjectIdentity;

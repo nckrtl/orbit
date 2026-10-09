@@ -27,7 +27,7 @@ function publish_group(): array
         'name' => 'publish-node', 'status' => LifecycleStatus::Active, 'platform' => 'linux',
         'public_ssh_host' => '192.0.2.71', 'wireguard_ip' => '10.44.0.71',
     ]);
-    $project = Project::query()->create(['name' => 'Publish', 'slug' => 'publish', 'repository_url' => 'git@example.test:publish.git', 'default_branch' => 'main']);
+    $project = Project::query()->create(['name' => 'Publish', 'slug' => 'publish', 'repository_url' => 'git@example.test:publish.git', 'default_branch' => 'main', 'apps' => fixture_apps(null)]);
     $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-1', 'checkout_path' => '/home/orbit/apps/publish/task-1', 'status' => 'source_resolved']);
     $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Publish', 'brief' => 'Brief', 'status' => TaskGroupStatus::Running, 'lines_added' => 1, 'lines_deleted' => 1, 'line_diff' => 2]);
     $group->taskable()->associate($instance)->save();

@@ -89,7 +89,7 @@ beforeEach(function (): void {
         'slug' => 'acme',
         'repository_url' => 'https://example.test/acme.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $this->node = reconciliation_node('dev', 'dev.test');
     $this->target = reconciliation_instance($this->orbitApp, $this->node, 'feature');

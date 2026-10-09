@@ -34,7 +34,7 @@ beforeEach(function (): void {
         'slug' => 'acme',
         'repository_url' => 'https://example.test/acme.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $this->node = route_removal_node('dev');
     $this->instance = Instance::query()->create([
@@ -78,6 +78,7 @@ it('runs ownership and scope guards through destructive action entry points', fu
         'name' => 'Routed',
         'slug' => 'routed',
         'repository_url' => 'https://example.test/routed.git',
+        'apps' => fixture_apps(null),
     ]);
     Route::query()->create([
         'project_id' => $routed->id,
@@ -209,6 +210,7 @@ it('eligible Route removal deletes only owned target rows and releases unrelated
         'name' => 'Other',
         'slug' => 'other',
         'repository_url' => 'https://example.test/other.git',
+        'apps' => fixture_apps(null),
     ]);
 
     $projector = new FakeRouteRemovalProjector;

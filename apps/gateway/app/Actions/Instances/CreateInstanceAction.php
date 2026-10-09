@@ -38,7 +38,6 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\GitRepositoryOrigin;
-use App\Domain\SourceControl\ProjectRoot;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseServer;
@@ -89,7 +88,7 @@ final readonly class CreateInstanceAction
         $project = Project::query()->findOrFail($data->projectId);
         $this->assertCompleteSourceDefaults($project);
         $requestedNode = Node::query()->findOrFail($data->nodeId);
-        $root = $data->root === null ? null : ProjectRoot::validate($data->root, $project->type);
+        $overrides = ProjectApps::overrides($project->configuredApps(), $data->appOverrides ?? []);
 
         if (
             $requestedNode
@@ -98,7 +97,7 @@ final readonly class CreateInstanceAction
                 ->where('status', LifecycleStatus::Active)
                 ->exists()
         ) {
-            return $this->announceCreated($this->productionProvisioner->execute($data, $project, $requestedNode, $root));
+            return $this->announceCreated($this->productionProvisioner->execute($data, $project, $requestedNode, $overrides));
         }
 
         $existing = Instance::query()
@@ -114,7 +113,7 @@ final readonly class CreateInstanceAction
 
         // An identical retry finishes the cleanup that an earlier failed create started, then creates afresh.
         if ($existing instanceof Instance && $this->hasUnfinishedCleanup($existing)) {
-            $this->assertRetryIdentity($existing, $requestedNode, $root, $data->branch, finishingCleanup: true);
+            $this->assertRetryIdentity($existing, $requestedNode, $overrides, $data->branch, finishingCleanup: true);
             try {
                 $this->removeFailedCreate($existing);
             } catch (Throwable $exception) {
@@ -124,7 +123,7 @@ final readonly class CreateInstanceAction
         }
 
         if ($existing instanceof Instance) {
-            $this->assertRetryIdentity($existing, $requestedNode, $root, $data->branch);
+            $this->assertRetryIdentity($existing, $requestedNode, $overrides, $data->branch);
             $instance = $existing;
             $created = false;
         } else {
@@ -152,7 +151,7 @@ final readonly class CreateInstanceAction
                 'source_layout' => InstanceSourceLayout::Checkout,
                 'checkout_path' => $checkout->value,
                 'source_prepare_id' => (string) Str::uuid(),
-                'root' => $root,
+                'app_overrides' => $overrides,
                 'branch_override' => $data->branch,
                 'status' => InstanceState::Reserved,
                 'first_setup_pending' => true,
@@ -589,10 +588,11 @@ final readonly class CreateInstanceAction
         }
     }
 
+    /** @param array<string, array{path: string, web_root: ?string}> $overrides */
     private function assertRetryIdentity(
         Instance $instance,
         Node $requestedNode,
-        ?string $root,
+        array $overrides,
         ?string $branchOverride,
         bool $finishingCleanup = false,
     ): void {
@@ -608,7 +608,7 @@ final readonly class CreateInstanceAction
         if (
             $requestedNode->id !== $recordedNode->id
             || ! ($instance->source_layout === InstanceSourceLayout::Checkout->value || ($instance->source_layout === InstanceSourceLayout::Worktree->value && $instance->seed_repository !== null))
-            || $instance->root !== $root
+            || ProjectApps::overrides($instance->project->configuredApps(), $instance->app_overrides ?? []) !== $overrides
             || $instance->branch_override !== $branchOverride
         ) {
             throw $this->conflict('instance.placement_conflict', 'Instance placement is immutable.');

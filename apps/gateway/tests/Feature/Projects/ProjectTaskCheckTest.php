@@ -27,7 +27,7 @@ it('stores no task check when creation omits the command or sends null, for ever
         'type' => $type->value,
         'repository_url' => 'https://github.com/acme/'.$type->value.$suffix.'.git',
         'default_branch' => 'main',
-        'root' => $root,
+        'apps' => fixture_apps($root, $type),
     ];
     if ($explicitNull) {
         $payload['task_check'] = null;
@@ -59,7 +59,7 @@ it('stores an explicit task check, and a create retry that omits it leaves that 
         'type' => ProjectType::NodePackage->value,
         'repository_url' => 'https://github.com/acme/custom-check.git',
         'default_branch' => 'main',
-        'root' => '.',
+        'apps' => fixture_apps('.', ProjectType::NodePackage->value),
         'task_check' => 'vp run check',
     ])->assertCreated()
         ->assertJsonPath('data.task_check', 'vp run check');
@@ -69,7 +69,7 @@ it('stores an explicit task check, and a create retry that omits it leaves that 
         'type' => ProjectType::LaravelApp->value,
         'repository_url' => 'https://github.com/acme/kept-check.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public', ProjectType::LaravelApp->value),
         'task_check' => 'composer check',
     ])->assertCreated()
         ->assertJsonPath('data.task_check', 'composer check');
@@ -79,7 +79,7 @@ it('stores an explicit task check, and a create retry that omits it leaves that 
         'type' => ProjectType::LaravelApp->value,
         'repository_url' => 'https://github.com/acme/kept-check.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public', ProjectType::LaravelApp->value),
     ])->assertOk()
         ->assertJsonPath('data.id', $created->json('data.id'))
         ->assertJsonPath('data.task_check', 'composer check');
@@ -91,7 +91,7 @@ it('leaves a stored task check unchanged when an update omits it, and clears it 
         'type' => ProjectType::LaravelPackage->value,
         'repository_url' => 'https://github.com/acme/update-check.git',
         'default_branch' => 'main',
-        'root' => '.',
+        'apps' => fixture_apps('.', ProjectType::LaravelPackage->value),
         'task_check' => 'vp run check',
     ])->assertCreated();
     $id = $created->json('data.id');
@@ -114,7 +114,7 @@ it('still refuses a Project create without a type', function (): void {
         'slug' => 'untyped',
         'repository_url' => 'https://github.com/acme/untyped.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ])->assertUnprocessable()
         ->assertJsonPath('error.details.type.0', 'The type field is required.');
 

@@ -63,6 +63,7 @@ beforeEach(function (): void {
         'slug' => 'mcp-demo',
         'repository_url' => 'git@example.test:mcp-demo.git',
         'default_branch' => 'main',
+        'apps' => fixture_apps(null),
     ]);
 });
 

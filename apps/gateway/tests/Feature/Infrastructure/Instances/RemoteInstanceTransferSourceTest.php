@@ -421,7 +421,7 @@ function remote_transfer_archive(): array
     ]);
     $source = $node('staging-source');
     $destination = $node('staging-destination');
-    $project = Project::query()->create(['name' => 'Transfer', 'slug' => 'transfer', 'repository_url' => 'https://example.test/transfer.git']);
+    $project = Project::query()->create(['name' => 'Transfer', 'slug' => 'transfer', 'repository_url' => 'https://example.test/transfer.git', 'apps' => fixture_apps(null)]);
     $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $source->id, 'name' => 'source', 'checkout_path' => $sandbox.'/source']);
     $capture = new TransferSourceCapture(
         instanceId: $instance->id, nodeId: $source->id, layout: InstanceSourceLayout::Checkout,

@@ -124,7 +124,7 @@ function tmpdir_instance(string $checkout, string $name): Instance
     $suffix = bin2hex(random_bytes(4));
     $slug = $name.'-'.$suffix;
     $host = '10.44.'.random_int(1, 254).'.'.random_int(1, 254);
-    $project = Project::query()->create(['name' => $slug, 'slug' => $slug, 'repository_url' => 'git@github.com:acme/'.$slug.'.git', 'default_branch' => 'main']);
+    $project = Project::query()->create(['name' => $slug, 'slug' => $slug, 'repository_url' => 'git@github.com:acme/'.$slug.'.git', 'default_branch' => 'main', 'apps' => fixture_apps(null)]);
     $node = Node::query()->create(['name' => $slug, 'status' => 'active', 'platform' => 'linux', 'public_ssh_host' => $host, 'wireguard_ip' => $host, 'user' => 'orbit']);
 
     return Instance::query()->create([

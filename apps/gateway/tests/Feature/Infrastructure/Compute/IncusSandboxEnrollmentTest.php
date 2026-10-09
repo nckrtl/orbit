@@ -63,7 +63,7 @@ function incus_fleet_sandbox(): TaskSandbox
         'compute.incus.hosts' => [['node_id' => $host->id, 'project' => 'orbit-sandbox-proof-318a36c8', 'pool' => 'proof',
             'max_vms' => 9, 'blocked_networks' => ['192.168.0.0/16'], 'gateway_address' => '10.44.0.2',
             'project_bootstrap' => ['wireguard_address' => '93.184.216.35', 'wireguard_port' => 51820]]]]);
-    $project = Project::query()->create(['name' => 'DLF', 'slug' => 'dlf', 'repository_url' => 'https://github.com/acme/dlf.git']);
+    $project = Project::query()->create(['name' => 'DLF', 'slug' => 'dlf', 'repository_url' => 'https://github.com/acme/dlf.git', 'apps' => fixture_apps(null)]);
     $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Local work', 'brief' => 'Work', 'status' => 'todo', 'task_compute' => TaskCompute::Vm]);
     $id = (string) Str::uuid();
 

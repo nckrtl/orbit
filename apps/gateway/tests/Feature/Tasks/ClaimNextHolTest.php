@@ -47,6 +47,7 @@ it('claimNext continues after provision null', function (): void {
         'slug' => 'claim-hol',
         'repository_url' => 'git@example.test:claim-hol.git',
         'default_branch' => 'main',
+        'apps' => fixture_apps(null),
     ]);
     $oldest = claim_hol_group($project, 'Oldest');
     $second = claim_hol_group($project, 'Second');
@@ -299,6 +300,7 @@ function claim_hol_app(): Project
         'name' => 'Claim HOL',
         'repository_url' => 'git@example.test:claim-hol.git',
         'default_branch' => 'main',
+        'apps' => fixture_apps(null),
     ]);
 }
 

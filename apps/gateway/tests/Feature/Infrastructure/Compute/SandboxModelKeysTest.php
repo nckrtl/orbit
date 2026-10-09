@@ -17,7 +17,7 @@ use Illuminate\Support\Str;
 
 function model_key_sandbox(): TaskSandbox
 {
-    $project = Project::query()->first() ?? Project::query()->create(['name' => 'Orbit', 'slug' => 'orbit', 'repository_url' => 'https://github.com/acme/orbit.git']);
+    $project = Project::query()->first() ?? Project::query()->create(['name' => 'Orbit', 'slug' => 'orbit', 'repository_url' => 'https://github.com/acme/orbit.git', 'apps' => fixture_apps(null)]);
     $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Key proof', 'brief' => 'Work', 'status' => 'todo', 'task_compute' => TaskCompute::Vm]);
 
     return TaskSandbox::query()->create(['id' => (string) Str::uuid(), 'group_id' => $group->id, 'provider' => 'incus', 'name' => 'ot-proof-'.$group->id, 'state' => 'reserved', 'desired_power' => 'running', 'spec' => []]);

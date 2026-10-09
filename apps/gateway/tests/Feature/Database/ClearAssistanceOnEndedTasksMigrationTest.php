@@ -30,6 +30,7 @@ it('clears assistance on every ended task and leaves every other task alone', fu
             'slug' => 'ended-assistance',
             'repository_url' => 'git@example.test:ended-assistance.git',
             'default_branch' => 'main',
+            'apps' => fixture_apps(null),
         ]);
         $stamp = '2026-10-01 12:00:00';
         $insert = function (array $row) use ($project, $stamp): int {

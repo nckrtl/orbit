@@ -5,9 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Requests\Instances;
 
 use App\Data\Instances\RegisterInstanceData;
-use App\Domain\Projects\ProjectType;
 use App\Domain\Routes\RouteDomain;
-use App\Domain\SourceControl\ProjectRoot;
 use App\Http\Requests\TopLevelJsonObjectInspector;
 use App\Models\Project;
 use Illuminate\Foundation\Http\FormRequest;
@@ -26,7 +24,10 @@ final class RegisterInstanceRequest extends FormRequest
             'include_worktrees' => ['sometimes', 'boolean'],
             'project_id' => ['sometimes', 'integer', Rule::exists(new Project()->getTable(), 'id')],
             'instance_name' => ['sometimes', 'string', 'max:63'],
-            'root' => ['sometimes', 'string', 'max:255'],
+            'app_overrides' => ['sometimes', 'array'],
+            'app_overrides.*' => ['array:path,web_root'],
+            'app_overrides.*.path' => ['required', 'string', 'max:255'],
+            'app_overrides.*.web_root' => ['present', 'nullable', 'string', 'max:255'],
             'domain' => ['sometimes', 'string', 'max:253'],
             'setup' => ['sometimes', 'boolean'],
         ];
@@ -36,12 +37,14 @@ final class RegisterInstanceRequest extends FormRequest
     public function validationData(): array
     {
         try {
+            app(TopLevelJsonObjectInspector::class)->refuseRemoved($this->getContent(), 'root', 'app_overrides');
+
             return app(TopLevelJsonObjectInspector::class)->inspect($this->getContent(), [
                 'source_path',
                 'include_worktrees',
                 'project_id',
                 'instance_name',
-                'root',
+                'app_overrides',
                 'domain',
                 'setup',
             ]);
@@ -54,15 +57,6 @@ final class RegisterInstanceRequest extends FormRequest
     public function after(): array
     {
         return [function (Validator $validator): void {
-            $root = $this->input('root');
-            $projectId = $this->input('project_id');
-            $project = is_numeric($projectId) ? Project::query()->find((int) $projectId) : null;
-            $type = $project instanceof Project ? $project->type : ProjectType::LaravelPackage;
-
-            if (is_string($root) && ! ProjectRoot::isValid($root, $type)) {
-                $validator->errors()->add('root', 'The root must be a normalized relative Project path.');
-            }
-
             $domain = $this->input('domain');
             if (is_string($domain) && ! RouteDomain::isValid($domain)) {
                 $validator->errors()->add('domain', 'The Route domain is invalid.');
@@ -80,7 +74,7 @@ final class RegisterInstanceRequest extends FormRequest
             includeWorktrees: ($values['include_worktrees'] ?? false) === true,
             projectId: is_int($values['project_id'] ?? null) ? $values['project_id'] : null,
             instanceName: is_string($values['instance_name'] ?? null) ? $values['instance_name'] : null,
-            root: is_string($values['root'] ?? null) ? $values['root'] : null,
+            appOverrides: $values['app_overrides'] ?? null,
             domain: is_string($values['domain'] ?? null) ? $values['domain'] : null,
             runSetup: ($values['setup'] ?? false) === true,
         );

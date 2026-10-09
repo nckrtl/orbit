@@ -261,7 +261,7 @@ it('refuses a non Git source before any registration mutation', function (): voi
 it('binds registration seed selection to the adopted source commit', function (bool $matching): void {
     $project = Project::query()->create([
         'name' => 'Acme', 'slug' => 'acme', 'repository_url' => 'https://github.com/acme/acme.git',
-        'default_branch' => 'main', 'root' => 'public',
+        'default_branch' => 'main', 'apps' => fixture_apps('public'),
     ]);
     $home = '/srv/orbit/apps/acme/default';
     $commit = str_repeat($matching ? 'a' : 'b', 40);
@@ -286,7 +286,7 @@ it('resolves a Project by canonical repository identity and returns bounded sour
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/acme.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
 
     $this
@@ -353,7 +353,7 @@ it('keeps the adopted source for a retry when registration is incomplete', funct
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/acme.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $this->projection->fail = true;
 
@@ -375,7 +375,7 @@ it('returns the same identities on an identical retry and refuses conflicting ev
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/acme.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $payload = ['source_path' => '/work/acme', 'project_id' => $project->id];
     $first = $this->postJson('/api/v1/instances/register', $payload)->assertOk();
@@ -400,18 +400,18 @@ it('returns the same identities on an identical retry and refuses conflicting ev
         ]);
 });
 
-it('preserves an ordinary retained root when retry input is omitted or identical and returns 409 for a conflict', function (): void {
+it('preserves retained app overrides when retry input is omitted or identical and returns 409 for a conflict', function (): void {
     $project = Project::query()->create([
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/acme.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $payload = [
         'source_path' => '/work/acme',
         'project_id' => $project->id,
-        'root' => 'web',
+        'app_overrides' => fixture_app_overrides('web'),
     ];
 
     $first = $this->postJson('/api/v1/instances/register', $payload)->assertOk();
@@ -428,7 +428,7 @@ it('preserves an ordinary retained root when retry input is omitted or identical
         ->postJson('/api/v1/instances/register', [
             'source_path' => '/work/acme',
             'project_id' => $project->id,
-            'root' => 'public',
+            'app_overrides' => fixture_app_overrides('public'),
         ])
         ->assertConflict()
         ->assertJsonPath('error.code', 'instance.registration_conflict');
@@ -439,8 +439,8 @@ it('preserves an ordinary retained root when retry input is omitted or identical
         ->toBe($first->json('data.instance.id'))
         ->and($instance->refresh()->getAttributes())
         ->toBe($before)
-        ->and($instance->root)
-        ->toBe('web')
+        ->and($instance->app_overrides)
+        ->toBe(fixture_app_overrides('web'))
         ->and($route->id)
         ->toBe($first->json('data.instance.route.id'));
 });
@@ -450,7 +450,7 @@ it('retains explicit hostname intent before Route creation and rejects a changed
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/acme.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $payload = [
         'source_path' => '/work/acme',
@@ -505,7 +505,7 @@ it('preserves explicit hostname intent after Route creation and returns 409 for 
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/acme.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $payload = [
         'source_path' => '/work/acme',
@@ -559,7 +559,7 @@ it('retains generated hostname provenance and returns 409 for a later explicit h
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/acme.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $this->registrationSource->failRelocateOnce = true;
 
@@ -609,7 +609,7 @@ it('uses the current sole Route after publication for omitted, matching, and con
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/acme.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $payload = [
         'source_path' => '/work/acme',
@@ -684,7 +684,7 @@ it('refuses registration while the authoritative Route domain change is incomple
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/acme.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $payload = [
         'source_path' => '/work/acme',
@@ -728,7 +728,7 @@ it('refuses colliding complete-set identities before reservation on every retry'
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/acme.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $this->registrationSource->facts = registration_set_facts($paths);
     $payload = [
@@ -768,7 +768,7 @@ it('refuses retained registration evidence that omits one requested worktree', f
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/acme.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $paths = ['/work/primary/source', '/work/linked/feature'];
     $requestId = (string) Str::uuid();
@@ -825,7 +825,7 @@ it('returns 409 for a retained secondary request and keeps the complete primary 
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/acme.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $paths = ['/work/acme', '/work/feature'];
     $facts = registration_set_facts($paths);
@@ -948,7 +948,7 @@ it('accepts evidence-backed managed primary retries after completion and interru
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/acme.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $originalPaths = $includeWorktrees
         ? ['/work/acme', '/work/feature']
@@ -1064,7 +1064,7 @@ it('finishes the same published registration without downgrading its active prov
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/acme.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $instance = Instance::query()->create([
         'project_id' => $project->id,
@@ -1146,7 +1146,7 @@ it('retries receipt cleanup after registration completion without republishing o
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/acme.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $payload = ['source_path' => '/work/acme', 'project_id' => $project->id];
     $this->registrationSource->failDiscardOnce = true;
@@ -1201,7 +1201,7 @@ it('recovers a same-filesystem move that outran its relocation checkpoint', func
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/acme.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $instance = Instance::query()->create([
         'project_id' => $project->id,
@@ -1246,7 +1246,7 @@ it('refuses a future managed primary path before relocation makes it a candidate
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/acme.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $original = '/work/acme';
     $destination = '/srv/orbit/apps/acme/default';
@@ -1288,7 +1288,7 @@ it('refuses to adopt an Instance already owned through instance new', function (
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/acme.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $instance = Instance::query()->create([
         'project_id' => $project->id,
@@ -1327,7 +1327,7 @@ it('uses an explicit hostname only for the primary member of a requested source 
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/acme.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $paths = ['/work/acme', '/work/feature'];
     $this->registrationSource->facts = registration_set_facts($paths);
@@ -1378,7 +1378,7 @@ it('adopts an unregistered source already at its calculated managed destination'
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/acme.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $path = '/srv/orbit/apps/acme/feature';
     $this->registrationSource->facts = registration_set_facts(['/work/acme', $path]);
@@ -1401,7 +1401,7 @@ it('preflights the requested and retained application root instead of unrelated 
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/acme.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $source = '/work/acme';
     $destination = '/srv/orbit/apps/acme/default';
@@ -1433,7 +1433,7 @@ it('preflights the requested and retained application root instead of unrelated 
         public function configureLaravelUrl(Instance $instance, string $url, ?string $app = null): void {}
     };
     app()->instance(DevelopmentInstanceConfigurator::class, $configuration);
-    $payload = ['source_path' => $source, 'project_id' => $project->id, 'root' => $root];
+    $payload = ['source_path' => $source, 'project_id' => $project->id, 'app_overrides' => fixture_app_overrides($root)];
 
     $first = $this->postJson('/api/v1/instances/register', $payload)->assertOk();
     $omitted = $this->postJson('/api/v1/instances/register', [
@@ -1441,13 +1441,13 @@ it('preflights the requested and retained application root instead of unrelated 
     ])->assertOk();
     $identical = $this->postJson('/api/v1/instances/register', $payload)->assertOk();
     $this->postJson('/api/v1/instances/register', [
-        ...$payload, 'root' => $root === 'public' ? 'server/web/public' : 'public',
+        ...$payload, 'app_overrides' => fixture_app_overrides($root === 'public' ? 'server/web/public' : 'public'),
     ])->assertConflict()->assertJsonPath('error.code', 'instance.registration_conflict');
 
     expect($omitted->json('data.instance.id'))->toBe($first->json('data.instance.id'))
         ->and($identical->json('data.instance.id'))->toBe($first->json('data.instance.id'))
         ->and(array_values(array_unique($configuration->inspected)))->toBe([$source.$relative, $destination.$relative])
-        ->and(Instance::query()->sole()->root)->toBe($root === 'public' ? null : $root)
+        ->and(Instance::query()->sole()->app_overrides)->toBe(fixture_app_overrides($root))
         ->and(Instance::query()->sole()->selected_php_version)->toBe('8.4')
         ->and(Route::query()->count())->toBe(1);
 })->with([
@@ -1462,7 +1462,7 @@ it('preflights every member source profile before reservation or relocation', fu
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/acme.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $paths = ['/work/acme', '/work/feature'];
     $this->registrationSource->facts = registration_set_facts($paths);
@@ -1491,7 +1491,7 @@ it('refuses retained source identity replacement before activation', function ()
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/acme.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $payload = ['source_path' => '/work/acme', 'project_id' => $project->id];
     $this->projection->fail = true;
@@ -1512,14 +1512,14 @@ it('refuses a source nested in an Instance checkout', function (): void {
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/acme.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $other = Project::query()->create([
         'name' => 'Other',
         'slug' => 'other',
         'repository_url' => 'https://github.com/acme/other.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $source = '/managed/other/nested/acme';
     Instance::query()->create([

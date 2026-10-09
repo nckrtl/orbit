@@ -23,6 +23,7 @@ function observer_group(): Task
         'slug' => 'observe-app',
         'repository_url' => 'git@example.test:observe.git',
         'default_branch' => 'main',
+        'apps' => fixture_apps(null),
     ]);
     $node = Node::query()->create([
         'name' => 'observe-node',

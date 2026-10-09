@@ -33,6 +33,7 @@ function cancelled_brief_coverage_group(): array
         'slug' => 'shop',
         'repository_url' => 'git@github.com:acme/shop.git',
         'default_branch' => 'main',
+        'apps' => fixture_apps(null),
     ]);
     $group = Task::topLevel()->create([
         'project_id' => $project->id,

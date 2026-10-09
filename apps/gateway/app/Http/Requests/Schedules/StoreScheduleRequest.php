@@ -21,6 +21,7 @@ final class StoreScheduleRequest extends FormRequest
         return [
             'target_type' => ['required', Rule::enum(ScheduleTargetType::class)],
             'target_id' => ['required', 'integer', 'min:1', $this->strictInteger(...)],
+            'app' => ['sometimes', 'string', 'max:63'],
             'name' => [
                 'required',
                 'string',
@@ -41,6 +42,7 @@ final class StoreScheduleRequest extends FormRequest
             return app(TopLevelJsonObjectInspector::class)->inspect($this->getContent(), [
                 'target_type',
                 'target_id',
+                'app',
                 'name',
                 'calendar',
                 'command',
@@ -64,6 +66,7 @@ final class StoreScheduleRequest extends FormRequest
             command: $this->string('command')->toString(),
             timeoutSeconds: $this->integer('timeout_seconds', 3600),
             start: ($validated['start'] ?? true) === true,
+            app: is_string($validated['app'] ?? null) ? $validated['app'] : null,
         );
     }
 

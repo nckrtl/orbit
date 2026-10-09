@@ -23,7 +23,7 @@ use Tests\Support\AppDevFakeSshExecutor;
 
 function view_diff_instance(): Instance
 {
-    $project = Project::query()->create(['name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'git@github.com:nckrtl/orbit.git', 'default_branch' => 'main']);
+    $project = Project::query()->create(['name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'git@github.com:nckrtl/orbit.git', 'default_branch' => 'main', 'apps' => fixture_apps(null)]);
     $node = Node::query()->create([
         'name' => 'view-diff-node', 'status' => LifecycleStatus::Active, 'platform' => 'linux',
         'public_ssh_host' => '10.44.0.143', 'wireguard_ip' => '10.44.0.143', 'user' => 'orbit',

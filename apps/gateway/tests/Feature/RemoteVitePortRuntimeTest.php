@@ -81,7 +81,7 @@ it('prepares Vite using application-local dependencies and publishes its environ
     }
     $node = Node::query()->create(['name' => 'vite-prepare', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.1', 'wireguard_ip' => '192.0.2.1']);
     $node->roles()->create(['role' => 'app-dev', 'status' => LifecycleStatus::Active]);
-    $project = Project::query()->create(['name' => 'Vite prepare', 'slug' => 'vite-prepare', 'repository_url' => 'git@example.test:vite.git', 'root' => $root]);
+    $project = Project::query()->create(['name' => 'Vite prepare', 'slug' => 'vite-prepare', 'repository_url' => 'git@example.test:vite.git', 'apps' => fixture_apps($root)]);
     $instance = Instance::query()->create([
         'project_id' => $project->id, 'node_id' => $node->id, 'name' => 'main',
         'checkout_path' => $checkout, 'source_is_laravel' => $laravel, 'vite_port' => 5210,

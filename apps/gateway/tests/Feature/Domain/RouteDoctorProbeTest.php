@@ -344,7 +344,7 @@ function route_doctor_app_route(Node $node): Route
         'slug' => 'doctor-app-'.$node->id,
         'repository_url' => 'https://example.test/doctor-app.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $instance = Instance::query()->create([
         'project_id' => $project->id,

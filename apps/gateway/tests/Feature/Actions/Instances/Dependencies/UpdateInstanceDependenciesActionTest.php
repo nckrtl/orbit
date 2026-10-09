@@ -40,6 +40,7 @@ function dependency_update_instance(bool $production = false, ProjectType $type 
         'name' => 'Dependency update',
         'type' => $type,
         'repository_url' => 'https://example.test/update.git',
+        'apps' => fixture_apps(null, $type),
     ]);
     $node = Node::query()->create(['name' => 'dependency-update', 'public_ssh_host' => '192.0.2.181', 'wireguard_ip' => '10.44.0.2', 'user' => 'orbit', 'status' => 'active']);
     orbit_test_set_app_placement_role($node, $production);
@@ -448,7 +449,7 @@ describe('coordinated development dependency updates', function (): void {
             $kind = dependency_update_kind($command);
             if ($kind === 'collect' && ++$calls === 1) {
                 $instance->project->update(['repository_identity' => 'example.test/update']);
-                $instance->update(['root' => 'public', 'branch' => 'main', 'starting_commit' => str_repeat('a', 40)]);
+                $instance->update(['app_overrides' => fixture_app_overrides('public'), 'branch' => 'main', 'starting_commit' => str_repeat('a', 40)]);
                 $route = Route::query()->create(['project_id' => $instance->project_id, 'node_id' => $instance->node_id, 'generation_basis_node_id' => $instance->node_id, 'domain' => 'update.test', 'provenance' => 'generated', 'publication' => 'private', 'status' => 'pending']);
                 $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
                 $route->update(['status' => 'active']);

@@ -132,7 +132,7 @@ it('re-reads removal eligibility after acquiring the lifecycle guard', function 
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/site.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     app()->instance(NodeProvisioningLock::class, new class($target, $project) implements NodeProvisioningLock
     {
@@ -308,7 +308,7 @@ it('refuses Node removal around an Instance for ordinary and forced offline path
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/site.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     Instance::query()->create([
         'project_id' => $project->id,

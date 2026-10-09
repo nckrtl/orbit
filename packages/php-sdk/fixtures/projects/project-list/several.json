@@ -14,7 +14,14 @@
                 "repository_url": "https://github.com/acme/site.git",
                 "source_access": "github_app",
                 "default_branch": "main",
-                "root": "public",
+                "apps": [
+                    {
+                        "name": "web",
+                        "path": ".",
+                        "web_root": "public",
+                        "type": "laravel-app"
+                    }
+                ],
                 "task_check": null,
                 "task_workspace_routed": true,
                 "task_compute": "shared",
@@ -30,7 +37,14 @@
                 "repository_url": "git@github.com:bravo/docs.git",
                 "source_access": "github_app",
                 "default_branch": "main",
-                "root": "public",
+                "apps": [
+                    {
+                        "name": "web",
+                        "path": ".",
+                        "web_root": "public",
+                        "type": "laravel-app"
+                    }
+                ],
                 "task_check": null,
                 "task_workspace_routed": true,
                 "task_compute": "shared",
@@ -46,7 +60,14 @@
                 "repository_url": "git@github.com:charlie/shop.git",
                 "source_access": "github_app",
                 "default_branch": "release",
-                "root": "web/public",
+                "apps": [
+                    {
+                        "name": "web",
+                        "path": "web",
+                        "web_root": "public",
+                        "type": "laravel-app"
+                    }
+                ],
                 "task_check": null,
                 "task_workspace_routed": true,
                 "task_compute": "shared",
@@ -62,7 +83,14 @@
                 "repository_url": "https://github.com/delta/api.git",
                 "source_access": "github_app",
                 "default_branch": "main",
-                "root": "public",
+                "apps": [
+                    {
+                        "name": "web",
+                        "path": ".",
+                        "web_root": "public",
+                        "type": "laravel-app"
+                    }
+                ],
                 "task_check": null,
                 "task_workspace_routed": true,
                 "task_compute": "shared",

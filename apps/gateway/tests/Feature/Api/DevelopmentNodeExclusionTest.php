@@ -34,7 +34,7 @@ beforeEach(function (): void {
         'type' => ProjectType::Monorepo,
         'repository_url' => 'https://github.com/nckrtl/orbit.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public', ProjectType::Monorepo),
     ]);
     $this->sabre = exclusion_node('sabre', '10.44.0.31');
     $this->shark = exclusion_node('shark', '10.44.0.32');
@@ -123,7 +123,7 @@ it('refuses a new development instance on an excluded node', function (): void {
         projectId: $this->project->id,
         nodeId: $this->sabre->id,
         name: 'feature',
-        root: 'public',
+        appOverrides: fixture_app_overrides('public'),
         domain: null,
         branch: 'main',
     )))->toThrow(ResourceOperationException::class, 'cannot use Node [sabre]');
@@ -138,7 +138,7 @@ it('still places a production instance when the node is excluded for development
     {
         public bool $called = false;
 
-        public function execute(CreateInstanceData $data, Project $project, Node $node, ?string $root): array
+        public function execute(CreateInstanceData $data, Project $project, Node $node, array $appOverrides): array
         {
             $this->called = true;
             $instance = Instance::query()->create([
@@ -159,7 +159,7 @@ it('still places a production instance when the node is excluded for development
         projectId: $this->project->id,
         nodeId: $this->sabre->id,
         name: 'release',
-        root: 'public',
+        appOverrides: fixture_app_overrides('public'),
         domain: 'orbit.example',
         branch: 'main',
     ));

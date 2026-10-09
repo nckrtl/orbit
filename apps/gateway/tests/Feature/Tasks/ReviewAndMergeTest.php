@@ -75,6 +75,7 @@ function rm_project(bool $flow = true): Project
         'name' => 'acme', 'slug' => 'acme-'.Str::random(6), 'repository_url' => 'https://github.com/acme/orbit.git',
         'default_branch' => 'main', 'task_check' => 'composer check',
         'review_and_merge' => $flow, 'merge_check' => $flow ? 'Required checks' : null,
+        'apps' => fixture_apps(null),
     ]);
 }
 

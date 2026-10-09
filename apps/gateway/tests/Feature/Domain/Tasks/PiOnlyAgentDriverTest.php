@@ -27,6 +27,7 @@ function pi_only_project(): Project
         'slug' => 'pi-only',
         'repository_url' => 'git@example.test:pi-only.git',
         'default_branch' => 'main',
+        'apps' => fixture_apps(null),
     ]);
 }
 

@@ -158,7 +158,6 @@ final readonly class ProjectSandboxWorkspaceProvisioner
                 $workspace = Instance::query()->create(['project_id' => $group->project_id, 'node_id' => $node->id,
                     'name' => TaskWorkspaceName::for($group), 'branch_override' => TaskWorkspaceName::for($group),
                     'checkout_path' => '/home/orbit/orbit', 'source_layout' => InstanceSourceLayout::Checkout,
-                    'root' => $group->project->type->isWebServing() ? $group->project->root : null,
                     'task_workspace_routed' => $group->project->type->isWebServing(), 'task_sandbox_id' => $sandbox->id, 'status' => InstanceState::Reserved]);
                 $locked->taskable()->associate($workspace);
                 $locked->save();

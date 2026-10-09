@@ -1262,7 +1262,7 @@ it('does not let force offline or purge remove an app-dev role beneath an Instan
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/site.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     Instance::query()->create([
         'project_id' => $project->id,
@@ -1661,7 +1661,7 @@ function node_roles_api_public_route(Cluster $cluster): OrbitRoute
         'slug' => 'public-'.$cluster->id,
         'repository_url' => 'https://github.com/acme/public.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
 
     return OrbitRoute::query()->create([

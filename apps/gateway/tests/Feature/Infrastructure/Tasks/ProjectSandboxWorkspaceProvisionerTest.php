@@ -49,7 +49,7 @@ it('enrolls and prepares one owned workspace through initial admission or cloud 
     $workspace = UpCloudRuntimeWorkspace::create();
     $sandbox = $workspace->taskSandbox;
     $group = $sandbox->group;
-    $group->project->update(['type' => $web ? 'laravel-app' : 'laravel-package', 'root' => $web ? 'public' : null]);
+    $group->project->update(['type' => $web ? 'laravel-app' : 'laravel-package', 'apps' => fixture_apps($web ? 'public' : null, $web ? 'laravel-app' : 'laravel-package')]);
     $group->taskable()->dissociate();
     $group->update(['status' => 'reserved', 'reserved_at' => now(), 'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi']);
     $workspace->delete();

@@ -39,7 +39,7 @@ beforeEach(function (): void {
 
 function allocation_group(string $slug): Task
 {
-    $project = Project::query()->create(['name' => $slug, 'slug' => $slug, 'repository_url' => 'https://github.com/acme/'.$slug.'.git']);
+    $project = Project::query()->create(['name' => $slug, 'slug' => $slug, 'repository_url' => 'https://github.com/acme/'.$slug.'.git', 'apps' => fixture_apps(null)]);
 
     return Task::topLevel()->create(['project_id' => $project->id, 'title' => 'VM work', 'brief' => 'Work', 'status' => 'todo', 'task_compute' => TaskCompute::Vm]);
 }

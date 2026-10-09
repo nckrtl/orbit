@@ -55,7 +55,7 @@ beforeEach(function (): void {
         'slug' => 'acme',
         'repository_url' => 'git@example.test:acme.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $this->candidate = orb225_instance($this->orbitApp, $this->developmentNode, 'candidate', 'development');
     $this->target = orb225_instance($this->orbitApp, $this->node, 'target', 'production');

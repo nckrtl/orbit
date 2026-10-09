@@ -22,7 +22,7 @@ use function Pest\Laravel\mock;
 function expandable_sandbox(): array
 {
     $host = Node::query()->create(['name' => 'host', 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.20', 'public_ssh_host' => '192.0.2.20', 'user' => 'orbit']);
-    $project = Project::query()->create(['name' => 'Orbit', 'slug' => 'orbit', 'repository_url' => 'https://github.com/acme/orbit.git']);
+    $project = Project::query()->create(['name' => 'Orbit', 'slug' => 'orbit', 'repository_url' => 'https://github.com/acme/orbit.git', 'apps' => fixture_apps(null)]);
     $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Expansion', 'brief' => 'Work', 'status' => 'running', 'task_compute' => TaskCompute::Vm]);
     $images = ['operator' => str_repeat('a', 64), 'gateway' => str_repeat('b', 64)];
     $sandbox = TaskSandbox::query()->create(['id' => 'ca656ccf-240d-476c-90f1-cf70f9dd7a12', 'group_id' => $group->id, 'provider' => 'incus',

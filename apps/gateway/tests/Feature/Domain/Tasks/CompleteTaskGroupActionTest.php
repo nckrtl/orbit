@@ -41,6 +41,7 @@ function complete_group(TaskGroupStatus $status = TaskGroupStatus::Settling): Ta
         'slug' => 'complete-app',
         'repository_url' => 'git@github.com:nckrtl/orbit.git',
         'default_branch' => 'main',
+        'apps' => fixture_apps(null),
     ]);
     $node = Node::query()->create([
         'name' => 'complete-node',

@@ -218,7 +218,7 @@ function targeted_route_removal_route(InstanceState $state): Route
         'slug' => 'acme',
         'repository_url' => 'https://example.test/acme.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $node = Node::query()->create([
         'name' => 'beast',

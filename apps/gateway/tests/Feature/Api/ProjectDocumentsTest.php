@@ -35,7 +35,7 @@ beforeEach(function (): void {
     });
     $gateway = $this->markAsGateway(Node::query()->create(['name' => 'gateway', 'status' => LifecycleStatus::Active, 'public_ssh_host' => '192.0.2.1', 'wireguard_ip' => '10.44.0.1']));
     $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
-    $this->documentProject = Project::query()->create(['name' => 'Documents', 'slug' => 'documents', 'repository_url' => 'https://example.test/documents.git']);
+    $this->documentProject = Project::query()->create(['name' => 'Documents', 'slug' => 'documents', 'repository_url' => 'https://example.test/documents.git', 'apps' => fixture_apps(null)]);
     $this->documentBase = '/api/v1/projects/'.$this->documentProject->id.'/documents';
 });
 
@@ -251,7 +251,7 @@ describe('Project Documents HTTP and generated MCP', function (): void {
         $provider = interface_document_provider();
         $one = $this->postJson($this->documentBase, ['kind' => 'file', 'name' => 'one', 'content_text' => 'one'])->assertCreated();
         $two = $this->postJson($this->documentBase, ['kind' => 'file', 'name' => 'two', 'content_text' => 'two'])->assertCreated();
-        $other = Project::query()->create(['name' => 'Other', 'slug' => 'other', 'repository_url' => 'https://example.test/other.git']);
+        $other = Project::query()->create(['name' => 'Other', 'slug' => 'other', 'repository_url' => 'https://example.test/other.git', 'apps' => fixture_apps(null)]);
         $before = count($provider->calls);
         $this->getJson('/api/v1/projects/'.$other->id.'/documents/'.$one->json('data.id'))->assertNotFound();
         $this->getJson($this->documentBase.'/'.$one->json('data.id').'/download?version='.$two->json('data.current_version.id'))->assertNotFound();

@@ -11,6 +11,7 @@ it('removes inert development applicability from stored runtime definitions', fu
         'name' => 'Definitions',
         'slug' => 'definitions',
         'repository_url' => 'https://example.test/definitions.git',
+        'apps' => fixture_apps(null),
     ]);
 
     foreach (['process_definitions', 'schedule_definitions'] as $table) {

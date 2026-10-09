@@ -10,7 +10,6 @@ use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Projects\ProjectType;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\GitRepositoryOrigin;
-use App\Domain\SourceControl\ProjectRoot;
 use App\Domain\Tasks\TaskCompute;
 use App\Http\Requests\TopLevelJsonObjectInspector;
 use Illuminate\Foundation\Http\FormRequest;
@@ -36,7 +35,12 @@ final class StoreProjectRequest extends FormRequest
             'repository_url' => ['required', 'string', 'max:2048'],
             'source_access' => ['sometimes', 'string', Rule::enum(ProjectSourceAccess::class)],
             'default_branch' => ['sometimes', 'string', 'max:255'],
-            'root' => ['required', 'string', 'max:255'],
+            'apps' => ['required', 'list'],
+            'apps.*' => ['array:name,path,web_root,type'],
+            'apps.*.name' => ['required', 'string', 'max:63'],
+            'apps.*.path' => ['required', 'string', 'max:255'],
+            'apps.*.web_root' => ['present', 'nullable', 'string', 'max:255'],
+            'apps.*.type' => ['required', 'string', 'max:32'],
             'task_check' => ['sometimes', 'nullable', 'string', 'max:4096'],
             'task_workspace_routed' => ['sometimes', 'boolean:strict'],
             'task_compute' => ['sometimes', 'required', 'string', Rule::enum(TaskCompute::class)],
@@ -47,9 +51,11 @@ final class StoreProjectRequest extends FormRequest
     public function validationData(): array
     {
         try {
+            app(TopLevelJsonObjectInspector::class)->refuseRemoved($this->getContent(), 'root', 'apps');
+
             return app(TopLevelJsonObjectInspector::class)->inspect(
                 $this->getContent(),
-                ['code', 'name', 'slug', 'type', 'repository_url', 'source_access', 'default_branch', 'root', 'task_check', 'task_workspace_routed', 'task_compute'],
+                ['code', 'name', 'slug', 'type', 'repository_url', 'source_access', 'default_branch', 'apps', 'task_check', 'task_workspace_routed', 'task_compute'],
             );
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
@@ -96,7 +102,7 @@ final class StoreProjectRequest extends FormRequest
             type: ProjectType::from(is_string($validated['type'] ?? null) ? $validated['type'] : ''),
             repositoryUrl: is_string($validated['repository_url'] ?? null) ? $validated['repository_url'] : '',
             defaultBranch: is_string($validated['default_branch'] ?? null) ? $validated['default_branch'] : null,
-            root: is_string($validated['root'] ?? null) ? $validated['root'] : '',
+            apps: $validated['apps'] ?? [],
             taskCheckProvided: array_key_exists('task_check', $validated),
             taskCheck: is_string($validated['task_check'] ?? null) ? $validated['task_check'] : null,
             sourceAccess: ProjectSourceAccess::tryFrom(is_string($validated['source_access'] ?? null) ? $validated['source_access'] : '')
@@ -113,13 +119,6 @@ final class StoreProjectRequest extends FormRequest
 
         if (is_string($branch) && ! GitBranchName::isValid($branch)) {
             $validator->errors()->add('default_branch', 'The default branch is not a valid Git branch name.');
-        }
-
-        $root = $this->input('root');
-        $type = ProjectType::tryFrom($this->string('type')->toString()) ?? ProjectType::LaravelApp;
-
-        if (is_string($root) && ! ProjectRoot::isValid($root, $type)) {
-            $validator->errors()->add('root', ProjectRoot::message($root, $type));
         }
     }
 }

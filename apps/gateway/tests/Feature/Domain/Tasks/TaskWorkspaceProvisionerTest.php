@@ -53,7 +53,7 @@ function provisioner_app(
         'repository_url' => "git@example.test:{$slug}.git",
         'type' => $type,
         'default_branch' => 'main',
-        'root' => $root,
+        'apps' => fixture_apps($root, $type),
     ]);
 }
 
@@ -282,7 +282,7 @@ it('activates a visitable workspace through the development provisioner', functi
     $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, true));
 
     expect($instance?->node_id)->toBe($node->id)
-        ->and($instance?->root)->toBe('public')
+        ->and($instance?->app_overrides)->toBe([])
         ->and($instance?->status)->toBe(InstanceState::SourceResolved)
         ->and($instance?->task_workspace_routed)->toBeTrue()
         ->and($fakes->development->reserves)->toBe(1)
@@ -299,7 +299,7 @@ it('creates a visitable Task workspace at the repository root for each package t
 
     expect($instance)->toBeInstanceOf(Instance::class)
         ->and($instance?->node_id)->toBe($node->id)
-        ->and($instance?->root)->toBe('.')
+        ->and($instance?->effectiveApps())->toBe(fixture_apps('.', $type))
         ->and($instance?->status)->toBe(InstanceState::SourceResolved)
         ->and($fakes->development->reserves)->toBe(1)
         ->and($fakes->development->completes)->toBe(1);
@@ -325,16 +325,6 @@ it('reuses an already assigned Task workspace', function (): void {
 
     expect(app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group->fresh(['taskable']) ?? $group, true))?->id)
         ->toBe($instance->id);
-});
-
-it('returns a failure when a visitable App lacks a web root', function (): void {
-    $project = provisioner_app('bare', null);
-    provisioner_node('bare-dev', '10.44.0.104');
-    $group = provisioner_group($project);
-    bind_task_workspace_fakes();
-
-    expect(app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, true)))
-        ->toBeInstanceOf(InstanceProvisionFailure::class);
 });
 
 it('returns a failure when destination occupation refuses the checkout', function (): void {

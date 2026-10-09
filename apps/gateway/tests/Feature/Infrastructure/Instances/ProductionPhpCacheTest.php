@@ -201,7 +201,7 @@ function orb215_cache_instance(Node $node, string $suffix): array
         'slug' => "php-cache-{$suffix}",
         'repository_url' => "https://example.test/php-cache-{$suffix}.git",
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $user = "orbit-app-{$project->id}";
     $instance = Instance::query()->create([
@@ -212,7 +212,7 @@ function orb215_cache_instance(Node $node, string $suffix): array
         'checkout_path' => "/home/{$user}",
         'production_user' => $user,
         'production_home' => "/home/{$user}",
-        'root' => 'public',
+        'app_overrides' => fixture_app_overrides('public'),
         'selected_php_version' => '8.5',
     ]);
     $identity = ProductionPhpRuntimeIdentity::forProvisioning($instance, '8.5');

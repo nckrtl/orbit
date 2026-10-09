@@ -17,7 +17,7 @@ function vite_lifecycle_instance(): Instance
 {
     $node = Node::query()->create(['name' => 'vite', 'platform' => 'linux', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.10']);
     orbit_test_set_app_placement_role($node, false);
-    $project = Project::query()->create(['name' => 'Vite', 'slug' => 'vite', 'repository_url' => 'git@example.test:vite.git']);
+    $project = Project::query()->create(['name' => 'Vite', 'slug' => 'vite', 'repository_url' => 'git@example.test:vite.git', 'apps' => fixture_apps(null)]);
 
     return Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'main', 'checkout_path' => '/apps/vite/main']);
 }

@@ -40,7 +40,7 @@ describe('TIA baseline setup', function (): void {
 
     it('restores after dependency setup and preserves local results on retry', function (): void {
         tia_setup_source();
-        $project = Project::query()->create(['name' => 'TIA', 'slug' => 'tia', 'repository_url' => 'git@github.com:acme/shop.git']);
+        $project = Project::query()->create(['name' => 'TIA', 'slug' => 'tia', 'repository_url' => 'git@github.com:acme/shop.git', 'apps' => fixture_apps(null)]);
         $node = Node::query()->create(['name' => 'tia', 'wireguard_ip' => '192.0.2.8', 'public_ssh_host' => '192.0.2.8']);
         $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'tia', 'checkout_path' => $this->sandbox, 'status' => 'active']);
         $target = $this->sandbox.'/.pest/tia';
@@ -59,7 +59,7 @@ describe('TIA baseline setup', function (): void {
     });
 
     it('refuses teardown without downloading or executing the builtin', function (): void {
-        $project = Project::query()->create(['name' => 'TIA', 'slug' => 'tia', 'repository_url' => 'git@github.com:acme/shop.git']);
+        $project = Project::query()->create(['name' => 'TIA', 'slug' => 'tia', 'repository_url' => 'git@github.com:acme/shop.git', 'apps' => fixture_apps(null)]);
         $node = Node::query()->create(['name' => 'tia', 'wireguard_ip' => '192.0.2.8', 'public_ssh_host' => '192.0.2.8']);
         $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'tia', 'checkout_path' => $this->sandbox, 'status' => 'active']);
         (new ProjectLifecycleStepStore)->create($project, LifecyclePhase::Teardown, new LifecycleStep('tia', LifecycleStep::RestoreTiaBaseline, 30), null, null);

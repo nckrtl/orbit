@@ -50,7 +50,6 @@ final readonly class ProductionPhpRuntimeIdentity
             || ! is_string($home)
             || $home !== "/home/{$user}"
             || ! preg_match('/\A[0-9]+\.[0-9]+\z/D', $version)
-            || ! is_string($documentRoot)
             || ! str_starts_with($documentRoot, "{$home}/")
         ) {
             throw self::invalid();

@@ -33,6 +33,7 @@ beforeEach(function (): void {
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/site.git',
+        'apps' => fixture_apps(null),
     ]);
     $this->sourceNode = sqlite_cloner_node('source', '10.44.0.11');
     $this->default = sqlite_cloner_instance($this->project, $this->sourceNode, 'default', "{$this->root}/default");

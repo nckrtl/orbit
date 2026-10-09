@@ -30,7 +30,7 @@ use function Pest\Laravel\mock;
 function review_sandbox_group(): array
 {
     (new FakeSandboxModelProxy)->install();
-    $project = Project::query()->create(['name' => 'Orbit', 'slug' => 'orbit', 'repository_url' => 'https://github.com/acme/orbit.git', 'task_compute' => TaskCompute::Vm]);
+    $project = Project::query()->create(['name' => 'Orbit', 'slug' => 'orbit', 'repository_url' => 'https://github.com/acme/orbit.git', 'task_compute' => TaskCompute::Vm, 'apps' => fixture_apps(null)]);
     $host = Node::query()->create(['name' => 'compute', 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.20', 'public_ssh_host' => '192.0.2.20', 'user' => 'orbit']);
     $settings = ['node_id' => $host->id, 'project' => 'orbit-task-sandboxes', 'pool' => 'proof', 'max_vms' => 2,
         'orbit_images' => ['operator' => str_repeat('a', 64), 'gateway' => str_repeat('b', 64)],
@@ -153,7 +153,7 @@ it('attempts a waiting VM resume before provisioning a new todo group', function
     Task::query()->create(['parent_id' => $waiting->id, 'title' => 'Fixup', 'brief' => 'Work', 'position' => 1, 'status' => TaskStatus::Todo]);
     $waiting->taskable()->dissociate();
     $waiting->save();
-    $project = Project::query()->create(['name' => 'Shared', 'slug' => 'shared', 'repository_url' => 'https://github.com/acme/shared.git']);
+    $project = Project::query()->create(['name' => 'Shared', 'slug' => 'shared', 'repository_url' => 'https://github.com/acme/shared.git', 'apps' => fixture_apps(null)]);
     $todo = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'New work', 'brief' => 'Work', 'status' => TaskGroupStatus::Todo]);
     Task::query()->create(['parent_id' => $todo->id, 'title' => 'First', 'brief' => 'Work', 'position' => 1, 'status' => TaskStatus::Todo]);
     mock(InstanceProvisioning::class)->shouldReceive('provision')->once()->andReturnUsing(function () use ($waiting): null {

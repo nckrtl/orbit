@@ -102,7 +102,7 @@ describe('POST /mcp', function (): void {
             'slug' => 'mcp-routes',
             'repository_url' => 'https://example.test/mcp-routes.git',
             'default_branch' => 'main',
-            'root' => 'public',
+            'apps' => fixture_apps('public'),
         ]);
         $node = Node::query()->create([
             'name' => 'mcp-route-node',

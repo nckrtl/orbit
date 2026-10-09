@@ -32,6 +32,7 @@ function dependency_publication_instance(string $name = 'web'): Instance
     $project = Project::query()->firstOrCreate(['slug' => 'dependency-publication'], [
         'name' => 'Dependency publication',
         'repository_url' => 'https://example.test/dependency-publication.git',
+        'apps' => fixture_apps(null),
     ]);
     $node = Node::query()->firstOrCreate(['name' => 'dependency-publication'], [
         'public_ssh_host' => '192.0.2.180',
@@ -308,7 +309,7 @@ describe('publication failure and removal races', function (): void {
         $previous = dependency_publication_snapshot();
         $publisher->execute($instance->id, DependencyScanResult::refreshed($previous));
         $instance->project->update(['repository_identity' => 'example.test/dependency-publication']);
-        $instance->update(['root' => 'public', 'branch' => 'main', 'starting_commit' => str_repeat('a', 40)]);
+        $instance->update(['app_overrides' => fixture_app_overrides('public'), 'branch' => 'main', 'starting_commit' => str_repeat('a', 40)]);
         $route = Route::query()->create([
             'project_id' => $instance->project_id,
             'node_id' => $instance->node_id,

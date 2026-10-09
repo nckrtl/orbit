@@ -11,6 +11,7 @@ use Illuminate\Support\Str;
 /**
  * @property string $id
  * @property int $project_id
+ * @property string|null $app
  * @property string $name
  * @property list<string> $environments
  * @property array<string, mixed> $spec
@@ -26,7 +27,7 @@ final class ScheduleDefinition extends Model
 
     /** @var list<string> */
     #[\Override]
-    protected $fillable = ['project_id', 'name', 'environments', 'spec'];
+    protected $fillable = ['project_id', 'name', 'environments', 'spec', 'app'];
 
     /** @var list<string> */
     #[\Override]
@@ -35,6 +36,7 @@ final class ScheduleDefinition extends Model
     protected static function booted(): void
     {
         self::creating(static function (self $definition): void {
+            $definition->app = $definition->project->appName($definition->app, 'Schedule');
             $id = $definition->getAttribute('id');
             $definition->id = is_string($id) && $id !== '' ? $id : (string) Str::uuid();
         });

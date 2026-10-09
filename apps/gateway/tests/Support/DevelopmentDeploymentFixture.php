@@ -78,7 +78,7 @@ final class DevelopmentDeploymentFixture
 
         $node = Node::query()->create(['name' => 'dev935', 'platform' => 'linux', 'status' => 'active', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.35', 'wireguard_ip' => '10.44.0.35']);
         $node->roles()->create(['role' => 'app-dev', 'status' => 'active']);
-        $project = Project::query()->create(['name' => 'dev935', 'slug' => 'dev935', 'type' => 'monorepo', 'repository_url' => $url, 'default_branch' => 'main', 'root' => 'public']);
+        $project = Project::query()->create(['name' => 'dev935', 'slug' => 'dev935', 'type' => 'monorepo', 'repository_url' => $url, 'default_branch' => 'main', 'apps' => fixture_apps('public', 'monorepo')]);
         $this->instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'default', 'checkout_path' => $this->home, 'source_layout' => 'checkout', 'branch' => 'main', 'status' => 'active']);
         $account = new ManagedUserAccount('orbit', 'orbit', $this->sandbox.'/user-home');
         $accounts = Mockery::mock(ManagedUserAccountResolver::class);

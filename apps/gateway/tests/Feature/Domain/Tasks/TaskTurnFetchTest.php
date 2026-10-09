@@ -39,6 +39,7 @@ function turn_fetch_group(string $slug, string $status = TaskGroupStatus::Todo->
         'slug' => $slug,
         'repository_url' => "git@example.test:{$slug}.git",
         'default_branch' => 'main',
+        'apps' => fixture_apps(null),
     ]);
     $node = Node::query()->create([
         'name' => $slug.'-node',

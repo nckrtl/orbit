@@ -320,7 +320,7 @@ describe('RunDoctorAction', function (): void {
             'slug' => 'doctor-run',
             'repository_url' => 'https://example.test/doctor-run.git',
             'default_branch' => 'main',
-            'root' => 'public',
+            'apps' => fixture_apps('public'),
         ]);
         $workload->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
         $user = "orbit-app-{$project->id}";
@@ -336,7 +336,7 @@ describe('RunDoctorAction', function (): void {
             'production_php_pool' => "orbit-{$user}",
             'production_php_socket' => "/run/php/{$user}.sock",
             'selected_php_version' => '8.5',
-            'root' => 'public',
+            'app_overrides' => fixture_app_overrides('public'),
             'branch' => 'main',
             'starting_commit' => str_repeat('a', 40),
             'status' => InstanceState::Active,

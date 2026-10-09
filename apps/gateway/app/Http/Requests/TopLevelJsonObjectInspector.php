@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Requests;
 
 use App\Support\ValidatedData;
+use Illuminate\Validation\ValidationException;
 use JsonException;
 use stdClass;
 use UnexpectedValueException;
@@ -146,6 +147,19 @@ final readonly class TopLevelJsonObjectInspector
         }
 
         $this->fail('The request body must be a valid JSON object.');
+    }
+
+    /**
+     * Names a removed field instead of reporting only unsupported keys. It is never accepted.
+     *
+     * @throws ValidationException
+     */
+    public function refuseRemoved(#[\SensitiveParameter] string $json, string $field, string $replacement): void
+    {
+        $object = json_decode($json);
+        if ($object instanceof stdClass && property_exists($object, $field)) {
+            throw ValidationException::withMessages([$field => ["The {$field} field was removed. Send {$replacement} instead."]]);
+        }
     }
 
     /** @throws UnexpectedValueException */

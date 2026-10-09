@@ -28,6 +28,7 @@ function question_close_group(TaskGroupStatus $status, TaskStatus ...$subtasks):
         'slug' => 'question-app',
         'repository_url' => 'git@github.com:nckrtl/orbit.git',
         'default_branch' => 'main',
+        'apps' => fixture_apps(null),
     ]);
     $group = Task::topLevel()->create([
         'project_id' => $project->id,

@@ -63,7 +63,7 @@ function check_runner_checkout(string $check): string
 
 function check_runner_instance(string $checkout): Instance
 {
-    $project = Project::query()->create(['name' => 'Shop', 'slug' => 'shop', 'repository_url' => 'git@github.com:acme/shop.git', 'default_branch' => 'main']);
+    $project = Project::query()->create(['name' => 'Shop', 'slug' => 'shop', 'repository_url' => 'git@github.com:acme/shop.git', 'default_branch' => 'main', 'apps' => fixture_apps(null)]);
     $node = Node::query()->create(['name' => 'check-node', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'public_ssh_host' => '10.44.0.160', 'wireguard_ip' => '10.44.0.160', 'user' => 'orbit']);
 
     return Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-8', 'checkout_path' => $checkout, 'branch' => 'task-8', 'status' => 'source_resolved']);
@@ -1302,7 +1302,7 @@ describe('ssr port', function (): void {
         $runtime = new FakeVitePortRuntime;
         $runtime->occupied[$node->id] = range(SsrPortAllocator::FIRST_PORT, 13719);
         app()->instance(VitePortRuntime::class, $runtime);
-        $project = Project::query()->create(['name' => 'Recall', 'slug' => 'recall', 'repository_url' => 'git@github.com:acme/recall.git', 'default_branch' => 'main']);
+        $project = Project::query()->create(['name' => 'Recall', 'slug' => 'recall', 'repository_url' => 'git@github.com:acme/recall.git', 'default_branch' => 'main', 'apps' => fixture_apps(null)]);
         $started = '{"pid":4100,"started":"now","head":"abc","tree":"def"}';
         $transport = new AppDevFakeSshExecutor([new CommandResult(0, $started, '', 1, false), new CommandResult(0, $started, '', 1, false)]);
         $runner = check_runner($transport);

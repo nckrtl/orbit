@@ -191,7 +191,7 @@ function orb131_process_admission_instance(): Instance
         'slug' => 'admission',
         'repository_url' => 'https://example.test/admission.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $node = Node::query()->create([
         'name' => 'admission',
@@ -209,7 +209,7 @@ function orb131_process_admission_instance(): Instance
         'environment' => 'development',
         'source_layout' => InstanceSourceLayout::Checkout,
         'checkout_path' => '/srv/orbit/apps/admission',
-        'root' => 'public',
+        'app_overrides' => fixture_app_overrides('public'),
         'branch' => 'main',
         'starting_commit' => str_repeat('a', 40),
         'provisioning_step' => 'active',

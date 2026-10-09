@@ -52,6 +52,7 @@ function blocked_task(TaskStatus $status): Task
     $project = Project::query()->create([
         'name' => 'blocked', 'slug' => 'blocked',
         'repository_url' => 'git@example.test:blocked.git', 'default_branch' => 'main',
+        'apps' => fixture_apps(null),
     ]);
     $node = Node::query()->create([
         'name' => 'blocked-node', 'status' => LifecycleStatus::Active, 'platform' => 'linux',
@@ -514,6 +515,7 @@ it('starts a fresh subtask reviewer with a review resolution when that thread do
     $project = Project::query()->create([
         'name' => 'resolution-target', 'slug' => 'resolution-target',
         'repository_url' => 'git@example.test:resolution-target.git', 'default_branch' => 'main',
+        'apps' => fixture_apps(null),
     ]);
     $node = Node::query()->create([
         'name' => 'resolution-target-node', 'status' => LifecycleStatus::Active, 'platform' => 'linux',

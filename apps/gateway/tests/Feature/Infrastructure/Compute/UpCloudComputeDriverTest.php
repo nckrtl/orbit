@@ -85,7 +85,7 @@ function compute_firewall(bool $sealed = false): array
 function compute_group(): Task
 {
     $slug = 'compute-'.Str::lower(Str::random(8));
-    $project = Project::query()->create(['name' => $slug, 'slug' => $slug, 'repository_url' => 'https://github.com/acme/compute.git', 'default_branch' => 'main']);
+    $project = Project::query()->create(['name' => $slug, 'slug' => $slug, 'repository_url' => 'https://github.com/acme/compute.git', 'default_branch' => 'main', 'apps' => fixture_apps(null)]);
 
     return Task::topLevel()->create([
         'project_id' => $project->id, 'title' => 'Cloud group', 'brief' => 'One sandbox',

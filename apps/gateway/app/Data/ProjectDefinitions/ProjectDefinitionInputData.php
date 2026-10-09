@@ -17,5 +17,6 @@ final readonly class ProjectDefinitionInputData
         public array $environments,
         #[SensitiveParameter]
         public array $spec,
+        public ?string $app = null,
     ) {}
 }

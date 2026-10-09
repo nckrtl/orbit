@@ -46,6 +46,7 @@ function cancel_subtask_in_baseline(int $suffix): array
         'slug' => 'cancel-baseline-'.$suffix,
         'repository_url' => 'git@example.test:cancel-baseline.git',
         'default_branch' => 'main',
+        'apps' => fixture_apps(null),
     ]);
     $node = Node::query()->create([
         'name' => 'cancel-baseline-node-'.$suffix,
@@ -148,6 +149,7 @@ it('cancel running subtask preserves its group and Instance', function (): void 
         'slug' => 'cancel-subtask',
         'repository_url' => 'git@example.test:cancel-subtask.git',
         'default_branch' => 'main',
+        'apps' => fixture_apps(null),
     ]);
     $node = Node::query()->create([
         'name' => 'cancel-subtask-instance',
@@ -290,6 +292,7 @@ it('cancels a running subtask through the generated MCP tool', function (): void
         'slug' => 'cancel-via-mcp',
         'repository_url' => 'git@example.test:cancel-via-mcp.git',
         'default_branch' => 'main',
+        'apps' => fixture_apps(null),
     ]);
     $group = Task::topLevel()->create([
         'project_id' => $project->id,
@@ -339,6 +342,7 @@ it('retries after an interrupt failure and settles when cancelling the last subt
         'slug' => 'cancel-retry',
         'repository_url' => 'git@example.test:cancel-retry.git',
         'default_branch' => 'main',
+        'apps' => fixture_apps(null),
     ]);
     $group = Task::topLevel()->create([
         'project_id' => $project->id,
@@ -401,6 +405,7 @@ it('returns a conflict when the subtask is neither todo nor running', function (
         'slug' => 'cancel-idle-subtask',
         'repository_url' => 'git@example.test:cancel-idle-subtask.git',
         'default_branch' => 'main',
+        'apps' => fixture_apps(null),
     ]);
     $group = Task::topLevel()->create([
         'project_id' => $project->id,

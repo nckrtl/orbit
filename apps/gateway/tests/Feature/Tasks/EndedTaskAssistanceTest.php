@@ -31,6 +31,7 @@ it('stops asking for assistance when a flagged task is saved as completed or can
         'slug' => 'ended-assistance',
         'repository_url' => 'git@example.test:ended-assistance.git',
         'default_branch' => 'main',
+        'apps' => fixture_apps(null),
     ]);
     $reason = 'The operator asked to hold this task.';
     $open = Task::topLevel()->create([
@@ -103,6 +104,7 @@ it('clears assistance in the same update that cancels the remaining subtasks', f
         'slug' => 'cancel-remaining',
         'repository_url' => 'git@example.test:cancel-remaining.git',
         'default_branch' => 'main',
+        'apps' => fixture_apps(null),
     ]);
     $group = Task::topLevel()->create([
         'project_id' => $project->id,
@@ -156,6 +158,7 @@ it('clears assistance when resolving an annotation completes its task', function
         'slug' => 'ended-annotation',
         'repository_url' => 'https://example.test/ended-annotation.git',
         'default_branch' => 'main',
+        'apps' => fixture_apps(null),
     ]);
     $instance = Instance::query()->create([
         'project_id' => $project->id,
@@ -216,6 +219,7 @@ it('keeps an assistance comment from putting an ended group back on tasks status
         'slug' => 'ended-comment-'.$status,
         'repository_url' => 'git@example.test:ended-comment.git',
         'default_branch' => 'main',
+        'apps' => fixture_apps(null),
     ]);
     $open = Task::topLevel()->create([
         'project_id' => $project->id,
@@ -279,6 +283,7 @@ it('keeps a stale save from leaving an ended task asking for assistance', functi
         'slug' => 'stale-assistance-'.$level.'-'.$status.'-'.$interleaving,
         'repository_url' => 'git@example.test:stale-assistance.git',
         'default_branch' => 'main',
+        'apps' => fixture_apps(null),
     ]);
     $group = Task::topLevel()->create([
         'project_id' => $project->id,

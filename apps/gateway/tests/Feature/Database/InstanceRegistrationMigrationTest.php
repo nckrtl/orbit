@@ -129,7 +129,7 @@ function orb105_registration_migration_instance(string $checkpoint): Instance
         'slug' => 'acme',
         'repository_url' => 'https://example.test/acme.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
 
     return Instance::query()->create([

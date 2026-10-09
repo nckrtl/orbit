@@ -353,6 +353,7 @@ function app_probe_app(): Project
         'name' => "App {$number}",
         'slug' => "app-{$number}",
         'repository_url' => "https://github.com/acme/private-origin-{$number}.git",
+        'apps' => fixture_apps(null),
     ]);
 }
 

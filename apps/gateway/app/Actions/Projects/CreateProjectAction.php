@@ -8,11 +8,11 @@ use App\Data\Projects\CreateProjectData;
 use App\Data\Projects\ProjectData;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
+use App\Domain\Projects\ProjectApps;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\GitRepositoryIdentity;
 use App\Domain\SourceControl\GitRepositoryOrigin;
-use App\Domain\SourceControl\ProjectRoot;
 use App\Domain\SourceControl\RepositoryDefaultBranchResolver;
 use App\Models\Project;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -30,11 +30,11 @@ final readonly class CreateProjectAction
         $repositoryUrl = GitRepositoryOrigin::validate($data->repositoryUrl);
         $repositoryIdentity = GitRepositoryIdentity::derive($repositoryUrl);
         $defaultBranch = $data->defaultBranch === null ? null : GitBranchName::validate($data->defaultBranch);
-        $root = ProjectRoot::validate($data->root, $data->type);
+        $apps = ProjectApps::validate($data->apps);
         $project = Project::query()->where('slug', $data->slug)->first();
 
         if ($project instanceof Project) {
-            $this->assertIdentityMatches($project, $data, $repositoryUrl, $defaultBranch, $root);
+            $this->assertIdentityMatches($project, $data, $repositoryUrl, $defaultBranch, $apps);
 
             return ['project' => $project, 'created' => false];
         }
@@ -58,7 +58,7 @@ final readonly class CreateProjectAction
                 'repository_url' => $repositoryUrl,
                 'source_access' => $data->sourceAccess,
                 'default_branch' => $defaultBranch,
-                'root' => $root,
+                'apps' => $apps,
                 'task_check' => $data->resolvedTaskCheck(),
                 'task_compute' => $data->taskCompute,
                 'task_workspace_routed' => $data->resolvedTaskWorkspaceRouted(),
@@ -76,7 +76,7 @@ final readonly class CreateProjectAction
                         $data,
                         $repositoryUrl,
                         $requestedDefaultBranch,
-                        $root,
+                        $apps,
                     );
 
                     return ['project' => $project, 'created' => false];
@@ -126,12 +126,13 @@ final readonly class CreateProjectAction
         );
     }
 
+    /** @param list<array{name: string, path: string, web_root: ?string, type: string}> $apps */
     private function assertIdentityMatches(
         Project $project,
         CreateProjectData $data,
         string $repositoryUrl,
         ?string $defaultBranch,
-        string $root,
+        array $apps,
     ): void {
         if (
             ($data->code === null || $project->code === $data->code)
@@ -141,7 +142,7 @@ final readonly class CreateProjectAction
             && $project->source_access === $data->sourceAccess
             && ($defaultBranch === null
             || $project->default_branch === $defaultBranch)
-            && $project->root === $root
+            && $project->configuredApps() === $apps
             && $project->task_compute === $data->taskCompute
             && (! $data->taskCheckProvided || $project->task_check === $data->taskCheck)
             && (! $data->taskWorkspaceRoutedProvided || $project->task_workspace_routed === $data->taskWorkspaceRouted)

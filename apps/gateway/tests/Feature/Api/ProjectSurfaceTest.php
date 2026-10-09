@@ -29,7 +29,7 @@ it('serves Projects only on the Project API', function (): void {
         'type' => 'laravel-package',
         'repository_url' => 'https://github.com/acme/support.git',
         'default_branch' => 'main',
-        'root' => 'src',
+        'apps' => fixture_apps('src', 'laravel-package'),
     ])->assertCreated();
 
     expect($created->json('data.type'))->toBe('laravel-package');
@@ -48,7 +48,7 @@ it('requires an explicit Project type', function (): void {
         'slug' => 'shop',
         'repository_url' => 'https://github.com/acme/shop.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ])
         ->assertUnprocessable()
         ->assertJsonPath('error.details.type.0', 'The type field is required.');
@@ -61,7 +61,7 @@ it('activates a laravel-package Instance without a Route', function (): void {
         'type' => ProjectType::LaravelPackage,
         'repository_url' => 'https://github.com/acme/support.git',
         'default_branch' => 'main',
-        'root' => null,
+        'apps' => fixture_apps(null, ProjectType::LaravelPackage),
     ]);
     $node = Node::query()->create([
         'name' => 'dev',
@@ -100,7 +100,7 @@ it('refuses a type change to a web-serving type while an active Instance has no 
         'type' => ProjectType::LaravelPackage,
         'repository_url' => 'https://github.com/acme/support.git',
         'default_branch' => 'main',
-        'root' => 'src',
+        'apps' => fixture_apps('src', ProjectType::LaravelPackage),
     ]);
     $node = Node::query()->create([
         'name' => 'dev',
@@ -128,25 +128,16 @@ it('refuses a type change to a web-serving type while an active Instance has no 
         ->and($instance->refresh()->status)->toBe(InstanceState::Active);
 })->with(['laravel-app', 'symfony-app']);
 
-it('creates a symfony-app Project that requires a web root', function (): void {
-    $this->postJson('/api/v1/projects', [
-        'slug' => 'storefront',
-        'type' => 'symfony-app',
-        'repository_url' => 'https://github.com/acme/storefront.git',
-        'default_branch' => 'main',
-        'root' => '.',
-    ])->assertUnprocessable()
-        ->assertJsonPath('error.details.root.0', 'The root [.] is not valid for a symfony-app Project. Send a web root such as public.');
-
+it('creates a symfony-app Project that serves its app from a web root', function (): void {
     $created = $this->postJson('/api/v1/projects', [
         'slug' => 'storefront',
         'type' => 'symfony-app',
         'repository_url' => 'https://github.com/acme/storefront.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public', 'symfony-app'),
     ])->assertCreated()
         ->assertJsonPath('data.type', 'symfony-app')
-        ->assertJsonPath('data.root', 'public');
+        ->assertJsonPath('data.apps', fixture_apps('public', 'symfony-app'));
 
     expect(Project::query()->findOrFail($created->json('data.id'))->isWebServing())->toBeTrue();
 });
@@ -158,7 +149,7 @@ it('pins the production mode of each framework on an app-prod Instance', functio
         'type' => $type,
         'repository_url' => 'https://github.com/acme/shop.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public', $type),
     ]);
     $node = Node::query()->create([
         'name' => 'prod',
@@ -198,7 +189,7 @@ it('normalizes APP_ENV and APP_DEBUG on existing app-prod Instances', function (
         'slug' => 'shop',
         'repository_url' => 'https://github.com/acme/shop.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $node = Node::query()->create([
         'name' => 'prod',
@@ -251,7 +242,7 @@ it('classifies the Orbit repository as a monorepo during upgrade', function (): 
         'slug' => 'orbit',
         'repository_url' => 'https://github.com/nckrtl/orbit.git',
         'default_branch' => 'main',
-        'root' => 'apps/gateway/public',
+        'apps' => fixture_apps('apps/gateway/public'),
     ]);
 
     $migration = require base_path(
@@ -270,7 +261,7 @@ it('exposes the Project identity on Instance payloads', function (): void {
         'type' => ProjectType::LaravelApp,
         'repository_url' => 'https://github.com/acme/shop.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public', ProjectType::LaravelApp),
     ]);
     $node = Node::query()->create([
         'name' => 'dev',

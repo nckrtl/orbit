@@ -76,6 +76,7 @@ function tasks_app(string $slug = 'commander-demo'): Project
         'slug' => $slug,
         'repository_url' => "git@example.test:{$slug}.git",
         'default_branch' => 'main',
+        'apps' => fixture_apps(null),
     ]);
 }
 

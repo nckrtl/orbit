@@ -29,7 +29,7 @@ it('accepts supported repository origins', function (string $repositoryUrl): voi
             'type' => 'laravel-app',
             'repository_url' => $repositoryUrl,
             'default_branch' => 'main',
-            'root' => 'public',
+            'apps' => fixture_apps('public', 'laravel-app'),
         ])
         ->assertCreated()
         ->assertJsonPath('data.repository_url', $repositoryUrl);
@@ -56,7 +56,7 @@ it('returns 422 without persistence or secret exposure for credential-bearing re
             'type' => 'laravel-app',
             'repository_url' => $repositoryUrl,
             'default_branch' => 'main',
-            'root' => 'public',
+            'apps' => fixture_apps('public', 'laravel-app'),
         ]);
 
     $response
@@ -118,7 +118,7 @@ it('returns 422 without persistence or secret exposure for embedded repository c
             'type' => 'laravel-app',
             'repository_url' => $repositoryUrl,
             'default_branch' => 'main',
-            'root' => 'public',
+            'apps' => fixture_apps('public', 'laravel-app'),
         ]);
 
     $response
@@ -165,7 +165,7 @@ it('returns 422 without persistence when a repository origin contains a query or
             'type' => 'laravel-app',
             'repository_url' => $repositoryUrl,
             'default_branch' => 'main',
-            'root' => 'public',
+            'apps' => fixture_apps('public', 'laravel-app'),
         ])
         ->assertUnprocessable()
         ->assertJsonPath('error.code', 'validation.failed')

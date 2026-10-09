@@ -190,6 +190,7 @@ it('counts a communication failure and does not send the review when the context
         'slug' => 'context-failure',
         'repository_url' => 'git@example.test:context-failure.git',
         'default_branch' => 'main',
+        'apps' => fixture_apps(null),
     ]);
     $node = Node::query()->create([
         'name' => 'context-failure-node',
@@ -273,6 +274,7 @@ it('does not send the review when the context path is a directory', function ():
         'slug' => 'context-directory',
         'repository_url' => 'git@example.test:context-directory.git',
         'default_branch' => 'main',
+        'apps' => fixture_apps(null),
     ]);
     $node = Node::query()->create([
         'name' => 'context-directory-node',
@@ -351,6 +353,7 @@ function review_context_opening(): array
         'slug' => 'review-context',
         'repository_url' => 'git@example.test:review-context.git',
         'default_branch' => 'main',
+        'apps' => fixture_apps(null),
     ]);
     $node = Node::query()->create([
         'name' => 'review-context-node',

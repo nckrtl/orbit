@@ -108,7 +108,7 @@ it('copies independent encrypted values and resolves placeholders through the ex
 
 it('clones and deploys an Instance without a route', function (): void {
     [$candidate, $reservedTarget, $targetRoute] = clone_environment_fixture('lifecycle');
-    $candidate->project->update(['type' => 'node-package', 'root' => null]);
+    $candidate->project->update(['type' => 'node-package', 'apps' => fixture_apps(null, 'node-package')]);
     $candidate->update(['branch' => 'main', 'source_is_laravel' => false]);
     $candidate->routes()->delete();
     $targetRoute->delete();
@@ -390,7 +390,7 @@ function clone_environment_fixture(string $suffix = 'primary'): array
         'slug' => "clone-environment-{$suffix}-{$count}",
         'repository_url' => "https://example.test/clone-environment-{$suffix}.git",
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $sourceNode = clone_environment_node("source-{$suffix}", $count + 10);
     $targetNode = clone_environment_node("target-{$suffix}", $count + 11);

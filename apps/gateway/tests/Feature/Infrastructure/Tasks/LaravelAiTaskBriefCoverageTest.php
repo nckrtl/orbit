@@ -26,7 +26,7 @@ use function Pest\Laravel\mock;
 /** @return array{Task, Task, Task} */
 function coverage_group(): array
 {
-    $project = Project::query()->create(['name' => 'Shop', 'slug' => 'shop', 'repository_url' => 'git@github.com:acme/shop.git', 'default_branch' => 'main']);
+    $project = Project::query()->create(['name' => 'Shop', 'slug' => 'shop', 'repository_url' => 'git@github.com:acme/shop.git', 'default_branch' => 'main', 'apps' => fixture_apps(null)]);
     $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Export orders', 'brief' => 'Export orders as CSV and add a download route.', 'status' => 'reviewing']);
     $models = Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'Export', 'brief' => 'Write the CSV export.', 'status' => 'completed']);
     $routes = Task::query()->create(['parent_id' => $group->id, 'position' => 2, 'title' => 'Route', 'brief' => 'Add the download route.', 'status' => 'reviewing']);
@@ -66,7 +66,7 @@ it('counts a subtask as covered from a probability of one half', function (): vo
 /** @return array{Task, Task, Task, Task} the 1261 shape: two completed subtasks and the reviewing publish subtask */
 function coverage_publication_group(): array
 {
-    $project = Project::query()->create(['name' => 'Website', 'slug' => 'website', 'repository_url' => 'git@github.com:acme/website.git', 'default_branch' => 'main']);
+    $project = Project::query()->create(['name' => 'Website', 'slug' => 'website', 'repository_url' => 'git@github.com:acme/website.git', 'default_branch' => 'main', 'apps' => fixture_apps(null)]);
     $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Prepare the website release', 'brief' => 'Ship the preparatory work as one pull request.', 'status' => 'reviewing']);
     $audit = Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'Audit the release checklist', 'brief' => 'List the open release items.', 'status' => 'completed']);
     $copy = Task::query()->create(['parent_id' => $group->id, 'position' => 2, 'title' => 'Update the landing copy', 'brief' => 'Rewrite the landing page copy.', 'status' => 'completed']);

@@ -23,6 +23,7 @@ it('stores apps, Instances, and their process ownership', function (): void {
         'name' => 'Orbit',
         'slug' => 'orbit',
         'repository_url' => 'git@github.com:nckrtl/orbit.git',
+        'apps' => fixture_apps(null),
     ]);
     $instance = Instance::query()->create([
         'project_id' => $project->id,
@@ -30,7 +31,7 @@ it('stores apps, Instances, and their process ownership', function (): void {
         'name' => 'dev',
         'environment' => 'development',
         'checkout_path' => '/home/orbit/apps/orbit',
-        'root' => 'public',
+        'app_overrides' => fixture_app_overrides('public'),
         'selected_php_version' => '8.5',
         'status' => InstanceState::Active,
     ]);
@@ -62,6 +63,7 @@ it('enforces one Instance name per app and one checkout path per node', function
         'name' => 'Orbit',
         'slug' => 'orbit',
         'repository_url' => 'git@github.com:nckrtl/orbit.git',
+        'apps' => fixture_apps(null),
     ]);
     Instance::query()->create([
         'project_id' => $project->id,
@@ -69,7 +71,7 @@ it('enforces one Instance name per app and one checkout path per node', function
         'name' => 'first',
         'environment' => 'development',
         'checkout_path' => '/home/orbit/apps/orbit',
-        'root' => 'public',
+        'app_overrides' => fixture_app_overrides('public'),
         'selected_php_version' => '8.5',
         'status' => InstanceState::Active,
     ]);
@@ -80,7 +82,7 @@ it('enforces one Instance name per app and one checkout path per node', function
         'name' => 'first',
         'environment' => 'development',
         'checkout_path' => '/home/orbit/apps/orbit-other',
-        'root' => 'public',
+        'app_overrides' => fixture_app_overrides('public'),
         'selected_php_version' => '8.5',
         'status' => InstanceState::Active,
     ]))
@@ -91,7 +93,7 @@ it('enforces one Instance name per app and one checkout path per node', function
             'name' => 'second',
             'environment' => 'development',
             'checkout_path' => '/home/orbit/apps/orbit',
-            'root' => 'public',
+            'app_overrides' => fixture_app_overrides('public'),
             'selected_php_version' => '8.5',
             'status' => InstanceState::Active,
         ]))

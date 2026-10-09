@@ -79,7 +79,7 @@ beforeEach(function (): void {
         'slug' => 'acme',
         'repository_url' => 'https://example.test/acme.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $this->node = route_node('dev-one', '10.44.0.2', 'one.test');
     $this->target = route_instance($this->orbitApp, $this->node, 'main');
@@ -254,7 +254,7 @@ it('defaults an instance route publication to private', function (): void {
 it('refuses a package Instance whose repository root is not a supported Route web root', function (): void {
     $this->orbitApp->update([
         'type' => ProjectType::NodePackage,
-        'root' => '.',
+        'apps' => fixture_apps('.', ProjectType::NodePackage),
     ]);
 
     $this->postJson('/api/v1/routes', [
@@ -271,7 +271,7 @@ it('refuses a package Instance whose repository root is not a supported Route we
 it('refuses to attach a package Instance with repository root . to an existing Route', function (): void {
     $this->orbitApp->update([
         'type' => ProjectType::NodePackage,
-        'root' => '.',
+        'apps' => fixture_apps('.', ProjectType::NodePackage),
     ]);
 
     $route = pendingNodeRouteFixture($this->orbitApp->id, $this->node->id, 'targetless.example.test')->id;
@@ -580,7 +580,7 @@ it('leaves the complete Route unchanged for invalid target proposals', function 
         'slug' => 'other',
         'repository_url' => 'https://example.test/other.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $foreign = route_instance($otherApp, $this->node, 'foreign');
 
@@ -1171,7 +1171,7 @@ it('refuses a generated Route, duplicate target, foreign App or Cluster, inactiv
         'slug' => 'other',
         'repository_url' => 'https://example.test/other.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $foreign = route_instance($foreignApp, $second->node, 'foreign');
     [$foreignCluster] = route_cluster('foreign-pool', null);

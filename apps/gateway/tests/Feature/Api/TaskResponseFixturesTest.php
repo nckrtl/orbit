@@ -81,6 +81,7 @@ describe('task response fixtures', function (): void {
             'slug' => 'orbit',
             'repository_url' => 'git@github.com:nckrtl/orbit.git',
             'default_branch' => 'main',
+            'apps' => fixture_apps(null),
         ]);
     });
 

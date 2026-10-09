@@ -4014,8 +4014,14 @@ export interface components {
             checkout_path?: string;
             production_user?: string | null;
             production_home?: string | null;
-            root?: string | null;
-            effective_root?: string | null;
+            apps?: components["schemas"]["ProjectApp"][];
+            /** @description Path and web root overrides keyed by app name; empty when the Instance inherits every app. */
+            app_overrides?: {
+                [key: string]: {
+                    path: string;
+                    web_root: string | null;
+                };
+            };
             selected_branch?: string | null;
             branch_override?: string | null;
             starting_commit?: string | null;
@@ -4044,6 +4050,12 @@ export interface components {
         NodeIdentity: {
             id?: number;
             name?: string;
+        };
+        ProjectApp: {
+            name: string;
+            path: string;
+            web_root: string | null;
+            type: string;
         };
         Route: {
             id?: number;
@@ -4130,7 +4142,7 @@ export interface components {
             /** @enum {string} */
             source_access?: "github_app" | "gh_cli";
             default_branch?: string | null;
-            root?: string | null;
+            apps?: components["schemas"]["ProjectApp"][];
             task_check?: string | null;
             task_workspace_routed?: boolean;
             /** @enum {string} */
@@ -4345,6 +4357,7 @@ export interface components {
             cpu?: number | null;
             memory_bytes?: number | null;
             user?: string | null;
+            app?: string | null;
         };
         DocumentStorage: {
             configured?: boolean;
@@ -4386,6 +4399,7 @@ export interface components {
         ProjectRuntimeDefinition: {
             id?: string;
             project_id?: number;
+            app?: string | null;
             name?: string;
             environments?: string[];
             spec?: {
@@ -4501,6 +4515,7 @@ export interface components {
             error_code?: string | null;
             last_run_at?: string | null;
             last_run_status?: string | null;
+            app?: string | null;
         };
         ScheduleLogs: {
             output?: string;
@@ -7899,8 +7914,13 @@ export interface operations {
                     node_id: number;
                     /** @description Instance name; default is reserved for the default development source */
                     name: string;
-                    /** @description Optional relative web-root override */
-                    root?: string;
+                    /** @description JSON object of app path and web root overrides, keyed by app name */
+                    app_overrides?: {
+                        [key: string]: {
+                            path: string;
+                            web_root: string | null;
+                        };
+                    };
                     /** @description Optional explicit Route domain */
                     domain?: string;
                     /** @description Optional explicit source branch */
@@ -7979,8 +7999,13 @@ export interface operations {
                     include_worktrees?: boolean;
                     project_id?: number;
                     instance_name?: string;
-                    /** @description Relative web-root override for this Instance */
-                    root?: string;
+                    /** @description JSON object of app path and web root overrides, keyed by app name */
+                    app_overrides?: {
+                        [key: string]: {
+                            path: string;
+                            web_root: string | null;
+                        };
+                    };
                     /** @description Optional explicit Route domain */
                     domain?: string;
                     /** @description Run the Project setup steps after adoption */
@@ -12644,6 +12669,8 @@ export interface operations {
                     /** @enum {string} */
                     target_type: "instance" | "node";
                     target_id: number;
+                    /** @description App name; required when the Project has several apps */
+                    app?: string;
                     /** @description Process name */
                     name: string;
                     /** @description Process preset: vp-dev, annotator, agentation-mcp, or antigravity-watch */
@@ -13364,8 +13391,13 @@ export interface operations {
                     source_access?: "github_app" | "gh_cli";
                     /** @description Stored default branch; resolve the remote default when omitted */
                     default_branch?: string;
-                    /** @description Repository-relative root; defaults to . for package types and public otherwise */
-                    root: string;
+                    /** @description JSON list of apps, each with name, path, web_root and type */
+                    apps: {
+                        name: string;
+                        path: string;
+                        web_root: string | null;
+                        type: string;
+                    }[];
                     /** @description Task check command. Omitted stores none */
                     task_check?: string | null;
                     /** @description Whether new task workspaces get a Route (true or false) */
@@ -13560,8 +13592,13 @@ export interface operations {
                     source_access?: "github_app" | "gh_cli";
                     /** @description New stored default branch */
                     default_branch?: string;
-                    /** @description New repository-relative root; package types may use . */
-                    root?: string;
+                    /** @description JSON list that replaces every app; only while the Project has no Instances */
+                    apps?: {
+                        name: string;
+                        path: string;
+                        web_root: string | null;
+                        type: string;
+                    }[];
                     /** @description New task check command for task baselines and handoffs */
                     task_check?: string | null;
                     /** @description Change routing for future task workspaces (true or false) */
@@ -15156,6 +15193,7 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
+                    app?: string;
                     name: string;
                     environments: "production"[];
                     spec: {
@@ -15303,6 +15341,7 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
+                    app?: string;
                     name: string;
                     environments: "production"[];
                     spec: {
@@ -15489,6 +15528,7 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
+                    app?: string;
                     name: string;
                     environments: "production"[];
                     spec: {
@@ -15623,6 +15663,7 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
+                    app?: string;
                     name: string;
                     environments: "production"[];
                     spec: {
@@ -17581,6 +17622,8 @@ export interface operations {
                     /** @enum {string} */
                     target_type: "node" | "instance";
                     target_id: number;
+                    /** @description App name; required when the Project has several apps */
+                    app?: string;
                     /** @description Schedule name */
                     name: string;
                     /** @description Native systemd calendar expression */

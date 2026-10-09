@@ -30,10 +30,10 @@ it('covers package project types when creating and updating Projects', function 
             'type' => $type->value,
             'repository_url' => 'https://github.com/acme/'.$type->value.'.git',
             'default_branch' => 'main',
-            'root' => '.',
+            'apps' => fixture_apps('.', $type->value),
         ])->assertCreated()
             ->assertJsonPath('data.type', $type->value)
-            ->assertJsonPath('data.root', '.');
+            ->assertJsonPath('data.apps', fixture_apps('.', $type->value));
 
         $updatedType = $type === ProjectType::LaravelPackage
             ? ProjectType::NodePackage
@@ -46,34 +46,26 @@ it('covers package project types when creating and updating Projects', function 
     }
 });
 
-it('names the type when the package root is sent for an app Project', function (): void {
+it('refuses an app path outside the repository with the apps error', function (): void {
     $this->postJson('/api/v1/projects', [
-        'slug' => 'app-with-dot-root',
+        'slug' => 'app-with-bad-path',
         'type' => ProjectType::LaravelApp->value,
-        'repository_url' => 'https://github.com/acme/app-with-dot-root.git',
+        'repository_url' => 'https://github.com/acme/app-with-bad-path.git',
         'default_branch' => 'main',
-        'root' => '.',
+        'apps' => [['name' => 'web', 'path' => '../outside', 'web_root' => 'public', 'type' => 'laravel-app']],
     ])->assertUnprocessable()
-        ->assertJsonPath('error.details.root.0', 'The root [.] is not valid for a laravel-app Project. Send a web root such as public.');
-
-    $this->postJson('/api/v1/projects', [
-        'slug' => 'app-with-bad-root',
-        'type' => ProjectType::LaravelApp->value,
-        'repository_url' => 'https://github.com/acme/app-with-bad-root.git',
-        'default_branch' => 'main',
-        'root' => '../outside',
-    ])->assertUnprocessable()
-        ->assertJsonPath('error.details.root.0', 'The root must be a normalized relative Project path.');
+        ->assertJsonPath('error.code', 'project.apps_invalid')
+        ->assertJsonPath('error.details.field', 'apps.0.path');
 });
 
-it('updates a legacy Project with a null root when root is omitted', function (): void {
+it('keeps the apps when an update omits them', function (): void {
     $project = Project::query()->create([
         'name' => 'legacy-project',
         'slug' => 'legacy-project',
         'type' => ProjectType::LaravelApp,
         'repository_url' => 'https://github.com/acme/legacy-project.git',
         'default_branch' => null,
-        'root' => null,
+        'apps' => fixture_apps(null, ProjectType::LaravelApp),
     ]);
 
     $this->patchJson('/api/v1/projects/'.$project->id, [
@@ -82,29 +74,7 @@ it('updates a legacy Project with a null root when root is omitted', function ()
     ])->assertOk()
         ->assertJsonPath('data.slug', 'legacy-renamed')
         ->assertJsonPath('data.default_branch', 'stable')
-        ->assertJsonPath('data.root', null);
-});
-
-it('rejects a type change when the stored package root is invalid for that type', function (): void {
-    $project = Project::query()->create([
-        'name' => 'root-package',
-        'slug' => 'root-package',
-        'type' => ProjectType::NodePackage,
-        'repository_url' => 'https://github.com/acme/root-package.git',
-        'default_branch' => 'main',
-        'root' => '.',
-    ]);
-
-    foreach ([ProjectType::LaravelApp, ProjectType::Monorepo] as $type) {
-        $this->patchJson('/api/v1/projects/'.$project->id, [
-            'type' => $type->value,
-        ])->assertUnprocessable()
-            ->assertJsonPath('error.code', 'validation.failed')
-            ->assertJsonPath('error.details.root.0', "The stored root [.] is not valid for a {$type->value} Project. Send a web root with the type change.");
-
-        expect($project->refresh()->type)->toBe(ProjectType::NodePackage)
-            ->and($project->root)->toBe('.');
-    }
+        ->assertJsonPath('data.apps', fixture_apps(null));
 });
 
 it('rejects unknown Project types on create and update', function (): void {
@@ -113,7 +83,7 @@ it('rejects unknown Project types on create and update', function (): void {
         'type' => 'desktop-app',
         'repository_url' => 'https://github.com/acme/unknown-project.git',
         'default_branch' => 'main',
-        'root' => 'src',
+        'apps' => fixture_apps('src', 'laravel-package'),
     ])->assertUnprocessable()
         ->assertJsonPath('error.code', 'validation.failed')
         ->assertJsonPath('error.details.type.0', fn (string $message): bool => $message !== '');
@@ -124,7 +94,7 @@ it('rejects unknown Project types on create and update', function (): void {
         'type' => ProjectType::LaravelPackage,
         'repository_url' => 'https://github.com/acme/known-project.git',
         'default_branch' => 'main',
-        'root' => 'src',
+        'apps' => fixture_apps('src', ProjectType::LaravelPackage),
     ]);
 
     $this->patchJson('/api/v1/projects/'.$project->id, [

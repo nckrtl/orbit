@@ -45,6 +45,7 @@ beforeEach(function (): void {
             'name' => 'Shop',
             'slug' => 'shop',
             'repository_url' => 'https://example.test/shop.git',
+            'apps' => fixture_apps(null),
         ])->id,
         'node_id' => $this->node->id,
         'name' => 'production',

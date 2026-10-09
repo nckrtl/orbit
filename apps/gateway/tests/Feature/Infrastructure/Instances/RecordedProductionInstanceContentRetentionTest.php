@@ -33,7 +33,7 @@ it('records retained production identity without changing content bytes or owner
         'slug' => 'retained',
         'repository_url' => 'https://example.test/retained.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $node = Node::query()->create([
         'name' => 'app-prod',

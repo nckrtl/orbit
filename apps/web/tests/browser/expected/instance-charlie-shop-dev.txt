@@ -20,6 +20,8 @@
 │  Domain │ dev.charlie-shop.test
 │  Status │ active
 │  Checkout │ /home/orbit/apps/charlie-shop/dev
+│  Apps │ storybook · storybook · web root dist
+│   │ web · web · web root public
 │  Selected branch │ main
 │  Deploy steps │ 2 steps
 ╰─

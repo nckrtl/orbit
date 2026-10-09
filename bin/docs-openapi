@@ -1900,6 +1900,26 @@ def tighten_task_definition_response(document):
 
 
 tighten_task_definition_response(spec)
+
+
+def name_keyed_app_overrides(document):
+    """Laravel validates the override map with per-item rules, which read as a list. It is an object keyed by app name."""
+    override = {'type': 'object', 'properties': {'path': {'type': 'string', 'maxLength': 255}, 'web_root': {'type': ['string', 'null'], 'maxLength': 255}},
+                'required': ['path', 'web_root'], 'additionalProperties': False}
+    for operations in document['paths'].values():
+        for op in operations.values():
+            schema = op.get('requestBody', {}).get('content', {}).get('application/json', {}).get('schema', {})
+            field = schema.get('properties', {}).get('app_overrides')
+            if field is not None:
+                schema['properties']['app_overrides'] = {'type': 'object', 'additionalProperties': copy.deepcopy(override),
+                                                         **({'description': field['description']} if 'description' in field else {})}
+    document['components']['schemas']['Instance']['properties']['app_overrides'] = {
+        'type': 'object', 'additionalProperties': copy.deepcopy(override),
+        'description': 'Path and web root overrides keyed by app name; empty when the Instance inherits every app.'}
+    document['components']['schemas']['ProjectApp']['required'] = ['name', 'path', 'web_root', 'type']
+
+
+name_keyed_app_overrides(spec)
 annotation_create = spec['paths']['/api/v1/instances/{instance}/annotations']['post']['requestBody']['content']['application/json']['schema']
 annotation_create['properties']['boundingBox'] = {'type': 'object', 'properties': {key: {'type': 'number'} for key in ('x', 'y', 'width', 'height')}, 'additionalProperties': False}
 # AnnotationData::fromModel() builds camelCase (`instanceId`, `syncError`, and the browser context).

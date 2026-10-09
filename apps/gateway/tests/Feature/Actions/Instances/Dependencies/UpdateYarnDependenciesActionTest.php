@@ -15,6 +15,7 @@ use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Symfony\Component\Process\Process;
 
@@ -28,12 +29,12 @@ function yarn_update_instance(bool $production = false, string $path = '/home/or
         'checkout_path' => $path,
         'production_user' => $production ? 'app_sample' : null,
         'production_home' => $production ? '/home/app_sample' : null,
-        'root' => 'public',
         'source_is_laravel' => true,
     ]);
     $node = new Node(['user' => 'orbit', 'wireguard_ip' => '10.44.0.2']);
     orbit_test_set_app_placement_role($node, $production);
     $instance->setRelation('node', $node);
+    $instance->setRelation('project', new Project(['apps' => fixture_apps('public')]));
 
     return $instance;
 }
@@ -97,7 +98,7 @@ function yarn_update_probe_present(string $family): CommandResult
 describe('Yarn Vite+ update refusal', function (): void {
     it('checks Yarn presence in the configured application directory', function (string $root, string $suffix): void {
         $instance = yarn_update_instance();
-        $instance->root = $root;
+        $instance->setRelation('project', new Project(['apps' => fixture_apps($root)]));
         $path = '/home/orbit/project'.$suffix;
         yarn_update_ssh([
             [fn (SshConnection $connection, RemoteCommand $command): bool => yarn_update_probe_command($command, $path), yarn_update_probe_present('modern')],

@@ -57,7 +57,7 @@ it('creates an Instance Route with the native production projector on a separate
         'name' => 'created',
         'environment' => 'production',
         'checkout_path' => $source->checkout_path,
-        'root' => 'public',
+        'app_overrides' => fixture_app_overrides('public'),
         'branch' => 'main',
         'starting_commit' => str_repeat('a', 40),
         'selected_php_version' => '8.5',
@@ -325,7 +325,7 @@ function orb199_production_route_models(
         'name' => 'Production route',
         'slug' => 'production-route-'.Str::lower(Str::random(8)),
         'repository_url' => 'https://example.test/production-route.git',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $instance = Instance::query()->create([
         'project_id' => $project->id,
@@ -333,7 +333,7 @@ function orb199_production_route_models(
         'name' => 'production',
         'environment' => 'production',
         'checkout_path' => "/home/orbit-app-{$project->id}/releases/initial",
-        'root' => 'public',
+        'app_overrides' => fixture_app_overrides('public'),
         'branch' => 'main',
         'starting_commit' => str_repeat('a', 40),
         'selected_php_version' => '8.5',

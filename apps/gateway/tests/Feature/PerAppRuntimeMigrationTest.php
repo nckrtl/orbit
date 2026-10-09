@@ -22,7 +22,7 @@ use Illuminate\Support\Facades\DB;
 
 function runtime_migration_fixture(): array
 {
-    $project = Project::query()->create(['name' => 'Migration', 'slug' => 'migration', 'repository_url' => 'https://example.test/migration.git', 'root' => 'public']);
+    $project = Project::query()->create(['name' => 'Migration', 'slug' => 'migration', 'repository_url' => 'https://example.test/migration.git', 'apps' => fixture_apps('public')]);
     $node = Node::query()->create(['name' => 'migration', 'status' => 'active', 'platform' => 'linux', 'public_ssh_host' => '192.0.2.20', 'wireguard_ip' => '10.44.0.20']);
     $node->roles()->create(['role' => 'app-dev', 'status' => 'active']);
     $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'main', 'checkout_path' => '/srv/migration/main', 'status' => 'source_resolved', 'vite_port' => 5173, 'agentation_port' => 5173]);

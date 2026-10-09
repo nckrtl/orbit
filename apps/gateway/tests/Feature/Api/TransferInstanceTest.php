@@ -66,6 +66,7 @@ beforeEach(function (): void {
         'slug' => 'transfer-api',
         'repository_url' => 'https://example.test/transfer-api.git',
         'default_branch' => 'main',
+        'apps' => fixture_apps(null),
     ]);
     $this->instance = Instance::query()->create([
         'project_id' => $project->id,

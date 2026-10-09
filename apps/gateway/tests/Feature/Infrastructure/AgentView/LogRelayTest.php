@@ -70,7 +70,7 @@ describe('a live log relay run', function (): void {
         $this->node = relay_node('app-dev', '10.44.0.3');
         $this->viewer = relay_node('laptop', '10.44.0.21');
         $this->viewer->accessibleNodes()->attach($this->node->id);
-        $project = Project::query()->create(['name' => 'Shop', 'slug' => 'shop', 'repository_url' => 'git@example.test:shop.git', 'default_branch' => 'main']);
+        $project = Project::query()->create(['name' => 'Shop', 'slug' => 'shop', 'repository_url' => 'git@example.test:shop.git', 'default_branch' => 'main', 'apps' => fixture_apps(null)]);
         $this->instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $this->node->id, 'name' => 'main', 'checkout_path' => '/home/orbit/apps/shop/main', 'status' => 'active']);
         InstanceEnvironmentValue::query()->create(['instance_id' => $this->instance->id, 'env_key' => 'STRIPE_SECRET', 'env_value' => 'sk-live-orbit-4821-secret']);
         $this->stream = new LogStream(str_repeat('ab', 16), LogStreamRecordType::Instance, (int) $this->instance->id, (int) $this->node->id, (int) $this->viewer->id, LogStreamSource::laravel(StoragePath::parse('/home/orbit/apps/shop/main')), 100, 1_060.0);

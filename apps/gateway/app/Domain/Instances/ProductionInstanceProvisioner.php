@@ -11,6 +11,9 @@ use App\Models\Project;
 
 interface ProductionInstanceProvisioner
 {
-    /** @return array{instance: Instance, created: bool} */
-    public function execute(CreateInstanceData $data, Project $project, Node $node, ?string $root): array;
+    /**
+     * @param  array<string, array{path: string, web_root: ?string}>  $appOverrides
+     * @return array{instance: Instance, created: bool}
+     */
+    public function execute(CreateInstanceData $data, Project $project, Node $node, array $appOverrides): array;
 }

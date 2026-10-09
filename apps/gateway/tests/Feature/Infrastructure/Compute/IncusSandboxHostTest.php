@@ -140,7 +140,7 @@ describe('Incus guest commands', function (): void {
 
 function project_identity_reservation(Node $host): TaskSandbox
 {
-    $project = Project::query()->create(['name' => 'DLF', 'slug' => 'dlf', 'repository_url' => 'https://github.com/acme/dlf.git']);
+    $project = Project::query()->create(['name' => 'DLF', 'slug' => 'dlf', 'repository_url' => 'https://github.com/acme/dlf.git', 'apps' => fixture_apps(null)]);
     $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Private Project VM', 'brief' => 'Verify owned Project SSH identity.', 'task_compute' => TaskCompute::Vm]);
 
     return TaskSandbox::query()->create([

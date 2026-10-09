@@ -28,7 +28,7 @@ describe('Project record events', function (): void {
             type: ProjectType::LaravelApp,
             repositoryUrl: 'git@github.com:acme/site.git',
             defaultBranch: 'main',
-            root: 'public',
+            apps: fixture_apps('public'),
         );
 
         $result = $action->execute($data);
@@ -50,7 +50,7 @@ describe('Project record events', function (): void {
             type: ProjectType::LaravelApp,
             repositoryUrl: 'git@github.com:acme/site.git',
             defaultBranch: 'main',
-            root: 'public',
+            apps: fixture_apps('public'),
         );
         $action->execute($data);
 
@@ -67,7 +67,7 @@ describe('Project record events', function (): void {
             'name' => 'Acme',
             'repository_url' => 'git@github.com:acme/site.git',
             'default_branch' => 'main',
-            'root' => 'public',
+            'apps' => fixture_apps('public'),
         ]);
 
         Event::fake([RecordBroadcast::class]);
@@ -82,8 +82,6 @@ describe('Project record events', function (): void {
             repositoryUrl: null,
             defaultBranchProvided: false,
             defaultBranch: null,
-            rootProvided: false,
-            root: null,
         ));
 
         Event::assertDispatched(
@@ -100,7 +98,7 @@ describe('Project record events', function (): void {
             'name' => 'Acme',
             'repository_url' => 'git@github.com:acme/site.git',
             'default_branch' => 'main',
-            'root' => 'public',
+            'apps' => fixture_apps('public'),
         ]);
 
         Event::fake([RecordBroadcast::class]);

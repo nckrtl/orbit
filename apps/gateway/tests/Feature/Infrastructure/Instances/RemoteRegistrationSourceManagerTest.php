@@ -1011,7 +1011,7 @@ it('restores Laravel URL files and the stable directory timestamps they touch', 
         $files->ensureDirectoryExists($application.'/bootstrap/cache');
         file_put_contents($application.'/.env', "APP_URL=https://before.test\n");
         file_put_contents($application.'/bootstrap/cache/config.php', "<?php return ['url' => 'before'];\n");
-        $fixture['instance']->update(['checkout_path' => $fixture['source'], 'root' => ltrim($relative.'/public', '/')]);
+        $fixture['instance']->update(['checkout_path' => $fixture['source'], 'app_overrides' => fixture_app_overrides(ltrim($relative.'/public', '/'))]);
         $before = orb105_complete_manifest($fixture['source']);
 
         $fixture['manager']->prepareLaravelRollback($fixture['instance']);
@@ -1109,7 +1109,7 @@ function orb105_relocation_fixture(bool $crossFilesystem = true): array
         'slug' => 'acme',
         'repository_url' => 'https://example.test/acme.git',
         'default_branch' => 'main',
-        'root' => null,
+        'apps' => fixture_apps(null),
     ]);
     $instance = Instance::query()->create([
         'project_id' => $project->id,
@@ -1542,7 +1542,7 @@ it('closes a relocated Instance environment to other local users after the last 
     $fixture = orb105_relocation_fixture();
 
     try {
-        $fixture['instance']->update(['root' => ltrim($relative.'/public', '/')]);
+        $fixture['instance']->update(['app_overrides' => fixture_app_overrides(ltrim($relative.'/public', '/'))]);
         new Filesystem()->ensureDirectoryExists($fixture['source'].$relative);
         file_put_contents($fixture['source'].$relative.'/.env', "APP_KEY=secret\n");
         chmod($fixture['source'].$relative.'/.env', 0o664);

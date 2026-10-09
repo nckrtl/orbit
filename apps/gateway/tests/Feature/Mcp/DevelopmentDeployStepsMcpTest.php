@@ -15,6 +15,7 @@ it('exposes and executes all development deploy step tools including false requi
     $this->withServerVariables(['REMOTE_ADDR' => $gateway->wireguard_ip]);
     $project = Project::query()->create([
         'name' => 'Acme', 'slug' => 'acme', 'repository_url' => 'https://example.test/acme.git', 'default_branch' => 'main',
+        'apps' => fixture_apps(null),
     ]);
     $call = function (string $operation, array $arguments): array {
         $response = $this->postJson('/mcp', [

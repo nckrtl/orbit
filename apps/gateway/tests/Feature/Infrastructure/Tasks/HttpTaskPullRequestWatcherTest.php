@@ -20,6 +20,7 @@ function watcher_group(string $url = 'https://github.com/acme/orbit/pull/42'): T
     $project = Project::query()->create([
         'name' => 'Watcher App', 'slug' => 'watcher-app',
         'repository_url' => 'https://github.com/acme/orbit.git', 'default_branch' => 'main',
+        'apps' => fixture_apps(null),
     ]);
 
     return Task::topLevel()->create([

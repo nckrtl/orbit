@@ -358,7 +358,7 @@ function orb207_concurrency_fixture(): array
         'slug' => 'concurrency',
         'repository_url' => 'https://example.test/concurrency.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $node = Node::query()->create([
         'name' => 'concurrency-owner',
@@ -376,7 +376,7 @@ function orb207_concurrency_fixture(): array
         'environment' => 'development',
         'source_layout' => InstanceSourceLayout::Checkout,
         'checkout_path' => '/srv/orbit/apps/concurrency/default',
-        'root' => 'public',
+        'app_overrides' => fixture_app_overrides('public'),
         'branch' => 'main',
         'starting_commit' => str_repeat('a', 40),
         'source_is_laravel' => false,
@@ -470,7 +470,7 @@ function orb207_concurrency_worker_script(): string
                 'slug' => 'concurrent-worker',
                 'repository_url' => 'https://example.test/concurrent-worker.git',
                 'default_branch' => 'main',
-                'root' => 'public',
+                'apps' => [['name' => 'web', 'path' => '.', 'web_root' => 'public', 'type' => 'laravel-app']],
             ]);
             $node = App\Models\Node::query()->create([
                 'name' => 'concurrent-worker',
@@ -624,7 +624,7 @@ function orb212_sync_concurrency_worker_script(): string
                 'slug' => 'concurrent-sync-worker',
                 'repository_url' => 'https://example.test/concurrent-sync-worker.git',
                 'default_branch' => 'main',
-                'root' => 'public',
+                'apps' => [['name' => 'web', 'path' => '.', 'web_root' => 'public', 'type' => 'laravel-app']],
             ]);
             $node = App\Models\Node::query()->create([
                 'name' => 'concurrent-sync-worker',

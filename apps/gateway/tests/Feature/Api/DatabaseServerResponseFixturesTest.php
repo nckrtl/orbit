@@ -58,6 +58,7 @@ it('records the database server and database user responses', function (): void 
         'slug' => 'dlf',
         'repository_url' => 'https://example.test/dlf.git',
         'default_branch' => 'main',
+        'apps' => fixture_apps(null),
     ]);
     $instance = Instance::query()->create([
         'project_id' => $project->id,

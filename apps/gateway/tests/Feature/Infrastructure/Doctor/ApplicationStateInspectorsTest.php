@@ -449,7 +449,7 @@ it('rejects pending or unacknowledged FPM generations but accepts a master resta
 
 it('expects the actual production renderer application directory for selected and initial releases', function (string $root, string $suffix): void {
     $instance = application_production_app_instance(application_inspector_app(), application_inspector_node(), 'private-production-value');
-    $instance->update(['root' => $root]);
+    $instance->update(['app_overrides' => fixture_app_overrides($root)]);
 
     $expectation = app(ProductionInstanceInspectionExpectationFactory::class)->make($instance);
 
@@ -1500,7 +1500,7 @@ function application_production_observation_program(string $observation, string 
         application_inspector_node(),
         'private-production-value',
     );
-    $instance->update(['root' => $webRoot]);
+    $instance->update(['app_overrides' => fixture_app_overrides($webRoot)]);
     $ssh = new AppDevFakeSshExecutor([app_inspector_result("1\n1\n1\n1\n1\n1\n")]);
     application_instance_inspector($ssh)->inspect($instance);
     $protected = $ssh->commands[0]->protectedInput;
@@ -1649,12 +1649,13 @@ function application_inspector_app(): Project
         'name' => "Project {$number}",
         'slug' => "project-{$number}",
         'repository_url' => "https://git.example.test/acme/project-{$number}.git",
+        'apps' => fixture_apps(null),
     ]);
 }
 
 function application_app_instance(Project $project, Node $node, string $name = 'development'): Instance
 {
-    $project->update(['default_branch' => 'main', 'root' => 'public']);
+    $project->update(['default_branch' => 'main', 'apps' => fixture_apps('public')]);
     if (! $node->roles()->whereIn('role', [RoleName::AppDev->value, RoleName::AppProd->value])->exists()) {
         $node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
     }
@@ -1717,7 +1718,7 @@ function application_production_app_instance(Project $project, Node $node, strin
         ['node_id' => $node->id, 'role' => RoleName::AppProd],
         ['status' => LifecycleStatus::Active],
     );
-    $project->update(['default_branch' => 'main', 'root' => 'public']);
+    $project->update(['default_branch' => 'main', 'apps' => fixture_apps('public')]);
     $user = "orbit-app-{$project->id}";
     $instance = Instance::query()->create([
         'project_id' => $project->id,
@@ -1730,7 +1731,7 @@ function application_production_app_instance(Project $project, Node $node, strin
         'production_php_service' => "orbit-{$user}-php8.5-fpm.service",
         'production_php_pool' => "orbit-{$user}",
         'production_php_socket' => "/run/php/{$user}.sock",
-        'root' => 'public',
+        'app_overrides' => fixture_app_overrides('public'),
         'branch' => 'main',
         'starting_commit' => str_repeat('a', 40),
         'selected_php_version' => '8.5',

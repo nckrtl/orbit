@@ -137,7 +137,7 @@ describe('Route removal certificate order', function (): void {
             'name' => 'Acme',
             'slug' => 'acme',
             'repository_url' => 'https://example.test/acme.git',
-            'root' => 'public',
+            'apps' => fixture_apps('public'),
         ]);
         $route = Route::query()->create([
             'project_id' => $project->id,
@@ -490,7 +490,7 @@ function certificate_order_targeted_route(CertificateOrderNodes $nodes, Node $no
         'name' => 'Acme',
         'slug' => 'acme',
         'repository_url' => 'https://example.test/acme.git',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $instance = Instance::query()->create([
         'project_id' => $project->id,

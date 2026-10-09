@@ -29,7 +29,7 @@ function sandbox_pi_workspace(?Node $host = null, int $port = 22000): array
 {
     $host ??= Node::query()->create(['name' => 'compute', 'status' => 'active', 'platform' => 'linux',
         'wireguard_ip' => '10.44.0.20', 'public_ssh_host' => '192.0.2.20', 'settings' => ['pi' => ['token' => 'host-secret', 'url' => 'http://host.test:3774']]]);
-    $project = Project::query()->firstOrCreate(['slug' => 'orbit'], ['name' => 'Orbit', 'repository_url' => 'https://github.com/acme/orbit.git']);
+    $project = Project::query()->firstOrCreate(['slug' => 'orbit'], ['name' => 'Orbit', 'repository_url' => 'https://github.com/acme/orbit.git', 'apps' => fixture_apps(null)]);
     $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Sandbox', 'brief' => 'Work', 'status' => 'running', 'task_compute' => TaskCompute::Vm]);
     $sandbox = TaskSandbox::query()->create(['id' => (string) Str::uuid(), 'group_id' => $group->id, 'provider' => 'incus',
         'name' => 'ot-'.$group->id, 'state' => SandboxState::Running, 'desired_power' => 'running',
@@ -109,7 +109,7 @@ describe('sandbox Pi identity', function (): void {
             'stopping' => $sandbox->update(['desired_power' => 'stopped']),
             'missing ownership' => $workspace->update(['task_sandbox_id' => null]),
             'foreign workspace' => $sandbox->group->update(['taskable_id' => null]),
-            'foreign project' => $workspace->update(['project_id' => Project::query()->create(['name' => 'Other', 'slug' => 'other', 'repository_url' => 'https://github.com/acme/other.git'])->id]),
+            'foreign project' => $workspace->update(['project_id' => Project::query()->create(['name' => 'Other', 'slug' => 'other', 'repository_url' => 'https://github.com/acme/other.git', 'apps' => fixture_apps(null)])->id]),
             'unconfigured host' => config(['compute.incus.hosts' => []]),
             'missing port' => $sandbox->update(['spec' => ['host_id' => $workspace->node_id, 'project' => 'orbit-task-sandboxes']]),
             'host runtime' => $thread->update(['runtime_key' => 'node:'.$workspace->node_id]),

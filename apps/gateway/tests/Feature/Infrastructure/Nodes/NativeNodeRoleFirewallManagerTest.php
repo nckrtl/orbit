@@ -293,7 +293,7 @@ it('keeps a conflicting private production footprint private during role converg
         'slug' => 'private-production',
         'repository_url' => 'https://example.test/private-production.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     Instance::query()->create([
         'project_id' => $project->id,

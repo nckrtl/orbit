@@ -50,7 +50,7 @@ describe('app creation', function (): void {
                 'type' => 'laravel-app',
                 'repository_url' => 'git@github.com:acme/site.git',
                 'default_branch' => 'main',
-                'root' => 'public',
+                'apps' => fixture_apps('public', 'laravel-app'),
             ]);
 
         $first
@@ -68,7 +68,7 @@ describe('app creation', function (): void {
                 'type' => 'laravel-app',
                 'repository_url' => 'git@github.com:acme/site.git',
                 'default_branch' => 'main',
-                'root' => 'public',
+                'apps' => fixture_apps('public', 'laravel-app'),
             ]);
 
         $second
@@ -95,7 +95,7 @@ describe('app creation', function (): void {
             'slug' => 'acme',
             'repository_url' => 'git@github.com:acme/site.git',
             'default_branch' => 'main',
-            'root' => 'public',
+            'apps' => fixture_apps('public'),
         ]);
 
         $this
@@ -104,7 +104,7 @@ describe('app creation', function (): void {
                 'type' => 'laravel-app',
                 'repository_url' => 'https://github.com/acme/other.git',
                 'default_branch' => 'main',
-                'root' => 'public',
+                'apps' => fixture_apps('public', 'laravel-app'),
             ])
             ->assertConflict()
             ->assertJsonPath('error.code', 'project.identity_conflict');
@@ -123,7 +123,7 @@ describe('app creation', function (): void {
                 'type' => 'laravel-app',
                 'repository_url' => 'git@github.com:acme/site.git',
                 'default_branch' => 'main',
-                'root' => 'public',
+                'apps' => fixture_apps('public', 'laravel-app'),
             ])
             ->assertCreated();
         $branches = new class implements RepositoryDefaultBranchResolver
@@ -152,7 +152,7 @@ describe('app creation', function (): void {
                 'type' => 'laravel-app',
                 'repository_url' => $repository,
                 'default_branch' => 'main',
-                'root' => 'web/public',
+                'apps' => fixture_apps('web/public', 'laravel-app'),
             ])
             ->assertConflict()
             ->assertJsonPath('error.code', 'project.repository_identity_conflict');
@@ -167,7 +167,7 @@ describe('app creation', function (): void {
                     'slug',
                     'repository_url',
                     'default_branch',
-                    'root',
+                    'apps',
                 ]))
             ->toBe([
                 'id' => $original->json('data.id'),
@@ -175,7 +175,7 @@ describe('app creation', function (): void {
                 'slug' => 'acme',
                 'repository_url' => 'git@github.com:acme/site.git',
                 'default_branch' => 'main',
-                'root' => 'public',
+                'apps' => fixture_apps('public'),
             ])
             ->and($branches->calls)
             ->toBe(0)
@@ -207,7 +207,7 @@ describe('app creation', function (): void {
                 'slug' => 'owner',
                 'repository_url' => 'git@github.com:acme/site.git',
                 'default_branch' => 'main',
-                'root' => 'public',
+                'apps' => fixture_apps('public'),
             ]);
         });
 
@@ -219,7 +219,7 @@ describe('app creation', function (): void {
                 'type' => 'laravel-app',
                 'repository_url' => $repository,
                 'default_branch' => 'main',
-                'root' => 'public',
+                'apps' => fixture_apps('public', 'laravel-app'),
             ])
             ->assertConflict()
             ->assertJsonPath('error.code', 'project.repository_identity_conflict');
@@ -243,6 +243,7 @@ describe('app lifecycle', function (): void {
             'name' => 'Acme',
             'slug' => 'acme',
             'repository_url' => 'https://github.com/acme/site.git',
+            'apps' => fixture_apps(null),
         ]);
 
         record_fixture($this
@@ -275,7 +276,7 @@ describe('app lifecycle', function (): void {
             ['Charlie shop', 'charlie-shop', 'git@github.com:charlie/shop.git', 'release', 'web/public'],
             ['Delta api', 'delta-api', 'https://github.com/delta/api.git', 'main', 'public'],
         ] as [$name, $slug, $repository, $branch, $root]) {
-            Project::query()->create(['name' => $name, 'slug' => $slug, 'repository_url' => $repository, 'default_branch' => $branch, 'root' => $root]);
+            Project::query()->create(['name' => $name, 'slug' => $slug, 'repository_url' => $repository, 'default_branch' => $branch, 'apps' => fixture_apps($root)]);
         }
 
         record_fixture($this->getJson('/api/v1/projects')->assertOk()->assertJsonCount(4, 'data'), 'projects/project-list/several', ListProjectsRequest::class, 'GET /api/v1/projects');
@@ -293,7 +294,7 @@ describe('app lifecycle', function (): void {
                 'slug' => $slug,
                 'repository_url' => ($index % 3 === 0 ? 'https://github.com/example/' : 'git@github.com:example/').$slug.'.git',
                 'default_branch' => $index % 4 === 0 ? 'release' : 'main',
-                'root' => $index % 5 === 0 ? 'web/public' : 'public',
+                'apps' => fixture_apps($index % 5 === 0 ? 'web/public' : 'public'),
             ]);
         }
 
@@ -313,7 +314,7 @@ describe('app lifecycle', function (): void {
             'slug' => 'acme',
             'repository_url' => 'https://github.com/acme/site.git',
             'default_branch' => 'main',
-            'root' => 'public',
+            'apps' => fixture_apps('public'),
         ]);
         Instance::query()->create([
             'project_id' => $project->id,
@@ -343,7 +344,7 @@ describe('app lifecycle', function (): void {
             'slug' => 'acme',
             'repository_url' => 'https://github.com/acme/site.git',
             'default_branch' => 'main',
-            'root' => 'public',
+            'apps' => fixture_apps('public'),
         ]);
         $parent = Task::topLevel()->create([
             'project_id' => $project->id,
@@ -377,7 +378,7 @@ describe('app lifecycle', function (): void {
             'slug' => 'acme',
             'repository_url' => 'https://github.com/acme/site.git',
             'default_branch' => 'main',
-            'root' => 'public',
+            'apps' => fixture_apps('public'),
         ]);
         $instance = Instance::query()->create([
             'project_id' => $project->id,
@@ -408,7 +409,7 @@ describe('app lifecycle', function (): void {
             'slug' => 'routed',
             'repository_url' => 'https://github.com/acme/routed.git',
             'default_branch' => 'main',
-            'root' => 'public',
+            'apps' => fixture_apps('public'),
         ]);
         Route::query()->create([
             'project_id' => $routed->id,
@@ -478,7 +479,7 @@ describe('app validation', function (): void {
                 'slug' => 'acme',
                 'type' => 'laravel-app',
                 'repository_url' => $repository,
-                'root' => 'public',
+                'apps' => fixture_apps('public', 'laravel-app'),
             ])
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation.failed');
@@ -520,7 +521,7 @@ describe('app validation', function (): void {
                 'slug' => 'acme',
                 'type' => 'laravel-app',
                 'repository_url' => 'https://example.test/acme/site.git',
-                'root' => 'public',
+                'apps' => fixture_apps('public', 'laravel-app'),
             ])
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'project.default_branch_unavailable');
@@ -571,21 +572,25 @@ describe('app list access', function (): void {
             'name' => 'Unplaced',
             'slug' => 'unplaced',
             'repository_url' => 'https://example.test/unplaced.git',
+            'apps' => fixture_apps(null),
         ]);
         $accessible = Project::query()->create([
             'name' => 'Accessible',
             'slug' => 'accessible',
             'repository_url' => 'https://example.test/accessible.git',
+            'apps' => fixture_apps(null),
         ]);
         $inaccessible = Project::query()->create([
             'name' => 'Inaccessible',
             'slug' => 'inaccessible',
             'repository_url' => 'https://example.test/inaccessible.git',
+            'apps' => fixture_apps(null),
         ]);
         $multiplyPlaced = Project::query()->create([
             'name' => 'Multiply placed',
             'slug' => 'multiply-placed',
             'repository_url' => 'https://example.test/multiply-placed.git',
+            'apps' => fixture_apps(null),
         ]);
         Instance::query()->create([
             'project_id' => $accessible->id,
@@ -665,16 +670,19 @@ describe('app list access', function (): void {
             'name' => 'Unplaced',
             'slug' => 'unplaced-direct',
             'repository_url' => 'https://example.test/unplaced-direct.git',
+            'apps' => fixture_apps(null),
         ]);
         $mixedHidden = Project::query()->create([
             'name' => 'Mixed hidden',
             'slug' => 'mixed-hidden',
             'repository_url' => 'https://example.test/mixed-hidden.git',
+            'apps' => fixture_apps(null),
         ]);
         $mixedVisible = Project::query()->create([
             'name' => 'Mixed visible',
             'slug' => 'mixed-visible',
             'repository_url' => 'https://example.test/mixed-visible.git',
+            'apps' => fixture_apps(null),
         ]);
         Instance::query()->create([
             'project_id' => $mixedHidden->id,

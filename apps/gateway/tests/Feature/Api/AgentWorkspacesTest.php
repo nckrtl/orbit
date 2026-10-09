@@ -28,6 +28,7 @@ function agent_workspace_group(Node $node, string $name, TaskGroupStatus $status
         'name' => 'Agent workspaces',
         'repository_url' => 'git@example.test:agent-workspaces.git',
         'default_branch' => 'main',
+        'apps' => fixture_apps(null),
     ]);
     $instance = Instance::query()->create([
         'project_id' => $project->id,

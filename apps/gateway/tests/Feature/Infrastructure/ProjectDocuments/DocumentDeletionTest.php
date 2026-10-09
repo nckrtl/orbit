@@ -96,7 +96,7 @@ function deletion_project(): Project
 {
     $name = 'deletion-'.Str::uuid();
 
-    return Project::query()->create(['name' => $name, 'slug' => $name, 'repository_url' => 'https://github.com/example/'.$name.'.git']);
+    return Project::query()->create(['name' => $name, 'slug' => $name, 'repository_url' => 'https://github.com/example/'.$name.'.git', 'apps' => fixture_apps(null)]);
 }
 
 function deletion_child(string $mode): Process
@@ -221,7 +221,7 @@ it('commits the retained published-row handoff but never deletes conflicting com
 it('deletes Project removal bodies without touching unknown objects or tracked probes', function (): void {
     deletion_provider(['published' => 'body']);
     $name = 'deletion-'.Str::uuid();
-    $project = Project::query()->create(['name' => $name, 'slug' => $name, 'repository_url' => 'https://github.com/example/'.$name.'.git']);
+    $project = Project::query()->create(['name' => $name, 'slug' => $name, 'repository_url' => 'https://github.com/example/'.$name.'.git', 'apps' => fixture_apps(null)]);
     $entry = ProjectDocumentEntry::query()->create(['project_id' => $project->id, 'kind' => 'file', 'name' => 'file.txt', 'sibling_scope' => 0]);
     $upload = ProjectDocumentUpload::query()->create(['project_id' => $project->id, 'entry_id' => $entry->id, 'storage_key' => 'published', 'state' => 'published']);
     $version = ProjectDocumentVersion::query()->create(['entry_id' => $entry->id, 'upload_id' => $upload->id, 'number' => 1,

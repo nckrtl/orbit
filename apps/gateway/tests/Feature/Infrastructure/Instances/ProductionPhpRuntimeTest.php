@@ -36,7 +36,7 @@ it('records a canonical dedicated PHP runtime identity without converting existi
         'slug' => 'dedicated-php',
         'repository_url' => 'https://example.test/dedicated-php.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $node = Node::query()->create([
         'name' => 'dedicated-php',
@@ -53,7 +53,7 @@ it('records a canonical dedicated PHP runtime identity without converting existi
         'checkout_path' => "/home/orbit-app-{$project->id}",
         'production_user' => "orbit-app-{$project->id}",
         'production_home' => "/home/orbit-app-{$project->id}",
-        'root' => 'public',
+        'app_overrides' => fixture_app_overrides('public'),
         'selected_php_version' => '8.5',
     ]);
 
@@ -91,7 +91,7 @@ it('refuses a stored runtime association that differs from its production identi
         'slug' => 'conflicting-php',
         'repository_url' => 'https://example.test/conflicting-php.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $node = Node::query()->create([
         'name' => 'conflicting-php',
@@ -107,7 +107,7 @@ it('refuses a stored runtime association that differs from its production identi
         'checkout_path' => "/home/orbit-app-{$project->id}",
         'production_user' => "orbit-app-{$project->id}",
         'production_home' => "/home/orbit-app-{$project->id}",
-        'root' => 'public',
+        'app_overrides' => fixture_app_overrides('public'),
         'selected_php_version' => '8.5',
         'production_php_service' => 'php8.5-fpm.service',
         'production_php_pool' => "orbit-orbit-app-{$project->id}",
@@ -807,7 +807,7 @@ it('keeps a dedicated production route in Caddy and out of shared FPM publicatio
         'slug' => 'shared-php',
         'repository_url' => 'https://example.test/shared-php.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $shared = Instance::query()->create([
         'project_id' => $sharedApp->id,
@@ -817,7 +817,7 @@ it('keeps a dedicated production route in Caddy and out of shared FPM publicatio
         'checkout_path' => "/home/orbit-app-{$sharedApp->id}",
         'production_user' => "orbit-app-{$sharedApp->id}",
         'production_home' => "/home/orbit-app-{$sharedApp->id}",
-        'root' => 'public',
+        'app_overrides' => fixture_app_overrides('public'),
         'selected_php_version' => '8.5',
         'status' => InstanceState::SourceResolved,
     ]);
@@ -863,7 +863,7 @@ function orb214_runtime_instance(): array
         'slug' => 'runtime-fixture',
         'repository_url' => 'https://example.test/runtime-fixture.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $node = Node::query()->create([
         'name' => 'runtime-fixture',
@@ -885,7 +885,7 @@ function orb214_runtime_instance(): array
             'checkout_path' => "/home/{$user}",
             'production_user' => $user,
             'production_home' => "/home/{$user}",
-            'root' => 'public',
+            'app_overrides' => fixture_app_overrides('public'),
             'selected_php_version' => '8.5',
         ]),
         $node,

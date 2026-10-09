@@ -142,7 +142,7 @@ it('inspects and prunes only the application dependencies while tracking reposit
         mkdir($repository.'/node_modules');
     }
     $instance = checkout_instance();
-    $instance->forceFill(['root' => $root, 'checkout_path' => $repository]);
+    $instance->forceFill(['app_overrides' => fixture_app_overrides($root), 'checkout_path' => $repository]);
     $ssh = new AppDevFakeSshExecutor;
     $inspector = checkout_inspector($ssh);
 
@@ -204,7 +204,7 @@ it('per-app hibernation prunes and restores both app dependency directories and 
         ['name' => 'web', 'type' => 'laravel-app', 'path' => 'apps/web', 'web_root' => 'public'],
         ['name' => 'docs', 'type' => 'node-package', 'path' => 'apps/docs', 'web_root' => null],
     ]]);
-    $instance->forceFill(['root' => null, 'app_overrides' => [], 'checkout_path' => $repository]);
+    $instance->forceFill(['app_overrides' => [], 'checkout_path' => $repository]);
     foreach (['web', 'docs'] as $app) {
         mkdir($repository.'/apps/'.$app.'/vendor', 0700, true);
         mkdir($repository.'/apps/'.$app.'/node_modules');
@@ -271,14 +271,14 @@ function checkout_instance(): Instance
     ]);
     $node->setRelation('roles', collect([new NodeRole(['role' => RoleName::AppDev])]));
     $instance = new Instance([
-        'root' => 'public',
+        'app_overrides' => fixture_app_overrides('public'),
         'source_is_laravel' => true,
         'name' => 'main',
         'environment' => 'development',
         'checkout_path' => '/home/orbit/apps/docs',
     ]);
     $instance->setRelation('node', $node);
-    $instance->setRelation('project', new Project(['name' => 'Docs', 'slug' => 'docs', 'type' => 'laravel-app', 'root' => 'public']));
+    $instance->setRelation('project', new Project(['name' => 'Docs', 'slug' => 'docs', 'type' => 'laravel-app', 'apps' => fixture_apps('public', 'laravel-app')]));
 
     return $instance;
 }

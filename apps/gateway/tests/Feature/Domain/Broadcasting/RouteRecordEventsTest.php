@@ -35,7 +35,7 @@ beforeEach(function (): void {
         'name' => 'Docs',
         'slug' => 'docs',
         'repository_url' => 'git@example.test:docs.git',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
 });
 

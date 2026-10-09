@@ -37,6 +37,7 @@ final readonly class PerAppAnnotatorTransferFixture
         $this->destination = $destination ?? $node('recovery-destination');
         $project = $instance?->project ?? Project::query()->create([
             'name' => 'Recovery', 'slug' => 'recovery', 'repository_url' => 'https://example.test/recovery.git',
+            'apps' => fixture_apps(null),
         ]);
         $project->update(['apps' => array_map(static fn (string $app): array => [
             'name' => $app, 'type' => 'laravel-app', 'path' => 'apps/'.$app, 'web_root' => 'public',

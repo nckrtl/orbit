@@ -69,7 +69,7 @@ function warm_fixture(int $available = 2): array
 
 function warm_group(): Task
 {
-    $project = Project::query()->firstOrCreate(['slug' => 'orbit'], ['name' => 'Orbit', 'repository_url' => 'https://github.com/acme/orbit.git', 'default_branch' => 'main']);
+    $project = Project::query()->firstOrCreate(['slug' => 'orbit'], ['name' => 'Orbit', 'repository_url' => 'https://github.com/acme/orbit.git', 'default_branch' => 'main', 'apps' => fixture_apps(null)]);
 
     $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Warm claim', 'brief' => 'Work', 'status' => 'todo', 'task_compute' => TaskCompute::Vm]);
     Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'Work', 'brief' => 'Work', 'status' => 'todo']);

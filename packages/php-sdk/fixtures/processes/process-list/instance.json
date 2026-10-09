@@ -29,7 +29,8 @@
                 "error_code": null,
                 "cpu": null,
                 "memory_bytes": null,
-                "user": null
+                "user": null,
+                "app": "web"
             },
             {
                 "id": 2,
@@ -55,7 +56,8 @@
                 "error_code": null,
                 "cpu": null,
                 "memory_bytes": null,
-                "user": null
+                "user": null,
+                "app": "web"
             }
         ],
         "meta": {

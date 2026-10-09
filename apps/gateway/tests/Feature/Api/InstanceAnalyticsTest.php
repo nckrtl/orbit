@@ -49,7 +49,7 @@ beforeEach(function (): void {
         'slug' => 'shop',
         'repository_url' => 'https://example.test/shop.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $this->cluster = Cluster::query()->create(['name' => 'edge', 'tld' => 'edge.test', 'state' => ClusterState::Active]);
     $this->router = instance_analytics_node('edge-router', '10.44.0.20', $this->cluster, RoleName::Router);

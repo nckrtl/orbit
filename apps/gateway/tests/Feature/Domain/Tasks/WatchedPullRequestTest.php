@@ -16,6 +16,7 @@ function branch_watch_group(string $status = 'running', string $subtaskStatus = 
     $project ??= Project::query()->create([
         'name' => 'Branch watch', 'slug' => 'branch-watch',
         'repository_url' => 'https://github.com/acme/orbit.git', 'default_branch' => 'main',
+        'apps' => fixture_apps(null),
     ]);
     $group = Task::topLevel()->create([
         'project_id' => $project->id, 'title' => 'Watch branch', 'brief' => 'Find external pull requests.',
@@ -43,6 +44,7 @@ it('records an externally opened watched pull request for a running group and th
     $project = Project::query()->create([
         'name' => 'Branch watch', 'slug' => 'branch-watch',
         'repository_url' => 'https://github.com/acme/orbit.git', 'default_branch' => 'main',
+        'apps' => fixture_apps(null),
     ]);
     $group = Task::topLevel()->create([
         'project_id' => $project->id, 'title' => 'Watch branch', 'brief' => 'Find external pull requests.',

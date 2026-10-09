@@ -122,6 +122,7 @@ describe('a raised alert', function (): void {
             'slug' => 'orbit',
             'repository_url' => 'https://example.test/orbit.git',
             'default_branch' => 'main',
+            'apps' => fixture_apps(null),
         ]);
 
         app(ReleaseAlertNotifier::class)->alert(release_alert(ReleaseAlertKind::ReleasePaused, 'Health check failed after migrations ran.'));

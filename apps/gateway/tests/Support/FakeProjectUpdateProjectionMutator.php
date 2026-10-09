@@ -19,7 +19,7 @@ final class FakeProjectUpdateProjectionMutator implements ProjectUpdateProjectio
     /** @var list<array{instance_id: int, url: string}> */
     public array $laravelUrls = [];
 
-    /** @var list<array{instance_id: int, root: ?string, validated: bool, preserved_tuning: bool}> */
+    /** @var list<array{instance_id: int, validated: bool, preserved_tuning: bool}> */
     public array $runtimeProjections = [];
 
     /** @var array<int, string> */
@@ -213,56 +213,6 @@ final class FakeProjectUpdateProjectionMutator implements ProjectUpdateProjectio
         }
     }
 
-    public function preflightRoot(Project $project, string $newRoot): array
-    {
-        $instances = [];
-
-        foreach ($project->instances as $instance) {
-            if ($instance->root !== null) {
-                continue;
-            }
-
-            $instances[] = [
-                'instance_id' => $instance->id,
-                'previous_root' => $project->root,
-                'effective_root' => $this->effectiveRoot($instance, $newRoot),
-            ];
-        }
-
-        return ['instances' => $instances];
-    }
-
-    public function prepareRoot(Project $project, string $newRoot, array $inventory): array
-    {
-        return $inventory;
-    }
-
-    public function publishRoot(Project $project, string $newRoot, array $prepared): void
-    {
-        foreach ($prepared['instances'] ?? [] as $row) {
-            if (! is_array($row)) {
-                continue;
-            }
-
-            $this->projectRuntime((int) $row['instance_id'], $row['effective_root'] ?? null);
-        }
-    }
-
-    public function rollbackRoot(Project $project, array $prepared): void
-    {
-        foreach ($prepared['instances'] ?? [] as $row) {
-            if (! is_array($row)) {
-                continue;
-            }
-
-            $instance = Instance::query()->find((int) $row['instance_id']);
-
-            if ($instance instanceof Instance) {
-                $this->projectRuntime($instance->id, $this->effectiveRoot($instance, $project->root));
-            }
-        }
-    }
-
     private function proposedDomain(Project $project, Route $route, ?Instance $instance, string $newSlug): string
     {
         $name = $instance?->name ?? 'default';
@@ -314,29 +264,13 @@ final class FakeProjectUpdateProjectionMutator implements ProjectUpdateProjectio
         ]);
     }
 
-    private function projectRuntime(int $instanceId, mixed $root = null): void
+    private function projectRuntime(int $instanceId): void
     {
         $this->localTuning[$instanceId] ??= 'operator-local.conf';
         $this->runtimeProjections[] = [
             'instance_id' => $instanceId,
-            'root' => is_string($root) ? $root : null,
             'validated' => true,
             'preserved_tuning' => $this->localTuning[$instanceId] === 'operator-local.conf',
         ];
-    }
-
-    private function effectiveRoot(Instance $instance, ?string $appRoot): ?string
-    {
-        $root = $instance->root ?? $appRoot;
-
-        if ($instance->placedOnAppProd() && is_string($instance->production_home) && is_string($root)) {
-            $base = $instance->usesProductionReleaseLayout()
-                ? "{$instance->production_home}/current"
-                : $instance->production_home;
-
-            return "{$base}/{$root}";
-        }
-
-        return $root;
     }
 }

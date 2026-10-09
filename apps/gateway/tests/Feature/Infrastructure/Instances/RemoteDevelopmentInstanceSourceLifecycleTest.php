@@ -160,7 +160,7 @@ beforeEach(function (): void {
         'slug' => 'acme',
         'repository_url' => $this->remoteOrigin,
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
 });
 
@@ -3012,7 +3012,7 @@ it('reports foreign App ownership drift as a removal conflict before path valida
         'slug' => 'foreign',
         'repository_url' => 'https://example.test/foreign/site.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $instance->update(['project_id' => $foreign->id]);
     $exception = null;

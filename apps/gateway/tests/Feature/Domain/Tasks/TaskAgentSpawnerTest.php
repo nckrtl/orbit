@@ -55,6 +55,7 @@ function task_spawner_group(TaskCompute $compute = TaskCompute::Shared): Task
         'slug' => 'orbit',
         'repository_url' => 'git@example.test:orbit.git',
         'default_branch' => 'main',
+        'apps' => fixture_apps(null),
     ]);
     $node = Node::query()->create([
         'name' => 'agent-node',

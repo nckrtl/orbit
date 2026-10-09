@@ -44,6 +44,7 @@ beforeEach(function (): void {
         'slug' => 'clone-api',
         'repository_url' => 'https://example.test/clone-api.git',
         'default_branch' => 'main',
+        'apps' => fixture_apps(null),
     ]);
     $this->candidate = Instance::query()->create([
         'project_id' => $project->id,

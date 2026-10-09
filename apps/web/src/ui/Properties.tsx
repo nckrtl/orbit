@@ -45,12 +45,13 @@ export function Properties({
             bodyClassName="properties"
             testId={testId}
         >
-            {properties.map((property) => {
+            {properties.map((property, index) => {
                 const value = text(property.value);
 
                 return (
                     <div
-                        key={property.name}
+                        // A continuation row has no name of its own, so the position keeps it apart.
+                        key={property.name === "" ? `#${index}` : property.name}
                         className="row"
                         style={{ gridTemplateColumns: "minmax(12ch, 18ch) minmax(0, 1fr)" }}
                     >

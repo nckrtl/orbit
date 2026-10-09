@@ -29,6 +29,7 @@ function metrics_running_group(): Task
         'slug' => 'live-metrics',
         'repository_url' => 'git@example.test:live-metrics.git',
         'default_branch' => 'main',
+        'apps' => fixture_apps(null),
     ]);
     $node = Node::query()->create([
         'name' => 'live-metrics-node',

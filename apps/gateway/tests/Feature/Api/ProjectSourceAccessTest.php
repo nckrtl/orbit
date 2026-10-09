@@ -56,7 +56,7 @@ function sourceAccessProject(array $attributes = []): Project
         'slug' => 'leden',
         'repository_url' => 'https://github.com/Dutch-Laravel-Foundation/leden.git',
         'default_branch' => null,
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
         ...$attributes,
     ]);
 }
@@ -67,7 +67,7 @@ describe('Project source access', function (): void {
             'slug' => 'acme',
             'type' => 'laravel-app',
             'repository_url' => 'https://github.com/acme/site.git',
-            'root' => 'public',
+            'apps' => fixture_apps('public', 'laravel-app'),
         ])
             ->assertCreated()
             ->assertJsonPath('data.source_access', 'github_app');
@@ -83,7 +83,7 @@ describe('Project source access', function (): void {
             'type' => 'laravel-app',
             'repository_url' => 'git@github.com:Dutch-Laravel-Foundation/leden.git',
             'source_access' => 'gh_cli',
-            'root' => 'public',
+            'apps' => fixture_apps('public'),
         ];
 
         $created = $this->postJson('/api/v1/projects', $payload)
@@ -108,7 +108,7 @@ describe('Project source access', function (): void {
             'type' => 'laravel-app',
             'repository_url' => 'https://gitlab.com/acme/site.git',
             'source_access' => 'gh_cli',
-            'root' => 'public',
+            'apps' => fixture_apps('public', 'laravel-app'),
         ])
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation.failed')

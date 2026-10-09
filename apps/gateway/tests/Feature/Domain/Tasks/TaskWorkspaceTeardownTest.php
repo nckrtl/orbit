@@ -220,7 +220,7 @@ function task_teardown_world(string $suffix, TaskGroupStatus $status = TaskGroup
         'type' => 'laravel-app',
         'repository_url' => "https://example.test/teardown-{$suffix}.git",
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public', 'laravel-app'),
     ]);
     $node = Node::query()->create([
         'name' => 'teardown-'.$suffix,

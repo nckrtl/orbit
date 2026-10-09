@@ -70,6 +70,7 @@ it('requires the selected production release even when installing a disabled Sch
         'name' => 'Release target',
         'slug' => 'release-target',
         'repository_url' => 'https://example.test/release-target.git',
+        'apps' => fixture_apps(null),
     ]);
     $instance = $project->instances()->create([
         'node_id' => $node->id,

@@ -24,6 +24,7 @@ function dependency_inventory_instance(string $name = 'web'): Instance
     $project = Project::query()->firstOrCreate(['slug' => 'dependency-inventory'], [
         'name' => 'Dependency inventory',
         'repository_url' => 'https://example.test/dependency-inventory.git',
+        'apps' => fixture_apps(null),
     ]);
     $node = Node::query()->firstOrCreate(['name' => 'dependency-inventory'], [
         'public_ssh_host' => '192.0.2.180',

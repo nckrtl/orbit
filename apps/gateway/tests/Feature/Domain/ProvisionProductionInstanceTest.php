@@ -23,7 +23,7 @@ beforeEach(function (): void {
         'slug' => 'production-app',
         'repository_url' => 'https://example.test/production.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $this->node = Node::query()->create([
         'name' => 'production',
@@ -40,14 +40,14 @@ beforeEach(function (): void {
         projectId: $this->orbitApp->id,
         nodeId: $this->node->id,
         name: 'live',
-        root: null,
+        appOverrides: null,
         domain: null,
         branch: null,
     );
 });
 
 it('refuses new production placement before user home source environment or Route mutation', function (): void {
-    expect(fn () => $this->provisioner->execute($this->data, $this->orbitApp, $this->node, null))
+    expect(fn () => $this->provisioner->execute($this->data, $this->orbitApp, $this->node, []))
         ->toThrow(function (ResourceOperationException $exception): void {
             expect($exception->errorCode)
                 ->toBe('instance.candidate_required')
@@ -68,7 +68,7 @@ it('refuses a repeat for an existing production Instance before mutation', funct
     $before = $instance->getAttributes();
     $routeBefore = Route::query()->sole()->getAttributes();
 
-    expect(fn () => $this->provisioner->execute($this->data, $this->orbitApp, $this->node, null))
+    expect(fn () => $this->provisioner->execute($this->data, $this->orbitApp, $this->node, []))
         ->toThrow(function (ResourceOperationException $exception): void {
             expect($exception->errorCode)->toBe('instance.candidate_required');
         });
@@ -92,7 +92,7 @@ it('refuses an incomplete production record without resuming retired creation', 
     ]);
     $before = $instance->refresh()->getAttributes();
 
-    expect(fn () => $this->provisioner->execute($this->data, $this->orbitApp, $this->node, null))
+    expect(fn () => $this->provisioner->execute($this->data, $this->orbitApp, $this->node, []))
         ->toThrow(function (ResourceOperationException $exception): void {
             expect($exception->errorCode)->toBe('instance.candidate_required');
         });
@@ -107,7 +107,7 @@ it('refuses production creation outside the recorded home release boundary', fun
     $instance = provision_production_active_instance($this->orbitApp, $this->node, 'live');
     $instance->update(['checkout_path' => $instance->production_home.$path]);
     $before = $instance->refresh()->getAttributes();
-    expect(fn () => $this->provisioner->execute($this->data, $this->orbitApp, $this->node, null))
+    expect(fn () => $this->provisioner->execute($this->data, $this->orbitApp, $this->node, []))
         ->toThrow(function (ResourceOperationException $exception): void {
             expect($exception->errorCode)->toBe('instance.candidate_required');
         });

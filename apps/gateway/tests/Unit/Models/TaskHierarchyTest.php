@@ -157,5 +157,6 @@ function hierarchy_project(): Project
         'name' => 'Hierarchy',
         'slug' => 'hierarchy-'.bin2hex(random_bytes(4)),
         'repository_url' => 'git@example.test:hierarchy.git',
+        'apps' => fixture_apps(null),
     ]);
 }

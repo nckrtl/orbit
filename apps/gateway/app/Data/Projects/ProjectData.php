@@ -24,7 +24,8 @@ final class ProjectData extends Data
         public string $repositoryUrl,
         public ProjectSourceAccess $sourceAccess,
         public ?string $defaultBranch,
-        public ?string $root,
+        /** @var list<ProjectAppData> */
+        public array $apps,
         public ?string $taskCheck,
         public bool $taskWorkspaceRouted,
         public TaskCompute $taskCompute = TaskCompute::Shared,
@@ -43,7 +44,7 @@ final class ProjectData extends Data
             repositoryUrl: $project->repository_url,
             sourceAccess: $project->source_access,
             defaultBranch: $project->default_branch,
-            root: $project->root,
+            apps: array_map(ProjectAppData::fromArray(...), $project->configuredApps()),
             taskCheck: $project->taskCheckCommand(),
             taskWorkspaceRouted: $project->task_workspace_routed,
             taskCompute: $project->task_compute,

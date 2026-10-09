@@ -88,6 +88,7 @@ it('persists a Task morph to a Project instance and ordered subtasks', function 
         'name' => 'Task migration',
         'slug' => 'task-migration',
         'repository_url' => 'git@example.test:task-migration.git',
+        'apps' => fixture_apps(null),
     ]);
     $instance = Instance::query()->create([
         'project_id' => $project->id,

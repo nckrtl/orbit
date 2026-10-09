@@ -32,6 +32,7 @@ final class ScheduleData extends Data
         public ?string $errorCode,
         public ?string $lastRunAt,
         public ?string $lastRunStatus,
+        public ?string $app = null,
     ) {}
 
     public static function fromModel(#[SensitiveParameter] Schedule $schedule, bool $includeCommand = true): self
@@ -52,6 +53,7 @@ final class ScheduleData extends Data
             errorCode: $schedule->error_code,
             lastRunAt: $schedule->last_run_at?->format(DateTimeInterface::ATOM),
             lastRunStatus: $schedule->last_run_status?->value,
+            app: $schedule->app,
         );
     }
 }

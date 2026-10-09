@@ -13,6 +13,7 @@ use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 
 use function Pest\Laravel\mock;
 
@@ -32,12 +33,12 @@ function dependency_collection_instance(bool $production = false): Instance
         'source_layout' => 'checkout', 'checkout_path' => '/home/orbit/project',
         'production_user' => $production ? 'app_sample' : null,
         'production_home' => $production ? '/home/app_sample' : null,
-        'root' => 'public',
         'source_is_laravel' => true,
     ]);
     $node = new Node(['user' => 'orbit', 'wireguard_ip' => '10.44.0.2']);
     orbit_test_set_app_placement_role($node, $production);
     $instance->setRelation('node', $node);
+    $instance->setRelation('project', new Project(['apps' => fixture_apps('public')]));
 
     return $instance;
 }
@@ -51,7 +52,7 @@ function dependency_collection_keys(): void
 describe('managed dependency collection transport', function (): void {
     it('uses pinned SSH and bounded fixed argv for the recorded source', function (bool $production, string $webRoot, string $suffix): void {
         $instance = dependency_collection_instance($production);
-        $instance->root = $webRoot;
+        $instance->setRelation('project', new Project(['apps' => fixture_apps($webRoot)]));
         $root = ($production ? '/home/app_sample/releases/selected' : '/home/orbit/project').$suffix;
         $receipt = dependency_collection_receipt($root, $production ? 'selected' : null);
         dependency_collection_keys();

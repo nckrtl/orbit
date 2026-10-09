@@ -73,7 +73,7 @@ function recovery_fixture(array $objects = []): RecoverDocumentCleanupAction
 function recovery_version(string $key = 'orbit-documents/1/1/private', string $bytes = 'private body'): ProjectDocumentVersion
 {
     $identity = 'recovery-'.Str::uuid();
-    $project = Project::query()->create(['name' => $identity, 'slug' => $identity, 'repository_url' => 'https://github.com/example/'.$identity.'.git']);
+    $project = Project::query()->create(['name' => $identity, 'slug' => $identity, 'repository_url' => 'https://github.com/example/'.$identity.'.git', 'apps' => fixture_apps(null)]);
     $entry = ProjectDocumentEntry::query()->create(['project_id' => $project->id, 'kind' => 'file', 'name' => 'private.txt', 'sibling_scope' => 0]);
     $upload = ProjectDocumentUpload::query()->create(['project_id' => $project->id, 'entry_id' => $entry->id, 'storage_key' => $key, 'state' => 'published']);
     $version = ProjectDocumentVersion::query()->create(['entry_id' => $entry->id, 'upload_id' => $upload->id, 'number' => 1, 'media_type' => 'text/plain',

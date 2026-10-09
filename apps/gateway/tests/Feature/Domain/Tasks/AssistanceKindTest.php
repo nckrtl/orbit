@@ -22,6 +22,7 @@ function assistance_kind_group(): Task
         'slug' => 'assistance-kind',
         'repository_url' => 'git@example.test:assistance.git',
         'default_branch' => 'main',
+        'apps' => fixture_apps(null),
     ]);
     $group = Task::topLevel()->create([
         'project_id' => $project->id,

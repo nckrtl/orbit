@@ -120,7 +120,7 @@ it('imports by exact Route domain and applies conflict and replacement semantics
 });
 
 it('imports and syncs the Laravel environment in its application directory', function (string $root, string $suffix): void {
-    $this->instance->update(['root' => $root, 'source_is_laravel' => true]);
+    $this->instance->update(['app_overrides' => fixture_app_overrides($root), 'source_is_laravel' => true]);
     $this->access->contents = "APP_KEY=nested-key\n";
 
     $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
@@ -470,7 +470,7 @@ it('keeps a release-layout production environment at the persistent home', funct
         'checkout_path' => "{$home}/releases/initial",
         'production_user' => 'orbit-app-216',
         'production_home' => $home,
-        'root' => 'server/web/public',
+        'app_overrides' => fixture_app_overrides('server/web/public'),
         'source_is_laravel' => true,
     ]);
     $this->instance
@@ -647,7 +647,7 @@ function environment_api_fixture(): array
         'slug' => 'environment-api',
         'repository_url' => 'https://example.test/environment-api.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $instance = Instance::query()->create([
         'project_id' => $project->id,
@@ -682,7 +682,7 @@ function ambiguous_environment_target(Node $caller): array
         'slug' => 'shared-environment',
         'repository_url' => 'https://example.test/shared-environment.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $route = Route::query()->create([
         'project_id' => $project->id,

@@ -227,6 +227,7 @@ final readonly class InstantiateProjectRuntimeDefinitionsAction
                 'target_type' => Instance::MorphAlias,
                 'target_id' => $instance->id,
                 'source_definition_id' => $definition->id,
+                'app' => $definition->app,
                 'host_node_id' => $instance->node_id,
                 'name' => $definition->name,
                 'calendar' => $specification['calendar'],

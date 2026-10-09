@@ -101,7 +101,7 @@ it('does not classify application metadata for an unrouted monorepo default', fu
 
     try {
         [$configurator, $ssh, $instance] = orb127_laravel_configurator($directory, 'nobody');
-        $instance->project->update(['type' => ProjectType::Monorepo]);
+        $instance->project->update(['type' => ProjectType::Monorepo, 'apps' => fixture_apps('public', ProjectType::Monorepo)]);
         $instance->update(['name' => 'default']);
         try {
             $profile = $configurator->inspect($instance);
@@ -460,8 +460,6 @@ it('reconciles Laravel canonical URLs when a Project slug changes', function ():
             repositoryUrl: null,
             defaultBranchProvided: false,
             defaultBranch: null,
-            rootProvided: false,
-            root: null,
         ),
     );
 
@@ -490,8 +488,6 @@ it('restores Laravel URL environment on a failed slug update and ignores applica
             repositoryUrl: null,
             defaultBranchProvided: false,
             defaultBranch: null,
-            rootProvided: false,
-            root: null,
         ),
     ))->toThrow(ResourceOperationException::class);
 
@@ -512,8 +508,6 @@ it('restores Laravel URL environment on a failed slug update and ignores applica
             repositoryUrl: null,
             defaultBranchProvided: false,
             defaultBranch: null,
-            rootProvided: false,
-            root: null,
         ),
     ))->toThrow(ResourceOperationException::class);
 
@@ -571,6 +565,7 @@ function orb127_laravel_configurator(string $checkoutPath, ?string $managedUser 
         'name' => 'Acme',
         'slug' => 'acme-'.Str::lower(Str::random(8)),
         'repository_url' => 'https://example.test/acme.git',
+        'apps' => fixture_apps(null),
     ]);
     $instance = Instance::query()->create([
         'project_id' => $project->id,

@@ -10,7 +10,14 @@
                 "slug": "acme",
                 "repository_url": "https://github.com/acme/site.git",
                 "default_branch": "main",
-                "root": "public"
+                "apps": [
+                    {
+                        "name": "web",
+                        "path": ".",
+                        "web_root": "public",
+                        "type": "laravel-app"
+                    }
+                ]
             },
             {
                 "id": 2,
@@ -18,7 +25,14 @@
                 "slug": "bravo-docs",
                 "repository_url": "git@github.com:bravo/docs.git",
                 "default_branch": "main",
-                "root": "public"
+                "apps": [
+                    {
+                        "name": "web",
+                        "path": ".",
+                        "web_root": "public",
+                        "type": "laravel-app"
+                    }
+                ]
             },
             {
                 "id": 3,
@@ -26,7 +40,20 @@
                 "slug": "charlie-shop",
                 "repository_url": "git@github.com:charlie/shop.git",
                 "default_branch": "release",
-                "root": "web/public"
+                "apps": [
+                    {
+                        "name": "storybook",
+                        "path": "storybook",
+                        "web_root": "dist",
+                        "type": "node-package"
+                    },
+                    {
+                        "name": "web",
+                        "path": "web",
+                        "web_root": "public",
+                        "type": "laravel-app"
+                    }
+                ]
             }
         ],
         "meta": {

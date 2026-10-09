@@ -34,7 +34,7 @@ it('records the deployment list and show responses', function (): void {
         'slug' => 'charlie-shop',
         'repository_url' => 'https://example.test/charlie-shop.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $instance = Instance::query()->create([
         'project_id' => $project->id,
@@ -45,7 +45,7 @@ it('records the deployment list and show responses', function (): void {
         'checkout_path' => '/home/charlie-shop/releases/20260101000000',
         'production_user' => 'charlie-shop',
         'production_home' => '/home/charlie-shop',
-        'root' => 'public',
+        'app_overrides' => fixture_app_overrides('public'),
         'branch' => 'main',
         'provisioning_step' => 'active',
         'status' => 'active',

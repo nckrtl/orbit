@@ -37,6 +37,7 @@ function fetcher_group(string $checkout): Task
 {
     $project = Project::query()->create([
         'name' => 'Shop', 'slug' => 'shop', 'repository_url' => 'git@github.com:acme/shop.git', 'default_branch' => 'main',
+        'apps' => fixture_apps(null),
     ]);
     $node = Node::query()->create([
         'name' => 'fetch-node', 'status' => LifecycleStatus::Active, 'platform' => 'linux',

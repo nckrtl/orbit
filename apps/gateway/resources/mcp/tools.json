@@ -2392,10 +2392,30 @@
             "maxLength": 63,
             "description": "Instance name; default is reserved for the default development source"
           },
-          "root": {
-            "type": "string",
-            "maxLength": 255,
-            "description": "Optional relative web-root override"
+          "app_overrides": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "maxLength": 255
+                },
+                "web_root": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "maxLength": 255
+                }
+              },
+              "required": [
+                "path",
+                "web_root"
+              ],
+              "additionalProperties": false
+            },
+            "description": "JSON object of app path and web root overrides, keyed by app name"
           },
           "domain": {
             "type": "string",
@@ -2992,10 +3012,30 @@
             "type": "string",
             "maxLength": 63
           },
-          "root": {
-            "type": "string",
-            "maxLength": 255,
-            "description": "Relative web-root override for this Instance"
+          "app_overrides": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "maxLength": 255
+                },
+                "web_root": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "maxLength": 255
+                }
+              },
+              "required": [
+                "path",
+                "web_root"
+              ],
+              "additionalProperties": false
+            },
+            "description": "JSON object of app path and web root overrides, keyed by app name"
           },
           "domain": {
             "type": "string",
@@ -4566,6 +4606,11 @@
             "type": "integer",
             "minimum": 1
           },
+          "app": {
+            "type": "string",
+            "maxLength": 63,
+            "description": "App name; required when the Project has several apps"
+          },
           "name": {
             "type": "string",
             "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$(?![\\s\\S])",
@@ -4927,10 +4972,40 @@
             "maxLength": 255,
             "description": "Stored default branch; resolve the remote default when omitted"
           },
-          "root": {
-            "type": "string",
-            "maxLength": 255,
-            "description": "Repository-relative root; defaults to . for package types and public otherwise"
+          "apps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "maxLength": 63
+                },
+                "path": {
+                  "type": "string",
+                  "maxLength": 255
+                },
+                "web_root": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "maxLength": 255
+                },
+                "type": {
+                  "type": "string",
+                  "maxLength": 32
+                }
+              },
+              "required": [
+                "name",
+                "path",
+                "web_root",
+                "type"
+              ]
+            },
+            "description": "JSON list of apps, each with name, path, web_root and type"
           },
           "task_check": {
             "type": [
@@ -4958,7 +5033,7 @@
           "slug",
           "type",
           "repository_url",
-          "root"
+          "apps"
         ]
       }
     },
@@ -6066,6 +6141,10 @@
             "minimum": 1,
             "description": "Numeric Project ID."
           },
+          "app": {
+            "type": "string",
+            "maxLength": 63
+          },
           "name": {
             "type": "string",
             "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$(?![\\s\\S])",
@@ -6304,6 +6383,10 @@
             "type": "string",
             "description": "Process definition name, unique within the Project."
           },
+          "app": {
+            "type": "string",
+            "maxLength": 63
+          },
           "name": {
             "type": "string",
             "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$(?![\\s\\S])",
@@ -6444,6 +6527,10 @@
             "type": "integer",
             "minimum": 1,
             "description": "Numeric Project ID."
+          },
+          "app": {
+            "type": "string",
+            "maxLength": 63
           },
           "name": {
             "type": "string",
@@ -6613,6 +6700,10 @@
             "type": "string",
             "description": "Schedule definition name, unique within the Project."
           },
+          "app": {
+            "type": "string",
+            "maxLength": 63
+          },
           "name": {
             "type": "string",
             "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$(?![\\s\\S])",
@@ -6749,10 +6840,40 @@
             "maxLength": 255,
             "description": "New stored default branch"
           },
-          "root": {
-            "type": "string",
-            "maxLength": 255,
-            "description": "New repository-relative root; package types may use ."
+          "apps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "maxLength": 63
+                },
+                "path": {
+                  "type": "string",
+                  "maxLength": 255
+                },
+                "web_root": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "maxLength": 255
+                },
+                "type": {
+                  "type": "string",
+                  "maxLength": 32
+                }
+              },
+              "required": [
+                "name",
+                "path",
+                "web_root",
+                "type"
+              ]
+            },
+            "description": "JSON list that replaces every app; only while the Project has no Instances"
           },
           "task_check": {
             "type": [
@@ -7302,6 +7423,11 @@
           "target_id": {
             "type": "integer",
             "minimum": 1
+          },
+          "app": {
+            "type": "string",
+            "maxLength": 63,
+            "description": "App name; required when the Project has several apps"
           },
           "name": {
             "type": "string",

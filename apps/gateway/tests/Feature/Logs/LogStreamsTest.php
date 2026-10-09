@@ -36,6 +36,7 @@ function log_stream_instance(Node $node, string $checkout = '/home/orbit/apps/sh
         'name' => 'Shop',
         'repository_url' => 'git@example.test:shop.git',
         'default_branch' => 'main',
+        'apps' => fixture_apps(null),
     ]);
 
     return Instance::query()->create([

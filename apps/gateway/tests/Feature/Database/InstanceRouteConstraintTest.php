@@ -35,7 +35,7 @@ it('reports every invalid active Instance before changing the upgrade schema or 
         'slug' => 'preflight',
         'repository_url' => 'https://example.test/preflight.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $node = Node::query()->create([
         'name' => 'preflight-node',
@@ -381,7 +381,7 @@ function app_instance_route_constraint_fixture(): array
         'slug' => 'constraint',
         'repository_url' => 'https://example.test/constraint.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $node = Node::query()->create([
         'name' => 'constraint-node',
@@ -424,7 +424,7 @@ function production_route_constraint_fixture(
         'slug' => 'shared',
         'repository_url' => 'https://example.test/shared.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $cluster = Cluster::query()->create(['name' => 'shared', 'state' => 'active']);
     $instances = collect(['one', 'two'])->map(function (string $name) use (

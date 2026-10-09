@@ -563,7 +563,7 @@ beforeEach(function (): void {
         'slug' => 'acme',
         'repository_url' => 'https://github.com/acme/site.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
 });
 
@@ -948,7 +948,7 @@ function seed_active_production_app_instance(
         'checkout_path' => $flatHome ? $home : "{$home}/releases/initial",
         'production_user' => $user,
         'production_home' => $home,
-        'root' => $root,
+        'app_overrides' => fixture_app_overrides($root),
         'branch' => $branchOverride ?? $project->default_branch,
         'branch_override' => $branchOverride,
         'starting_commit' => str_repeat('b', 40),
@@ -1040,7 +1040,7 @@ it('bounds Instance response relationship queries for one and several visible ro
         ->getJson('/api/v1/instances')
         ->assertOk()
         ->assertJsonPath('data.*.id', [$first->id])
-        ->assertJsonPath('data.0.effective_root', 'public')
+        ->assertJsonPath('data.0.apps', fixture_apps('public'))
         ->assertJsonPath('data.0.route.target.instance_id', $first->id);
     $oneRowQueryCounts = array_count_values($relationshipQueries);
 
@@ -1065,7 +1065,7 @@ it('bounds Instance response relationship queries for one and several visible ro
         'name' => 'Unrouted',
         'slug' => 'unrouted',
         'repository_url' => 'https://example.test/unrouted.git',
-        'root' => 'web',
+        'apps' => fixture_apps('web'),
     ]);
     $unrouted = Instance::query()->create([
         'project_id' => $unroutedApp->id,
@@ -1077,7 +1077,7 @@ it('bounds Instance response relationship queries for one and several visible ro
         'name' => 'Inaccessible',
         'slug' => 'inaccessible',
         'repository_url' => 'https://example.test/inaccessible.git',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $inaccessible = Instance::query()->create([
         'project_id' => $inaccessibleApp->id,
@@ -1104,7 +1104,7 @@ it('bounds Instance response relationship queries for one and several visible ro
         ->assertOk()
         ->assertJsonPath('data.*.id', [$first->id, $unrouted->id, $second->id])
         ->assertJsonPath('data.*.project_id', [$this->orbitApp->id, $unroutedApp->id, $this->orbitApp->id])
-        ->assertJsonPath('data.1.effective_root', 'web')
+        ->assertJsonPath('data.1.apps.0.path', 'web')
         ->assertJsonPath('data.1.route', null)
         ->assertJsonPath('data.0.route.target.instance_id', $first->id)
         ->assertJsonPath('data.2.route.target.instance_id', $second->id);
@@ -1144,7 +1144,7 @@ it('loads missing response relations for a single Instance DTO caller', function
     $data = InstanceData::fromModel($instance);
     $loadedRoute = $instance->routes->first();
 
-    expect($data->effectiveRoot)
+    expect($data->apps[0]->webRoot)
         ->toBe('public')
         ->and($data->route?->target?->instanceId)
         ->toBe($instance->id)
@@ -1175,8 +1175,8 @@ it('creates an active checkout Instance on a standalone Node with inherited root
         ->assertJsonMissingPath('data.cluster_id')
         ->assertJsonPath('data.source_layout', 'checkout')
         ->assertJsonPath('data.checkout_path', '/srv/orbit/apps/acme/dev')
-        ->assertJsonPath('data.root', null)
-        ->assertJsonPath('data.effective_root', 'public')
+        ->assertJsonPath('data.app_overrides', [])
+        ->assertJsonPath('data.apps', fixture_apps('public'))
         ->assertJsonPath('data.selected_branch', 'dev')
         ->assertJsonPath('data.branch_override', null)
         ->assertJsonMissingPath('data.migration_required')
@@ -1256,7 +1256,7 @@ it('creates an Instance with a repository-root Project root for each package typ
             'type' => $type,
             'repository_url' => 'https://github.com/acme/'.$type->value.'.git',
             'default_branch' => 'main',
-            'root' => '.',
+            'apps' => fixture_apps('.', $type),
         ]);
         $name = 'package-'.$index;
         $this->source->resolution = new DevelopmentSourceResolution($name, str_repeat('a', 40));
@@ -1265,10 +1265,10 @@ it('creates an Instance with a repository-root Project root for each package typ
             'project_id' => $project->id,
             'node_id' => $this->node->id,
             'name' => $name,
-            'root' => '.',
+            'app_overrides' => fixture_app_overrides('.'),
         ])->assertCreated()
-            ->assertJsonPath('data.root', '.')
-            ->assertJsonPath('data.effective_root', '.')
+            ->assertJsonPath('data.app_overrides', fixture_app_overrides('.'))
+            ->assertJsonPath('data.apps', fixture_apps('.', $type))
             ->assertJsonPath('data.status', 'active');
 
         expect($response->json('data.project.type'))->toBe($type->value)
@@ -1277,8 +1277,8 @@ it('creates an Instance with a repository-root Project root for each package typ
 });
 
 it('records the instances of one App among several', function (): void {
-    Project::query()->create(['name' => 'Bravo docs', 'slug' => 'bravo-docs', 'repository_url' => 'git@github.com:bravo/docs.git', 'default_branch' => 'main', 'root' => 'public']);
-    $shop = Project::query()->create(['name' => 'Charlie shop', 'slug' => 'charlie-shop', 'repository_url' => 'git@github.com:charlie/shop.git', 'default_branch' => 'release', 'root' => 'web/public']);
+    Project::query()->create(['name' => 'Bravo docs', 'slug' => 'bravo-docs', 'repository_url' => 'git@github.com:bravo/docs.git', 'default_branch' => 'main', 'apps' => fixture_apps('public')]);
+    $shop = Project::query()->create(['name' => 'Charlie shop', 'slug' => 'charlie-shop', 'repository_url' => 'git@github.com:charlie/shop.git', 'default_branch' => 'release', 'apps' => fixture_apps('web/public')]);
     foreach (['dev', 'staging', 'feature-checkout'] as $name) {
         // The fake source resolves to the branch the placement name selects.
         $this->source->resolution = new DevelopmentSourceResolution($name, str_repeat('a', 40));
@@ -1311,7 +1311,7 @@ it('refuses new production placement with a candidate-required error before muta
             'project_id' => $this->orbitApp->id,
             'node_id' => $node->id,
             'name' => 'release-name',
-            'root' => 'public',
+            'app_overrides' => fixture_app_overrides('public'),
         ])
         ->assertConflict()
         ->assertJsonPath('error.code', 'instance.candidate_required')
@@ -2038,21 +2038,21 @@ it('renames a Cluster and accepts unchanged placement input despite an unrelated
         ->toBe($targetBefore);
 });
 
-it('transports a root override and returns it as the effective root', function (): void {
+it('transports an app override and returns the effective app', function (): void {
     $this
         ->postJson('/api/v1/instances', [
             'project_id' => $this->orbitApp->id,
             'node_id' => $this->node->id,
             'name' => 'dev',
-            'root' => 'site/public',
+            'app_overrides' => fixture_app_overrides('site/public'),
         ])
         ->assertCreated()
-        ->assertJsonPath('data.root', 'site/public')
-        ->assertJsonPath('data.effective_root', 'site/public');
+        ->assertJsonPath('data.app_overrides', fixture_app_overrides('site/public'))
+        ->assertJsonPath('data.apps.0', ['name' => 'web', 'path' => 'site', 'web_root' => 'public', 'type' => 'laravel-app']);
 });
 
 it('fails before mutation when a legacy App has incomplete source defaults', function (): void {
-    $this->orbitApp->update(['default_branch' => null, 'root' => null]);
+    $this->orbitApp->update(['default_branch' => null, 'apps' => fixture_apps(null)]);
 
     $this
         ->postJson('/api/v1/instances', [
@@ -2106,7 +2106,7 @@ it('keeps a failed attempt from overwriting a successful retry after lease relea
         projectId: $this->orbitApp->id,
         nodeId: $this->node->id,
         name: 'dev',
-        root: null,
+        appOverrides: null,
         domain: null,
         branch: null,
     );
@@ -2221,7 +2221,7 @@ it('persists unexpected provisioning failures when guarded cleanup cannot comple
         projectId: $this->orbitApp->id,
         nodeId: $this->node->id,
         name: 'dev',
-        root: null,
+        appOverrides: null,
         domain: null,
         branch: null,
     )))
@@ -2272,7 +2272,7 @@ it('keeps reserved recovery state when both source acquisition and cleanup are u
         projectId: $this->orbitApp->id,
         nodeId: $this->node->id,
         name: 'dev',
-        root: null,
+        appOverrides: null,
         domain: null,
         branch: null,
     )))
@@ -2345,7 +2345,7 @@ it('persists reservation conflicts before releasing the lease when cleanup canno
         projectId: $this->orbitApp->id,
         nodeId: $this->node->id,
         name: 'dev',
-        root: null,
+        appOverrides: null,
         domain: 'dev.example.test',
         branch: null,
     )))
@@ -2444,7 +2444,7 @@ it('keeps the first checkout immutable when a later Instance uses a changed apps
         ->toBe('/srv/orbit/apps/acme/dev');
 });
 
-it('rejects immutable root and source-layout conflicts on retry', function (string $conflict): void {
+it('rejects immutable app override and source-layout conflicts on retry', function (string $conflict): void {
     $payload = [
         'project_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
@@ -2453,8 +2453,8 @@ it('rejects immutable root and source-layout conflicts on retry', function (stri
     $this->postJson('/api/v1/instances', $payload)->assertCreated();
     $this->source->calls = [];
 
-    if ($conflict === 'root') {
-        $payload['root'] = 'other/public';
+    if ($conflict === 'app overrides') {
+        $payload['app_overrides'] = fixture_app_overrides('other/public');
     } else {
         Instance::query()->sole()->update(['source_layout' => 'worktree']);
     }
@@ -2467,7 +2467,7 @@ it('rejects immutable root and source-layout conflicts on retry', function (stri
     expect(Instance::query()->sole()->getAttributes())->toBe($before);
 
     expect($this->source->calls)->toBeEmpty();
-})->with(['root', 'source layout']);
+})->with(['app overrides', 'source layout']);
 
 it('refuses a default path occupied by another managed Instance before mutation', function (): void {
     Instance::query()->create([
@@ -2475,7 +2475,7 @@ it('refuses a default path occupied by another managed Instance before mutation'
         'node_id' => $this->node->id,
         'name' => 'occupied',
         'checkout_path' => '/srv/orbit/apps/acme/default',
-        'root' => 'public',
+        'app_overrides' => fixture_app_overrides('public'),
         'status' => InstanceState::Active,
     ]);
 
@@ -3440,7 +3440,7 @@ it('keeps setup pending when create is interrupted after activation before the b
         projectId: $this->orbitApp->id,
         nodeId: $this->node->id,
         name: 'interrupted-setup',
-        root: null,
+        appOverrides: null,
         domain: null,
         branch: 'dev',
     );

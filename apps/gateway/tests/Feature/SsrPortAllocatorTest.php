@@ -22,7 +22,7 @@ function ssr_port_node(string $name, bool $production = false): Node
 
 function ssr_port_instance(Node $node, string $name): Instance
 {
-    $project = Project::query()->firstOrCreate(['slug' => 'recall'], ['name' => 'Recall', 'repository_url' => 'git@example.test:recall.git']);
+    $project = Project::query()->firstOrCreate(['slug' => 'recall'], ['name' => 'Recall', 'repository_url' => 'git@example.test:recall.git', 'apps' => fixture_apps(null)]);
 
     return Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => $name, 'checkout_path' => "/apps/recall/{$name}"]);
 }

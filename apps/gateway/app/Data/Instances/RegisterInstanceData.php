@@ -11,7 +11,7 @@ final readonly class RegisterInstanceData
         public bool $includeWorktrees,
         public ?int $projectId,
         public ?string $instanceName,
-        public ?string $root,
+        public mixed $appOverrides,
         public ?string $domain,
         public bool $runSetup = false,
     ) {}

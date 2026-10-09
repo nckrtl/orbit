@@ -23,6 +23,7 @@ final class ScheduleDefinitionRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'app' => ['sometimes', 'string', 'max:63'],
             'name' => [
                 'required',
                 'string',
@@ -86,6 +87,7 @@ final class ScheduleDefinitionRequest extends FormRequest
             name: ValidatedData::string($validated['name'] ?? null),
             environments: ValidatedData::stringList($validated['environments'] ?? null),
             spec: ValidatedData::object($validated['spec'] ?? null),
+            app: is_string($validated['app'] ?? null) ? $validated['app'] : null,
         );
     }
 }

@@ -366,7 +366,7 @@ function database_connection_doctor_instance(Node $node): Instance
         'slug' => "database-doctor-{$number}",
         'repository_url' => "https://example.test/database-doctor-{$number}.git",
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $node->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
     $instance = Instance::query()->create([

@@ -15,7 +15,7 @@ final readonly class ProjectDefinitionJsonInspector
     public function inspectProcess(#[\SensitiveParameter] string $json): array
     {
         $object = $this->decode($json);
-        $this->assertAllowedKeys($object, ['name', 'environments', 'spec'], 'top-level');
+        $this->assertAllowedKeys($object, ['app', 'name', 'environments', 'spec'], 'top-level');
 
         if (property_exists($object, 'spec')) {
             if (! $object->spec instanceof stdClass) {
@@ -56,7 +56,7 @@ final readonly class ProjectDefinitionJsonInspector
     public function inspectSchedule(#[\SensitiveParameter] string $json): array
     {
         $object = $this->decode($json);
-        $this->assertAllowedKeys($object, ['name', 'environments', 'spec'], 'top-level');
+        $this->assertAllowedKeys($object, ['app', 'name', 'environments', 'spec'], 'top-level');
 
         if (property_exists($object, 'spec')) {
             if (! $object->spec instanceof stdClass) {

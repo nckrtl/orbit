@@ -23,6 +23,7 @@ final class ProcessDefinitionRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'app' => ['sometimes', 'string', 'max:63'],
             'name' => [
                 'required',
                 'string',
@@ -119,6 +120,7 @@ final class ProcessDefinitionRequest extends FormRequest
             name: ValidatedData::string($validated['name'] ?? null),
             environments: ValidatedData::stringList($validated['environments'] ?? null),
             spec: $spec,
+            app: is_string($validated['app'] ?? null) ? $validated['app'] : null,
         );
     }
 

@@ -219,7 +219,7 @@ function nested_application_configurator(string $checkout, string $root): array
         public function put(string $host, int $port, HostKey $key): void {}
     };
     $node = Node::query()->create(['name' => 'nested-source', 'status' => 'active', 'platform' => 'linux', 'public_ssh_host' => '192.0.2.10', 'wireguard_ip' => '10.44.0.10', 'user' => $owner['name']]);
-    $project = Project::query()->create(['name' => 'Nested', 'slug' => 'nested-'.Str::lower(Str::random(8)), 'repository_url' => 'https://example.test/nested.git', 'root' => $root]);
+    $project = Project::query()->create(['name' => 'Nested', 'slug' => 'nested-'.Str::lower(Str::random(8)), 'repository_url' => 'https://example.test/nested.git', 'apps' => fixture_apps($root)]);
     $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'feature', 'checkout_path' => $checkout, 'branch' => 'feature', 'starting_commit' => str_repeat('a', 40), 'status' => 'source_resolved']);
 
     $development = new DevelopmentSshExecutor($ssh, $keys, $hosts);

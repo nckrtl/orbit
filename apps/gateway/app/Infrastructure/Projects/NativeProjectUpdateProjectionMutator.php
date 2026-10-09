@@ -5,16 +5,13 @@ declare(strict_types=1);
 namespace App\Infrastructure\Projects;
 
 use App\Actions\Routes\ConvergeRouteAction;
-use App\Domain\Instances\DevelopmentRouteProjector;
 use App\Domain\Instances\Environment\InstanceEnvironmentRouteDomain;
 use App\Domain\Instances\Environment\InstanceRouteEnvironmentSynchronizer;
-use App\Domain\Instances\ProductionPhpRuntimeManager;
 use App\Domain\Projects\ProjectUpdateProjectionMutator;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStateResolver;
 use App\Domain\Routes\RouteStatus;
-use App\Domain\Routes\RouteTargetWebRoot;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Shared\StoredValue;
 use App\Models\Instance;
@@ -31,8 +28,6 @@ final readonly class NativeProjectUpdateProjectionMutator implements ProjectUpda
     public function __construct(
         private RouteStateResolver $domains,
         private InstanceRouteEnvironmentSynchronizer $environment,
-        private DevelopmentRouteProjector $developmentRuntime,
-        private ProductionPhpRuntimeManager $productionRuntime,
         private ConvergeRouteAction $routes,
     ) {}
 
@@ -248,56 +243,6 @@ final readonly class NativeProjectUpdateProjectionMutator implements ProjectUpda
         }
     }
 
-    public function preflightRoot(Project $project, string $newRoot): array
-    {
-        $instances = [];
-
-        foreach ($project->instances as $instance) {
-            if ($instance->root !== null) {
-                continue;
-            }
-
-            if ($instance->routeTargets()->exists()) {
-                RouteTargetWebRoot::assertSupportedRoot($newRoot);
-            }
-
-            $instances[] = [
-                'instance_id' => $instance->id,
-                'previous_root' => $project->root,
-                'effective_root' => $this->effectiveRoot($instance, $newRoot),
-            ];
-        }
-
-        return ['instances' => $instances];
-    }
-
-    public function prepareRoot(Project $project, string $newRoot, array $inventory): array
-    {
-        return $inventory;
-    }
-
-    public function publishRoot(Project $project, string $newRoot, array $prepared): void
-    {
-        foreach ($this->rows($prepared['instances'] ?? null) as $row) {
-            $instance = Instance::query()->find(StoredValue::integer($row['instance_id'] ?? null));
-
-            if (! $instance instanceof Instance) {
-                continue;
-            }
-
-            $route = $instance->authoritativeRoute();
-
-            if ($route instanceof Route) {
-                $this->projectRuntime($instance, $route);
-            }
-        }
-    }
-
-    public function rollbackRoot(Project $project, array $prepared): void
-    {
-        $this->publishRoot($project, (string) $project->root, $prepared);
-    }
-
     /** @return list<array<string, mixed>> */
     private function rows(mixed $value): array
     {
@@ -367,26 +312,5 @@ final readonly class NativeProjectUpdateProjectionMutator implements ProjectUpda
             'env_key' => 'APP_URL',
             'env_value' => $url,
         ]);
-    }
-
-    private function projectRuntime(Instance $instance, Route $route): void
-    {
-        if ($instance->placedOnAppProd()) {
-            $this->productionRuntime->converge($instance);
-
-            return;
-        }
-
-        $this->developmentRuntime->converge($instance, $route);
-    }
-
-    private function effectiveRoot(Instance $instance, ?string $appRoot): ?string
-    {
-        $previous = $instance->root;
-        $instance->root ??= $appRoot;
-        $effective = $instance->effectiveRoot();
-        $instance->root = $previous;
-
-        return $effective;
     }
 }

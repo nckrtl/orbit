@@ -279,7 +279,7 @@ it('runs Router mutation and removal guards against state created while waiting'
             'slug' => 'acme',
             'repository_url' => 'https://example.test/acme.git',
             'default_branch' => 'main',
-            'root' => 'public',
+            'apps' => fixture_apps('public'),
         ]);
         $this->first
             ->roles()
@@ -918,7 +918,7 @@ function cluster_router_owned_route(Cluster $cluster, Node $workload): array
         'slug' => 'acme-'.Str::random(6),
         'repository_url' => 'https://example.test/acme.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $target = Instance::query()->create([
         'project_id' => $project->id,

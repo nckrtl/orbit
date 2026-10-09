@@ -586,7 +586,7 @@ it('serves a composed Router pool from the staging Router certificate during a d
         'node_id' => $router->id,
         'name' => 'local',
         'checkout_path' => '/srv/acme/local',
-        'root' => 'public',
+        'app_overrides' => fixture_app_overrides('public'),
         'branch' => 'feature',
         'starting_commit' => str_repeat('b', 40),
         ...$production('local'),
@@ -878,7 +878,7 @@ it('hydrates only requested workload and Router routes while global inventory st
         'node_id' => $workload->id,
         'name' => 'active',
         'checkout_path' => '/home/orbit/apps/acme/active',
-        'root' => 'public',
+        'app_overrides' => fixture_app_overrides('public'),
         'selected_php_version' => '8.5',
         'status' => 'source_resolved',
     ]);
@@ -898,7 +898,7 @@ it('hydrates only requested workload and Router routes while global inventory st
         'node_id' => $workload->id,
         'name' => 'failed',
         'checkout_path' => '/home/orbit/apps/acme/failed',
-        'root' => 'public',
+        'app_overrides' => fixture_app_overrides('public'),
         'selected_php_version' => '8.5',
         'status' => 'source_resolved',
     ]);
@@ -930,7 +930,7 @@ it('hydrates only requested workload and Router routes while global inventory st
         'node_id' => $unrelatedNode->id,
         'name' => 'unrelated',
         'checkout_path' => '/home/orbit/apps/acme/unrelated',
-        'root' => 'public',
+        'app_overrides' => fixture_app_overrides('public'),
         'selected_php_version' => '8.5',
         'status' => 'source_resolved',
     ]);
@@ -1087,7 +1087,7 @@ it('retains active workload and Router sites while publishing a second Route on 
         'node_id' => $workload->id,
         'name' => 'second',
         'checkout_path' => '/home/orbit/apps/acme/second',
-        'root' => 'public',
+        'app_overrides' => fixture_app_overrides('public'),
         'branch' => 'second',
         'starting_commit' => str_repeat('b', 40),
         'selected_php_version' => '8.5',
@@ -1486,14 +1486,14 @@ function orb127_route_projection_models(
         'name' => 'Acme',
         'slug' => 'acme-'.Str::lower(Str::random(8)),
         'repository_url' => 'https://example.test/acme.git',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $instance = Instance::query()->create([
         'project_id' => $project->id,
         'node_id' => $workload->id,
         'name' => 'feature',
         'checkout_path' => '/home/orbit/apps/acme/feature',
-        'root' => 'public',
+        'app_overrides' => fixture_app_overrides('public'),
         'branch' => 'feature',
         'starting_commit' => str_repeat('a', 40),
         'selected_php_version' => $phpVersion,
@@ -1761,7 +1761,7 @@ function route_access_served_instance(
 ): Instance {
     $other = Instance::query()->create([
         'project_id' => $instance->project_id, 'node_id' => $node->id, 'name' => $name,
-        'checkout_path' => $checkout, 'development_release_layout' => $releases, 'root' => 'public',
+        'checkout_path' => $checkout, 'development_release_layout' => $releases, 'app_overrides' => fixture_app_overrides('public'),
         'branch' => $name, 'starting_commit' => str_repeat('b', 40), 'selected_php_version' => '8.5',
         'status' => InstanceState::Active,
     ]);
@@ -1884,8 +1884,8 @@ final class Orb127RouteProcessRunner implements ProcessRunner
 
 it('converges the Project sandbox leaf and private preview through native projection', function (): void {
     $workspace = IncusRuntimeWorkspace::create();
-    $workspace->project->update(['type' => 'laravel-app', 'root' => 'public']);
-    $workspace->update(['task_workspace_routed' => true, 'root' => 'public', 'status' => InstanceState::SourceResolved]);
+    $workspace->project->update(['type' => 'laravel-app', 'apps' => fixture_apps('public', 'laravel-app')]);
+    $workspace->update(['task_workspace_routed' => true, 'status' => InstanceState::SourceResolved]);
     $route = app(CreateRouteAction::class)->ensureForInstance($workspace, null);
     [$projector, $ssh, $processes, $home] = orb127_route_projector();
     try {

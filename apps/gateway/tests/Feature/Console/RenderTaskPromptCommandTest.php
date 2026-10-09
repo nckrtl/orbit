@@ -42,6 +42,7 @@ function production_task_prompt_models(): array
         'repository_url' => 'git@example.test:gateway-prompts.git',
         'default_branch' => 'main',
         'task_check' => 'composer check',
+        'apps' => fixture_apps(null),
     ]);
     $group = Task::topLevel()->create([
         'project_id' => $project->id,

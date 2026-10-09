@@ -38,7 +38,7 @@ it('reads a provisional default branch SHA and a complete immutable tree in a di
             return new CommandResult(0, $output, '', 0, false);
         }
     };
-    $project = new Project(['repository_url' => 'git@example.test:fixture.git', 'default_branch' => 'main']);
+    $project = new Project(['repository_url' => 'git@example.test:fixture.git', 'default_branch' => 'main', 'apps' => fixture_apps(null)]);
     $repository = new NativeDeliverablePathRepository($processes, app(RepositoryReadAccess::class), new Filesystem, DeliverablePathWorkspace::unreachableExecutor());
     expect($repository->defaultBranchCommit($project))->toBe($commit);
     expect($repository->files($project, $commit))->toBe(['tests/Space NameTest.php']);
@@ -70,7 +70,7 @@ it('fails closed on incomplete or failed base reads and removes the disposable r
     };
     $repository = new NativeDeliverablePathRepository($processes, app(RepositoryReadAccess::class), new Filesystem, DeliverablePathWorkspace::unreachableExecutor());
     try {
-        $repository->files(new Project(['repository_url' => 'git@example.test:fixture.git']), str_repeat('b', 40));
+        $repository->files(new Project(['repository_url' => 'git@example.test:fixture.git', 'apps' => fixture_apps(null)]), str_repeat('b', 40));
         $this->fail('Expected an unreadable tree to fail.');
     } catch (ResourceOperationException $exception) {
         expect($exception->errorCode)->toBe('tasks.deliverable_base_unavailable');
@@ -83,7 +83,7 @@ it('fails closed on incomplete or failed base reads and removes the disposable r
 function deliverable_workspace_fixture(): array
 {
     $git = DeliverablePathWorkspace::repositories();
-    $project = Project::query()->create(['name' => 'Workspace base', 'slug' => 'workspace-base', 'repository_url' => 'git@example.test:workspace-base.git', 'default_branch' => 'main']);
+    $project = Project::query()->create(['name' => 'Workspace base', 'slug' => 'workspace-base', 'repository_url' => 'git@example.test:workspace-base.git', 'default_branch' => 'main', 'apps' => fixture_apps(null)]);
     // Stored origins need a host. The reader passes this one to Git unchanged, so a local bare repository stands in.
     $project->setRawAttributes([...$project->getAttributes(), 'repository_url' => $git['origin']]);
     $node = Node::query()->create(['name' => 'workspace-base-node', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'public_ssh_host' => '192.0.2.131', 'wireguard_ip' => '10.44.0.131']);

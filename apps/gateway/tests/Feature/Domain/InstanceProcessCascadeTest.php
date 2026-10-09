@@ -80,7 +80,7 @@ function orb131_cascade_instance(string $suffix): Instance
         'slug' => "cascade-{$suffix}",
         'repository_url' => "https://example.test/cascade-{$suffix}.git",
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $node = Node::query()->create([
         'name' => "cascade-{$suffix}",
@@ -99,7 +99,7 @@ function orb131_cascade_instance(string $suffix): Instance
         'environment' => 'development',
         'source_layout' => 'checkout',
         'checkout_path' => "/srv/orbit/apps/cascade-{$suffix}",
-        'root' => 'public',
+        'app_overrides' => fixture_app_overrides('public'),
         'branch' => 'main',
         'starting_commit' => str_repeat('a', 40),
         'provisioning_step' => 'active',

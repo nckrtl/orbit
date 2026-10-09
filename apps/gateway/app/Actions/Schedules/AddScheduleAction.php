@@ -67,7 +67,7 @@ final readonly class AddScheduleAction
                 ScheduleTargetType::Instance => Instance::query()->lockForUpdate()->findOrFail($data->targetId),
             };
 
-            return $this->targets->resolve($data->targetType, $model->id);
+            return $this->targets->resolve($data->targetType, $model->id, $data->app);
         });
 
         $admission = DB::transaction(function () use ($data, $target): array {
@@ -79,6 +79,7 @@ final readonly class AddScheduleAction
                     'target_type' => $data->targetType->storedType(),
                     'target_id' => $data->targetId,
                     'name' => $data->name,
+                    'app' => $target->instance?->appConfiguration($data->app)['name'],
                 ]);
             $created = ! $schedule->exists;
 
@@ -162,6 +163,7 @@ final readonly class AddScheduleAction
             in_array($schedule->target_type, $data->targetType->storedTypes(), true)
             && $schedule->target_id === $data->targetId
             && $schedule->name === $data->name
+            && ($data->app === null || $schedule->app === $data->app)
             && hash_equals($schedule->calendar, $data->calendar)
             && hash_equals($schedule->command, $data->command)
             && $schedule->timeout_seconds === $data->timeoutSeconds;

@@ -48,7 +48,7 @@ describe('development default deployments', function (): void {
 
     it('projects visitable defaults through current and resolves PHP roots after migration and switch', function (): void {
         $instance = $this->instance;
-        $instance->update(['root' => 'public', 'selected_php_version' => '8.5', 'source_is_laravel' => true]);
+        $instance->update(['app_overrides' => fixture_app_overrides('public'), 'selected_php_version' => '8.5', 'source_is_laravel' => true]);
         $route = Route::query()->create(['project_id' => $instance->project_id, 'node_id' => $instance->node_id, 'domain' => 'dev935.example.test', 'provenance' => 'explicit', 'publication' => 'public', 'status' => 'pending']);
         $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
         $route->update(['status' => 'active']);
@@ -66,7 +66,7 @@ describe('development default deployments', function (): void {
 
     it('retries an unconverged persisted release layout before skipping an unchanged scheduled tick', function (): void {
         $instance = $this->instance;
-        $instance->update(['development_release_layout' => true, 'root' => 'public', 'selected_php_version' => '8.5', 'source_is_laravel' => true]);
+        $instance->update(['development_release_layout' => true, 'app_overrides' => fixture_app_overrides('public'), 'selected_php_version' => '8.5', 'source_is_laravel' => true]);
         $this->remote->targetCommit = str_repeat('a', 40);
         $route = Route::query()->create(['project_id' => $instance->project_id, 'node_id' => $instance->node_id, 'domain' => 'recover935.example.test', 'provenance' => 'explicit', 'publication' => 'public', 'status' => 'pending']);
         $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
@@ -92,7 +92,7 @@ describe('development default deployments', function (): void {
 
     it('skips the projection lock for an unchanged scheduled tick with a current projection', function (): void {
         $instance = $this->instance;
-        $instance->update(['development_release_layout' => true, 'development_projection_pending' => false, 'root' => 'public', 'selected_php_version' => '8.5', 'source_is_laravel' => true]);
+        $instance->update(['development_release_layout' => true, 'development_projection_pending' => false, 'app_overrides' => fixture_app_overrides('public'), 'selected_php_version' => '8.5', 'source_is_laravel' => true]);
         $this->remote->targetCommit = str_repeat('a', 40);
         $route = Route::query()->create(['project_id' => $instance->project_id, 'node_id' => $instance->node_id, 'domain' => 'idle935.example.test', 'provenance' => 'explicit', 'publication' => 'public', 'status' => 'pending']);
         $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
@@ -117,7 +117,7 @@ describe('development default deployments', function (): void {
 
     it('marks the projection pending until a deployment converges it', function (): void {
         $instance = $this->instance;
-        $instance->update(['development_release_layout' => true, 'development_projection_pending' => false, 'root' => 'public', 'selected_php_version' => '8.5', 'source_is_laravel' => true]);
+        $instance->update(['development_release_layout' => true, 'development_projection_pending' => false, 'app_overrides' => fixture_app_overrides('public'), 'selected_php_version' => '8.5', 'source_is_laravel' => true]);
         $route = Route::query()->create(['project_id' => $instance->project_id, 'node_id' => $instance->node_id, 'domain' => 'switch935.example.test', 'provenance' => 'explicit', 'publication' => 'public', 'status' => 'pending']);
         $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
         $route->update(['status' => 'active']);
@@ -261,7 +261,7 @@ function dev935_instance(string $slug = 'dev935', string $name = 'default', stri
 {
     $node = Node::query()->create(['name' => $slug, 'platform' => 'linux', 'status' => 'active', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.35', 'wireguard_ip' => '10.44.0.'.(Node::query()->count() + 35)]);
     $node->roles()->create(['role' => $role, 'status' => 'active']);
-    $project = Project::query()->create(['name' => $slug, 'slug' => $slug, 'type' => 'monorepo', 'repository_url' => 'https://example.test/'.$slug.'.git', 'default_branch' => 'main']);
+    $project = Project::query()->create(['name' => $slug, 'slug' => $slug, 'type' => 'monorepo', 'repository_url' => 'https://example.test/'.$slug.'.git', 'default_branch' => 'main', 'apps' => fixture_apps(null, 'monorepo')]);
 
     return Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => $name, 'checkout_path' => '/fast/apps/'.$slug.'/'.$name, 'source_layout' => 'checkout', 'branch' => 'main', 'status' => 'active']);
 }

@@ -121,7 +121,7 @@ function source_profile_migration_instance(
         'slug' => "profile-{$name}",
         'repository_url' => "https://example.test/{$name}.git",
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
 
     return Instance::query()->create([

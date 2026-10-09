@@ -28,6 +28,7 @@ beforeEach(function (): void {
         'name' => 'Docs',
         'slug' => 'docs',
         'repository_url' => 'git@example.test:docs.git',
+        'apps' => fixture_apps(null),
     ]);
     $this->instance = Instance::query()->create([
         'project_id' => $project->id,
@@ -76,7 +77,7 @@ it('derives the stable production current context with fixed non-login bash', fu
 });
 
 it('runs Instance schedules in the application directory', function (string $root, bool $laravel, string $suffix, bool $production): void {
-    $this->instance->update(['root' => $root, 'source_is_laravel' => $laravel]);
+    $this->instance->update(['app_overrides' => fixture_app_overrides($root), 'source_is_laravel' => $laravel]);
     if ($production) {
         $this->node->roles()->where('role', 'app-dev')->delete();
         $this->node->roles()->create(['role' => 'app-prod', 'status' => LifecycleStatus::Active]);

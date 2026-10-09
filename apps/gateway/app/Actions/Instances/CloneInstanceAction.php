@@ -252,7 +252,7 @@ final readonly class CloneInstanceAction
                     'checkout_path' => "{$home}/releases/initial",
                     'production_user' => $user,
                     'production_home' => $home,
-                    'root' => $candidate->root,
+                    'app_overrides' => $candidate->app_overrides ?? [],
                     'branch' => $data->branch ?? $source->branch,
                     'branch_override' => $data->branch,
                     'clone_candidate_id' => $candidate->id,

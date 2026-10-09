@@ -552,6 +552,7 @@ it('does not file problems while tasks are disabled', function (): void {
         'slug' => 'orbit',
         'repository_url' => 'https://example.test/orbit.git',
         'default_branch' => 'main',
+        'apps' => fixture_apps(null),
     ]);
     $fingerprint = problem_filer_fingerprint('activity|instance:clone|instance.clone_failed', 10, [
         'error_message' => 'Clone failed',
@@ -662,6 +663,7 @@ function problem_filer_project(): Project
         'slug' => 'orbit',
         'repository_url' => 'https://example.test/orbit.git',
         'default_branch' => 'main',
+        'apps' => fixture_apps(null),
     ]);
 }
 

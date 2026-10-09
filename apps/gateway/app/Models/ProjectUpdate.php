@@ -16,11 +16,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string|null $requested_slug
  * @property string|null $requested_repository_url
  * @property string|null $requested_default_branch
- * @property string|null $requested_root
  * @property string $previous_slug
  * @property string $previous_repository_url
  * @property string|null $previous_default_branch
- * @property string|null $previous_root
  * @property array<string, mixed>|null $inventory
  * @property array<string, mixed>|null $evidence
  * @property string|null $error_code
@@ -40,11 +38,9 @@ final class ProjectUpdate extends Model
         'requested_slug',
         'requested_repository_url',
         'requested_default_branch',
-        'requested_root',
         'previous_slug',
         'previous_repository_url',
         'previous_default_branch',
-        'previous_root',
         'inventory',
         'evidence',
         'error_code',

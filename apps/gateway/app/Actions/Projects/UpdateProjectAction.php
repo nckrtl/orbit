@@ -11,6 +11,7 @@ use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Projects\ProjectApps;
 use App\Domain\Projects\ProjectCode;
 use App\Domain\Projects\ProjectDefaultBranchInheritance;
 use App\Domain\Projects\ProjectRepositoryUpdatePlanner;
@@ -19,13 +20,11 @@ use App\Domain\Projects\ProjectType;
 use App\Domain\Projects\ProjectUpdateProjectionMutator;
 use App\Domain\Projects\ProjectUpdateSourceMutator;
 use App\Domain\Projects\ProjectUpdateStatus;
-use App\Domain\Routes\RouteTargetWebRoot;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Shared\StoredInteger;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\GitRepositoryIdentity;
 use App\Domain\SourceControl\GitRepositoryOrigin;
-use App\Domain\SourceControl\ProjectRoot;
 use App\Domain\SourceControl\RepositoryDefaultBranchResolver;
 use App\Models\Instance;
 use App\Models\InstanceRename;
@@ -58,16 +57,8 @@ final readonly class UpdateProjectAction
             );
         }
 
-        if ($data->code !== null && ($data->hasReconcilableChanges() || $data->typeProvided || $data->sourceAccessProvided)) {
+        if ($data->code !== null && ($data->hasReconcilableChanges() || $data->typeProvided || $data->sourceAccessProvided || $data->appsProvided)) {
             throw new ResourceOperationException('project.code_update_separate', 'Update the Project code separately from source settings.', 422);
-        }
-
-        if ($data->rootProvided || $data->typeProvided) {
-            $effectiveRoot = $data->rootProvided ? $data->root : $project->root;
-            $message = ! $data->rootProvided && $data->type instanceof ProjectType
-                ? "A Route targets an Instance that inherits root [{$effectiveRoot}], which is not a web root. Send a web root with the change."
-                : null;
-            $this->assertRouteTargetRootCompatibility($project, $effectiveRoot, $message);
         }
 
         if ($data->hasReconcilableChanges()) {
@@ -82,6 +73,10 @@ final readonly class UpdateProjectAction
             } catch (UniqueConstraintViolationException $exception) {
                 throw new ResourceOperationException('project.code_conflict', 'This Project code is already in use.', 409, previous: $exception);
             }
+        }
+
+        if ($data->appsProvided) {
+            $project = $this->replaceApps($project, $data->apps);
         }
 
         if ($data->typeProvided && $data->type instanceof ProjectType) {
@@ -186,6 +181,25 @@ final readonly class UpdateProjectAction
         return $project->fresh() ?? $project;
     }
 
+    /**
+     * Apps change only while the Project has no Instances, so no checkout, Route or runtime
+     * needs reconciliation. Remove and recreate the Instances to change a Project's apps.
+     */
+    private function replaceApps(Project $project, mixed $apps): Project
+    {
+        $validated = ProjectApps::validate($apps);
+        $instanceIds = array_values($project->instances()->orderBy('id')->pluck('id')
+            ->map(static fn (mixed $id): int => StoredInteger::from($id))->all());
+
+        return $this->operations->run($instanceIds, static fn (): Project => DB::transaction(static function () use ($project, $validated): Project {
+            $locked = Project::query()->lockForUpdate()->findOrFail($project->id);
+            ProjectApps::assertReplaceable($locked, $validated);
+            $locked->update(['apps' => $validated]);
+
+            return $locked->fresh() ?? $locked;
+        }));
+    }
+
     private function executeOwned(Project $project, UpdateProjectData $data): Project
     {
         InstanceRename::assertProjectAvailable($project);
@@ -246,11 +260,9 @@ final readonly class UpdateProjectAction
                     'requested_slug' => $normalized['slug'],
                     'requested_repository_url' => $normalized['repository_url'],
                     'requested_default_branch' => $normalized['default_branch'],
-                    'requested_root' => $normalized['root'],
                     'previous_slug' => $locked->slug,
                     'previous_repository_url' => $locked->repository_url,
                     'previous_default_branch' => $locked->default_branch,
-                    'previous_root' => $locked->root,
                     'inventory' => ['noop' => true],
                     'evidence' => ['noop' => true],
                 ]);
@@ -265,11 +277,9 @@ final readonly class UpdateProjectAction
                 'requested_slug' => $data->slugProvided ? $normalized['slug'] : null,
                 'requested_repository_url' => $data->repositoryUrlProvided ? $normalized['repository_url'] : null,
                 'requested_default_branch' => $data->defaultBranchProvided ? $normalized['default_branch'] : null,
-                'requested_root' => $data->rootProvided ? $normalized['root'] : null,
                 'previous_slug' => $locked->slug,
                 'previous_repository_url' => $locked->repository_url,
                 'previous_default_branch' => $locked->default_branch,
-                'previous_root' => $locked->root,
                 'inventory' => null,
                 'evidence' => [],
             ]);
@@ -321,7 +331,6 @@ final readonly class UpdateProjectAction
                 'production_ids' => array_map(static fn (Instance $instance): int => $instance->id, $plan['production']),
             ],
             'slug' => null,
-            'root' => null,
         ];
 
         if (is_string($update->requested_default_branch)) {
@@ -364,10 +373,6 @@ final readonly class UpdateProjectAction
             $inventory['slug'] = $this->projections->preflightSlug($project, $update->requested_slug);
         }
 
-        if (is_string($update->requested_root) && $update->requested_root !== $project->root) {
-            $inventory['root'] = $this->projections->preflightRoot($project, $update->requested_root);
-        }
-
         $update->update([
             'status' => ProjectUpdateStatus::Preflighted,
             'inventory' => $inventory,
@@ -407,11 +412,6 @@ final readonly class UpdateProjectAction
         $slugInventory = $this->storedMap($inventory['slug'] ?? null);
         if ($slugInventory !== null && is_string($update->requested_slug)) {
             $evidence['slug'] = $this->projections->prepareSlug($project, $update->requested_slug, $slugInventory);
-        }
-
-        $rootInventory = $this->storedMap($inventory['root'] ?? null);
-        if ($rootInventory !== null && is_string($update->requested_root)) {
-            $evidence['root'] = $this->projections->prepareRoot($project, $update->requested_root, $rootInventory);
         }
 
         $update->update([
@@ -476,10 +476,6 @@ final readonly class UpdateProjectAction
             $attributes['default_branch'] = $update->requested_default_branch;
         }
 
-        if (is_string($update->requested_root)) {
-            $attributes['root'] = $update->requested_root;
-        }
-
         $evidence = $update->evidence ?? [];
 
         $slugEvidence = $this->storedMap($evidence['slug'] ?? null);
@@ -490,11 +486,6 @@ final readonly class UpdateProjectAction
         if ($attributes !== []) {
             $project->fill($attributes);
             $project->save();
-        }
-
-        $rootEvidence = $this->storedMap($evidence['root'] ?? null);
-        if ($rootEvidence !== null && is_string($update->requested_root)) {
-            $this->projections->publishRoot($project->refresh(), $update->requested_root, $rootEvidence);
         }
 
         $this->assertProductionUnchanged($update);
@@ -568,11 +559,6 @@ final readonly class UpdateProjectAction
             $this->projections->rollbackSlug($project, $slugEvidence);
         }
 
-        $rootEvidence = $this->storedMap($evidence['root'] ?? null);
-        if ($rootEvidence !== null) {
-            $this->projections->rollbackRoot($project, $rootEvidence);
-        }
-
         if (is_array($evidence['origins'] ?? null)) {
             $this->sources->restoreOrigins($this->originMutations($evidence['origins']));
         }
@@ -600,7 +586,6 @@ final readonly class UpdateProjectAction
             'slug' => $update->previous_slug,
             'repository_url' => $update->previous_repository_url,
             'default_branch' => $update->previous_default_branch,
-            'root' => $update->previous_root,
         ]);
         $project->repository_identity = GitRepositoryIdentity::derive($update->previous_repository_url);
         $project->save();
@@ -610,16 +595,10 @@ final readonly class UpdateProjectAction
     }
 
     /**
-     * @return array{slug: ?string, repository_url: ?string, default_branch: ?string, root: ?string}
+     * @return array{slug: ?string, repository_url: ?string, default_branch: ?string}
      */
     private function normalized(Project $project, UpdateProjectData $data): array
     {
-        $type = $data->typeProvided ? $data->type ?? $project->type : $project->type;
-        $root = $data->rootProvided ? (string) $data->root : $project->root;
-        if (is_string($root)) {
-            $root = ProjectRoot::validate($root, $type);
-        }
-
         return [
             'slug' => $data->slugProvided ? $data->slug : $project->slug,
             'repository_url' => $data->repositoryUrlProvided
@@ -628,19 +607,17 @@ final readonly class UpdateProjectAction
             'default_branch' => $data->defaultBranchProvided
                 ? GitBranchName::validate((string) $data->defaultBranch)
                 : $project->default_branch,
-            'root' => $root,
         ];
     }
 
     /**
-     * @param  array{slug: ?string, repository_url: ?string, default_branch: ?string, root: ?string}  $normalized
+     * @param  array{slug: ?string, repository_url: ?string, default_branch: ?string}  $normalized
      */
     private function changesState(Project $project, array $normalized): bool
     {
         return $normalized['slug'] !== $project->slug
             || $normalized['repository_url'] !== $project->repository_url
-            || $normalized['default_branch'] !== $project->default_branch
-            || $normalized['root'] !== $project->root;
+            || $normalized['default_branch'] !== $project->default_branch;
     }
 
     private function assertSlugAvailable(Project $project, string $slug): void
@@ -806,18 +783,6 @@ final readonly class UpdateProjectAction
                     status: 409,
                 );
             }
-        }
-    }
-
-    private function assertRouteTargetRootCompatibility(Project $project, ?string $root, ?string $message = null): void
-    {
-        $hasInheritedRouteTarget = $project->instances()
-            ->whereNull('root')
-            ->whereHas('routeTargets')
-            ->exists();
-
-        if ($hasInheritedRouteTarget) {
-            RouteTargetWebRoot::assertSupportedRoot($root, $message);
         }
     }
 

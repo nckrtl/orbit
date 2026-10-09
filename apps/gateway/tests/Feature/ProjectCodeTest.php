@@ -20,7 +20,7 @@ function projectForCode(string $slug): Project
 {
     return Project::query()->create([
         'name' => $slug, 'slug' => $slug, 'repository_url' => "https://github.com/example/{$slug}.git",
-        'default_branch' => 'main', 'root' => 'public',
+        'default_branch' => 'main', 'apps' => fixture_apps('public'),
     ]);
 }
 
@@ -65,7 +65,7 @@ it('accepts an explicit code on creation and rejects another project claiming it
     $payload = [
         'slug' => 'custom-project', 'code' => 'CUS', 'type' => 'laravel-app',
         'repository_url' => 'https://github.com/example/custom-project.git',
-        'default_branch' => 'main', 'root' => 'public',
+        'default_branch' => 'main', 'apps' => fixture_apps('public'),
     ];
     $this->postJson('/api/v1/projects', $payload)->assertCreated()->assertJsonPath('data.code', 'CUS');
     $this->postJson('/api/v1/projects', $payload)->assertOk()->assertJsonPath('data.code', 'CUS');
@@ -88,7 +88,7 @@ it('allocates another code when a concurrent project claims the suggested code',
     $this->postJson('/api/v1/projects', [
         'slug' => 'orbit', 'type' => 'laravel-app',
         'repository_url' => 'https://github.com/example/orbit.git',
-        'default_branch' => 'main', 'root' => 'public',
+        'default_branch' => 'main', 'apps' => fixture_apps('public', 'laravel-app'),
     ])->assertCreated();
 
     expect(Project::query()->where('slug', 'orbital')->sole()->code)->toBe('ORB')

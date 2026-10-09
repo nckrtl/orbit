@@ -417,6 +417,7 @@ function native_process_inspector(
         'name' => fake()->word(),
         'slug' => fake()->unique()->slug(),
         'repository_url' => 'git@example.test:app.git',
+        'apps' => fixture_apps(null),
     ]);
     $instance = Instance::query()->create([
         'project_id' => $project->id,

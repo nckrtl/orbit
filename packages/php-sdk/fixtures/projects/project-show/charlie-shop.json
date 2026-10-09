@@ -13,7 +13,14 @@
             "repository_url": "git@github.com:charlie/shop.git",
             "source_access": "github_app",
             "default_branch": "release",
-            "root": "web/public",
+            "apps": [
+                {
+                    "name": "web",
+                    "path": "web",
+                    "web_root": "public",
+                    "type": "laravel-app"
+                }
+            ],
             "task_check": null,
             "task_workspace_routed": true,
             "task_compute": "shared",

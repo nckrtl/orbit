@@ -47,7 +47,7 @@ function legacy_reserved_removal_instance(): Instance
         'type' => 'laravel-app',
         'repository_url' => 'https://example.test/reserved-removal.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public', 'laravel-app'),
     ]);
     $node = Node::query()->create([
         'name' => 'reserved-removal',

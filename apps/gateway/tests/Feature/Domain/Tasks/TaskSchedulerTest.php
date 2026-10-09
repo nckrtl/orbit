@@ -130,6 +130,7 @@ function scheduler_app(string $slug): Project
         'slug' => $slug,
         'repository_url' => "git@example.test:{$slug}.git",
         'default_branch' => 'main',
+        'apps' => fixture_apps(null),
     ]);
 }
 
@@ -978,7 +979,7 @@ it('provisioning failures raise assistance naming the driver constraint when no 
 
 it('advances a claimed unrouted group to running when the real provisioner and agent spawner succeed', function (): void {
     $project = scheduler_app('orbit');
-    $project->update(['root' => 'public', 'task_workspace_routed' => false]);
+    $project->update(['apps' => fixture_apps('public'), 'task_workspace_routed' => false]);
     $node = scheduler_node('real-wire', '10.44.0.94');
     $node->update(['user' => 'orbit', 'tld' => 'test', 'settings' => ['apps' => ['path' => '/srv/orbit/apps']]]);
     $node->roles()->create([

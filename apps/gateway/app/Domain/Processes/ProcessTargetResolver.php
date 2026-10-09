@@ -28,9 +28,9 @@ final readonly class ProcessTargetResolver
                     ->findOrFail($id),
                 $app,
             ),
-            ProcessTargetType::Node => $this->forNodeAdmission(
-                Node::query()->findOrFail($id),
-            ),
+            ProcessTargetType::Node => $app === null
+                ? $this->forNodeAdmission(Node::query()->findOrFail($id))
+                : throw new ResourceOperationException('app.selector_unsupported', 'A Node Process has no app.', 422),
         };
     }
 

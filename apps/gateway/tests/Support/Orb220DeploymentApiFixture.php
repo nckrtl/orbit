@@ -63,7 +63,7 @@ final readonly class Orb220DeploymentApiFixture
             'slug' => 'deployment-stream',
             'repository_url' => 'https://example.test/deployment-stream.git',
             'default_branch' => 'main',
-            'root' => 'public',
+            'apps' => fixture_apps('public'),
         ]);
         $instance = Instance::query()->create([
             'project_id' => $project->id,
@@ -74,7 +74,7 @@ final readonly class Orb220DeploymentApiFixture
             'checkout_path' => '/home/deployment-stream/releases/initial',
             'production_user' => 'deployment-stream',
             'production_home' => '/home/deployment-stream',
-            'root' => 'public',
+            'app_overrides' => fixture_app_overrides('public'),
             'branch' => 'main',
             'branch_override' => 'main',
             'selected_php_version' => '8.5',

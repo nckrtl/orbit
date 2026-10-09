@@ -14,7 +14,14 @@
                 "repository_url": "https://github.com/example/acme.git",
                 "source_access": "github_app",
                 "default_branch": "release",
-                "root": "web/public",
+                "apps": [
+                    {
+                        "name": "web",
+                        "path": "web",
+                        "web_root": "public",
+                        "type": "laravel-app"
+                    }
+                ],
                 "task_check": null,
                 "task_workspace_routed": true,
                 "task_compute": "shared",
@@ -30,7 +37,14 @@
                 "repository_url": "git@github.com:example/bravo-docs.git",
                 "source_access": "github_app",
                 "default_branch": "main",
-                "root": "public",
+                "apps": [
+                    {
+                        "name": "web",
+                        "path": ".",
+                        "web_root": "public",
+                        "type": "laravel-app"
+                    }
+                ],
                 "task_check": null,
                 "task_workspace_routed": true,
                 "task_compute": "shared",
@@ -46,7 +60,14 @@
                 "repository_url": "git@github.com:example/charlie-shop.git",
                 "source_access": "github_app",
                 "default_branch": "main",
-                "root": "public",
+                "apps": [
+                    {
+                        "name": "web",
+                        "path": ".",
+                        "web_root": "public",
+                        "type": "laravel-app"
+                    }
+                ],
                 "task_check": null,
                 "task_workspace_routed": true,
                 "task_compute": "shared",
@@ -62,7 +83,14 @@
                 "repository_url": "https://github.com/example/delta-api.git",
                 "source_access": "github_app",
                 "default_branch": "main",
-                "root": "public",
+                "apps": [
+                    {
+                        "name": "web",
+                        "path": ".",
+                        "web_root": "public",
+                        "type": "laravel-app"
+                    }
+                ],
                 "task_check": null,
                 "task_workspace_routed": true,
                 "task_compute": "shared",
@@ -78,7 +106,14 @@
                 "repository_url": "git@github.com:example/echo-mail.git",
                 "source_access": "github_app",
                 "default_branch": "release",
-                "root": "public",
+                "apps": [
+                    {
+                        "name": "web",
+                        "path": ".",
+                        "web_root": "public",
+                        "type": "laravel-app"
+                    }
+                ],
                 "task_check": null,
                 "task_workspace_routed": true,
                 "task_compute": "shared",
@@ -94,7 +129,14 @@
                 "repository_url": "git@github.com:example/foxtrot-crm.git",
                 "source_access": "github_app",
                 "default_branch": "main",
-                "root": "web/public",
+                "apps": [
+                    {
+                        "name": "web",
+                        "path": "web",
+                        "web_root": "public",
+                        "type": "laravel-app"
+                    }
+                ],
                 "task_check": null,
                 "task_workspace_routed": true,
                 "task_compute": "shared",
@@ -110,7 +152,14 @@
                 "repository_url": "https://github.com/example/golf-billing.git",
                 "source_access": "github_app",
                 "default_branch": "main",
-                "root": "public",
+                "apps": [
+                    {
+                        "name": "web",
+                        "path": ".",
+                        "web_root": "public",
+                        "type": "laravel-app"
+                    }
+                ],
                 "task_check": null,
                 "task_workspace_routed": true,
                 "task_compute": "shared",
@@ -126,7 +175,14 @@
                 "repository_url": "git@github.com:example/hotel-booking.git",
                 "source_access": "github_app",
                 "default_branch": "main",
-                "root": "public",
+                "apps": [
+                    {
+                        "name": "web",
+                        "path": ".",
+                        "web_root": "public",
+                        "type": "laravel-app"
+                    }
+                ],
                 "task_check": null,
                 "task_workspace_routed": true,
                 "task_compute": "shared",
@@ -142,7 +198,14 @@
                 "repository_url": "git@github.com:example/india-search.git",
                 "source_access": "github_app",
                 "default_branch": "release",
-                "root": "public",
+                "apps": [
+                    {
+                        "name": "web",
+                        "path": ".",
+                        "web_root": "public",
+                        "type": "laravel-app"
+                    }
+                ],
                 "task_check": null,
                 "task_workspace_routed": true,
                 "task_compute": "shared",
@@ -158,7 +221,14 @@
                 "repository_url": "https://github.com/example/juliet-chat.git",
                 "source_access": "github_app",
                 "default_branch": "main",
-                "root": "public",
+                "apps": [
+                    {
+                        "name": "web",
+                        "path": ".",
+                        "web_root": "public",
+                        "type": "laravel-app"
+                    }
+                ],
                 "task_check": null,
                 "task_workspace_routed": true,
                 "task_compute": "shared",
@@ -174,7 +244,14 @@
                 "repository_url": "git@github.com:example/kilo-metrics.git",
                 "source_access": "github_app",
                 "default_branch": "main",
-                "root": "web/public",
+                "apps": [
+                    {
+                        "name": "web",
+                        "path": "web",
+                        "web_root": "public",
+                        "type": "laravel-app"
+                    }
+                ],
                 "task_check": null,
                 "task_workspace_routed": true,
                 "task_compute": "shared",
@@ -190,7 +267,14 @@
                 "repository_url": "git@github.com:example/lima-auth.git",
                 "source_access": "github_app",
                 "default_branch": "main",
-                "root": "public",
+                "apps": [
+                    {
+                        "name": "web",
+                        "path": ".",
+                        "web_root": "public",
+                        "type": "laravel-app"
+                    }
+                ],
                 "task_check": null,
                 "task_workspace_routed": true,
                 "task_compute": "shared",
@@ -206,7 +290,14 @@
                 "repository_url": "https://github.com/example/mike-media.git",
                 "source_access": "github_app",
                 "default_branch": "release",
-                "root": "public",
+                "apps": [
+                    {
+                        "name": "web",
+                        "path": ".",
+                        "web_root": "public",
+                        "type": "laravel-app"
+                    }
+                ],
                 "task_check": null,
                 "task_workspace_routed": true,
                 "task_compute": "shared",
@@ -222,7 +313,14 @@
                 "repository_url": "git@github.com:example/november-news.git",
                 "source_access": "github_app",
                 "default_branch": "main",
-                "root": "public",
+                "apps": [
+                    {
+                        "name": "web",
+                        "path": ".",
+                        "web_root": "public",
+                        "type": "laravel-app"
+                    }
+                ],
                 "task_check": null,
                 "task_workspace_routed": true,
                 "task_compute": "shared",
@@ -238,7 +336,14 @@
                 "repository_url": "git@github.com:example/oscar-orders.git",
                 "source_access": "github_app",
                 "default_branch": "main",
-                "root": "public",
+                "apps": [
+                    {
+                        "name": "web",
+                        "path": ".",
+                        "web_root": "public",
+                        "type": "laravel-app"
+                    }
+                ],
                 "task_check": null,
                 "task_workspace_routed": true,
                 "task_compute": "shared",
@@ -254,7 +359,14 @@
                 "repository_url": "https://github.com/example/papa-payments.git",
                 "source_access": "github_app",
                 "default_branch": "main",
-                "root": "web/public",
+                "apps": [
+                    {
+                        "name": "web",
+                        "path": "web",
+                        "web_root": "public",
+                        "type": "laravel-app"
+                    }
+                ],
                 "task_check": null,
                 "task_workspace_routed": true,
                 "task_compute": "shared",
@@ -270,7 +382,14 @@
                 "repository_url": "git@github.com:example/quebec-queue.git",
                 "source_access": "github_app",
                 "default_branch": "release",
-                "root": "public",
+                "apps": [
+                    {
+                        "name": "web",
+                        "path": ".",
+                        "web_root": "public",
+                        "type": "laravel-app"
+                    }
+                ],
                 "task_check": null,
                 "task_workspace_routed": true,
                 "task_compute": "shared",
@@ -286,7 +405,14 @@
                 "repository_url": "git@github.com:example/romeo-reports.git",
                 "source_access": "github_app",
                 "default_branch": "main",
-                "root": "public",
+                "apps": [
+                    {
+                        "name": "web",
+                        "path": ".",
+                        "web_root": "public",
+                        "type": "laravel-app"
+                    }
+                ],
                 "task_check": null,
                 "task_workspace_routed": true,
                 "task_compute": "shared",
@@ -302,7 +428,14 @@
                 "repository_url": "https://github.com/example/sierra-store.git",
                 "source_access": "github_app",
                 "default_branch": "main",
-                "root": "public",
+                "apps": [
+                    {
+                        "name": "web",
+                        "path": ".",
+                        "web_root": "public",
+                        "type": "laravel-app"
+                    }
+                ],
                 "task_check": null,
                 "task_workspace_routed": true,
                 "task_compute": "shared",
@@ -318,7 +451,14 @@
                 "repository_url": "git@github.com:example/tango-tickets.git",
                 "source_access": "github_app",
                 "default_branch": "main",
-                "root": "public",
+                "apps": [
+                    {
+                        "name": "web",
+                        "path": ".",
+                        "web_root": "public",
+                        "type": "laravel-app"
+                    }
+                ],
                 "task_check": null,
                 "task_workspace_routed": true,
                 "task_compute": "shared",
@@ -334,7 +474,14 @@
                 "repository_url": "git@github.com:example/uniform-uploads.git",
                 "source_access": "github_app",
                 "default_branch": "release",
-                "root": "web/public",
+                "apps": [
+                    {
+                        "name": "web",
+                        "path": "web",
+                        "web_root": "public",
+                        "type": "laravel-app"
+                    }
+                ],
                 "task_check": null,
                 "task_workspace_routed": true,
                 "task_compute": "shared",
@@ -350,7 +497,14 @@
                 "repository_url": "https://github.com/example/victor-video.git",
                 "source_access": "github_app",
                 "default_branch": "main",
-                "root": "public",
+                "apps": [
+                    {
+                        "name": "web",
+                        "path": ".",
+                        "web_root": "public",
+                        "type": "laravel-app"
+                    }
+                ],
                 "task_check": null,
                 "task_workspace_routed": true,
                 "task_compute": "shared",
@@ -366,7 +520,14 @@
                 "repository_url": "git@github.com:example/whiskey-wiki.git",
                 "source_access": "github_app",
                 "default_branch": "main",
-                "root": "public",
+                "apps": [
+                    {
+                        "name": "web",
+                        "path": ".",
+                        "web_root": "public",
+                        "type": "laravel-app"
+                    }
+                ],
                 "task_check": null,
                 "task_workspace_routed": true,
                 "task_compute": "shared",
@@ -382,7 +543,14 @@
                 "repository_url": "git@github.com:example/x-ray-export.git",
                 "source_access": "github_app",
                 "default_branch": "main",
-                "root": "public",
+                "apps": [
+                    {
+                        "name": "web",
+                        "path": ".",
+                        "web_root": "public",
+                        "type": "laravel-app"
+                    }
+                ],
                 "task_check": null,
                 "task_workspace_routed": true,
                 "task_compute": "shared",

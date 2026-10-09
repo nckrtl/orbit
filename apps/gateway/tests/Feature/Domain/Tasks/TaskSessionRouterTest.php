@@ -29,6 +29,7 @@ function router_group(): Task
         'slug' => 'router-app',
         'repository_url' => 'git@example.test:router.git',
         'default_branch' => 'main',
+        'apps' => fixture_apps(null),
     ]);
     $node = Node::query()->create([
         'name' => 'router-node',

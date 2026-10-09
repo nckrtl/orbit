@@ -59,7 +59,7 @@ final readonly class ProjectSandboxFleetRemoval implements SandboxFleetRemover
             if ($group === null || $node === null || $workspace->node_id !== $node->id || $workspace->project_id !== $group->project_id
                 || $workspace->name !== TaskWorkspaceName::for($group) || $workspace->branch_override !== $workspace->name
                 || $workspace->checkout_path !== '/home/orbit/orbit' || ! is_bool($workspace->task_workspace_routed)
-                || ($workspace->task_workspace_routed && (! $workspace->requiresRoute() || $workspace->root !== $group->project->root))
+                || ($workspace->task_workspace_routed && (! $workspace->requiresRoute() || $workspace->app_overrides !== []))
                 || ($group->taskable_id !== null && ($group->taskable_id !== $workspace->id || $group->taskable_type !== $workspace->getMorphClass()))
                 || Task::withoutGlobalScope('subtask')->where('taskable_type', $workspace->getMorphClass())->where('taskable_id', $workspace->id)->whereKeyNot($group->id)->exists()
                 || (! $workspace->task_workspace_routed && $workspace->routeTargets()->exists()) || $workspace->processes()->exists() || $workspace->schedules()->exists()

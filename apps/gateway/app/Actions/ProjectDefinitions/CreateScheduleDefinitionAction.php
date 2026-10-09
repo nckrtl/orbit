@@ -17,6 +17,7 @@ final readonly class CreateScheduleDefinitionAction
     {
         try {
             return $project->scheduleDefinitions()->create([
+                'app' => $data->app,
                 'name' => $data->name,
                 'environments' => $data->environments,
                 'spec' => $data->spec,

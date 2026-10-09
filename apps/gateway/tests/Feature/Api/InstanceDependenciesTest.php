@@ -40,7 +40,7 @@ function dependency_api_fixture(): array
     $owner = Node::query()->create(['public_ssh_host' => '192.0.2.81', 'name' => 'inventory-owner', 'wireguard_ip' => '10.44.0.81', 'user' => 'orbit', 'status' => 'active']);
     orbit_test_set_app_placement_role($owner, false);
     $caller->accessibleNodes()->attach($owner);
-    $project = Project::query()->create(['name' => 'Inventory', 'slug' => 'inventory', 'repository_url' => 'https://example.test/inventory.git']);
+    $project = Project::query()->create(['name' => 'Inventory', 'slug' => 'inventory', 'repository_url' => 'https://example.test/inventory.git', 'apps' => fixture_apps(null)]);
     $instance = $project->instances()->create(['node_id' => $owner->id, 'name' => 'development', 'environment' => 'development', 'status' => 'active', 'source_layout' => 'checkout', 'checkout_path' => '/home/orbit/project']);
 
     return [$caller, $instance];
@@ -79,7 +79,7 @@ function dependency_api_seed(Instance $instance): void
 function dependency_api_removing(Instance $instance, bool $markedRemoving): void
 {
     $instance->project->update(['repository_identity' => 'example.test/inventory']);
-    $instance->update(['root' => 'public', 'branch' => 'main', 'starting_commit' => str_repeat('a', 40)]);
+    $instance->update(['app_overrides' => fixture_app_overrides('public'), 'branch' => 'main', 'starting_commit' => str_repeat('a', 40)]);
     $route = Route::query()->create(['project_id' => $instance->project_id, 'node_id' => $instance->node_id, 'generation_basis_node_id' => $instance->node_id, 'domain' => 'inventory.test', 'provenance' => 'generated', 'publication' => 'private', 'status' => 'pending']);
     $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
     $route->update(['status' => 'active']);

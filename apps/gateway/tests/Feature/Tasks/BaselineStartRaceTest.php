@@ -31,6 +31,7 @@ it('starts one baseline check and asks for no assistance when the todo move and 
         'repository_url' => 'git@example.test:baseline-start-race.git',
         'default_branch' => 'main',
         'task_check' => 'composer check',
+        'apps' => fixture_apps(null),
     ]);
     $node = Node::query()->create([
         'name' => 'baseline-start-race-node',
@@ -198,6 +199,7 @@ function baseline_start_task(string $slug, string $ip, TaskStatus $status): arra
         'repository_url' => "git@example.test:{$slug}.git",
         'default_branch' => 'main',
         'task_check' => 'composer check',
+        'apps' => fixture_apps(null),
     ]);
     $node = Node::query()->create([
         'name' => $slug.'-node',

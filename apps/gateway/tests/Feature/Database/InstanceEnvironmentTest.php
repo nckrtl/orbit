@@ -53,7 +53,7 @@ function environment_database_instances(): array
         'slug' => 'environment-database',
         'repository_url' => 'https://example.test/environment.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $node = Node::query()->create([
         'name' => 'environment-node',

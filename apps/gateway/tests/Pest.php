@@ -14,6 +14,8 @@ use App\Domain\Logs\LogStreamStore;
 use App\Domain\Nodes\NodeAgentRuntime;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Processes\ProcessEnvironmentProjection;
+use App\Domain\Projects\ProjectApps;
+use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\NullTaskReviewDiff;
 use App\Domain\Tasks\TaskCheckRunner;
@@ -96,6 +98,9 @@ uses(TestCase::class, RefreshDatabase::class)
     })
     ->in('Feature');
 
+// Historical migration tests start from the schema their migrations knew, with Project and Instance roots.
+pest()->beforeEach(fn () => restore_legacy_project_roots())->in('Feature/Database');
+
 pest()
     ->tia()
     ->locally()
@@ -154,6 +159,28 @@ pest()->tia()->watch([
 ]);
 
 /** @param list<array{name: string, phase: string, command: string, timeout_seconds: int}> $steps */
+/**
+ * A single `web` app for a fixture Project, written as its serving path: `public` serves
+ * `public`, `apps/site/public` serves app `apps/site` from web root `public`, and null takes
+ * the type's default.
+ *
+ * @return list<array{name: string, path: string, web_root: ?string, type: string}>
+ */
+function fixture_apps(?string $serving = 'public', ProjectType|string $type = ProjectType::LaravelApp): array
+{
+    return ProjectApps::legacy($serving, $type instanceof ProjectType ? $type : ProjectType::from($type));
+}
+
+/**
+ * The override map that serves the fixture's `web` app from another path, or no override.
+ *
+ * @return array<string, array{path: string, web_root: ?string}>
+ */
+function fixture_app_overrides(?string $serving): array
+{
+    return $serving === null ? [] : ['web' => ProjectApps::fromRoot($serving)];
+}
+
 function store_deploy_steps(Instance $instance, array $steps): void
 {
     app(InstanceDeployStepStore::class)->replaceAll(
@@ -223,7 +250,7 @@ function deployment_migration_parents(): array
         'slug' => "deployment-migration-{$count}",
         'repository_url' => "https://example.test/deployment-migration-{$count}.git",
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
 
     return [$project, $node];
@@ -255,7 +282,7 @@ function deployment_api_fixture(): array
         'slug' => 'deployment-api',
         'repository_url' => 'https://example.test/deployment-api.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $instance = Instance::query()->create([
         'project_id' => $project->id,

@@ -10,7 +10,6 @@ use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Projects\ProjectType;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\GitRepositoryOrigin;
-use App\Domain\SourceControl\ProjectRoot;
 use App\Domain\Tasks\TaskCompute;
 use App\Http\Requests\TopLevelJsonObjectInspector;
 use App\Models\Project;
@@ -32,7 +31,12 @@ final class UpdateProjectRequest extends FormRequest
             'repository_url' => ['sometimes', 'required', 'string', 'max:2048'],
             'source_access' => ['sometimes', 'required', 'string', Rule::enum(ProjectSourceAccess::class)],
             'default_branch' => ['sometimes', 'required', 'string', 'max:255'],
-            'root' => ['sometimes', 'required', 'string', 'max:255'],
+            'apps' => ['sometimes', 'list'],
+            'apps.*' => ['array:name,path,web_root,type'],
+            'apps.*.name' => ['required', 'string', 'max:63'],
+            'apps.*.path' => ['required', 'string', 'max:255'],
+            'apps.*.web_root' => ['present', 'nullable', 'string', 'max:255'],
+            'apps.*.type' => ['required', 'string', 'max:32'],
             'task_check' => ['sometimes', 'nullable', 'string', 'max:4096'],
             'task_workspace_routed' => ['sometimes', 'boolean:strict'],
             'task_compute' => ['sometimes', 'required', 'string', Rule::enum(TaskCompute::class)],
@@ -45,9 +49,11 @@ final class UpdateProjectRequest extends FormRequest
     public function validationData(): array
     {
         try {
+            app(TopLevelJsonObjectInspector::class)->refuseRemoved($this->getContent(), 'root', 'apps');
+
             return app(TopLevelJsonObjectInspector::class)->inspect(
                 $this->getContent(),
-                ['code', 'type', 'slug', 'repository_url', 'source_access', 'default_branch', 'root', 'task_check', 'task_workspace_routed', 'task_compute', 'review_and_merge', 'merge_check'],
+                ['code', 'type', 'slug', 'repository_url', 'source_access', 'default_branch', 'apps', 'task_check', 'task_workspace_routed', 'task_compute', 'review_and_merge', 'merge_check'],
             );
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
@@ -65,7 +71,7 @@ final class UpdateProjectRequest extends FormRequest
                 && ! $this->exists('repository_url')
                 && ! $this->exists('source_access')
                 && ! $this->exists('default_branch')
-                && ! $this->exists('root')
+                && ! $this->exists('apps')
                 && ! $this->exists('task_check')
                 && ! $this->exists('task_workspace_routed')
                 && ! $this->exists('task_compute')
@@ -92,18 +98,6 @@ final class UpdateProjectRequest extends FormRequest
             if (is_string($branch) && ! GitBranchName::isValid($branch)) {
                 $validator->errors()->add('default_branch', 'The default branch is not a valid Git branch name.');
             }
-
-            $routeApp = $this->route('project');
-            $type = ProjectType::tryFrom($this->string('type')->toString())
-                ?? ($routeApp instanceof Project ? $routeApp->type : ProjectType::LaravelApp);
-            $sentRoot = $this->input('root');
-            $root = is_string($sentRoot) ? $sentRoot : ($routeApp instanceof Project ? $routeApp->root : null);
-
-            if (is_string($root) && ! ProjectRoot::isValid($root, $type)) {
-                $validator->errors()->add('root', is_string($sentRoot)
-                    ? ProjectRoot::message($root, $type)
-                    : "The stored root [{$root}] is not valid for a {$type->value} Project. Send a web root with the type change.");
-            }
         }];
     }
 
@@ -121,8 +115,6 @@ final class UpdateProjectRequest extends FormRequest
             repositoryUrl: is_string($validated['repository_url'] ?? null) ? $validated['repository_url'] : null,
             defaultBranchProvided: array_key_exists('default_branch', $validated),
             defaultBranch: is_string($validated['default_branch'] ?? null) ? $validated['default_branch'] : null,
-            rootProvided: array_key_exists('root', $validated),
-            root: is_string($validated['root'] ?? null) ? $validated['root'] : null,
             taskCheckProvided: array_key_exists('task_check', $validated),
             taskCheck: is_string($validated['task_check'] ?? null) ? $validated['task_check'] : null,
             sourceAccessProvided: array_key_exists('source_access', $validated),
@@ -134,6 +126,8 @@ final class UpdateProjectRequest extends FormRequest
             reviewAndMerge: ($validated['review_and_merge'] ?? false) === true,
             mergeCheckProvided: array_key_exists('merge_check', $validated),
             mergeCheck: is_string($validated['merge_check'] ?? null) && trim($validated['merge_check']) !== '' ? trim($validated['merge_check']) : null,
+            appsProvided: array_key_exists('apps', $validated),
+            apps: $validated['apps'] ?? null,
         );
     }
 

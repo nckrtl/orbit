@@ -20,12 +20,11 @@ final readonly class RecordedProductionInstanceContentRetention implements Produ
     public function inventory(Instance $instance): InstanceSourceInventory
     {
         $instance->loadMissing('project');
-        $root = $instance->root ?? $instance->project->root;
+        $root = $instance->sourceRoot();
 
         if (
             ! $instance->placedOnAppProd()
             || $instance->checkout_path === ''
-            || ! is_string($root)
             || $root === ''
             || ! is_string($instance->starting_commit)
             || $instance->starting_commit === ''

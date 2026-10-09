@@ -30,6 +30,7 @@ function live_group(string $status = 'running'): Task
         'name' => 'Live tasks',
         'repository_url' => 'git@example.test:live-tasks.git',
         'default_branch' => 'main',
+        'apps' => fixture_apps(null),
     ]);
     $group = Task::topLevel()->create([
         'project_id' => $project->id,
@@ -289,6 +290,7 @@ describe('task broadcasts', function (): void {
             'name' => 'Level broadcasts',
             'slug' => 'level-broadcasts-'.bin2hex(random_bytes(4)),
             'repository_url' => 'git@example.test:level-broadcasts.git',
+            'apps' => fixture_apps(null),
         ]);
         $group = Task::topLevel()->create([
             'project_id' => $project->id,

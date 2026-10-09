@@ -6,6 +6,8 @@ import type {
     ManagedFirewallRule,
     Node,
     Process,
+    Project,
+    ProjectApp,
     QuotaAccount,
     QuotaProvider,
     Schedule,
@@ -120,6 +122,7 @@ export function createDemoGateway() {
     const schedules = list<Schedule>("GET /api/v1/schedules");
     const databases = list<Database>("GET /api/v1/database-connections");
     const instances = list<Instance>("GET /api/v1/instances");
+    const projects = list<Project>("GET /api/v1/projects");
     const taskGroups = list<TaskGroup>("GET /api/v1/task-groups");
     const taskDefinitions = list<Definition>("GET /api/v1/task-definitions");
     const proxyModels = list<{ id: string; provider: string }>("GET /api/v1/proxycli/models");
@@ -564,6 +567,108 @@ export function createDemoGateway() {
         return ok({ ...removed, outcome: "applied" });
     };
 
+    /** `project:update`, for the fields the web app changes: the code and the complete list of apps. */
+    const updateProject = (id: string, body: Record<string, unknown>): Answer => {
+        const project = projects.find((row) => String(row.id) === id);
+
+        if (project === undefined) {
+            return notFound("Project");
+        }
+
+        if (body.apps !== undefined) {
+            const refused = refuseApps(project, body.apps);
+
+            if (refused !== undefined) {
+                return refused;
+            }
+
+            project.apps = [...(body.apps as ProjectApp[])].sort((a, b) =>
+                a.name < b.name ? -1 : a.name > b.name ? 1 : 0,
+            );
+        }
+
+        if (typeof body.code === "string") {
+            project.code = body.code;
+        }
+
+        return ok(project);
+    };
+    /** The Gateway's refusals for a new list of apps, in the order it checks them. */
+    const refuseApps = (project: Project, apps: unknown): Answer | undefined => {
+        const invalid = (field: string, message: string, code = "project.apps_invalid") =>
+            toolFailure(422, code, message, { field });
+        const path = /^[a-zA-Z0-9._-]+(\/[a-zA-Z0-9._-]+)*$/;
+        const canonical = (value: string, dot: boolean) =>
+            (dot && value === ".") ||
+            (path.test(value) && !value.split("/").some((part) => part === "." || part === ".."));
+
+        if (!Array.isArray(apps) || apps.length === 0) {
+            return invalid("apps", "Apps must be a non-empty list.");
+        }
+
+        const seen: ProjectApp[] = [];
+
+        for (const [index, app] of (apps as ProjectApp[]).entries()) {
+            if (!/^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/.test(String(app.name))) {
+                return invalid(
+                    `apps.${index}.name`,
+                    "The app name must be a lowercase DNS label of 1 through 63 characters.",
+                );
+            }
+            if (seen.some((other) => other.name === app.name)) {
+                return invalid(
+                    `apps.${index}.name`,
+                    "App names must be unique within the Project.",
+                    "project.app_name_conflict",
+                );
+            }
+            if (typeof app.path !== "string" || !canonical(app.path, true)) {
+                return invalid(
+                    `apps.${index}.path`,
+                    "The app path must be a canonical relative directory of 1 through 255 bytes.",
+                );
+            }
+            if (seen.some((other) => other.path === app.path)) {
+                return invalid(
+                    `apps.${index}.path`,
+                    "App paths must be distinct within the Project.",
+                    "project.app_path_conflict",
+                );
+            }
+            if (
+                ![
+                    "laravel-app",
+                    "symfony-app",
+                    "monorepo",
+                    "laravel-package",
+                    "node-package",
+                ].includes(app.type)
+            ) {
+                return invalid(`apps.${index}.type`, "The app type is invalid.");
+            }
+            if (
+                app.web_root !== null &&
+                (typeof app.web_root !== "string" || !canonical(app.web_root, false))
+            ) {
+                return invalid(
+                    `apps.${index}.web_root`,
+                    "The web root must be a canonical non-dot relative directory or null.",
+                );
+            }
+            seen.push(app);
+        }
+
+        if (instances.some((instance) => instance.project.id === project.id)) {
+            return failure(
+                409,
+                "project.apps_locked_by_instances",
+                `Project [${project.slug}] has Instances, so its apps cannot change. Remove its Instances, change the apps, then recreate the Instances.`,
+            );
+        }
+
+        return undefined;
+    };
+
     const routes: [Method, RegExp, (params: string[], body: Record<string, unknown>) => Answer][] =
         [
             [
@@ -640,8 +745,9 @@ export function createDemoGateway() {
             ],
             ["GET", /^\/api\/v1\/realtime$/, () => ok(recordedFixture("unconfigured").body.data)],
             ["GET", /^\/api\/v1\/nodes$/, () => ok(nodes)],
-            ["GET", /^\/api\/v1\/projects$/, () => ok(list("GET /api/v1/projects"))],
-            ["GET", /^\/api\/v1\/apps$/, () => ok(list("GET /api/v1/projects"))],
+            ["GET", /^\/api\/v1\/projects$/, () => ok(projects)],
+            ["GET", /^\/api\/v1\/apps$/, () => ok(projects)],
+            ["PATCH", /^\/api\/v1\/projects\/(\d+)$/, ([id = ""], body) => updateProject(id, body)],
             ["GET", /^\/api\/v1\/instances$/, () => ok(list("GET /api/v1/instances"))],
             ["GET", /^\/api\/v1\/processes$/, () => ok(processes)],
             ["GET", /^\/api\/v1\/schedules$/, () => ok(schedules)],

@@ -37,7 +37,7 @@ it('preserves populated Instance and Route state while adding empty removal stor
         'repository_url' => 'https://example.test/acme/upgrade.git',
         'repository_identity' => 'example.test/acme/upgrade',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
         'created_at' => $timestamp,
         'updated_at' => $timestamp,
     ]);
@@ -61,7 +61,7 @@ it('preserves populated Instance and Route state while adding empty removal stor
             'environment' => 'development',
             'source_layout' => 'checkout',
             'checkout_path' => "/srv/orbit/apps/upgrade/{$status}",
-            'root' => $position === 0 ? null : 'site/public',
+            'app_overrides' => fixture_app_overrides($position === 0 ? null : 'site/public'),
             'branch' => $status,
             'branch_override' => $position === 2 ? 'release' : null,
             'migration_required' => false,
@@ -529,8 +529,10 @@ function orb179_removal_fixture(
         'repository_url' => "https://example.test/acme/{$suffix}.git",
         'repository_identity' => "example.test/acme/{$suffix}",
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
+    // The historical removal guard compares the Project root these legacy rows still carry.
+    DB::table('projects')->where('id', $project->id)->whereNull('root')->update(['root' => 'public']);
     $node ??= Node::query()->create([
         'name' => "removal-{$suffix}",
         'status' => LifecycleStatus::Active,

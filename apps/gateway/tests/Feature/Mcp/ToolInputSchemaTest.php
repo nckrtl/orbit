@@ -153,7 +153,7 @@ describe('instance-destroy', function (): void {
                 'slug' => 'mcp-force',
                 'repository_url' => 'https://example.test/mcp-force.git',
                 'default_branch' => 'main',
-                'root' => 'public',
+                'apps' => fixture_apps('public'),
             ]);
             $instance = Instance::query()->create([
                 'project_id' => $project->id,

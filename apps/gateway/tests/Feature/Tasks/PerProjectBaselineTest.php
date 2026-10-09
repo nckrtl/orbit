@@ -75,6 +75,7 @@ it('per-project baseline skips an unset command and preserves custom command fai
         'slug' => 'project',
         'repository_url' => 'git@github.com:acme/project.git',
         'task_check' => 'printf "custom baseline failed\\n"; exit 7',
+        'apps' => fixture_apps(null),
     ]);
     expect($project->taskCheckCommand())->toBe('printf "custom baseline failed\\n"; exit 7');
 
@@ -112,6 +113,7 @@ it('per-project baseline skips an unset command and preserves custom command fai
         'name' => 'No check',
         'slug' => 'no-check',
         'repository_url' => 'git@github.com:acme/no-check.git',
+        'apps' => fixture_apps(null),
     ]);
     expect($unsetProject->taskCheckCommand())->toBeNull();
     $instance->project()->associate($unsetProject);

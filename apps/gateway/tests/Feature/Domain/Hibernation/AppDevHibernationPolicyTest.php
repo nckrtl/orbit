@@ -17,6 +17,7 @@ it('applies only to development Instance Processes on an active app-dev Node', f
         'name' => 'Docs',
         'slug' => 'docs',
         'repository_url' => 'git@example.test:docs.git',
+        'apps' => fixture_apps(null),
     ]);
     $development = hibernation_policy_instance($project, $appDev, 'development');
     $production = hibernation_policy_instance($project, $appProd, 'production');
@@ -54,6 +55,7 @@ it('does not treat restart policy as an exemption', function (): void {
         'name' => 'Docs',
         'slug' => 'docs',
         'repository_url' => 'git@example.test:docs.git',
+        'apps' => fixture_apps(null),
     ]);
     $instance = hibernation_policy_instance($project, $node, 'development');
     $always = hibernation_policy_process($instance, 'always');
@@ -68,6 +70,7 @@ it('still applies to a keep-alive Process so restart policy stays independent', 
         'name' => 'Docs',
         'slug' => 'docs',
         'repository_url' => 'git@example.test:docs.git',
+        'apps' => fixture_apps(null),
     ]);
     $instance = hibernation_policy_instance($project, $node, 'development');
     $queue = hibernation_policy_process($instance, 'never', keepAlive: true);

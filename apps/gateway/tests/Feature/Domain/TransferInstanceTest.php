@@ -72,7 +72,7 @@ beforeEach(function (): void {
         'slug' => 'shop',
         'repository_url' => 'https://example.test/shop.git',
         'default_branch' => 'main',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     [$this->sourceCluster, $this->sourceNode] = orb245_clustered_app_dev(
         'source',
@@ -203,7 +203,7 @@ it('rechecks Schedules created after reserve before transfer cutover', function 
 });
 
 it('transfers a development Instance to another app-dev Node in the same Cluster', function (string $webRoot, string $suffix): void {
-    $this->instance->update(['root' => $webRoot]);
+    $this->instance->update(['app_overrides' => fixture_app_overrides($webRoot)]);
     $this->destinationNode->update([
         'cluster_id' => $this->sourceCluster->id,
         'tld' => null,
@@ -240,7 +240,7 @@ it('transfers a development Instance to another app-dev Node in the same Cluster
 })->with(['root public' => ['public', ''], 'nested Laravel' => ['server/web/public', '/server/web']]);
 
 it('transfer rewrites EnvironmentFile to destination for a custom Process', function (string $webRoot, string $suffix): void {
-    $this->instance->update(['root' => $webRoot]);
+    $this->instance->update(['app_overrides' => fixture_app_overrides($webRoot)]);
     $this->destinationNode->update(['settings' => ['apps' => ['path' => '/home/orbit/apps']]]);
     $sourceEnvironment = '/srv/orbit/apps/shop/web'.$suffix.'/.env';
     $this->process->update(['runtime_config' => [

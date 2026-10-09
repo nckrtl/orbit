@@ -229,6 +229,7 @@ function service_metrics_runtime_instance(Node $node): Instance
         'name' => 'Metrics fixture',
         'slug' => 'metrics-fixture',
         'repository_url' => 'https://example.test/metrics-fixture.git',
+        'apps' => fixture_apps(null),
     ]);
 
     return Instance::query()->create([
@@ -237,7 +238,7 @@ function service_metrics_runtime_instance(Node $node): Instance
         'name' => 'production',
         'environment' => 'production',
         'checkout_path' => '/home/metricapp/current',
-        'root' => 'public',
+        'app_overrides' => fixture_app_overrides('public'),
         'production_user' => 'metricapp',
         'production_home' => '/home/metricapp',
         'selected_php_version' => '8.5',

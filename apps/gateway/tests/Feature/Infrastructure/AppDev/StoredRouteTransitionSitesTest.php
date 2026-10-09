@@ -321,14 +321,14 @@ function stored_transition_fleet(bool $coLocated = false, bool $ingress = false)
         'name' => 'Acme',
         'slug' => 'acme-'.Str::lower(Str::random(6)),
         'repository_url' => 'https://example.test/acme.git',
-        'root' => 'public',
+        'apps' => fixture_apps('public'),
     ]);
     $instance = Instance::query()->create([
         'project_id' => $project->id,
         'node_id' => $workload->id,
         'name' => 'feature',
         'checkout_path' => '/home/orbit/apps/acme/feature',
-        'root' => 'public',
+        'app_overrides' => fixture_app_overrides('public'),
         'branch' => 'feature',
         'starting_commit' => str_repeat('a', 40),
         'status' => InstanceState::SourceResolved,

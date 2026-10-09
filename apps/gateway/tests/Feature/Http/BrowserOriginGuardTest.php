@@ -23,6 +23,7 @@ function browserOriginRoute(string $domain, bool $activate = true): Route
         'name' => "Shop {$sequence}",
         'slug' => "shop-{$sequence}",
         'repository_url' => "https://example.test/shop-{$sequence}.git",
+        'apps' => fixture_apps(null),
     ]);
     $node = Node::query()->create([
         'name' => "workload-{$sequence}",
