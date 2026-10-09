@@ -380,7 +380,8 @@
                 "Process",
                 "Project",
                 "Role",
-                "Route"
+                "Route",
+                "Task"
             ],
             "governing_adrs": []
         },
@@ -1305,6 +1306,7 @@
             "title": "Instance releases",
             "kind": "reference",
             "components": [
+                "apps/docs",
                 "apps/gateway",
                 "packages/php-sdk"
             ],
