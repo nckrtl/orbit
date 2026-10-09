@@ -25,11 +25,13 @@ class FakeImage(ProjectImage):
                        'aliases': [], 'properties': {**self.metadata, 'user.orbit.template.role': 'app-dev'}}
         self.guests, self.images_out, self.calls = [], [], []
         self.ready = True
+        self.output_change = {}
 
     def query(self, path, method='GET', data=None):
         self.calls.append((path, method))
         if path.startswith('/1.0/images/'):
-            return copy.deepcopy(self.source)
+            return copy.deepcopy(self.source if path.endswith(self.build['base_image']) else
+                                 next(value for value in self.images_out if path.endswith(value['fingerprint'])))
         if path == '/1.0/instances?recursion=1':
             return copy.deepcopy(self.guests)
         if path == '/1.0/images?recursion=1':
@@ -54,10 +56,11 @@ class FakeImage(ProjectImage):
         if args[0] == 'delete':
             self.guests = [value for value in self.guests if value['name'] != self.name]
         if args[0] == 'publish':
-            guest = next(value for value in self.guests if value['name'] == self.name)
-            inherited = {key[6:]: value for key, value in guest['config'].items() if key.startswith('image.')}
             self.images_out.append({'fingerprint': 'c' * 64, 'public': False, 'aliases': [], 'type': 'virtual-machine',
-                                    'architecture': 'x86_64', 'properties': {**inherited, **dict(arg.split('=', 1) for arg in args[4:])}})
+                                    'architecture': 'x86_64', 'properties': {**self.source['properties'],
+                                    **dict(arg.split('=', 1) for arg in args[4:]), **self.output_change}})
+        if args[:2] == ('image', 'unset-property'):
+            next(value for value in self.images_out if value['fingerprint'] == args[2])['properties'].pop(args[3])
         if args[0] == 'exec' and args[-1] != 'true':
             return json.dumps({'ready': self.ready, 'role': 'app-dev'})
         return ''
@@ -85,6 +88,27 @@ class ProjectImageTest(unittest.TestCase):
         self.assertTrue(image.destroy()['destroyed'])
         self.assertEqual(1, len(image.images_out))
         self.assertTrue(image.destroy()['destroyed'])
+
+    def test_publication_removes_base_metadata_only_from_its_new_image(self):
+        image = FakeImage()
+        base = copy.deepcopy(image.source)
+        image.prepare()
+        self.assertTrue(image.publish()['published'])
+        self.assertEqual(base, image.source)
+        self.assertFalse(any(key.startswith('user.orbit.template.') for key in image.images_out[0]['properties']))
+
+    def test_foreign_output_template_metadata_is_retained_without_relabeling(self):
+        for change in ({'user.orbit.template.id': 'foreign'}, {'user.orbit.template.extra': 'foreign'},
+                       {'user.orbit.project.account': 'foreign'}):
+            image = FakeImage()
+            base = copy.deepcopy(image.source)
+            image.output_change = change
+            image.prepare()
+            with self.subTest(change=change), self.assertRaises(Refusal):
+                image.publish()
+            self.assertEqual(base, image.source)
+            self.assertEqual(1, len(image.images_out))
+            self.assertFalse(any(call[:2] == ('image', 'unset-property') for call in image.calls))
 
     def test_refuses_public_aliased_or_unpinned_workload_bases_before_allocation(self):
         for change in ({'public': True}, {'aliases': [{'name': 'moving'}]}, {'architecture': 'aarch64'},
