@@ -267,19 +267,27 @@ jobs:
           key: ${{ steps.orbit-tia-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       # A full run records this commit in the graph, and the step that requires it records it after an affected run.
-      - name: Export sandbox TIA baseline
+      # Sandbox images and the shared main cache store (bin/tia-cache refresh) import this artifact. The Pint and
+      # PHPStan caches that composer check just wrote travel with it.
+      - name: Export main caches
         if: success() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         env:
           PROJECT: ${{ matrix.directory }}
         run: |
           python3 - <<'PY'
-          import hashlib, json, os
+          import hashlib, json, os, shutil, subprocess
           from pathlib import Path
           graph = Path('.orbit-tia/graph.json')
           data = json.loads(graph.read_text())
           baseline = data['baselines']['main']
           if data.get('schema') != 1 or baseline.get('sha') != os.environ['GITHUB_SHA'] or not baseline.get('results'):
-              raise SystemExit('The sandbox baseline must describe this tested main commit.')
+              raise SystemExit('The main graph must describe this tested commit.')
+          quality = {}
+          Path('.orbit-tia/quality').mkdir(exist_ok=True)
+          for tool, source in (('pint', 'vendor/pint.cache'), ('phpstan', 'vendor/phpstan/cache/resultCache.php')):
+              if Path(source).is_file() and Path(source).stat().st_size:
+                  shutil.copyfile(source, f'.orbit-tia/quality/{tool}')
+                  quality[tool] = hashlib.sha256(Path(source).read_bytes()).hexdigest()
           files = ['composer.lock', 'tests/Pest.php', 'phpunit.xml', 'phpunit.xml.dist']
           manifest = {
               'schema': 1,
@@ -288,11 +296,14 @@ jobs:
               'run_id': os.environ['GITHUB_RUN_ID'],
               'graph_sha256': hashlib.sha256(graph.read_bytes()).hexdigest(),
               'inputs': {name: hashlib.sha256(Path(name).read_bytes()).hexdigest() for name in files if Path(name).is_file()},
+              'php': subprocess.run(['php', '-r', 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;'],
+                                    check=True, capture_output=True, text=True).stdout,
+              'quality': quality,
           }
           Path('.orbit-tia/manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
           PY
 
-      - name: Publish sandbox TIA baseline
+      - name: Publish main caches
         if: success() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         uses: actions/upload-artifact@v7
         with:
@@ -300,6 +311,7 @@ jobs:
           path: |
             ${{ matrix.directory }}/.orbit-tia/graph.json
             ${{ matrix.directory }}/.orbit-tia/manifest.json
+            ${{ matrix.directory }}/.orbit-tia/quality/
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 14
