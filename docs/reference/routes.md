@@ -9,8 +9,7 @@ covers:
   - apps/gateway/app/Infrastructure/AppDev/{DevelopmentCaddyConfigRenderer,DevelopmentSiteRepository,NativeDevelopmentProjectionOperationLock}.php
   - apps/gateway/app/Domain/AppDev/{DevelopmentServerEndpoint,AgentationEndpoint,PrivateDnsAnswerExpiry}.php
   - apps/gateway/app/Infrastructure/Clusters/NativeClusterRouterOperationLock.php
-  - apps/gateway/app/Infrastructure/Instances/{NativeProductionRouteProjector,NativeDevelopmentRouteProjector,NativeDevelopmentSourceAccess}.php
-  - apps/gateway/app/Domain/Instances/DevelopmentSourceAccess.php
+  - apps/gateway/app/{Infrastructure/Instances/NativeProductionRouteProjector.php,Infrastructure/Instances/NativeDevelopmentRouteProjector.php,Infrastructure/Instances/NativeDevelopmentSourceAccess.php,Domain/Instances/DevelopmentSourceAccess.php}
 ---
 
 # Routes
