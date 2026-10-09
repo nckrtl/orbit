@@ -184,7 +184,7 @@ The API takes `web_root` on `POST /api/v1/routes` and `PATCH /api/v1/routes/{rou
 | `APP_URL` | The Instance's own Route keeps its directory. Another directory takes the domain of the oldest Route that serves it. A development `default` with releases copies each directory's `.env` into its next [release](/reference/deployments#development-defaults). |
 | Change | Creating, updating, or removing such a Route converges its site, pool, and `APP_URL`. A Project root change moves `APP_URL` to the new winner. |
 | Instance removal | Once every refusal check passes, removes the Instance's Routes with a web root, then the Instance. A refused removal keeps them. |
-| Transfer | Refused with `instance.transfer_web_root_routes`. Remove those Routes, transfer, and create them again. |
+| Transfer | The Routes move with the Instance and keep their IDs and domains. A public one cannot change Cluster. See [Instance transfer](/reference/instance-transfer#routes-with-a-web-root). |
 | Hibernation | A request to any Route of the Instance wakes it. Dependency pruning covers only the default directory. |
 | Processes and Schedules | Unchanged. They keep the default application directory or their explicit working directory. |
 | Production | Served from the selected release. See [Web roots on production](#web-roots-on-production). |
@@ -211,6 +211,8 @@ A production Instance serves each web root from its selected release, `<home>/cu
 | Target set | The Route keeps one target. A target-set change, or a move to a production Instance, returns `route.web_root_unsupported`. |
 
 A web root must not hold a link, the same rule as for the Instance root. So no web root of the Instance, its own root included, may contain the `.env` of a served directory. A web root that is its own application directory, such as `apps/docs`, or one inside the Instance root, such as `public/docs/public`, returns `route.web_root_unsafe`. A web root in the default directory must be the Instance root itself; `apps/site` on root `apps/site/public` returns `route.web_root_unsafe`. Doctor's `APP_URL` check of each directory skips production. A cached configuration in a release keeps its old `APP_URL` until the next deployment rebuilds it.
+
+Follow-up: a transfer that moves a public Route with a web root to another Cluster.
 
 ## Custom proxy Routes
 
