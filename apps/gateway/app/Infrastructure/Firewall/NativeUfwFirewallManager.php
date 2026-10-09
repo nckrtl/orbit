@@ -26,7 +26,6 @@ final readonly class NativeUfwFirewallManager implements FirewallManager
         private KnownHostsStore $knownHosts,
         private UfwStatusParser $parser,
         private UfwManagedCommentCounter $commentCounter = new UfwManagedCommentCounter,
-        private NodeFirewallRuleCatalog $catalog = new NodeFirewallRuleCatalog,
     ) {}
 
     public function converge(FirewallRule $rule): FirewallBackendStatus
@@ -342,7 +341,7 @@ final readonly class NativeUfwFirewallManager implements FirewallManager
 
     private function guardRecoverySsh(FirewallRule $rule, Node $node): void
     {
-        if ($rule->action !== FirewallAction::Deny || ! FirewallPort::contains($rule->port, (int) $this->catalog->publicSshRecovery($node)->shape->port)) {
+        if ($rule->action !== FirewallAction::Deny || ! FirewallPort::contains($rule->port, $node->public_ssh_port)) {
             return;
         }
 

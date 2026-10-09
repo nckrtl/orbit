@@ -18,10 +18,6 @@ use App\Domain\Nodes\CaddyRelease;
  * 2026-10-09 with `402 Payment Required`, and a failing source fails every `apt-get update` on the
  * Node. The program deletes the old source and keyring.
  *
- * A sandbox image can carry an authenticated snapshot of that repository at `SNAPSHOT_PATH`, so it
- * converges offline. The program verifies the snapshot against the Cloudsmith key pins and installs the
- * one package in it, without an apt source. A snapshot that fails verification stops the program.
- *
  * The program runs as root before the role installs the rest of its packages. It is idempotent: it
  * installs nothing while Caddy already reaches the floor, so a converge never restarts a running
  * Caddy for a newer pin. It upgrades an archive Caddy in place and keeps the Orbit-owned Caddyfile
@@ -46,13 +42,6 @@ final class CaddyPackageSourceProgram
 
     public const string LEGACY_SOURCE_PATH = '/etc/apt/sources.list.d/orbit-caddy.sources';
 
-    /** The Cloudsmith signing key that signs a sandbox snapshot. `guest-template-install.py` reads both pins. */
-    public const string KEY_SHA256 = '783dfee04b19e851a928cd87b34710213ebbe7628f98d9f34595ab83be578c00';
-
-    public const string KEY_FINGERPRINT = '65760C51EDEA2017CEA2CA15155B6D79CA56EA34';
-
-    public const string SNAPSHOT_PATH = '/usr/local/share/orbit/caddy-source';
-
     public const string Changed = 'orbit-caddy-package-result=changed';
 
     /**
@@ -72,20 +61,12 @@ final class CaddyPackageSourceProgram
             self::KERNEL_SETTING,
             self::LEGACY_KEYRING_PATH,
             self::LEGACY_SOURCE_PATH,
-            self::KEY_SHA256,
-            self::KEY_FINGERPRINT,
-            self::SNAPSHOT_PATH,
         ];
     }
 
     public static function render(): string
     {
-        $verifier = file_get_contents(resource_path('compute/caddy-source-snapshot.py'));
-        if (! is_string($verifier) || $verifier === '') {
-            throw new \RuntimeException('The Caddy snapshot verifier is unavailable.');
-        }
-
-        return str_replace('__SNAPSHOT_VERIFY__', $verifier, <<<'BASH'
+        return <<<'BASH'
             release=$1
             release_url=$2
             amd64_sha512=$3
@@ -95,9 +76,6 @@ final class CaddyPackageSourceProgram
             kernel_setting=$7
             legacy_keyring_path=$8
             legacy_source_path=$9
-            key_sha256=${10}
-            key_fingerprint=${11}
-            snapshot_path=${12}
             changed=0
 
             if [ -e "$kernel_setting_path" ] || [ -L "$kernel_setting_path" ]; then
@@ -139,46 +117,30 @@ final class CaddyPackageSourceProgram
                 printf '%s\n' "${reported#v}"
             }
 
-            snapshot_package=''
-            if [ -e "$snapshot_path" ] || [ -L "$snapshot_path" ]; then
-                python3 -I - "$snapshot_path" "$key_sha256" "$key_fingerprint" "$minimum_version" <<'ORBIT_CADDY_SNAPSHOT' > /dev/null
-            __SNAPSHOT_VERIFY__
-            ORBIT_CADDY_SNAPSHOT
-                snapshot_package=$(find "$snapshot_path/repository" -type f -name '*.deb' -print)
-                if [ -z "$snapshot_package" ] || [ "$(printf '%s\n' "$snapshot_package" | wc -l)" -ne 1 ]; then
-                    printf '%s\n' 'The Caddy snapshot does not hold exactly one package.' >&2
-                    exit 1
-                fi
-            fi
-
             current_version=$(installed_version)
             if [ -z "$current_version" ] \
                 || ! dpkg --compare-versions "$current_version" ge "$minimum_version"
             then
-                if [ -n "$snapshot_package" ]; then
-                    package_path=$snapshot_package
-                else
-                    architecture=$(dpkg --print-architecture)
-                    case "$architecture" in
-                        amd64) package_sha512=$amd64_sha512 ;;
-                        arm64) package_sha512=$arm64_sha512 ;;
-                        *)
-                            printf 'Orbit pins no Caddy package for the %s architecture.\n' "$architecture" >&2
-                            exit 1
-                            ;;
-                    esac
-
-                    chmod 0755 -- "$work_directory"
-                    package_path="$work_directory/caddy_${release}_linux_${architecture}.deb"
-                    curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
-                        --output "$package_path" \
-                        "$release_url/caddy_${release}_linux_${architecture}.deb"
-                    if ! printf '%s  %s\n' "$package_sha512" "$package_path" | sha512sum --check --status; then
-                        printf 'The Caddy %s package does not match the Orbit pin.\n' "$release" >&2
+                architecture=$(dpkg --print-architecture)
+                case "$architecture" in
+                    amd64) package_sha512=$amd64_sha512 ;;
+                    arm64) package_sha512=$arm64_sha512 ;;
+                    *)
+                        printf 'Orbit pins no Caddy package for the %s architecture.\n' "$architecture" >&2
                         exit 1
-                    fi
-                    chmod 0644 -- "$package_path"
+                        ;;
+                esac
+
+                chmod 0755 -- "$work_directory"
+                package_path="$work_directory/caddy_${release}_linux_${architecture}.deb"
+                curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
+                    --output "$package_path" \
+                    "$release_url/caddy_${release}_linux_${architecture}.deb"
+                if ! printf '%s  %s\n' "$package_sha512" "$package_path" | sha512sum --check --status; then
+                    printf 'The Caddy %s package does not match the Orbit pin.\n' "$release" >&2
+                    exit 1
                 fi
+                chmod 0644 -- "$package_path"
 
                 export DEBIAN_FRONTEND=noninteractive
                 apt-get -o DPkg::Lock::Timeout=300 -o Dpkg::Options::=--force-confold \
@@ -204,6 +166,6 @@ final class CaddyPackageSourceProgram
             else
                 printf '%s\n' 'orbit-caddy-package-result=unchanged'
             fi
-            BASH);
+            BASH;
     }
 }
