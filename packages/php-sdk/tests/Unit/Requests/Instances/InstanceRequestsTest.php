@@ -394,6 +394,7 @@ function instance_gateway_data(): array
         'project_id' => 3,
         'node_id' => 4,
         'vite_port' => null,
+        'ssr_port' => null,
         'annotator_port' => null,
         'annotator_url' => null,
         'name' => 'main',

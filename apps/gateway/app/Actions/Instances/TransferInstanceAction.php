@@ -8,6 +8,7 @@ use App\Data\Instances\TransferInstanceData;
 use App\Domain\AppDev\AgentationPortAllocator;
 use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
+use App\Domain\AppDev\SsrPortAllocator;
 use App\Domain\AppDev\VitePortAllocator;
 use App\Domain\Clusters\ClusterRouterOperationLock;
 use App\Domain\Clusters\ClusterState;
@@ -438,6 +439,8 @@ final readonly class TransferInstanceAction
         if ($transfer->current_step === InstanceTransferStep::Reserved) {
             app(VitePortAllocator::class)->assign($instance);
             app(VitePortAllocator::class)->assign($instance, $destination);
+            app(SsrPortAllocator::class)->assign($instance);
+            app(SsrPortAllocator::class)->assign($instance, $destination);
             $this->runtime->pause($instance);
             $capture = $this->sources->capture($instance, $transfer->sqlite_source_path);
             $this->checkpoint($transfer, InstanceTransferStep::SourceCaptured, [
@@ -733,6 +736,7 @@ final readonly class TransferInstanceAction
             $lockedInstance->update([
                 'node_id' => $destination->id,
                 'vite_port' => StoredInteger::fromOrZero(DB::table('vite_port_assignments')->where('instance_id', $instance->id)->where('node_id', $destination->id)->value('port')),
+                'ssr_port' => $this->destinationSsrPort($instance, $destination),
                 'annotator_port' => $annotatorPort,
                 'agentation_port' => $agentationPort,
                 'name' => $lockedTransfer->destination_name,
@@ -824,6 +828,7 @@ final readonly class TransferInstanceAction
             }
 
             app(VitePortAllocator::class)->release($instance, $sourceNode);
+            app(SsrPortAllocator::class)->release($instance, $sourceNode);
             $this->checkpoint($lockedTransfer, InstanceTransferStep::Completed, [
                 'status' => InstanceTransferStatus::Completed,
                 'completed_at' => now(),
@@ -973,6 +978,7 @@ final readonly class TransferInstanceAction
             try {
                 $this->sources->discardDestination($destination, StoragePath::parse($transfer->destination_path));
                 app(VitePortAllocator::class)->release($instance, $destination);
+                app(SsrPortAllocator::class)->release($instance, $destination);
             } catch (Throwable) {
                 $incomplete[] = 'destination-checkout';
             }
@@ -1025,6 +1031,13 @@ final readonly class TransferInstanceAction
                 'source_path' => $transfer->source_path,
             ],
         ]);
+    }
+
+    private function destinationSsrPort(Instance $instance, Node $destination): ?int
+    {
+        $port = DB::table('ssr_port_assignments')->where('instance_id', $instance->id)->where('node_id', $destination->id)->value('port');
+
+        return $port === null ? null : StoredInteger::from($port);
     }
 
     private function conflict(string $errorCode, string $message): ResourceOperationException

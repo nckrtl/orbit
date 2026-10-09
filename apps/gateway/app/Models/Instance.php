@@ -24,6 +24,7 @@ use Illuminate\Support\Carbon;
  * @property int $id
  * @property int $project_id
  * @property int|null $vite_port
+ * @property int|null $ssr_port
  * @property int|null $annotator_port
  * @property int|null $agentation_port
  * @property string|null $task_sandbox_id
@@ -120,6 +121,7 @@ final class Instance extends Model
         'node_id',
         'task_sandbox_id',
         'vite_port',
+        'ssr_port',
         'agentation_port',
         'annotator_port',
         'name',
@@ -423,6 +425,7 @@ final class Instance extends Model
     {
         return [
             'vite_port' => 'integer',
+            'ssr_port' => 'integer',
             'agentation_port' => 'integer',
             'annotator_port' => 'integer',
             'clone_candidate_id' => 'integer',
