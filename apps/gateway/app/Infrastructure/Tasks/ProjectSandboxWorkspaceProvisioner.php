@@ -101,8 +101,10 @@ final readonly class ProjectSandboxWorkspaceProvisioner
             $restoreCommit = null;
             if ($restore) {
                 $previous = TaskSandbox::query()->where('group_id', $group->id)->where('provider', 'upcloud')
-                    ->where('state', SandboxState::Destroyed)->whereNull('node_id')->whereNull('server_id')->whereNull('disk_id')->exists();
-                if (! $previous || ($existing !== null && ! isset($existing->spec['restore_commit']))) {
+                    ->where('state', SandboxState::Destroyed)->where('desired_power', 'destroyed')->whereNotNull('destroyed_at')
+                    ->whereNull('node_id')->whereNull('model_key')->whereNull('pi_token')->latest('destroyed_at')->first();
+                if ($previous === null || Node::query()->where('compute_sandbox_id', $previous->id)->exists()
+                    || ($existing !== null && ! isset($existing->spec['restore_commit']))) {
                     throw $this->ownership();
                 }
                 $published = $this->publishedCommit($group);
