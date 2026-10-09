@@ -99,6 +99,12 @@ Run `task-vms:prepare-hub` once. It runs `resources/task-vms/hub.sh` on the `vpn
 
 The table accepts established traffic and drops all other traffic to or from the range. The WireGuard address allocator skips the range for other Nodes. Only `AllocateTaskVmAction` assigns addresses in it. A task VM Node has no access grants to other Nodes.
 
+### Refuse task VMs in Caddy
+
+TCP 443 on the Gateway Node and on the `websocket` Node is one Caddy listener for every private site on that Node, so the hub table cannot tell `reverb.orbit` from `executor.orbit` or `analytics.orbit`. Caddy closes that gap. On every Node, every site except `gateway.orbit` and `reverb.orbit` aborts a client in `task_vms.wireguard_range`. [Caddy configuration](/reference/caddy-configuration#listener-addresses) shows the guard.
+
+Caddy renders the guard only after you configure task VMs: you enable them, or you set `dev_cluster_id`, `model_proxy_origin`, or a host. Until then, every Caddyfile stays as it was. A Gateway release does not rebuild Caddy, so after you set these values, run `php artisan orbit:caddy-build NODE` for every Node that serves sites, before the first task VM enrolls. Until then, Doctor reports `role.caddy_build_drift` on each of those Nodes. While the task VM configuration is invalid, every Node Caddy build refuses to render and names the problem, so live Caddyfiles do not change.
+
 ### Placement invariant
 
 A task VM workspace is a normal Instance on a normal Node, so generic Instance operations need no sandbox guard. One rule protects the VM: an Instance on a task VM Node must be its group's `task-<group id>` workspace in the group's Project. The rule runs whenever an Instance is saved, so it covers create, clone, transfer, and register. Orbit also refuses an access grant from a task VM Node. The fleet rollout skips task VM Nodes. Shared groups never get a workspace on one.
