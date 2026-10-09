@@ -5,7 +5,12 @@ declare(strict_types=1);
 use App\Domain\Fleet\FleetRolloutMembership;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Tasks\TaskCompute;
+use App\Domain\TaskVms\TaskVmState;
 use App\Models\Node;
+use App\Models\Project;
+use App\Models\Task;
+use App\Models\TaskVm;
 use Tests\Support\Fleet\FleetFixtures;
 
 describe('fleet rollout set', function (): void {
@@ -45,6 +50,23 @@ describe('fleet rollout set', function (): void {
             ->and($membership->includes($sandbox))->toBeFalse()
             ->and($membership->exclusion($sandbox))->toBe('sandbox')
             ->and($membership->exclusion($dev))->toBeNull();
+    });
+
+    it('leaves out a live task VM Node, and takes it back once the task VM is destroyed', function (): void {
+        $host = FleetFixtures::node('beast', [RoleName::AppDev]);
+        $node = FleetFixtures::node('tvm-1', [RoleName::AppDev]);
+        $project = Project::query()->create(['name' => 'DLF', 'slug' => 'dlf', 'repository_url' => 'https://github.com/acme/dlf.git']);
+        $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Work', 'brief' => 'Work', 'status' => 'todo', 'task_compute' => TaskCompute::Vm]);
+        $vm = TaskVm::query()->create(['group_id' => $group->id, 'host_node_id' => $host->id, 'node_id' => $node->id, 'provider' => 'incus',
+            'name' => 'tvm-1', 'state' => TaskVmState::Ready, 'wireguard_ip' => '10.44.64.10', 'pi_token' => 'pi-token']);
+        $membership = app(FleetRolloutMembership::class);
+
+        expect(array_map(static fn (Node $member): string => $member->name, $membership->members()))->toBe(['beast'])
+            ->and($membership->exclusion($node))->toBe('sandbox');
+
+        $vm->update(['state' => TaskVmState::Destroyed]);
+
+        expect($membership->exclusion($node))->toBeNull();
     });
 
     it('puts a Node in the latest group of its roles', function (): void {

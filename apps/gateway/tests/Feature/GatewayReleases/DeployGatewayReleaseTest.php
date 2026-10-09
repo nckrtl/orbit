@@ -698,7 +698,24 @@ describe('gateway:release:deploy', function (): void {
         expect($this->fixture->layout->retainedReleaseIds())->toBe([$id]);
     });
 
-    it('keeps the configured number of releases plus the current and previous one', function (): void {
+    it('keeps three releases by default, the current one and the two newest others', function (): void {
+        $order = new ReleaseSteps;
+        $first = adopt_release($this->fixture);
+        $ids = [$first];
+
+        foreach (range(1, 4) as $index) {
+            $sha = $this->fixture->commit('Release '.$index);
+            $ids[] = release_deployer($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order), recording_smoke($order))->execute($sha)->id;
+            touch($this->fixture->layout->releasePath(end($ids)).'/REVISION', time() + $index);
+        }
+
+        expect(GatewayReleasePromoter::KeptReleases)->toBe(3)
+            ->and($this->fixture->layout->retainedReleaseIds())->toBe([$ids[4], $ids[3], $ids[2]])
+            ->and($this->fixture->layout->currentReleaseId())->toBe($ids[4])
+            ->and($order->pruned)->toEqualCanonicalizing([$ids[4], $ids[3], $ids[2]]);
+    });
+
+    it('keeps the current and the previous release when the configured count is lower', function (): void {
         $order = new ReleaseSteps;
         $first = adopt_release($this->fixture);
         $ids = [$first];
@@ -976,6 +993,27 @@ describe('gateway:release:deploy', function (): void {
 
         expect($this->fixture->layout->retainedReleaseIds())->toEqualCanonicalizing([$latest, $oldest])
             ->and($this->fixture->layout->currentReleaseId())->toBe($latest);
+    });
+
+    it('keeps no more than three releases after a rollback to an older one', function (): void {
+        $order = new ReleaseSteps;
+        $oldest = adopt_release($this->fixture);
+        touch($this->fixture->layout->releasePath($oldest).'/REVISION', time() - 1000);
+        $deploy = fn (): DeployGatewayReleaseAction => release_deployer($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order), recording_smoke($order));
+        $ids = [];
+
+        foreach (['B', 'C'] as $index => $name) {
+            $ids[$name] = $deploy()->execute($this->fixture->commit($name))->id;
+            touch($this->fixture->layout->releasePath($ids[$name]).'/REVISION', time() - 500 + $index);
+        }
+
+        release_rollback($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order), recording_smoke($order))->execute($oldest);
+        $latest = $deploy()->execute($this->fixture->commit('D'))->id;
+
+        // The newest three would be D, C, and B; the previous release, the oldest one, takes the place of B.
+        expect($this->fixture->layout->retainedReleaseIds())->toEqualCanonicalizing([$latest, $oldest, $ids['C']])
+            ->and($this->fixture->layout->currentReleaseId())->toBe($latest)
+            ->and($order->pruned)->toEqualCanonicalizing([$latest, $oldest, $ids['C']]);
     });
 
     it('prints one JSON object for a deploy and refuses a branch name', function (): void {
