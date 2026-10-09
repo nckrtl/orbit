@@ -8,7 +8,6 @@ use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use DateTimeImmutable;
 use Orbit\Sdk\Requests\Tasks\ListTaskQuestionsRequest;
-use Orbit\Sdk\Responses\Tasks\TaskQuestionResponse;
 use Orbit\Sdk\Responses\Tasks\TaskQuestionsResponse;
 
 final class ListTaskQuestionsCommand extends TaskCommand
@@ -17,7 +16,7 @@ final class ListTaskQuestionsCommand extends TaskCommand
     private const array CAUSES = ['brief_unclear', 'contract_gap', 'scope', 'environment', 'missed_contract'];
 
     /** @var list<string> */
-    private const array STATUSES = ['open', 'escalated', 'answered'];
+    private const array STATUSES = ['open', 'escalated', 'answered', 'superseded'];
 
     private const int MAXIMUM_OFFSET_HOUR = 24;
 
@@ -233,23 +232,5 @@ final class ListTaskQuestionsCommand extends TaskCommand
 
         return $parsed !== false
             && ($errors === false || ($errors['warning_count'] === 0 && $errors['error_count'] === 0));
-    }
-
-    private function writeQuestion(TaskQuestionResponse $question): void
-    {
-        $header = implode(' · ', [
-            self::time($question->askedAt) ?? $question->askedAt,
-            $question->reference(),
-            $question->askedBy,
-            $question->status,
-            $question->cause ?? '—',
-        ]);
-        $text = $question->question;
-
-        if ($question->answer !== null && $question->answer !== '') {
-            $text .= "\n".$question->answer;
-        }
-
-        $this->writeText($header, $text);
     }
 }

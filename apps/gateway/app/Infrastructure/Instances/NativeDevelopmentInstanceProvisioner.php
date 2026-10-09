@@ -14,8 +14,8 @@ use App\Domain\AppDev\VitePortAllocator;
 use App\Domain\Instances\DevelopmentInstanceConfigurator;
 use App\Domain\Instances\DevelopmentInstanceProvisioner;
 use App\Domain\Instances\DevelopmentRouteProjector;
-use App\Domain\Instances\InstanceSandboxGuard;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Instances\ProjectSandboxRuntimeGuard;
 use App\Domain\Projects\ProjectApps;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RouteStateResolver;
@@ -36,7 +36,7 @@ final readonly class NativeDevelopmentInstanceProvisioner implements Development
 
     public function reserve(Instance $instance, ?string $domain): void
     {
-        InstanceSandboxGuard::assertHostOperation($instance);
+        ProjectSandboxRuntimeGuard::assertRuntime($instance);
         app(SsrPortAllocator::class)->assign($instance);
         if ($domain !== null) {
             $instance->appConfiguration();

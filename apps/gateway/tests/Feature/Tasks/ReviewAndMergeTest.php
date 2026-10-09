@@ -239,6 +239,11 @@ function rm_runtime(array $receipts = []): object
             return $this->check;
         }
 
+        public function baseTipGreenAhead(Task $group, string $base, string $headSha, string $checkName): bool
+        {
+            return false;
+        }
+
         public function merge(Task $group, string $sha): GitHubMergeResult
         {
             $this->merges[] = $sha;
@@ -258,6 +263,11 @@ function rm_runtime(array $receipts = []): object
         public function openPullRequests(Project $project): array
         {
             return $this->open;
+        }
+
+        public function greenDefaultTipAfter(Task $group, string $sha, string $checkName): ?string
+        {
+            return null;
         }
 
         public function commit(Instance $instance, string $message): ?string

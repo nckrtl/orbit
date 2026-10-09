@@ -10,7 +10,7 @@ use App\Domain\Instances\DevelopmentInstanceConfigurator;
 use App\Domain\Instances\DevelopmentSourceProfile;
 use App\Domain\Instances\Environment\InstanceEnvironmentRenderer;
 use App\Domain\Instances\Environment\LaravelApplicationKey;
-use App\Domain\Instances\InstanceSandboxGuard;
+use App\Domain\Instances\ProjectSandboxRuntimeGuard;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Projects\ProjectType;
 use App\Domain\SourceControl\ApplicationDirectory;
@@ -30,7 +30,7 @@ final readonly class RemoteDevelopmentInstanceConfigurator implements Developmen
 
     public function inspect(Instance $instance, ?string $app = null): DevelopmentSourceProfile
     {
-        InstanceSandboxGuard::assertHostOperation($instance);
+        ProjectSandboxRuntimeGuard::assertRuntime($instance);
         $instance->loadMissing(['project', 'node']);
 
         $configuration = $instance->appConfiguration($app);
@@ -93,7 +93,7 @@ final readonly class RemoteDevelopmentInstanceConfigurator implements Developmen
 
     public function configureLaravelUrl(Instance $instance, string $url, ?string $app = null): void
     {
-        InstanceSandboxGuard::assertHostOperation($instance);
+        ProjectSandboxRuntimeGuard::assertRuntime($instance);
         $instance->loadMissing(['node', 'project']);
         $account = $this->accounts->resolve($instance->node);
         $appName = $instance->appConfiguration($app)['name'];

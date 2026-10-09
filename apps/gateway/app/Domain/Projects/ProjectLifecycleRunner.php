@@ -6,7 +6,7 @@ namespace App\Domain\Projects;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Instances\Deployment\DevelopmentDeployment;
-use App\Domain\Instances\InstanceSandboxGuard;
+use App\Domain\Instances\ProjectSandboxRuntimeGuard;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Processes\CommandDeadline;
@@ -31,7 +31,7 @@ final readonly class ProjectLifecycleRunner
 
     public function run(Instance $instance, LifecyclePhase $phase): bool
     {
-        InstanceSandboxGuard::assertHostOperation($instance);
+        ProjectSandboxRuntimeGuard::assertRuntime($instance);
         if ($instance->placedOnAppProd()) {
             return false;
         }

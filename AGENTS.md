@@ -31,6 +31,8 @@ For focused documentation work, use [writing-documentation](.agents/skills/writi
 
 Run `composer test:affected` and `composer check` in each changed project. Confirm that the tests covering the feature ran. CI checks all five projects; root `composer check` also runs checks across projects locally.
 
+For dependency updates and advisories, follow [Dependencies](docs/contributor-guide.md#dependencies). Run `composer audit:dependencies` from the root.
+
 For documentation changes, follow `writing-documentation` and run `composer docs-lint`. Include generated context updates when `composer docs-build` changes `docs/generated/context.json`.
 
 Use Incus machines allocated to the task. Preserve other work and follow resource cleanup safeguards. A known correctness failure on main holds unrelated merges until a reviewed fix is verified on main.

@@ -16,7 +16,9 @@ use App\Domain\Instances\DevelopmentInstanceProvisioner;
 use App\Domain\Instances\DevelopmentInstanceSourceLifecycle;
 use App\Domain\Instances\DevelopmentSourceResolution;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
+use App\Domain\Instances\InstanceCreationRecovery;
 use App\Domain\Instances\InstanceDestinationGuard;
+use App\Domain\Instances\InstanceRemovalStatus;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\ProductionInstanceProvisioner;
@@ -41,6 +43,7 @@ use App\Infrastructure\Processes\CommandDeadline;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseServer;
 use App\Models\Instance;
+use App\Models\InstanceRemoval;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
@@ -108,6 +111,17 @@ final readonly class CreateInstanceAction
             ? null
             : ($this->clonePlanner ?? app(InstanceDatabaseClonePlanner::class))->plan($project, $data->name);
         $databaseServer = $this->databaseServer($data, $clonePlan, $existing);
+
+        // An identical retry finishes the cleanup that an earlier failed create started, then creates afresh.
+        if ($existing instanceof Instance && $this->hasUnfinishedCleanup($existing)) {
+            $this->assertRetryIdentity($existing, $requestedNode, $root, $data->branch, finishingCleanup: true);
+            try {
+                $this->removeFailedCreate($existing);
+            } catch (Throwable $exception) {
+                throw $this->cleanupIncomplete($existing, (string) $existing->error_code, $exception);
+            }
+            $existing = null;
+        }
 
         if ($existing instanceof Instance) {
             $this->assertRetryIdentity($existing, $requestedNode, $root, $data->branch);
@@ -221,17 +235,63 @@ final readonly class CreateInstanceAction
             if ($instance->status === InstanceState::Reserved && $instance->source_prepare_id === null) {
                 throw new ResourceOperationException('instance.source_ownership_mismatch', 'Unconfirmed source has no preparation ownership evidence.', 409);
             }
-            ($this->remover ?? app(RemoveInstanceAction::class))->execute($instance, force: true, runTeardown: false, allowCascade: false, requirePreActivation: true);
+            $this->removeFailedCreate($instance);
         } catch (Throwable) {
-            throw new ResourceOperationException(
-                errorCode: $code,
-                message: 'Instance creation failed and cleanup is incomplete. Finish removal with '
-                    ."`orbit instance:destroy {$instance->id} --force`.",
-                status: $failure instanceof ResourceOperationException ? $failure->status : 502,
-                previous: $failure,
-                details: [...($failure instanceof ResourceOperationException ? $failure->details : []), 'cleanup' => 'incomplete', 'instance_id' => (string) $instance->id],
-            );
+            throw $this->cleanupIncomplete($instance, $code, $failure);
         }
+    }
+
+    /**
+     * Removes a failed create without teardown or cascade. A removal that started keeps its progress,
+     * so one resume can finish it after a passing failure such as a busy lock.
+     */
+    private function removeFailedCreate(Instance $instance): void
+    {
+        $remover = $this->remover ?? app(RemoveInstanceAction::class);
+        try {
+            $remover->execute($instance, force: true, runTeardown: false, allowCascade: false, requirePreActivation: true);
+        } catch (Throwable $exception) {
+            $current = Instance::query()->find($instance->id);
+            if ($current?->status !== InstanceState::Removing) {
+                throw $exception;
+            }
+            $remover->execute($current, force: true, runTeardown: false, allowCascade: false, requirePreActivation: true);
+        }
+    }
+
+    /**
+     * A create that failed before activation and whose own forced cleanup started and stopped before it
+     * finished. Setup and database rollbacks keep their own recovery.
+     */
+    private function hasUnfinishedCleanup(Instance $instance): bool
+    {
+        if (
+            $instance->status !== InstanceState::Removing
+            || $instance->failed_step === null
+            || in_array($instance->failed_step, ['setup', 'database_clone', 'database_create'], true)
+            || $instance->error_code === null
+            || ! InstanceCreationRecovery::isPreActivation($instance, removing: true)
+        ) {
+            return false;
+        }
+        $removal = InstanceRemoval::query()
+            ->whereHas('members', static fn ($query) => $query->where('instance_id', $instance->id)->whereNull('row_deleted_at'))
+            ->latest('created_at')
+            ->first();
+
+        return $removal instanceof InstanceRemoval && $removal->force && $removal->status === InstanceRemovalStatus::Failed;
+    }
+
+    private function cleanupIncomplete(Instance $instance, string $code, Throwable $failure): ResourceOperationException
+    {
+        return new ResourceOperationException(
+            errorCode: $code,
+            message: 'Instance creation failed and cleanup is incomplete. Retry the same request to finish cleanup, or finish removal with '
+                ."`orbit instance:destroy {$instance->id} --force`.",
+            status: $failure instanceof ResourceOperationException ? $failure->status : 502,
+            previous: $failure,
+            details: [...($failure instanceof ResourceOperationException ? $failure->details : []), 'cleanup' => 'incomplete', 'instance_id' => (string) $instance->id],
+        );
     }
 
     /**
@@ -534,8 +594,9 @@ final readonly class CreateInstanceAction
         Node $requestedNode,
         ?string $root,
         ?string $branchOverride,
+        bool $finishingCleanup = false,
     ): void {
-        if ($instance->status === InstanceState::Removing) {
+        if ($instance->status === InstanceState::Removing && ! $finishingCleanup) {
             throw $this->conflict(
                 'instance.removal_conflict',
                 "Instance [{$instance->name}] is being removed.",

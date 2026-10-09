@@ -240,6 +240,7 @@ export const taskCommentTypeLabels: Record<string, string> = {
     blocked: "Blocked",
     assistance_requested: "Assistance requested",
     resolution: "Resolution",
+    question_closed: "Question closed",
 };
 
 /** The short label for a comment type; an unknown type reads as itself. */

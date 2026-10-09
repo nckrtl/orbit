@@ -110,21 +110,33 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
         $group->loadMissing(['project', 'taskable']);
         $instance = $group->taskable;
         $default = $group->project->default_branch;
+        $local = $instance instanceof Instance && is_string($instance->branch) && $instance->branch !== '' ? $instance->branch : 'task-'.$group->id;
         if (! $instance instanceof Instance || $instance->checkout_path === ''
-            || ! is_string($default) || ! GitBranchName::isValid($default)) {
+            || ! is_string($default) || ! GitBranchName::isValid($default) || ! GitBranchName::isValid($local)) {
             throw new TaskPullRequestException('The baseline workspace could not be reset.');
         }
         $instance->loadMissing('node');
+        // The checks and the reset run in one command: another branch, a commit that is not on the
+        // default branch, or a tracked change is manual work, and the reset refuses it. Content reads
+        // can start filters, so they run as the worker.
         $script = WorkspaceGit::bashPreamble().WorkspaceGit::workerPreamble(TaskWorkerUser::name($instance)).<<<'BASH'
             checkout=$1
             branch=$2
+            local=$3
             tip=$(git -C "$checkout" rev-parse --verify "refs/remotes/origin/$branch^{commit}")
+            if [ "$(git -C "$checkout" symbolic-ref -q HEAD)" != "refs/heads/$local" ] \
+                || ! git -C "$checkout" merge-base --is-ancestor HEAD "$tip" \
+                || ! workspace_git -C "$checkout" diff --quiet --cached HEAD -- \
+                || ! workspace_git -C "$checkout" diff --quiet --; then
+                echo 'The workspace has manual work.' >&2
+                exit 3
+            fi
             workspace_git -C "$checkout" reset --hard --quiet "$tip"
             git -C "$checkout" rev-parse HEAD
             BASH;
         try {
             $result = $this->workspaces->execute($instance, new RemoteCommand(
-                arguments: ['bash', '-seu', '--', $instance->checkout_path, $default],
+                arguments: ['bash', '-seu', '--', $instance->checkout_path, $default, $local],
                 input: $script,
             ), 'task-baseline-reset', 'tasks.baseline_reset_failed');
         } catch (RuntimeConvergenceException $exception) {

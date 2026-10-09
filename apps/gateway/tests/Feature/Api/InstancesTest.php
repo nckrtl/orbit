@@ -184,6 +184,9 @@ beforeEach(function (): void {
 
         public string $failureCode = 'instance.source_interrupted';
 
+        /** @var array<string, mixed> Seed fields that real preparation records, which switch the layout to `worktree`. */
+        public array $seed = [];
+
         public DevelopmentSourceResolution $resolution;
 
         public function __construct()
@@ -194,6 +197,9 @@ beforeEach(function (): void {
         public function prepare(Instance $instance, bool $allowExisting): void
         {
             $this->prepareExisting[] = $allowExisting;
+            if ($this->seed !== []) {
+                $instance->update($this->seed);
+            }
             $this->record('prepare', $instance);
         }
 
@@ -472,6 +478,8 @@ beforeEach(function (): void {
 
         public ?string $fail = null;
 
+        public bool $failOnce = false;
+
         public function clearRouteTarget(InstanceRemovalMember $member): string
         {
             $this->record('route', $member);
@@ -512,6 +520,10 @@ beforeEach(function (): void {
             $this->calls[] = "{$operation}:{$member->instance_id}";
 
             if ($this->fail === $operation) {
+                if ($this->failOnce) {
+                    $this->fail = null;
+                }
+
                 throw new ResourceOperationException(
                     'instance.runtime_interrupted',
                     'Removal projection interrupted.',
@@ -1656,6 +1668,69 @@ it('cleans up a branch resolution failure before activation', function (): void 
     $this->source->fail = null;
     $this->source->resolution = new DevelopmentSourceResolution('t3code/retry', str_repeat('b', 40));
     $this->postJson('/api/v1/instances', ['project_id' => $this->orbitApp->id, 'node_id' => $this->node->id, 'name' => 'default', 'branch' => 't3code/retry'])->assertCreated();
+});
+
+/** The Instance 345 pattern: a seeded maintenance Instance prepares a linked worktree, then its branch cannot be resolved. */
+function worktree_maintenance_create(object $test): array
+{
+    $test->source->seed = [
+        'source_layout' => 'worktree',
+        'seed_selected' => true,
+        'seed_repository' => '/srv/orbit/apps/acme/default',
+        'seed_path' => '/srv/orbit/apps/acme/default/releases/initial',
+        'seed_commit' => str_repeat('c', 40),
+    ];
+    $test->source->fail = 'resolve';
+    $test->source->failureCode = 'instance.branch_resolution_failed';
+
+    return ['project_id' => $test->orbitApp->id, 'node_id' => $test->node->id, 'name' => 'dot-maintenance-20261005', 'branch' => 'main'];
+}
+
+it('fully cleans up a worktree maintenance branch_resolution_failed create after an interrupted cleanup attempt', function (): void {
+    $payload = worktree_maintenance_create($this);
+    $this->removalProjector->fail = 'route';
+    $this->removalProjector->failOnce = true;
+
+    $this->postJson('/api/v1/instances', $payload)
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'instance.branch_resolution_failed')
+        ->assertJsonMissingPath('error.details.cleanup');
+
+    expect(Instance::query()->count())->toBe(0)
+        ->and(Route::query()->count())->toBe(0)
+        ->and(array_filter($this->removalProjector->calls, static fn (string $call): bool => str_starts_with($call, 'route:')))->toHaveCount(2)
+        ->and($this->removalSource->calls)->toContain('finalize:1');
+});
+
+it('finishes a stranded worktree maintenance branch_resolution_failed cleanup on an identical retry without force', function (): void {
+    $payload = worktree_maintenance_create($this);
+    $this->removalProjector->fail = 'route';
+
+    $this->postJson('/api/v1/instances', $payload)
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'instance.branch_resolution_failed')
+        ->assertJsonPath('error.details.cleanup', 'incomplete');
+    $stranded = Instance::query()->sole();
+    expect($stranded->status)->toBe(InstanceState::Removing)
+        ->and($stranded->source_layout)->toBe('worktree')
+        ->and(Route::query()->count())->toBe(1);
+
+    $this->postJson('/api/v1/instances', [...$payload, 'branch' => 'other'])
+        ->assertConflict()
+        ->assertJsonPath('error.code', 'instance.placement_conflict');
+    expect(Instance::query()->sole()->status)->toBe(InstanceState::Removing);
+
+    $this->removalProjector->fail = null;
+    $this->source->fail = null;
+    $this->source->resolution = new DevelopmentSourceResolution('main', str_repeat('b', 40));
+    $this->postJson('/api/v1/instances', $payload)->assertCreated();
+
+    $created = Instance::query()->sole();
+    expect($created->id)->not->toBe($stranded->id)
+        ->and($created->status)->toBe(InstanceState::Active)
+        ->and($created->source_layout)->toBe('worktree')
+        ->and(Route::query()->sole()->status)->toBe(RouteStatus::Active)
+        ->and($this->removalSource->calls)->toContain("finalize:{$stranded->id}");
 });
 
 it('retains the original create failure and recovery command when cleanup is incomplete', function (): void {

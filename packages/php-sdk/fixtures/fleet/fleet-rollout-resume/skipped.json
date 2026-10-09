@@ -46,19 +46,19 @@
                         ]
                     },
                     "agent": {
-                        "version": "0.4.1",
+                        "version": "0.4.2",
                         "assets": [
                             {
                                 "platform": "linux-x86_64",
-                                "name": "orbit-agent-0.4.1-linux-x86_64",
-                                "url": "https://github.com/nckrtl/orbit/releases/download/agent-v0.4.1/orbit-agent-0.4.1-linux-x86_64",
-                                "sha256": "3ee2488f9dc5eb132bcd63236613536e9cf06bbe6e07a421c3c7547fe222689b"
+                                "name": "orbit-agent-0.4.2-linux-x86_64",
+                                "url": "https://github.com/nckrtl/orbit/releases/download/agent-v0.4.2/orbit-agent-0.4.2-linux-x86_64",
+                                "sha256": "800c83121c6c3c1e1614d11326e1a2386f0651897a5dd7eb35155aac1867ccee"
                             },
                             {
                                 "platform": "linux-aarch64",
-                                "name": "orbit-agent-0.4.1-linux-aarch64",
-                                "url": "https://github.com/nckrtl/orbit/releases/download/agent-v0.4.1/orbit-agent-0.4.1-linux-aarch64",
-                                "sha256": "1aed0809800b68d97a2f8dc373cb045f8ed918c006a6cdb9567e3105608b4b27"
+                                "name": "orbit-agent-0.4.2-linux-aarch64",
+                                "url": "https://github.com/nckrtl/orbit/releases/download/agent-v0.4.2/orbit-agent-0.4.2-linux-aarch64",
+                                "sha256": "edddd97040290d7a4cc8ba83c8cc68121c46c714bb8fbf05bd60f06f94bf2bb1"
                             }
                         ]
                     },

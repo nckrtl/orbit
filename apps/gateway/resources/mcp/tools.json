@@ -7679,7 +7679,8 @@
               "answered",
               "topology_requested",
               "assistance_requested",
-              "resolution"
+              "resolution",
+              "question_closed"
             ]
           },
           "limit": {
@@ -8545,6 +8546,48 @@
       }
     },
     {
+      "name": "tasks-question-close",
+      "extension": "tasks",
+      "title": "Close a task question",
+      "description": "Closes an `open` or `escalated` question as `answered` or `superseded`, with the operator's `reason` (1 to 2,000 characters) as its answer and `answered_by` `operator`. Orbit posts one `question_closed` comment on the subtask. Closing delivers no resolution, changes no assistance flag, and counts no consult. Repeating the same status and reason returns the question unchanged. Requires Gateway access. Returns `extension.disabled` while the extension is off, `tasks.question_closed` (409) when the question is already `answered` or `superseded`, and 422 for another status or an empty reason.",
+      "method": "POST",
+      "path": "/api/v1/task-questions/{question}/close",
+      "path_inputs": [
+        "question"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "question": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric task question ID."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "answered",
+              "superseded"
+            ],
+            "description": "answered or superseded"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 2000,
+            "description": "Why the question is closed"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "question",
+          "status",
+          "reason"
+        ]
+      }
+    },
+    {
       "name": "tasks-question-list",
       "extension": "tasks",
       "title": "List task questions",
@@ -8581,7 +8624,8 @@
             "enum": [
               "open",
               "escalated",
-              "answered"
+              "answered",
+              "superseded"
             ]
           },
           "since": {

@@ -7,6 +7,7 @@ namespace App\Infrastructure\AppDev;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Instances\InstanceSandboxGuard;
+use App\Domain\Instances\ProjectSandboxRuntimeGuard;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Infrastructure\Caddy\CaddyPublicationLock;
@@ -70,7 +71,7 @@ final readonly class RemoteAppDevCertificateManager
 
     public function convergeInstance(Instance $instance, Route $route): void
     {
-        InstanceSandboxGuard::assertHostOperation($instance);
+        ProjectSandboxRuntimeGuard::assertRuntime($instance, $route);
         $instance->loadMissing('node');
         $this->converge($instance->node, $this->instanceScope($instance, $route->app), $route->domain);
     }

@@ -7,6 +7,7 @@ namespace App\Domain\Instances\Environment;
 use App\Domain\Instances\InstanceSandboxGuard;
 use App\Domain\Instances\InstanceSourceProfileGuard;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Instances\ProjectSandboxRuntimeGuard;
 use App\Domain\Routes\PublicRouteEligibility;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
@@ -21,7 +22,7 @@ final readonly class InstanceEnvironmentContextResolver
 {
     public function resolve(Instance $instance, bool $requireActiveNode, bool $lockRoute = false, ?string $app = null): InstanceEnvironmentContext
     {
-        InstanceSandboxGuard::assertHostOperation($instance);
+        ProjectSandboxRuntimeGuard::assertRuntime($instance);
         InstanceAppProjection::assertAvailable([$instance->id]);
 
         return $this->publishedContext($instance, $requireActiveNode, $lockRoute, $app);

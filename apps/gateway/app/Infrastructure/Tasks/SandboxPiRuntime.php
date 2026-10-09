@@ -64,7 +64,7 @@ final readonly class SandboxPiRuntime
                     throw new ComputeException('compute.pi_unavailable', 'The sandbox Pi network did not confirm readiness.');
                 }
             }
-            if ($sandbox->provider === 'upcloud') {
+            if ($workspace->project->slug !== 'orbit') {
                 $this->artifact->prepare($workspace);
             }
             $request = ['sandbox_id' => $sandbox->id, 'checkout' => $workspace->checkout_path, 'pi_token' => $sandbox->pi_token,
@@ -110,7 +110,7 @@ final readonly class SandboxPiRuntime
     /** @return array{model_relay_address: ?string, model_relay_kind: string, model_relay_port: int} */
     private function relay(TaskSandbox $sandbox, Instance $workspace): array
     {
-        if ($sandbox->provider === 'upcloud') {
+        if ($workspace->project->slug !== 'orbit' && in_array($sandbox->provider, ['upcloud', 'incus'], true)) {
             $this->identity->assertReady($sandbox, $workspace->node);
             $address = $sandbox->enrollment['model_address'] ?? null;
             $port = $sandbox->enrollment['model_port'] ?? null;
@@ -119,7 +119,7 @@ final readonly class SandboxPiRuntime
                 throw new ComputeException('compute.model_proxy_unconfirmed', 'The enrolled model endpoint does not match key registration.');
             }
 
-            return ['model_relay_address' => $address, 'model_relay_kind' => 'upcloud', 'model_relay_port' => $port];
+            return ['model_relay_address' => $address, 'model_relay_kind' => $sandbox->provider === 'upcloud' ? 'upcloud' : 'fleet', 'model_relay_port' => $port];
         }
         if (! isset($sandbox->spec['model_proxy_origin'])) {
             return ['model_relay_address' => null, 'model_relay_kind' => 'incus', 'model_relay_port' => 8317];

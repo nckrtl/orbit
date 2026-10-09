@@ -24,6 +24,11 @@ CONFIG = {'version': 1, 'projects': [PROJECT], 'pi_host': '10.44.0.7',
 SPEC = {'version': 1, 'project': PROJECT, 'sandbox_id': ID, 'subnet': '10.233.209.0/24',
         'gateway_address': '10.44.0.1', 'wireguard_interface': 'eh', 'blocked_networks': ['192.168.6.0/24', '198.41.0.20/32'], 'config': CONFIG}
 REQUEST = {'operation': 'ensure', 'project': PROJECT, 'sandbox_id': ID}
+BOOTSTRAP = {'ssh_host': CONFIG['pi_host'], 'ssh_port': 24209, 'gateway_address': CONFIG['gateway_address'],
+             'wireguard_address': '93.184.216.34', 'wireguard_port': 51820}
+PROJECT_CONFIG = {**CONFIG, 'project_bootstrap': {'projects': [PROJECT],
+                  'wireguard_address': BOOTSTRAP['wireguard_address'], 'wireguard_port': 51820}}
+PROJECT_SPEC = {**SPEC, 'project_bootstrap': BOOTSTRAP, 'project_slug': 'dlf', 'config': PROJECT_CONFIG}
 
 
 def network():
@@ -35,6 +40,112 @@ def network():
 
 
 class ContractTests(unittest.TestCase):
+    def test_project_bootstrap_requires_its_own_closed_root_opt_in(self):
+        self.assertEqual({'enabled': False}, policy.apply({**REQUEST, 'operation': 'project_enabled'}, CONFIG))
+        self.assertEqual({'enabled': True}, policy.apply({**REQUEST, 'operation': 'project_enabled'}, PROJECT_CONFIG))
+        with patch.object(policy, 'read', return_value=json.dumps(PROJECT_CONFIG)):
+            self.assertEqual(PROJECT_CONFIG, policy.configuration())
+        for change in [{'projects': ['default']}, {'projects': [PROJECT, PROJECT]}, {'projects': []},
+                       {'wireguard_address': '10.44.0.3'}, {'wireguard_address': '100.64.0.1'},
+                       {'wireguard_address': '224.0.0.1'}, {'wireguard_address': '2001:4860::1'},
+                       {'wireguard_port': True}, {'wireguard_port': 0}, {'wireguard_port': 65536}, {'command': 'id'}]:
+            value = {**PROJECT_CONFIG, 'project_bootstrap': {**PROJECT_CONFIG['project_bootstrap'], **change}}
+            with self.subTest(change=change), patch.object(policy, 'read', return_value=json.dumps(value)), self.assertRaises(ValueError):
+                policy.configuration()
+
+    def test_project_bridge_bootstrap_must_match_the_approved_host_and_hub(self):
+        project = {'config': {'user.orbit.compute.owner': policy.OWNER, 'features.networks': 'false'}}
+        acl = {'config': {'user.orbit.compute.owner': policy.OWNER, 'user.orbit.compute.id': ID}}
+        interfaces = [{'ifname': 'eh', 'addr_info': [{'local': CONFIG['pi_host'], 'prefixlen': 16}]}]
+        bridge = network()
+        bridge['config'].update({'user.orbit.compute.project_slug': 'dlf',
+                                'user.orbit.compute.project_bootstrap': json.dumps(BOOTSTRAP, sort_keys=True, separators=(',', ':'))})
+        def derive(value, config=PROJECT_CONFIG):
+            with patch.object(policy, 'incus', side_effect=[project, value, acl]), patch.object(policy, 'run', side_effect=[json.dumps(interfaces), json.dumps([{'ifname': 'eh', 'linkinfo': {'info_kind': 'wireguard'}}])]):
+                return policy.derive(REQUEST, config)
+        self.assertEqual(BOOTSTRAP, derive(bridge)['project_bootstrap'])
+        with self.assertRaises(ValueError):
+            derive(bridge, CONFIG)
+        for field, value in [('ssh_host', '10.44.0.8'), ('ssh_port', 24210), ('gateway_address', '10.44.0.99'),
+                             ('wireguard_address', '93.184.216.35'), ('wireguard_port', 51821), ('command', 'id')]:
+            changed = copy.deepcopy(bridge)
+            changed['config']['user.orbit.compute.project_bootstrap'] = json.dumps({**BOOTSTRAP, field: value}, sort_keys=True, separators=(',', ':'))
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                derive(changed)
+        for slug in (None, 'orbit', '../dlf'):
+            changed = copy.deepcopy(bridge); changed['config']['user.orbit.compute.project_slug'] = slug
+            with self.subTest(slug=slug), self.assertRaises(ValueError):
+                derive(changed)
+        changed = copy.deepcopy(bridge); changed['used_by'] = ['/1.0/instances/foreign?project='+PROJECT]
+        with self.assertRaises(ValueError):
+            derive(changed)
+
+    def test_new_project_opt_in_preserves_existing_pair_policy_identity(self):
+        self.assertEqual(CONFIG, policy.policy_configuration(PROJECT_CONFIG))
+        self.assertEqual(PROJECT_CONFIG, policy.policy_configuration(PROJECT_CONFIG, BOOTSTRAP))
+
+    def test_root_attests_the_exact_project_guest_image_proxy_and_worktree(self):
+        bridge = policy.name(ID)
+        marker = json.dumps(BOOTSTRAP, sort_keys=True, separators=(',', ':'))
+        metadata = {'user.orbit.compute.owner': policy.OWNER, 'user.orbit.compute.id': ID,
+                    'user.orbit.compute.project_slug': 'dlf', 'user.orbit.compute.project_bootstrap': marker}
+        guest = {'name': bridge+'-operator', 'type': 'virtual-machine', 'profiles': [],
+                 'config': {**metadata, 'volatile.base_image': 'a'*64}, 'devices': {
+                     'root': {'type': 'disk', 'path': '/', 'pool': 'proof', 'size': '20GiB'},
+                     'worktree': {'type': 'disk', 'pool': 'proof', 'source': bridge+'-worktree', 'path': '/home/orbit/orbit'},
+                     'eth0': {'type': 'nic', 'network': bridge, 'name': 'eth0', 'ipv4.address': '10.233.209.10',
+                              'security.mac_filtering': 'true', 'security.ipv4_filtering': 'true'},
+                     'ssh': {'type': 'proxy', 'bind': 'host', 'nat': 'true', 'listen': 'tcp:10.44.0.7:24209',
+                             'connect': 'tcp:10.233.209.10:22'}}}
+        image = {'type': 'virtual-machine', 'architecture': 'x86_64', 'public': False, 'properties': {
+            'user.orbit.project.owner': 'orbit-task-project-image', 'user.orbit.project.slug': 'dlf',
+            'user.orbit.project.account': 'orbit', 'user.orbit.project.bootstrap': 'unenrolled'}}
+        volume = {'type': 'custom', 'content_type': 'filesystem', 'config': metadata,
+                  'used_by': ['/1.0/instances/'+bridge+'-operator?project='+PROJECT]}
+        def attest(values):
+            with patch.object(policy, 'incus', side_effect=values):
+                policy.attest_project(PROJECT, ID, bridge, policy.ipaddress.ip_network(SPEC['subnet']), metadata, BOOTSTRAP)
+        attest([guest, image, volume])
+        cases = [lambda g, i, v: g.update(profiles=['default']),
+                 lambda g, i, v: g['config'].update({'user.orbit.compute.id': 'foreign'}),
+                 lambda g, i, v: g['config'].pop('user.orbit.compute.project_bootstrap'),
+                 lambda g, i, v: g['devices']['ssh'].update(listen='tcp:0.0.0.0:24209'),
+                 lambda g, i, v: g['devices']['ssh'].update(connect='tcp:10.233.209.11:22'),
+                 lambda g, i, v: g['devices']['root'].update(pool='../default'),
+                 lambda g, i, v: i.update(public=True),
+                 lambda g, i, v: i['properties'].update({'user.orbit.project.slug': 'foreign'}),
+                 lambda g, i, v: i['properties'].update({'user.orbit.project.bootstrap': 'enrolled'}),
+                 lambda g, i, v: v['config'].pop('user.orbit.compute.project_slug'),
+                 lambda g, i, v: v.update(used_by=['/1.0/instances/foreign'])]
+        for change in cases:
+            values = copy.deepcopy([guest, image, volume]); change(*values)
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                attest(values)
+
+    def test_an_existing_pair_policy_cannot_be_converted_into_a_project_policy(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder)/'policy.json'; path.touch()
+            with patch.object(policy, 'manifest_path', return_value=path), patch.object(policy, 'read', return_value=json.dumps(SPEC)), \
+                    patch.object(policy, 'derive', return_value=PROJECT_SPEC), patch.object(policy, 'change') as change, self.assertRaises(ValueError):
+                policy.apply(REQUEST, PROJECT_CONFIG)
+            change.assert_not_called()
+
+    def test_verify_refuses_missing_or_drifted_policy_without_mutation(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder)/'policy.json'; path.touch()
+            with patch.object(policy, 'manifest_path', return_value=path), patch.object(policy, 'read', return_value=json.dumps(PROJECT_SPEC)), \
+                    patch.object(policy, 'derive', return_value=PROJECT_SPEC), patch.object(policy, 'desired', return_value={}), \
+                    patch.object(policy, 'snapshot', return_value={}), patch.object(policy, 'state', return_value='present') as state, \
+                    patch.object(policy, 'put') as put, patch.object(policy, 'change') as change:
+                self.assertEqual({'ready': True}, policy.apply({**REQUEST, 'operation': 'verify'}, PROJECT_CONFIG))
+                state.return_value = 'absent'
+                with self.assertRaises(ValueError):
+                    policy.apply({**REQUEST, 'operation': 'verify'}, PROJECT_CONFIG)
+                path.unlink()
+                with self.assertRaises(ValueError):
+                    policy.apply({**REQUEST, 'operation': 'verify'}, PROJECT_CONFIG)
+            put.assert_not_called(); change.assert_not_called()
+
     def test_packaged_boot_units_match_the_fixed_installer_contract(self):
         self.assertEqual(policy.UNIT_TEXT, (source.parent/'orbit-sandbox-host-network.service').read_text())
         self.assertEqual(policy.DEPENDENCY_TEXT, (source.parent/'orbit-sandbox-host-network-incus.conf').read_text())
@@ -298,6 +409,63 @@ except TimeoutError: pass
         self.assertFalse(self.connect(self.external.pid, '10.44.0.99', '10.233.209.10', 3774))
         self.assertFalse(self.connect(self.external.pid, '10.44.0.1', '10.233.209.10', 80))
         self.assertTrue(self.connect(self.guest.pid, '10.233.209.10', '10.233.209.11', 80))
+
+    def test_project_ssh_requires_original_proxy_destination_and_exact_hub_udp(self):
+        self.listen(self.guest.pid, '10.233.209.10', 22)
+        self.listen(self.external.pid, '93.184.216.34', 51820, udp=True)
+        self.listen(self.external.pid, '93.184.216.34', 51821, udp=True)
+        self.listen(self.external.pid, '93.184.216.35', 51820, udp=True)
+        for address in ('93.184.216.34', '93.184.216.35'):
+            self.command(['ip', 'route', 'replace', address+'/32', 'via', '198.19.0.2'])
+        nat = ['-d', CONFIG['pi_host'], '-p', 'tcp', '--dport', '24209', '-j', 'DNAT', '--to-destination', '10.233.209.10:22']
+        wrong_port = [*nat]; wrong_port[5] = '24210'
+        self.command(['iptables', '-t', 'nat', '-A', 'PREROUTING', *nat])
+        self.command(['iptables', '-t', 'nat', '-A', 'PREROUTING', *wrong_port])
+        policy.change(SPEC, remove=True)
+        try:
+            policy.change(PROJECT_SPEC)
+            self.assertTrue(self.connect(self.external.pid, '10.44.0.1', CONFIG['pi_host'], 24209))
+            self.assertFalse(self.connect(self.external.pid, '10.44.0.1', CONFIG['pi_host'], 24210))
+            self.assertFalse(self.connect(self.external.pid, '10.44.0.99', CONFIG['pi_host'], 24209))
+            self.assertFalse(self.connect(self.external.pid, '10.44.0.1', '10.233.209.10', 22))
+            self.assertFalse(self.connect(self.external.pid, '10.44.0.1', '10.233.209.10', 3774))
+            self.command(['ip', 'route', 'replace', '10.44.0.1/32', 'via', '172.20.0.2'])
+            try:
+                self.assertFalse(self.connect(self.spoof.pid, '10.44.0.1', CONFIG['pi_host'], 24209))
+            finally:
+                self.command(['ip', 'route', 'replace', '10.44.0.1/32', 'via', '198.19.0.2'])
+            self.assertTrue(self.connect(self.guest.pid, '10.233.209.10', '93.184.216.34', 51820, udp=True))
+            self.assertFalse(self.connect(self.guest.pid, '10.233.209.10', '93.184.216.34', 51821, udp=True))
+            self.assertFalse(self.connect(self.guest.pid, '10.233.209.10', '93.184.216.35', 51820, udp=True))
+            self.assertFalse(self.connect(self.pair.pid, '10.233.209.11', '93.184.216.34', 51820, udp=True))
+            self.assertFalse(self.connect(self.guest.pid, '10.233.209.10', '10.44.0.99', 443))
+            self.assertFalse(self.connect(self.guest.pid, '10.233.209.10', '169.254.169.254', 80))
+            with tempfile.TemporaryDirectory(dir='/root') as folder, patch.object(policy, 'ROOT', Path(folder)):
+                path = policy.manifest_path(ID)
+                policy.put(path, json.dumps(PROJECT_SPEC, sort_keys=True).encode())
+                policy.change(PROJECT_SPEC, remove=True)
+                with patch.object(policy, 'wireguard'):
+                    policy.restore(PROJECT_CONFIG)
+                before = {ipv6: policy.snapshot(ipv6) for ipv6 in (False, True)}
+                content = path.read_bytes()
+                with patch.object(policy, 'derive', return_value=PROJECT_SPEC):
+                    self.assertEqual({'ready': True}, policy.apply({**REQUEST, 'operation': 'verify'}, PROJECT_CONFIG))
+                self.assertEqual(content, path.read_bytes())
+                self.assertEqual(before, {ipv6: policy.snapshot(ipv6) for ipv6 in (False, True)})
+                self.assertTrue(self.connect(self.external.pid, '10.44.0.1', CONFIG['pi_host'], 24209))
+                with self.assertRaises(ValueError):
+                    policy.restore(CONFIG)
+                retired = network()
+                retired['config'].update({'user.orbit.compute.project_slug': 'dlf',
+                                          'user.orbit.compute.project_bootstrap': json.dumps(BOOTSTRAP, sort_keys=True, separators=(',', ':'))})
+                with patch.object(policy, 'incus', return_value=retired):
+                    self.assertEqual({'removed': True}, policy.apply({**REQUEST, 'operation': 'remove'}, PROJECT_CONFIG))
+                self.assertFalse(path.exists())
+        finally:
+            policy.change(PROJECT_SPEC, remove=True)
+            self.command(['iptables', '-t', 'nat', '-D', 'PREROUTING', *nat])
+            self.command(['iptables', '-t', 'nat', '-D', 'PREROUTING', *wrong_port])
+            policy.change(SPEC)
 
     def test_gateway_source_on_another_interface_cannot_reach_pi(self):
         self.command(['ip', 'route', 'replace', '10.44.0.1/32', 'via', '172.20.0.2'])

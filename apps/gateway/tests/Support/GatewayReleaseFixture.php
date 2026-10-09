@@ -89,7 +89,7 @@ final class GatewayReleaseFixture implements ProcessRunner
         $this->commit('Initial Gateway');
 
         mkdir($this->layout->sharedPath(), 0700, true);
-        $this->git($this->base, 'clone', '--quiet', '--bare', $this->origin, $this->layout->repositoryPath());
+        $this->git($this->base, 'clone', '--quiet', '--no-local', '--bare', $this->origin, $this->layout->repositoryPath());
         file_put_contents($this->layout->environmentPath(), "APP_ENV=production\n");
     }
 
@@ -120,7 +120,7 @@ final class GatewayReleaseFixture implements ProcessRunner
     {
         $current = $this->layout->currentPath();
         exec('chmod -R u+w '.escapeshellarg($this->layout->sharedPath()).' 2>/dev/null; rm -rf '.escapeshellarg($this->layout->sharedPath()).' '.escapeshellarg($current));
-        $this->git($this->base, 'clone', '--quiet', $this->origin, $current);
+        $this->git($this->base, 'clone', '--quiet', '--no-local', $this->origin, $current);
         $this->git($current, 'remote', 'set-url', 'origin', 'https://github.com/nckrtl/orbit.git');
         $sha = trim($this->git($current, 'rev-parse', 'HEAD'));
         $this->git($current, 'checkout', '--quiet', '--detach', $sha);

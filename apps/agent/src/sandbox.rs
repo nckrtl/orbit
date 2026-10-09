@@ -20,6 +20,8 @@ enum Operation {
     Resume,
     Destroy,
     GuestCommand,
+    ProjectIdentity,
+    ProjectFleetIdentity,
 }
 
 #[derive(Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
@@ -44,12 +46,24 @@ struct SourceTemplate {
 
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
+struct ProjectBootstrap {
+    ssh_host: String,
+    ssh_port: u16,
+    gateway_address: String,
+    wireguard_address: String,
+    wireguard_port: u16,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 struct Spec {
     images: BTreeMap<Role, String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     source_template: Option<SourceTemplate>,
     #[serde(skip_serializing_if = "Option::is_none")]
     project_slug: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    project_bootstrap: Option<ProjectBootstrap>,
     pool: String,
     subnet: String,
     blocked_networks: Vec<String>,
@@ -156,7 +170,15 @@ mod tests {
 
     #[test]
     fn accepts_lifecycle_operations_without_arbitrary_commands() {
-        for operation in ["observe", "capacity", "park", "resume", "destroy"] {
+        for operation in [
+            "observe",
+            "capacity",
+            "park",
+            "resume",
+            "destroy",
+            "project_identity",
+            "project_fleet_identity",
+        ] {
             let mut value = base();
             value["operation"] = operation.into();
             assert!(request(value.to_string().as_bytes()).is_ok());
@@ -288,6 +310,40 @@ mod tests {
             value["spec"]["project_slug"] = invalid;
             assert!(request(value.to_string().as_bytes()).is_err());
         }
+    }
+
+    #[test]
+    fn forwards_only_the_closed_project_bootstrap_descriptor() {
+        let mut value = base();
+        value["operation"] = "provision".into();
+        value["spec"] = json!({"images":{"operator":"a".repeat(64)}, "pool":"proof",
+            "subnet":"10.233.1.0/24", "blocked_networks":["192.168.0.0/16"], "project_slug":"dlf",
+            "project_bootstrap":{"ssh_host":"10.44.0.20", "ssh_port":24001,
+                "gateway_address":"10.44.0.2", "wireguard_address":"93.184.216.35", "wireguard_port":51820}});
+        let forwarded: serde_json::Value = serde_json::from_slice(
+            &request(value.to_string().as_bytes()).expect("bootstrap intent must reach the host"),
+        )
+        .unwrap();
+        assert_eq!(
+            forwarded["spec"]["project_bootstrap"],
+            value["spec"]["project_bootstrap"]
+        );
+        for (field, invalid) in [
+            ("ssh_port", json!(65536)),
+            ("ssh_port", json!("24001")),
+            ("wireguard_port", json!(-1)),
+            ("wireguard_port", json!(true)),
+            ("command", json!("whoami")),
+        ] {
+            let mut bad = value.clone();
+            bad["spec"]["project_bootstrap"][field] = invalid;
+            assert!(request(bad.to_string().as_bytes()).is_err());
+        }
+        value["spec"]["project_bootstrap"]
+            .as_object_mut()
+            .unwrap()
+            .remove("ssh_host");
+        assert!(request(value.to_string().as_bytes()).is_err());
     }
 
     #[test]

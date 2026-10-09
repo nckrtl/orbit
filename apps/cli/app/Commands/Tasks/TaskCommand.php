@@ -28,6 +28,7 @@ use Orbit\Sdk\Responses\Tasks\TaskAgentResponse;
 use Orbit\Sdk\Responses\Tasks\TaskCommentResponse;
 use Orbit\Sdk\Responses\Tasks\TaskGroupResponse;
 use Orbit\Sdk\Responses\Tasks\TaskGroupsResponse;
+use Orbit\Sdk\Responses\Tasks\TaskQuestionResponse;
 
 /**
  * Shared input resolution and rendering for the tasks family.
@@ -622,6 +623,25 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
             'command' => $field('command').' in '.($field('directory') === '' ? '.' : $field('directory')),
             default => 'reviewer confirms',
         };
+    }
+
+    /** Writes one question as a header line, then the question and its answer indented by two spaces. */
+    protected function writeQuestion(TaskQuestionResponse $question): void
+    {
+        $header = implode(' · ', [
+            self::time($question->askedAt) ?? $question->askedAt,
+            $question->reference(),
+            $question->askedBy,
+            $question->status,
+            $question->cause ?? '—',
+        ]);
+        $text = $question->question;
+
+        if ($question->answer !== null && $question->answer !== '') {
+            $text .= "\n".$question->answer;
+        }
+
+        $this->writeText($header, $text);
     }
 
     /** Writes one comment as a header line and its body indented by two spaces. */

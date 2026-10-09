@@ -54,7 +54,7 @@ final readonly class TaskWorkspaceExecutor
                 || (in_array($role, TaskTopology::Roles, true) && ! $this->workloadSourceMatches($workspace, $sandbox)))) {
                 throw new RuntimeConvergenceException($step, $errorCode, 'The requested sandbox role is unavailable.');
             }
-            if ($sandbox->provider === 'upcloud') {
+            if ($sandbox->provider === 'upcloud' || ($sandbox->provider === 'incus' && $group->project->slug !== 'orbit')) {
                 if ($sandbox->node_id !== $workspace->node_id || $group->project->slug === 'orbit') {
                     throw new RuntimeConvergenceException($step, $errorCode, 'The project sandbox has no matching enrolled Node.');
                 }
@@ -69,7 +69,7 @@ final readonly class TaskWorkspaceExecutor
             $hostId = $sandbox->spec['host_id'] ?? null;
             $settings = array_find($this->drivers->localHosts(), fn (array $candidate): bool => $candidate['node_id'] === $hostId);
             $node = is_int($hostId) ? Node::query()->find($hostId) : null;
-            $expectedNodeId = $group->project->slug === 'orbit' ? $hostId : $sandbox->node_id;
+            $expectedNodeId = $hostId;
             if ($settings === null || ! $node instanceof Node || $workspace->node_id !== $expectedNodeId
                 || ($sandbox->spec['project'] ?? null) !== $settings['project']) {
                 throw new RuntimeConvergenceException($step, $errorCode, 'The recorded sandbox host is unavailable.');

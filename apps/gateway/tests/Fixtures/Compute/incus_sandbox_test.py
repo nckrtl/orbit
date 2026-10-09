@@ -85,9 +85,9 @@ class Boundary(unittest.TestCase):
         host.storage_volumes = [{'name': host.name + '-worktree', 'type': 'custom', 'content_type': 'filesystem', 'config': host.metadata(), 'used_by': []}]
         return host, spec
 
-    def provision(self, host, spec):
+    def provision(self, host, spec, interfaces=None):
         with patch('subprocess.run') as process:
-            process.return_value.stdout = b'[]'
+            process.return_value.stdout = json.dumps(interfaces or []).encode()
             return host.provision(spec)
 
     def project_prepared(self):
@@ -101,6 +101,89 @@ class Boundary(unittest.TestCase):
         host.storage_volumes[0]['config']['user.orbit.compute.project_slug'] = 'dlf'
         return host, spec
 
+    def test_project_identity_reads_only_the_public_key_from_the_owned_guest(self):
+        host, spec = self.project_prepared()
+        host.rows[0]['status'] = 'Running'
+        key = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHdUmJNAeflz28V7EadKJL3DLqnMqS6JyEQJmpCPNG5T'
+        result = {'exit_code': 0, 'stdout': base64.b64encode((key + ' fixture\n').encode()).decode(),
+                  'stderr': '', 'duration_ms': 1, 'truncated': False, 'timed_out': False}
+        with patch.dict(host.project_identity.__globals__, bounded_process=lambda argv, data, timeout, limit: result):
+            value = host.project_identity()
+        self.assertEqual({'name': host.name, 'guest': host.name + '-operator', 'project_slug': 'dlf',
+                          'image': 'a' * 64, 'pool': 'proof', 'subnet': spec['subnet'],
+                          'address': '10.233.201.10', 'ssh_key': key}, value)
+        self.assertFalse(any(call[0] in ('start', 'stop', 'delete') or call[:3] in (
+            ('network', 'acl', 'edit'), ('query', '-X', 'POST')) for call in host.calls))
+
+    def test_project_fleet_retry_accepts_enrollment_files_but_initial_admission_refuses_them(self):
+        import contextlib
+        import io
+        import stat
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+        host, spec = self.project_prepared()
+        host.rows[0]['status'] = 'Running'
+        key = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHdUmJNAeflz28V7EadKJL3DLqnMqS6JyEQJmpCPNG5T'
+        path = Mock()
+        path.lstat.return_value = SimpleNamespace(st_mode=stat.S_IFREG | 0o644, st_uid=0, st_size=len(key))
+        path.read_text.return_value = key
+        def run(argv, data, timeout, limit):
+            output, code = io.StringIO(), 0
+            with patch('pwd.getpwnam', side_effect=lambda name: SimpleNamespace() if name == 'orbit' else (_ for _ in ()).throw(KeyError(name))), patch('os.path.lexists', return_value=True), patch('pathlib.Path', return_value=path), contextlib.redirect_stdout(output):
+                try:
+                    exec(argv[-1], {})
+                except SystemExit as error:
+                    code = error.code
+            return {'exit_code': code, 'stdout': base64.b64encode(output.getvalue().encode()).decode(),
+                    'stderr': '', 'duration_ms': 1, 'truncated': False, 'timed_out': False}
+        with patch.dict(host.project_identity.__globals__, bounded_process=run):
+            with self.assertRaises(Refusal):
+                host.project_identity()
+            path.read_text.assert_not_called()
+            result = host.project_identity(initial=False)
+        self.assertEqual(key, result['ssh_key'])
+        path.read_text.assert_called_once()
+        self.assertFalse(any(call[0] in ('start', 'stop', 'delete') for call in host.calls))
+
+    def test_project_identity_refuses_foreign_or_changed_placement_before_reading_a_key(self):
+        changes = [
+            lambda h: h.rows[0].update(status='Stopped'),
+            lambda h: h.rows.append({**copy.deepcopy(h.rows[0]), 'name': h.name + '-gateway'}),
+            lambda h: h.rows[0]['config'].pop('user.orbit.compute.project_slug'),
+            lambda h: h.rows[0]['config'].update({'user.orbit.compute.id': 'foreign'}),
+            lambda h: h.rows[0]['config'].update({'volatile.base_image': 'unpinned'}),
+            lambda h: h.template_image['properties'].update({'user.orbit.template.role': 'operator'}),
+            lambda h: h.storage_volumes[0]['config'].update({'user.orbit.compute.project_slug': 'foreign'}),
+            lambda h: h.storage_volumes[0].update(used_by=['/1.0/instances/foreign']),
+            lambda h: h.rows[0]['devices']['eth0'].update(network='foreign'),
+            lambda h: h.rows[0]['devices']['root'].update(source='/'),
+            lambda h: h.rows[0].update(profiles=['default']),
+            lambda h: h.network['config'].update({'security.acls.default.egress.action': 'allow'}),
+            lambda h: h.network['config'].update({'ipv4.address': '10.233.202.2/24'}),
+            lambda h: h.network['config'].update({'user.orbit.compute.id': 'foreign'}),
+        ]
+        for index, change in enumerate(changes):
+            with self.subTest(index=index):
+                host, spec = self.project_prepared()
+                host.rows[0]['status'] = 'Running'
+                change(host)
+                with patch.dict(host.project_identity.__globals__, bounded_process=lambda *args: self.fail('must not read a guest key')):
+                    with self.assertRaises(Refusal):
+                        host.project_identity()
+
+    def test_project_identity_refuses_unbounded_or_malformed_public_keys(self):
+        for key, changes in [('ssh-ed25519 invalid', {}), ('ssh-rsa AA==', {}),
+                             ('ssh-ed25519 AA==', {}), ('', {'truncated': True}),
+                             ('', {'timed_out': True}), ('', {'exit_code': 1})]:
+            with self.subTest(key=key, changes=changes):
+                host, spec = self.project_prepared()
+                host.rows[0]['status'] = 'Running'
+                result = {'exit_code': 0, 'stdout': base64.b64encode(key.encode()).decode(),
+                          'stderr': '', 'duration_ms': 1, 'truncated': False, 'timed_out': False, **changes}
+                with patch.dict(host.project_identity.__globals__, bounded_process=lambda *args: result):
+                    with self.assertRaises((Refusal, ValueError)):
+                        host.project_identity()
+
     def test_project_image_keeps_one_guest_and_pins_worktree_ownership(self):
         host, spec = self.project_prepared()
         host.rows, host.storage_volumes = [], []
@@ -111,6 +194,120 @@ class Boundary(unittest.TestCase):
         self.assertEqual('dlf', created[0]['config']['user.orbit.compute.project_slug'])
         volume = next(args for args in host.calls if args[:3] == ('storage', 'volume', 'create'))
         self.assertIn('user.orbit.compute.project_slug=dlf', volume)
+
+    def test_project_bootstrap_exposes_only_its_pinned_ssh_and_hub_endpoints(self):
+        host, spec = self.project_prepared()
+        host.rows, host.storage_volumes = [], []
+        host.network, host.acl = None, None
+        value = {'ssh_host': '10.44.0.20', 'ssh_port': 24201, 'gateway_address': '10.44.0.2',
+                 'wireguard_address': '93.184.216.35', 'wireguard_port': 51820}
+        spec['project_bootstrap'] = value
+        interfaces = [{'addr_info': [{'local': '10.44.0.20', 'prefixlen': 16}]}]
+        with patch.object(host, 'host_network', return_value=True) as policy:
+            self.provision(host, spec, interfaces)
+        self.assertEqual(['project_enabled', 'ensure', 'ensure'], [call.args[0] for call in policy.call_args_list])
+        marker = json.dumps(value, sort_keys=True, separators=(',', ':'))
+        guest = next(json.loads(args[5]) for args, data in host.payloads
+                     if args[:3] == ('query', '-X', 'POST') and '/instances?' in args[3])
+        self.assertEqual(marker, guest['config']['user.orbit.compute.project_bootstrap'])
+        self.assertEqual({'root', 'eth0', 'worktree', 'ssh'}, set(guest['devices']))
+        self.assertEqual({'type': 'proxy', 'bind': 'host', 'nat': 'true',
+                          'listen': 'tcp:10.44.0.20:24201', 'connect': 'tcp:10.233.201.10:22'}, guest['devices']['ssh'])
+        volume = next(args for args in host.calls if args[:3] == ('storage', 'volume', 'create'))
+        self.assertIn('user.orbit.compute.project_bootstrap=' + marker, volume)
+        acl = next(json.loads(data) for args, data in host.payloads if args[:3] == ('network', 'acl', 'create'))
+        self.assertIn({'action': 'allow', 'source': '10.233.201.10', 'destination': '93.184.216.35',
+                       'protocol': 'udp', 'destination_port': '51820', 'state': 'enabled'}, acl['egress'])
+        self.assertIn({'action': 'allow', 'source': '10.44.0.2', 'destination': '10.233.201.10',
+                       'protocol': 'tcp', 'destination_port': '22', 'state': 'enabled'}, acl['ingress'])
+        creation = next(args for args in host.calls if args[:2] == ('network', 'create'))
+        self.assertIn('user.orbit.compute.project_bootstrap=' + marker, creation)
+
+    def test_project_bootstrap_opt_out_refuses_before_any_mutation(self):
+        host, spec = self.project_prepared()
+        spec['project_bootstrap'] = {'ssh_host': '10.44.0.20', 'ssh_port': 24201, 'gateway_address': '10.44.0.2',
+                                     'wireguard_address': '93.184.216.35', 'wireguard_port': 51820}
+        with patch.object(host, 'host_network', return_value=False), self.assertRaises(Refusal):
+            self.provision(host, spec, [{'addr_info': [{'local': '10.44.0.20', 'prefixlen': 16}]}])
+        self.assertFalse(any(call[:2] in (('network', 'create'), ('network', 'acl')) or call[:3] == ('query', '-X', 'POST') for call in host.calls))
+
+    def test_project_root_attestation_failure_keeps_the_guest_stopped(self):
+        host, spec = self.project_prepared()
+        host.rows, host.storage_volumes, host.network, host.acl = [], [], None, None
+        spec['project_bootstrap'] = {'ssh_host': '10.44.0.20', 'ssh_port': 24201, 'gateway_address': '10.44.0.2',
+                                     'wireguard_address': '93.184.216.35', 'wireguard_port': 51820}
+        with patch.object(host, 'host_network', side_effect=[True, True, Refusal('foreign guest')]), self.assertRaises(Refusal):
+            self.provision(host, spec, [{'addr_info': [{'local': '10.44.0.20', 'prefixlen': 16}]}])
+        self.assertEqual('Stopped', host.rows[0]['status'])
+        self.assertFalse(any(call[0] == 'start' for call in host.calls))
+
+    def test_project_identity_verifies_bootstrap_rules_without_restoring_them(self):
+        host, spec = self.project_prepared()
+        host.rows[0]['status'] = 'Running'
+        bootstrap = {'ssh_host': '10.44.0.20', 'ssh_port': 24201, 'gateway_address': '10.44.0.2',
+                     'wireguard_address': '93.184.216.35', 'wireguard_port': 51820}
+        marker = json.dumps(bootstrap, sort_keys=True, separators=(',', ':'))
+        host.rows[0]['config']['user.orbit.compute.project_bootstrap'] = marker
+        host.storage_volumes[0]['config']['user.orbit.compute.project_bootstrap'] = marker
+        host.network['config'].update({'user.orbit.compute.project_bootstrap': marker,
+                                      'user.orbit.compute.project_slug': 'dlf', 'user.orbit.compute.host_network': '1'})
+        host.rows[0]['devices']['ssh'] = module['project_ssh_proxy'](marker, ipaddress.ip_network(spec['subnet']))
+        key = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHdUmJNAeflz28V7EadKJL3DLqnMqS6JyEQJmpCPNG5T'
+        result = {'exit_code': 0, 'stdout': base64.b64encode((key+'\n').encode()).decode(),
+                  'stderr': '', 'duration_ms': 1, 'truncated': False, 'timed_out': False}
+        with patch('subprocess.run') as process, patch.object(host, 'host_network', return_value=True) as policy, \
+                patch.dict(host.project_identity.__globals__, bounded_process=lambda *args: result):
+            process.return_value.stdout = json.dumps([{'addr_info': [{'local': '10.44.0.20', 'prefixlen': 16}]}]).encode()
+            self.assertEqual(key, host.project_identity()['ssh_key'])
+        policy.assert_called_once_with('verify')
+        with patch('subprocess.run') as process, patch.object(host, 'host_network', side_effect=Refusal('missing policy')), \
+                patch.dict(host.project_identity.__globals__, bounded_process=lambda *args: self.fail('must not read the key before policy verification')), \
+                self.assertRaises(Refusal):
+            process.return_value.stdout = json.dumps([{'addr_info': [{'local': '10.44.0.20', 'prefixlen': 16}]}]).encode()
+            host.project_identity()
+        self.assertFalse(any(call[0] in ('start', 'stop', 'delete') or call[:3] == ('query', '-X', 'POST') for call in host.calls))
+
+    def test_project_bootstrap_rejects_invalid_or_changed_intent_before_mutation(self):
+        value = {'ssh_host': '10.44.0.20', 'ssh_port': 24201, 'gateway_address': '10.44.0.2',
+                 'wireguard_address': '93.184.216.35', 'wireguard_port': 51820}
+        interfaces = [{'addr_info': [{'local': '10.44.0.20', 'prefixlen': 16}]}]
+        changes = [
+            lambda h, s: s['project_bootstrap'].update(ssh_host='10.44.0.21'),
+            lambda h, s: s['project_bootstrap'].update(ssh_host='0.0.0.0'),
+            lambda h, s: s['project_bootstrap'].update(gateway_address='10.44.0.20'),
+            lambda h, s: s['project_bootstrap'].update(gateway_address='93.184.216.34'),
+            lambda h, s: s['project_bootstrap'].update(wireguard_address='169.254.169.254'),
+            lambda h, s: s['project_bootstrap'].update(wireguard_address='100.64.0.1'),
+            lambda h, s: s['project_bootstrap'].update(wireguard_address='224.0.0.1'),
+            lambda h, s: s['project_bootstrap'].update(wireguard_port=True),
+            lambda h, s: s['project_bootstrap'].update(wireguard_port=65536),
+            lambda h, s: s['project_bootstrap'].update(ssh_port=24001),
+            lambda h, s: s['project_bootstrap'].update(ssh_port=22),
+            lambda h, s: s['project_bootstrap'].update(command='whoami'),
+            lambda h, s: s.pop('project_slug'),
+            lambda h, s: s['project_bootstrap'].update(wireguard_port=51821),
+            lambda h, s: s.pop('project_bootstrap'),
+            lambda h, s: h.rows[0]['config'].pop('user.orbit.compute.project_bootstrap'),
+            lambda h, s: h.storage_volumes[0]['config'].pop('user.orbit.compute.project_bootstrap'),
+            lambda h, s: h.network['config'].pop('user.orbit.compute.project_bootstrap'),
+            lambda h, s: h.rows[0]['devices']['ssh'].update(listen='tcp:0.0.0.0:24201'),
+            lambda h, s: h.rows[0]['devices']['ssh'].update(connect='tcp:10.233.201.11:22'),
+        ]
+        for index, change in enumerate(changes):
+            with self.subTest(index=index):
+                host, spec = self.project_prepared()
+                spec['project_bootstrap'] = copy.deepcopy(value)
+                marker = json.dumps(value, sort_keys=True, separators=(',', ':'))
+                host.rows[0]['config']['user.orbit.compute.project_bootstrap'] = marker
+                host.storage_volumes[0]['config']['user.orbit.compute.project_bootstrap'] = marker
+                host.network['config'].update({'user.orbit.compute.project_bootstrap': marker,
+                                               'user.orbit.compute.project_slug': 'dlf', 'user.orbit.compute.host_network': '1'})
+                host.rows[0]['devices']['ssh'] = module['project_ssh_proxy'](marker, ipaddress.ip_network(spec['subnet']))
+                change(host, spec)
+                with patch.object(host, 'host_network', return_value=True), self.assertRaises((Refusal, ValueError)):
+                    self.provision(host, spec, interfaces)
+                self.assertFalse(any(call[0] in ('start', 'stop', 'delete') or call[:3] in (
+                    ('network', 'acl', 'edit'), ('query', '-X', 'POST')) for call in host.calls))
 
     def test_project_provenance_and_retry_drift_refuse_before_mutation(self):
         changes = [
