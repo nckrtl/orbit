@@ -244,6 +244,31 @@ class ContractTests(unittest.TestCase):
                 policy.change(SPEC)
         self.assertEqual(['/usr/sbin/ip6tables-restore', '/usr/sbin/iptables-restore'], calls)
 
+    def test_bootstrap_nat_refuses_drift_and_foreign_references(self):
+        rules, jumps = policy.nat_chains(PROJECT_SPEC)
+        expected = {chain: [row.split() for row in rows] for chain, rows in {**rules, **jumps}.items()}
+        self.assertEqual('present', policy.state(PROJECT_SPEC, expected, expected, 'nat'))
+        self.assertEqual('absent', policy.state(PROJECT_SPEC, expected, {'POSTROUTING': []}, 'nat'))
+        for mutate in [lambda value: value['POSTROUTING'].insert(0, ['-j', 'MASQUERADE']),
+                       lambda value: value['POSTROUTING'].append(value['POSTROUTING'][0]),
+                       lambda value: value[next(iter(rules))].append(['-j', 'RETURN']),
+                       lambda value: value.update(PREROUTING=value['POSTROUTING'])]:
+            current = copy.deepcopy(expected); mutate(current)
+            with self.subTest(mutate=mutate), self.assertRaises(ValueError):
+                policy.state(PROJECT_SPEC, expected, current, 'nat')
+
+    def test_bootstrap_nat_installation_failure_keeps_the_boundary_retryable(self):
+        calls = []
+        def command(argv, data=None):
+            calls.append(data.splitlines()[0])
+            if data.startswith('*nat'):
+                raise ValueError('NAT installation failed')
+        with patch.object(policy, 'desired', return_value={}), patch.object(policy, 'snapshot', return_value={}), \
+                patch.object(policy, 'state', return_value='absent'), patch.object(policy, 'run', side_effect=command):
+            with self.assertRaises(ValueError):
+                policy.change(PROJECT_SPEC)
+        self.assertEqual(['*filter', '*filter', '*nat'], calls)
+
     def test_lock_timeout_refuses_concurrent_mutation(self):
         with patch.object(policy.fcntl, 'flock', side_effect=[BlockingIOError(), None]), patch.object(policy.time, 'sleep'):
             policy.acquire(123)
@@ -296,6 +321,7 @@ while True:
                                    stdout=subprocess.PIPE, text=True)
         cls.children.append(process)
         assert process.stdout.readline().strip() == 'ready'
+        return process
 
     @classmethod
     def connect(cls, pid, source, target, port, udp=False, source_port=0):
@@ -411,7 +437,7 @@ except TimeoutError: pass
         self.assertTrue(self.connect(self.guest.pid, '10.233.209.10', '10.233.209.11', 80))
 
     def test_project_ssh_requires_original_proxy_destination_and_exact_hub_udp(self):
-        self.listen(self.guest.pid, '10.233.209.10', 22)
+        ssh_listener = self.listen(self.guest.pid, '10.233.209.10', 22)
         self.listen(self.external.pid, '93.184.216.34', 51820, udp=True)
         self.listen(self.external.pid, '93.184.216.34', 51821, udp=True)
         self.listen(self.external.pid, '93.184.216.35', 51820, udp=True)
@@ -421,6 +447,7 @@ except TimeoutError: pass
         wrong_port = [*nat]; wrong_port[5] = '24210'
         self.command(['iptables', '-t', 'nat', '-A', 'PREROUTING', *nat])
         self.command(['iptables', '-t', 'nat', '-A', 'PREROUTING', *wrong_port])
+        before_nat = policy.snapshot(table='nat')
         policy.change(SPEC, remove=True)
         try:
             policy.change(PROJECT_SPEC)
@@ -429,6 +456,10 @@ except TimeoutError: pass
             self.assertFalse(self.connect(self.external.pid, '10.44.0.99', CONFIG['pi_host'], 24209))
             self.assertFalse(self.connect(self.external.pid, '10.44.0.1', '10.233.209.10', 22))
             self.assertFalse(self.connect(self.external.pid, '10.44.0.1', '10.233.209.10', 3774))
+            ssh_listener.terminate()
+            ssh_listener.wait(timeout=3)
+            self.assert_bootstrap_stream_survives_overlay_route()
+            self.listen(self.guest.pid, '10.233.209.10', 22)
             self.command(['ip', 'route', 'replace', '10.44.0.1/32', 'via', '172.20.0.2'])
             try:
                 self.assertFalse(self.connect(self.spoof.pid, '10.44.0.1', CONFIG['pi_host'], 24209))
@@ -440,6 +471,14 @@ except TimeoutError: pass
             self.assertFalse(self.connect(self.pair.pid, '10.233.209.11', '93.184.216.34', 51820, udp=True))
             self.assertFalse(self.connect(self.guest.pid, '10.233.209.10', '10.44.0.99', 443))
             self.assertFalse(self.connect(self.guest.pid, '10.233.209.10', '169.254.169.254', 80))
+            nat_chain = next(iter(policy.nat_chains(PROJECT_SPEC)[0]))
+            drift = ['-p', 'tcp', '--dport', '23', '-j', 'RETURN']
+            self.command(['iptables', '-t', 'nat', '-A', nat_chain, *drift])
+            before_drift = {ipv6: policy.snapshot(ipv6) for ipv6 in (False, True)}
+            with self.assertRaises(ValueError):
+                policy.change(PROJECT_SPEC)
+            self.assertEqual(before_drift, {ipv6: policy.snapshot(ipv6) for ipv6 in (False, True)})
+            self.command(['iptables', '-t', 'nat', '-D', nat_chain, *drift])
             with tempfile.TemporaryDirectory(dir='/root') as folder, patch.object(policy, 'ROOT', Path(folder)):
                 path = policy.manifest_path(ID)
                 policy.put(path, json.dumps(PROJECT_SPEC, sort_keys=True).encode())
@@ -461,11 +500,44 @@ except TimeoutError: pass
                 with patch.object(policy, 'incus', return_value=retired):
                     self.assertEqual({'removed': True}, policy.apply({**REQUEST, 'operation': 'remove'}, PROJECT_CONFIG))
                 self.assertFalse(path.exists())
+                self.assertEqual(before_nat, policy.snapshot(table='nat'))
         finally:
             policy.change(PROJECT_SPEC, remove=True)
             self.command(['iptables', '-t', 'nat', '-D', 'PREROUTING', *nat])
             self.command(['iptables', '-t', 'nat', '-D', 'PREROUTING', *wrong_port])
             policy.change(SPEC)
+
+    def assert_bootstrap_stream_survives_overlay_route(self):
+        server_code = '''import socket,sys
+s=socket.socket(); s.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1); s.bind(('10.233.209.10',22)); s.listen()
+print('ready',flush=True); c,_=s.accept(); c.sendall(b'before'); print('connected',flush=True)
+sys.stdin.readline(); c.sendall(b'after'); c.close()
+'''
+        client_code = '''import socket,sys
+s=socket.socket(); s.settimeout(2); s.bind(('10.44.0.1',0)); s.connect(('10.44.0.7',24209))
+assert s.recv(6)==b'before'; print('connected',flush=True); sys.stdin.readline()
+assert s.recv(5)==b'after'
+'''
+        server = subprocess.Popen(['nsenter', '-t', str(self.guest.pid), '-n', 'python3', '-u', '-c', server_code],
+                                  stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+        self.children.append(server)
+        self.assertEqual('ready', server.stdout.readline().strip())
+        client = subprocess.Popen(['nsenter', '-t', str(self.external.pid), '-n', 'python3', '-u', '-c', client_code],
+                                  stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+        self.children.append(client)
+        self.assertEqual('connected', client.stdout.readline().strip())
+        self.assertEqual('connected', server.stdout.readline().strip())
+        prefix = ['nsenter', '-t', str(self.guest.pid), '-n']
+        self.command(prefix+['ip', 'link', 'add', 'orbit', 'type', 'dummy'])
+        self.command(prefix+['ip', 'link', 'set', 'orbit', 'up'])
+        self.command(prefix+['ip', 'route', 'add', '10.44.0.1/32', 'dev', 'orbit'])
+        try:
+            server.stdin.write('send\n'); server.stdin.flush()
+            client.stdin.write('check\n'); client.stdin.flush()
+            self.assertEqual(0, client.wait(timeout=4), 'Bootstrap SSH must survive the new fleet route')
+            self.assertEqual(0, server.wait(timeout=4))
+        finally:
+            self.command(prefix+['ip', 'link', 'delete', 'orbit'])
 
     def test_gateway_source_on_another_interface_cannot_reach_pi(self):
         self.command(['ip', 'route', 'replace', '10.44.0.1/32', 'via', '172.20.0.2'])
