@@ -49,8 +49,9 @@ final readonly class RunInstanceSetupAction
             throw $exception;
         }
 
-        if ($instance->failed_step === 'setup') {
-            $instance->update(['failed_step' => null, 'error_code' => null]);
+        // A completed setup also completes an unfinished create, so a create retry no longer resumes it.
+        if ($instance->failed_step === 'setup' || $instance->first_setup_pending) {
+            $instance->update(['failed_step' => null, 'error_code' => null, 'first_setup_pending' => false]);
         }
 
         return $instance;

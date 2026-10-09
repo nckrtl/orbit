@@ -23,6 +23,8 @@ Creating Instance...
 │
 ├  Vite port         5173
 │
+├  SSR port          13714
+│
 ├  Root override     —
 │
 ├  Effective root    public

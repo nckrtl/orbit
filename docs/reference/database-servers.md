@@ -62,6 +62,8 @@ Orbit refuses a name with `database.name_conflict` when the server already has t
 
 With `--instance`, Orbit also creates the test database `<name>_test`, attaches the connection to the Instance under prefix `DB`, and records the Instance as the owner. [Test databases](/reference/database-connections#test-databases) describes how tests use it.
 
+`database:create --instance` needs an existing Instance, so it comes after that Instance's setup steps. To have the database before setup runs, pass the server to [`instance:create --database-server`](/domains/applications#database-on-a-server) instead.
+
 ## Add a user
 
 `database:user:create` adds a user to a database on a server, for example a read-only user in production. `database:user:list` lists the users that Orbit created for a connection.

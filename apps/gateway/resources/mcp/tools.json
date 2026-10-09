@@ -2371,7 +2371,7 @@
       "name": "instance-create",
       "extension": null,
       "title": "Create an Instance",
-      "description": "Create a development Instance on an app-dev Node.\n\nCreates a development Instance. New production Instances require a candidate. Use instance:clone.",
+      "description": "Create a development Instance on an app-dev Node.\n\nCreates a development Instance. New production Instances require a candidate. Use instance:clone.\nWith a Database server, Orbit creates the Instance's database there before the setup steps run.",
       "method": "POST",
       "path": "/api/v1/instances",
       "path_inputs": [],
@@ -2406,6 +2406,12 @@
             "type": "string",
             "maxLength": 255,
             "description": "Optional explicit source branch"
+          },
+          "database_server": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$(?![\\s\\S])",
+            "maxLength": 63,
+            "description": "Database server that gets the new Instance database before setup"
           }
         },
         "additionalProperties": false,
@@ -3220,6 +3226,27 @@
           "after": {
             "type": "string",
             "description": "Place after this step"
+          },
+          "rebalance": {
+            "type": "array",
+            "maxItems": 32,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "timeout_seconds": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "name",
+                "timeout_seconds"
+              ]
+            },
+            "description": "Set another step timeout in the same write, as NAME=SECONDS; repeat as needed"
           }
         },
         "additionalProperties": false,
@@ -3331,6 +3358,27 @@
           "after": {
             "type": "string",
             "description": "Place after this step"
+          },
+          "rebalance": {
+            "type": "array",
+            "maxItems": 32,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "timeout_seconds": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "name",
+                "timeout_seconds"
+              ]
+            },
+            "description": "Set another step timeout in the same write, as NAME=SECONDS; repeat as needed"
           }
         },
         "additionalProperties": false,
@@ -3405,6 +3453,27 @@
           "after": {
             "type": "string",
             "description": "Place after this step"
+          },
+          "rebalance": {
+            "type": "array",
+            "maxItems": 32,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "timeout_seconds": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "name",
+                "timeout_seconds"
+              ]
+            },
+            "description": "Set another step timeout in the same write, as NAME=SECONDS; repeat as needed"
           }
         },
         "additionalProperties": false,
@@ -3516,6 +3585,27 @@
           "after": {
             "type": "string",
             "description": "Place after this step"
+          },
+          "rebalance": {
+            "type": "array",
+            "maxItems": 32,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "timeout_seconds": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "name",
+                "timeout_seconds"
+              ]
+            },
+            "description": "Set another step timeout in the same write, as NAME=SECONDS; repeat as needed"
           }
         },
         "additionalProperties": false,

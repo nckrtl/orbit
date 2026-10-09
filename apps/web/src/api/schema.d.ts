@@ -1012,6 +1012,7 @@ export interface paths {
          * @description Create a development Instance on an app-dev Node.
          *
          *     Creates a development Instance. New production Instances require a candidate. Use instance:clone.
+         *     With a Database server, Orbit creates the Instance's database there before the setup steps run.
          */
         post: operations["instance-create"];
         delete?: never;
@@ -4006,6 +4007,7 @@ export interface components {
             transfer?: components["schemas"]["InstanceTransfer"] | null;
             deploy_steps?: components["schemas"]["DeploymentStep"][];
             vite_port?: number | null;
+            ssr_port?: number | null;
             seed_path?: string | null;
             seed_commit?: string | null;
             annotator_port?: number | null;
@@ -7882,6 +7884,8 @@ export interface operations {
                     domain?: string;
                     /** @description Optional explicit source branch */
                     branch?: string;
+                    /** @description Database server that gets the new Instance database before setup */
+                    database_server?: string;
                 };
             };
         };
@@ -15780,6 +15784,11 @@ export interface operations {
                     before?: string;
                     /** @description Place after this step */
                     after?: string;
+                    /** @description Set another step timeout in the same write, as NAME=SECONDS; repeat as needed */
+                    rebalance?: {
+                        name: string;
+                        timeout_seconds: number;
+                    }[];
                 };
             };
         };
@@ -15911,6 +15920,11 @@ export interface operations {
                     before?: string;
                     /** @description Place after this step */
                     after?: string;
+                    /** @description Set another step timeout in the same write, as NAME=SECONDS; repeat as needed */
+                    rebalance?: {
+                        name: string;
+                        timeout_seconds: number;
+                    }[];
                 };
             };
         };
@@ -16427,6 +16441,11 @@ export interface operations {
                     before?: string;
                     /** @description Place after this step */
                     after?: string;
+                    /** @description Set another step timeout in the same write, as NAME=SECONDS; repeat as needed */
+                    rebalance?: {
+                        name: string;
+                        timeout_seconds: number;
+                    }[];
                 };
             };
         };
@@ -16558,6 +16577,11 @@ export interface operations {
                     before?: string;
                     /** @description Place after this step */
                     after?: string;
+                    /** @description Set another step timeout in the same write, as NAME=SECONDS; repeat as needed */
+                    rebalance?: {
+                        name: string;
+                        timeout_seconds: number;
+                    }[];
                 };
             };
         };

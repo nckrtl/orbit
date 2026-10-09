@@ -36,6 +36,7 @@ final class StoreInstanceRequest extends FormRequest
             'root' => ['sometimes', 'string', 'max:255'],
             'domain' => ['sometimes', 'string', 'max:253'],
             'branch' => ['sometimes', 'string', 'max:255'],
+            'database_server' => ['sometimes', 'string', 'max:63', 'regex:/\A[a-z0-9]+(?:-[a-z0-9]+)*\z/D'],
         ];
     }
 
@@ -45,7 +46,7 @@ final class StoreInstanceRequest extends FormRequest
         try {
             return app(TopLevelJsonObjectInspector::class)->inspect(
                 $this->getContent(),
-                ['project_id', 'node_id', 'name', 'root', 'domain', 'branch'],
+                ['project_id', 'node_id', 'name', 'root', 'domain', 'branch', 'database_server'],
             );
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
@@ -94,6 +95,7 @@ final class StoreInstanceRequest extends FormRequest
                 ? RouteDomain::normalize($validated['domain'])
                 : null,
             branch: is_string($validated['branch'] ?? null) ? $validated['branch'] : null,
+            databaseServer: is_string($validated['database_server'] ?? null) ? $validated['database_server'] : null,
         );
     }
 

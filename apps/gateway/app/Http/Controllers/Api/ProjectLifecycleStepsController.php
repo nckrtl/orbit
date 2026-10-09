@@ -82,7 +82,7 @@ final class ProjectLifecycleStepsController extends Controller
     private function store(StoreProjectLifecycleStepRequest $request, Project $project, LifecyclePhase $phase): JsonResponse
     {
         return response()->json([
-            'data' => $this->steps->create($project, $phase, $request->step(), $request->beforeStep(), $request->afterStep())->toArray(),
+            'data' => $this->steps->create($project, $phase, $request->step(), $request->beforeStep(), $request->afterStep(), $request->rebalance())->toArray(),
             'meta' => $this->meta($request),
         ], 201);
     }
@@ -104,6 +104,7 @@ final class ProjectLifecycleStepsController extends Controller
                 $request->afterStep(),
                 $request->hasCommand(),
                 $request->hasTimeout(),
+                $request->rebalance(),
             )->toArray(),
             'meta' => $this->meta($request),
         ]);

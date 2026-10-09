@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Instances;
 
+use App\Actions\DatabaseConnections\CreateServerDatabaseAction;
 use App\Data\Instances\CreateInstanceData;
 use App\Data\Instances\InstanceData;
 use App\Domain\AppDev\AppDevSourceOperationLock;
@@ -38,11 +39,14 @@ use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\GitRepositoryOrigin;
 use App\Domain\SourceControl\ProjectRoot;
 use App\Infrastructure\Processes\CommandDeadline;
+use App\Models\DatabaseConnection;
+use App\Models\DatabaseServer;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
+use Closure;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Throwable;
@@ -75,6 +79,7 @@ final readonly class CreateInstanceAction
         private ?CommandDeadline $deadline = null,
         private ?InstanceDatabaseClonePlanner $clonePlanner = null,
         private ?CloneInstanceDatabaseAction $databaseClone = null,
+        private ?CreateInstanceServerDatabaseAction $serverDatabase = null,
     ) {}
 
     /** @return array{instance: Instance, created: bool} */
@@ -99,10 +104,12 @@ final readonly class CreateInstanceAction
             ->where('project_id', $project->id)
             ->where('name', $data->name)
             ->first();
-        // A database the Gateway cannot copy refuses the request before anything changes.
-        $clonePlan = $existing?->status === InstanceState::Active && $existing->failed_step !== 'setup'
+        // A database the Gateway cannot copy refuses the request before anything changes. Only a
+        // create that has not finished its first setup still gets a database.
+        $clonePlan = $existing instanceof Instance && ! $existing->first_setup_pending
             ? null
             : ($this->clonePlanner ?? app(InstanceDatabaseClonePlanner::class))->plan($project, $data->name);
+        $databaseServer = $this->databaseServer($data, $clonePlan, $existing);
 
         // An identical retry finishes the cleanup that an earlier failed create started, then creates afresh.
         if ($existing instanceof Instance && $this->hasUnfinishedCleanup($existing)) {
@@ -147,6 +154,7 @@ final readonly class CreateInstanceAction
                 'root' => $root,
                 'branch_override' => $data->branch,
                 'status' => InstanceState::Reserved,
+                'first_setup_pending' => true,
             ]);
             $created = true;
         }
@@ -156,15 +164,17 @@ final readonly class CreateInstanceAction
                 [$instance->id],
                 fn (): Instance => $this->sourceLock->synchronized(
                     $instance->node_id,
-                    function () use ($instance, $created, $data, $clonePlan): Instance {
+                    function () use ($instance, $created, $data, $clonePlan, $databaseServer): Instance {
                         $wasActive = $instance->refresh()->status === InstanceState::Active;
-                        // An interrupted create left the copy unfinished, so this retry finishes it and runs setup.
-                        $resumesClone = $wasActive
-                            && $instance->failed_step === 'setup'
-                            && $clonePlan instanceof InstanceDatabaseClonePlan
+                        // A create that stopped after activation left the database unfinished, so this retry
+                        // finishes it and runs setup. Only the create's own marker allows that: a live Instance
+                        // whose later `instance:setup` failed also has `failed_step: setup`.
+                        $resumesDatabase = $wasActive
+                            && $instance->first_setup_pending
+                            && ($clonePlan instanceof InstanceDatabaseClonePlan || $databaseServer instanceof DatabaseServer)
                             && ! $this->databaseCloner()->isComplete($instance);
 
-                        if ($wasActive && $instance->failed_step === 'setup' && ! $resumesClone) {
+                        if ($wasActive && ($instance->failed_step === 'setup' || $instance->first_setup_pending) && ! $resumesDatabase) {
                             throw new ResourceOperationException('instance.setup_step_failed', 'Setup is incomplete. Run instance:setup before using this Instance.', 409);
                         }
 
@@ -187,12 +197,17 @@ final readonly class CreateInstanceAction
                             throw $exception;
                         }
 
-                        if (! $wasActive || $resumesClone) {
+                        if (! $wasActive || $resumesDatabase) {
+                            // Only the request that activated the Instance may remove it. A retry keeps it.
+                            $removeOnFailure = ! $wasActive;
+
                             if ($clonePlan instanceof InstanceDatabaseClonePlan) {
-                                $this->cloneDatabase($result, $clonePlan);
+                                $this->prepareDatabase($result, 'database_clone', 'database copy', fn () => $this->databaseCloner()->execute($result, $clonePlan), $removeOnFailure);
+                            } elseif ($databaseServer instanceof DatabaseServer) {
+                                $this->prepareDatabase($result, 'database_create', 'database creation', fn () => ($this->serverDatabase ?? app(CreateInstanceServerDatabaseAction::class))->execute($result, $databaseServer), $removeOnFailure);
                             }
 
-                            $this->finishSetup($result);
+                            $this->finishSetup($result, $removeOnFailure);
                         }
 
                         return $result;
@@ -244,14 +259,14 @@ final readonly class CreateInstanceAction
 
     /**
      * A create that failed before activation and whose own forced cleanup started and stopped before it
-     * finished. Setup and database-copy rollbacks keep their own recovery.
+     * finished. Setup and database rollbacks keep their own recovery.
      */
     private function hasUnfinishedCleanup(Instance $instance): bool
     {
         if (
             $instance->status !== InstanceState::Removing
             || $instance->failed_step === null
-            || in_array($instance->failed_step, ['setup', 'database_clone'], true)
+            || in_array($instance->failed_step, ['setup', 'database_clone', 'database_create'], true)
             || $instance->error_code === null
             || ! InstanceCreationRecovery::isPreActivation($instance, removing: true)
         ) {
@@ -278,34 +293,92 @@ final readonly class CreateInstanceAction
     }
 
     /**
-     * Copy the default Instance's database before the setup steps, so a migration runs against
-     * the copy. A failed copy removes the Instance as a failed setup does.
+     * The Database server named in the request, checked before anything changes. A new Instance
+     * that gets a copy of the default Instance's database cannot also get an empty one. An Instance
+     * that finished its first setup gets its database from `database:create --instance`, never from
+     * a create retry, so a failure here can never remove it. A repeat of a finished create that
+     * already made the database on that server changes nothing.
      */
-    private function cloneDatabase(Instance $instance, InstanceDatabaseClonePlan $plan): void
+    private function databaseServer(CreateInstanceData $data, ?InstanceDatabaseClonePlan $clonePlan, ?Instance $existing): ?DatabaseServer
+    {
+        if ($data->databaseServer === null) {
+            return null;
+        }
+
+        if ($existing instanceof Instance && ! $existing->first_setup_pending) {
+            $owned = DatabaseConnection::query()
+                ->where('owner_instance_id', $existing->id)
+                ->whereHas('server', static fn ($query) => $query->where('slug', $data->databaseServer))
+                ->exists();
+
+            if ($owned) {
+                return null;
+            }
+
+            $slug = $this->databaseCloner()->slug($existing);
+
+            throw new ResourceOperationException(
+                errorCode: 'instance.database_server_existing',
+                message: "Instance [{$existing->name}] already exists, so instance:create does not create its database. "
+                    ."Run `orbit database:create {$slug} --server={$data->databaseServer} --instance={$existing->id}`, then `orbit instance:setup {$existing->id}`.",
+                status: 409,
+            );
+        }
+
+        if ($clonePlan instanceof InstanceDatabaseClonePlan) {
+            throw new ResourceOperationException(
+                errorCode: 'instance.database_server_conflict',
+                message: 'The new Instance gets a copy of the default Instance\'s database. Omit database_server.',
+                status: 422,
+            );
+        }
+
+        return app(CreateServerDatabaseAction::class)->activeServer($data->databaseServer);
+    }
+
+    /**
+     * Give the Instance its database before the setup steps, so a migration runs against it: a
+     * copy of the default Instance's database, or an empty one on the requested Database server.
+     * On the request that activated the Instance, a failure removes it as a failed setup does. A
+     * retry keeps it.
+     *
+     * @param  Closure(): mixed  $prepare
+     */
+    private function prepareDatabase(Instance $instance, string $step, string $operation, Closure $prepare, bool $removeOnFailure): void
     {
         try {
-            $this->databaseCloner()->execute($instance, $plan);
-        } catch (ResourceOperationException $cloneFailure) {
-            $instance->update(['failed_step' => 'database_clone', 'error_code' => $cloneFailure->errorCode]);
+            $prepare();
+        } catch (ResourceOperationException $failure) {
+            $instance->update(['failed_step' => $step, 'error_code' => $failure->errorCode]);
+
+            if (! $removeOnFailure) {
+                throw new ResourceOperationException(
+                    errorCode: $failure->errorCode,
+                    message: $failure->getMessage().' The Instance remains. Repeat instance:create to try again.',
+                    status: $failure->status,
+                    previous: $failure,
+                    details: $failure->details,
+                );
+            }
 
             try {
                 ($this->remover ?? app(RemoveInstanceAction::class))->execute($instance->fresh() ?? $instance, force: true, runTeardown: false, allowCascade: false);
             } catch (Throwable) {
                 throw new ResourceOperationException(
-                    errorCode: $cloneFailure->errorCode,
-                    message: 'The database copy failed and cleanup is incomplete. Inspect the Instance, then finish the removal with '
+                    errorCode: $failure->errorCode,
+                    message: "The {$operation} failed and cleanup is incomplete. Inspect the Instance, then finish the removal with "
                         ."`orbit instance:destroy {$instance->id} --force`.",
-                    status: $cloneFailure->status,
-                    previous: $cloneFailure,
+                    status: $failure->status,
+                    previous: $failure,
                     details: ['cleanup' => 'incomplete'],
                 );
             }
 
             throw new ResourceOperationException(
-                errorCode: $cloneFailure->errorCode,
-                message: $cloneFailure->getMessage().' The Instance was removed.',
-                status: $cloneFailure->status,
-                previous: $cloneFailure,
+                errorCode: $failure->errorCode,
+                message: $failure->getMessage().' The Instance was removed.',
+                status: $failure->status,
+                previous: $failure,
             );
         }
     }
@@ -315,7 +388,7 @@ final readonly class CreateInstanceAction
         return $this->databaseClone ?? app(CloneInstanceDatabaseAction::class);
     }
 
-    private function finishSetup(Instance $instance): void
+    private function finishSetup(Instance $instance, bool $removeOnFailure): void
     {
         $runner = $this->lifecycle ?? app(ProjectLifecycleRunner::class);
 
@@ -327,7 +400,7 @@ final readonly class CreateInstanceAction
                 self::RollbackTeardownSeconds + self::RollbackRemovalSeconds,
                 fn (): bool => $runner->run($instance, LifecyclePhase::Setup),
             );
-            $instance->update(['failed_step' => null, 'error_code' => null]);
+            $instance->update(['failed_step' => null, 'error_code' => null, 'first_setup_pending' => false]);
         } catch (ResourceOperationException $setupFailure) {
             if (($setupFailure->details['outcome'] ?? null) === 'busy') {
                 $instance->update(['failed_step' => 'setup', 'error_code' => 'instance.lifecycle_busy']);
@@ -347,6 +420,16 @@ final readonly class CreateInstanceAction
 
             if (($details['outcome'] ?? null) === 'unconfirmed') {
                 throw $setupFailure;
+            }
+
+            if (! $removeOnFailure) {
+                throw new ResourceOperationException(
+                    errorCode: $code,
+                    message: "{$diagnostic}{$cause}. The Instance remains. Fix the step, then run `orbit instance:setup {$instance->id}`.",
+                    status: $status,
+                    previous: $setupFailure,
+                    details: $details,
+                );
             }
 
             try {

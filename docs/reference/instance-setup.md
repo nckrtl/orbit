@@ -34,7 +34,7 @@ orbit instance:teardown-step:create drop-sqlite --project=4 --command='rm -f dat
 | --- | --- |
 | `instance:setup-step:create NAME --project=ID --command=COMMAND` | Add a setup step at the end, or at `--before=NAME` or `--after=NAME`. |
 | `instance:setup-step:list --project=ID` | List the setup steps in order. |
-| `instance:setup-step:update NAME --project=ID` | Change `--command`, `--timeout`, or the position. |
+| `instance:setup-step:update NAME --project=ID` | Change `--command`, `--timeout`, or the position. `--rebalance` changes other steps in the same write. |
 | `instance:setup-step:destroy NAME --project=ID` | Remove a setup step. The others keep their order. |
 | `instance:teardown-step:*` | The same four commands for the teardown list. |
 
@@ -48,8 +48,23 @@ The Gateway checks each change against these limits and stores nothing when one 
 | `command` | Nonempty UTF-8, at most 16 KiB, no NUL byte. |
 | `timeout_seconds` | 1 to 540. The default is 240. |
 | `before`, `after` | The name of a step in the same list. Use at most one. |
+| `rebalance` | Other steps in the same list and their new timeouts, each as `name` and `timeout_seconds`. The Gateway sets them in the same write. |
 
 A list holds at most 32 steps. The timeouts of one list add up to at most 540 seconds, so a whole list fits in one API request. The Gateway stores a step only when its timeout is inside that limit, and a later read returns the stored timeout.
+
+A list stored before that limit can total more. The Gateway keeps it, and accepts a change only when the change does not raise the list's total. A lower total becomes the new ceiling, so do not lower a step on its own to make room.
+
+### Make room in a full list
+
+To add a step to a full list, or to move time from one step to another, change the other steps in the same write. Repeat `--rebalance=NAME=SECONDS` for each step whose timeout changes. The Gateway checks the whole list after the change, so the total must stay within 540 seconds, or within the stored total of an older list.
+
+```bash
+orbit instance:setup-step:create browsers --project=4 --command='npx playwright install' --timeout=180 \
+  --after=install-js --rebalance=build-assets=360
+orbit instance:setup-step:update build-assets --project=4 --timeout=540 --rebalance=install-js=360
+```
+
+The first command adds a 180-second step and lowers `build-assets` by 180 seconds. The second gives that time back to `build-assets` and takes it from `install-js`. A write that would raise the total stores nothing and fails with `The lifecycle list timeout total is too large.`
 
 Authorized reads return the commands. [Activity](/cli/activity) records no input for the step commands and `instance:setup`, so it never holds command text or command output.
 
@@ -75,13 +90,25 @@ The ACL is not applied to the apps root or to either home. New files in the chec
 
 A create that fails before activation cleans up its owned resources without running setup or teardown, and keeps the original failure code. If cleanup cannot finish or the process is interrupted, removal accepts the pre-activation states `reserved`, `checkout_prepared`, and `source_resolved` and skips teardown. See [pre-activation removal](/reference/instance-removal#pre-activation-removal).
 
-`instance:create` runs the setup list after the Instance and its Route are active, and after the [database clone](/domains/applications#database-clone) when it applies. Setup steps receive `ORBIT_SEED_PATH` and `ORBIT_SEED_COMMIT`, naming the successful default release selected on the same Node. Project steps own the [dependency copy](/domains/applications#dependency-copy), including nested monorepo folders. When the Project has no release at source preparation, Orbit records an empty seed decision and setup installs from lock files. Retries keep that decision. Registration records a seed only when the adopted source commit matches the selected default release; it never pairs an older source with newer seed dependencies.
+`instance:create` runs the setup list after the Instance and its Route are active, and after the [database clone](/domains/applications#database-clone) or the [database on a server](/domains/applications#database-on-a-server) when it applies. Setup steps receive `ORBIT_SEED_PATH` and `ORBIT_SEED_COMMIT`, naming the successful default release selected on the same Node. Project steps own the [dependency copy](/domains/applications#dependency-copy), including nested monorepo folders. When the Project has no release at source preparation, Orbit records an empty seed decision and setup installs from lock files. Retries keep that decision. Registration records a seed only when the adopted source commit matches the selected default release; it never pairs an older source with newer seed dependencies.
 
 A routed Laravel Instance has its `.env` before setup runs. When Orbit creates that file, it already holds `APP_URL`, a usable `APP_KEY`, and the Project's `APP_NAME`, so setup does not need `key:generate`. See [Laravel application URL](/domains/applications#laravel-application-url).
 
 Activation records `failed_step: setup` in the same transaction, so a Gateway interruption before or during setup cannot make an identical create retry report success without setup. Orbit clears the marker only after setup completes.
 
-Each command runs with `bash -eu` at the repository root, even when the Laravel [application directory](/reference/projects#application-directory) is nested. For example, a setup command for root `apps/site/public` must use `cd apps/site && composer install` to install that application's dependencies. Teardown and task-check commands also keep their repository-root scope. Each setup command runs on the Instance's Node, as the Node's managed user. This is the `instance:create` and `instance:setup` path. A task workspace does not use it. The task baseline runs the same commands, also as the managed user, inside the task check. [Project check](/reference/tasks#project-check) describes that run.
+`instance:create` also marks a new Instance as unfinished until its first setup completes, through `instance:create` or `instance:setup`. Only that mark lets a create retry finish the Instance's database and then run setup. A live Instance whose later `instance:setup` failed also has `failed_step: setup`, but it lacks the mark: a create retry returns `instance.setup_step_failed` and changes nothing. Only the request that activated an Instance removes it after a failure. A retry that resumes an unfinished create keeps the Instance when the database or a setup step fails, and its error says the Instance remains.
+
+Each command runs with `bash -eu` at the repository root of the code the Instance serves, even when the Laravel [application directory](/reference/projects#application-directory) is nested. For example, a setup command for root `apps/site/public` must use `cd apps/site && composer install` to install that application's dependencies. Teardown and task-check commands also keep their repository-root scope. Each setup command runs on the Instance's Node, as the Node's managed user. This is the `instance:create` and `instance:setup` path. A task workspace does not use it. The task baseline runs the same commands, also as the managed user, inside the task check. [Project check](/reference/tasks#project-check) describes that run.
+
+That root is the checkout for most Instances. A `default` Instance with the [development release layout](/reference/deployments#development-defaults) serves the release that `current` selects, and its checkout stays at the commit it was cloned at. Setup and teardown run in that release, so a migration sees the code that runs.
+
+The Instance's seed is its own release, so setup in a release always gets empty seed variables, even when the stored seed names an older release. Orbit reads the selection on the Node before the first step. When it cannot read it, no setup step starts and the request returns `instance.active_release_unavailable`. Teardown runs in the checkout instead, as [removal](#run-teardown) describes. The lifecycle lock stays on the checkout.
+
+[Synchronization](/reference/environment-variables) writes `.env` and `.env.testing` in the checkout's application directory, and a deploy copies them into its new release. So `database:create --instance` followed by `instance:setup` would migrate with the release's older `.env`.
+
+Before each setup step in a release, Orbit copies those two files from the checkout into the same directory of the release, as a deploy does: `cp -a` keeps the mode and makes the managed user the owner. Each file replaces the release's copy in one rename, so the served application never reads a partial file.
+
+A file that the checkout lacks stays as it is in the release. A link in place of the checkout's file, or a directory in place of the release's file, stops setup before its first step. A link in place of the release's file is replaced by a regular file, as a deploy does.
 
 Setup and teardown export `VP_HOME` to the Node's [resolved Vite+ store](/reference/tools#tool-managers). Project-local `vp` processes inherit that value even in these non-login shells, rather than using the default `~/.vite-plus`.
 
@@ -136,6 +163,8 @@ A step that the request deadline stops, or that has no time left to start, is no
 `instance:destroy` of an active development Instance runs the teardown list after the [removal checks](/reference/instance-removal) accept the source. Then Orbit checks the source again and deletes the Route, the source, and the record. In a forced removal of a checkout with worktrees, each member runs its own teardown list.
 
 Teardown may delete ignored files. It must keep the checkout, its Git identity, and its worktrees. When teardown changes tracked files, normal removal refuses. Retry with `--force` to discard them.
+
+A `default` Instance with the release layout runs teardown in its active release. When Orbit cannot read that release, for example because `current` names a release whose worktree entry is gone, teardown runs in the checkout, as it did before releases existed. The Gateway logs a warning with the Instance and the error code, and the removal goes on. Setup never falls back this way.
 
 The first teardown command that exits non-zero or times out stops the removal. The Route, source, and record stay, and the command returns `instance.teardown_step_failed` with the step name. A missing or non-executable command (exit 127 or 126) returns `instance.teardown_step_unavailable` instead, with `outcome: missing`. The message names the step and its Node and says the command was not found or is not executable. Setup uses the same distinction with `instance.setup_step_unavailable`. Orbit retains a bounded stderr tail internally, without including command output in the public error. Fix or destroy the step, then run `instance:destroy` again.
 
@@ -194,7 +223,7 @@ orbit node:excluded-project:list --node=NODE --json
 
 Replace `NODE` with each candidate. An eligible Node is active, has the `app-dev` role, is not in the Project exclusion list, and does not exclude Project 46. Install the helper on every eligible Node, including one that has no task checkout yet. A later workspace can land there.
 
-Confirm `task_check` is `composer check`. Confirm each stored `timeout_seconds` is an integer from 1 to 540. A new list totals at most 540 seconds. A list stored before that cap may total more, and a later change may not raise its total.
+Confirm `task_check` is `composer check`. Confirm each stored `timeout_seconds` is an integer from 1 to 540. A new list totals at most 540 seconds. A list stored before that cap may total more, and a later change may not raise its total. To add a step to such a list, [rebalance the other steps in the same write](#make-room-in-a-full-list).
 
 The task baseline runs each setup step with that step's own timeout, outside the API request deadline. `instance:create`, `instance:setup`, and `instance:destroy` run one whole list inside one request. Remote work ends at 570 seconds, and forward work stops 20 seconds earlier. `instance:create` holds 150 seconds back: 60 for teardown and 90 for removal.
 
@@ -360,6 +389,7 @@ These codes name the step that failed. The sections above say whether the Instan
 | `instance.setup_step_unavailable` | A setup command was not found or is not executable on the Node; `outcome: missing`. |
 | `instance.teardown_step_unavailable` | A teardown command was not found or is not executable on the Node; `outcome: missing`. |
 | `instance.setup_unavailable` | `instance:setup` targets an Instance that is not an active development Instance. |
+| `instance.active_release_unavailable` | Orbit could not read the active release of a `default` Instance with the release layout. No setup step ran. Teardown does not return it. |
 | `command.deadline_exceeded` | The request deadline stopped a step. |
 
 ## Why it works this way

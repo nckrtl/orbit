@@ -5817,7 +5817,7 @@
         "tags": [
           "Instances"
         ],
-        "description": "Create a development Instance on an app-dev Node.\n\nCreates a development Instance. New production Instances require a candidate. Use instance:clone.",
+        "description": "Create a development Instance on an app-dev Node.\n\nCreates a development Instance. New production Instances require a candidate. Use instance:clone.\nWith a Database server, Orbit creates the Instance's database there before the setup steps run.",
         "requestBody": {
           "required": true,
           "content": {
@@ -5851,6 +5851,12 @@
                     "type": "string",
                     "maxLength": 255,
                     "description": "Optional explicit source branch"
+                  },
+                  "database_server": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$(?![\\s\\S])",
+                    "maxLength": 63,
+                    "description": "Database server that gets the new Instance database before setup"
                   }
                 },
                 "required": [
@@ -20843,6 +20849,27 @@
                   "after": {
                     "type": "string",
                     "description": "Place after this step"
+                  },
+                  "rebalance": {
+                    "type": "array",
+                    "maxItems": 32,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        },
+                        "timeout_seconds": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "timeout_seconds"
+                      ]
+                    },
+                    "description": "Set another step timeout in the same write, as NAME=SECONDS; repeat as needed"
                   }
                 },
                 "required": [
@@ -21069,6 +21096,27 @@
                   "after": {
                     "type": "string",
                     "description": "Place after this step"
+                  },
+                  "rebalance": {
+                    "type": "array",
+                    "maxItems": 32,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        },
+                        "timeout_seconds": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "timeout_seconds"
+                      ]
+                    },
+                    "description": "Set another step timeout in the same write, as NAME=SECONDS; repeat as needed"
                   }
                 },
                 "additionalProperties": false
@@ -21144,7 +21192,7 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X PATCH \"https://gateway.orbit/api/v1/projects/4/setup-steps/migrate\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"command\": \"/usr/bin/php artisan queue:work\", \"timeout_seconds\": 3600, \"before\": \"example\", \"after\": \"example\"}'\n"
+            "source": "curl -sS -X PATCH \"https://gateway.orbit/api/v1/projects/4/setup-steps/migrate\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"command\": \"/usr/bin/php artisan queue:work\"}'\n"
           }
         ]
       }
@@ -22218,6 +22266,27 @@
                   "after": {
                     "type": "string",
                     "description": "Place after this step"
+                  },
+                  "rebalance": {
+                    "type": "array",
+                    "maxItems": 32,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        },
+                        "timeout_seconds": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "timeout_seconds"
+                      ]
+                    },
+                    "description": "Set another step timeout in the same write, as NAME=SECONDS; repeat as needed"
                   }
                 },
                 "required": [
@@ -22444,6 +22513,27 @@
                   "after": {
                     "type": "string",
                     "description": "Place after this step"
+                  },
+                  "rebalance": {
+                    "type": "array",
+                    "maxItems": 32,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        },
+                        "timeout_seconds": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "timeout_seconds"
+                      ]
+                    },
+                    "description": "Set another step timeout in the same write, as NAME=SECONDS; repeat as needed"
                   }
                 },
                 "additionalProperties": false
@@ -22519,7 +22609,7 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X PATCH \"https://gateway.orbit/api/v1/projects/4/teardown-steps/migrate\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"command\": \"/usr/bin/php artisan queue:work\", \"timeout_seconds\": 3600, \"before\": \"example\", \"after\": \"example\"}'\n"
+            "source": "curl -sS -X PATCH \"https://gateway.orbit/api/v1/projects/4/teardown-steps/migrate\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"command\": \"/usr/bin/php artisan queue:work\"}'\n"
           }
         ]
       }
@@ -29101,6 +29191,12 @@
             }
           },
           "vite_port": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "ssr_port": {
             "type": [
               "integer",
               "null"

@@ -85,7 +85,7 @@ The Gateway derives the file location and the user from the Instance's placement
 | `app-dev` | `.env` in the Instance's application directory within the checkout | The Node's managed user |
 | `app-prod` | `.env` in the production home | The Instance's production user |
 
-For Laravel, the [application directory](/reference/projects#application-directory) is the effective web root without its trailing `/public`. With root `apps/site/public`, development reads and writes `<checkout>/apps/site/.env`, and `.env.testing` lives beside it. A development default uses the same paths in its stable checkout home and copies those files into each candidate's application directory.
+For Laravel, the [application directory](/reference/projects#application-directory) is the effective web root without its trailing `/public`. With root `apps/site/public`, development reads and writes `<checkout>/apps/site/.env`, and `.env.testing` lives beside it. A development default uses the same paths in its stable checkout home and copies those files into each candidate's application directory. Before [setup](/reference/instance-setup#run-setup) runs in the active release, Orbit copies them into that release too, so `instance:setup` after a synchronization sees the new values.
 
 On `app-prod`, every release links `.env` in its application directory to the production home's file. With root `apps/site/public`, `<home>/releases/<name>/apps/site/.env` links to `<home>/.env`; no release-root `.env` link is needed. See [Production release layout](/reference/deployments).
 
