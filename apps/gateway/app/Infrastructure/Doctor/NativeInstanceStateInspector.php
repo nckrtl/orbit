@@ -7,7 +7,6 @@ namespace App\Infrastructure\Doctor;
 use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Doctor\InstanceInspectionData;
 use App\Domain\Doctor\InstanceStateInspector;
-use App\Domain\Instances\InstanceSandboxGuard;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\Storage\CheckoutRemovalBoundary;
 use App\Domain\SourceControl\GitRepositoryOrigin;
@@ -35,7 +34,6 @@ final readonly class NativeInstanceStateInspector implements InstanceStateInspec
 
     public function inspect(Instance $instance): InstanceInspectionData
     {
-        InstanceSandboxGuard::assertHostOperation($instance);
         $instance->loadMissing(['project', 'node']);
 
         if ($instance->placedOnAppProd()) {

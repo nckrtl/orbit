@@ -11,7 +11,6 @@ use App\Domain\Instances\Deployment\DeploymentOutputStream;
 use App\Domain\Instances\Deployment\DeploymentRequest;
 use App\Domain\Instances\Deployment\DevelopmentDeployment;
 use App\Domain\Instances\Deployment\DevelopmentTarget;
-use App\Domain\Instances\InstanceSandboxGuard;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\Storage\CheckoutRemovalBoundary;
 use App\Domain\Nodes\Storage\StoragePath;
@@ -40,7 +39,6 @@ final readonly class RemoteDevelopmentDeployment implements DevelopmentDeploymen
 
     public function convert(Instance $instance): string
     {
-        InstanceSandboxGuard::assertHostOperation($instance);
         $result = $this->run($instance, DevelopmentCheckoutProgram::convert(), 'convert', [$this->branch($instance)]);
 
         return $this->commit(trim($result->stdout));
@@ -48,7 +46,6 @@ final readonly class RemoteDevelopmentDeployment implements DevelopmentDeploymen
 
     public function target(Instance $instance): DevelopmentTarget
     {
-        InstanceSandboxGuard::assertHostOperation($instance);
         $repository = GitRepositoryOrigin::validate($instance->project->repository_url);
         $script = GitReadScript::for($this->access->for($repository, $instance->project->source_access), DevelopmentCheckoutProgram::target());
         $result = $this->ssh->execute(
@@ -72,7 +69,6 @@ final readonly class RemoteDevelopmentDeployment implements DevelopmentDeploymen
 
     public function checkout(Instance $instance, string $commit, DeploymentRequest $request): void
     {
-        InstanceSandboxGuard::assertHostOperation($instance);
         $this->commit($commit);
         $result = $this->run($instance, DevelopmentCheckoutProgram::checkout(), 'checkout', [$this->branch($instance), $commit], self::stream('checkout', $request));
         if (trim($result->stdout) !== $commit) {
@@ -82,8 +78,6 @@ final readonly class RemoteDevelopmentDeployment implements DevelopmentDeploymen
 
     public function executeStep(Instance $instance, DevelopmentDeployStep $step, DeploymentRequest $request): CommandResult
     {
-        InstanceSandboxGuard::assertHostOperation($instance);
-
         return $this->ssh->execute(
             $instance->node,
             new RemoteCommand(
@@ -102,7 +96,6 @@ final readonly class RemoteDevelopmentDeployment implements DevelopmentDeploymen
 
     public function removeReleases(Instance $instance, array $consumers): void
     {
-        InstanceSandboxGuard::assertHostOperation($instance);
         $this->run($instance, DevelopmentCheckoutProgram::removeReleases(), 'release_removal', array_map(
             static fn (string $checkout): string => StoragePath::parse($checkout)->value,
             $consumers,

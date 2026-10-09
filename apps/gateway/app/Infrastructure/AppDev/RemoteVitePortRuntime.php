@@ -7,7 +7,6 @@ namespace App\Infrastructure\AppDev;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppDev\VitePortRuntime;
 use App\Domain\Hibernation\RuntimeHibernation;
-use App\Domain\Instances\InstanceSandboxGuard;
 use App\Domain\Processes\ProcessOperationException;
 use App\Infrastructure\Processes\SystemdProcessRenderer;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -81,7 +80,6 @@ final readonly class RemoteVitePortRuntime implements VitePortRuntime
     /** @phpstan-impure */
     public function ownsListener(Process $process, Instance $instance, int $port): bool
     {
-        InstanceSandboxGuard::assertHostOperation($instance);
         $result = $this->ssh->execute($instance->node, new RemoteCommand(arguments: ['sudo', 'python3', '-c', <<<'PY'
             import pathlib, re, subprocess, sys
             unit, port, process_id = sys.argv[1:]
@@ -115,7 +113,6 @@ final readonly class RemoteVitePortRuntime implements VitePortRuntime
 
     public function ready(Process $process, Instance $instance, int $port): bool
     {
-        InstanceSandboxGuard::assertHostOperation($instance);
         if (! $this->ownsListener($process, $instance, $port)) {
             return false;
         }
@@ -135,13 +132,11 @@ final readonly class RemoteVitePortRuntime implements VitePortRuntime
 
     public function suspendTraffic(Instance $instance): void
     {
-        InstanceSandboxGuard::assertHostOperation($instance);
         $this->ssh->execute($instance->node, new RemoteCommand(arguments: ['sudo', 'rm', '-f', '--', RuntimeHibernation::awakePath(RuntimeHibernation::key($instance->id))], timeout: 10), 'vite-suspend-traffic', 'vite.suspend_failed');
     }
 
     public function markAwake(Instance $instance): void
     {
-        InstanceSandboxGuard::assertHostOperation($instance);
         $marker = RuntimeHibernation::awakePath(RuntimeHibernation::key($instance->id));
         $this->ssh->execute($instance->node, new RemoteCommand(arguments: ['sudo', 'install', '-d', '-o', 'root', '-g', 'caddy', '-m', '0755', '--', RuntimeHibernation::MarkerDirectory], timeout: 10), 'vite-awake-directory', 'vite.awake_failed');
         $this->ssh->execute($instance->node, new RemoteCommand(arguments: ['sudo', 'touch', '--', $marker], timeout: 10), 'vite-mark-awake', 'vite.awake_failed');
@@ -150,7 +145,6 @@ final readonly class RemoteVitePortRuntime implements VitePortRuntime
 
     public function prepare(Process $process, Instance $instance): void
     {
-        InstanceSandboxGuard::assertHostOperation($instance);
         $applicationDirectory = $instance->source_is_laravel === true ? $instance->applicationDirectory() : $instance->checkout_path;
         $path = SystemdProcessRenderer::viteEnvironmentPath($instance->id);
         $marker = RuntimeHibernation::awakePath(RuntimeHibernation::key($instance->id));
@@ -172,7 +166,6 @@ final readonly class RemoteVitePortRuntime implements VitePortRuntime
 
     public function project(Instance $instance): void
     {
-        InstanceSandboxGuard::assertHostOperation($instance);
         $this->projection->run(function () use ($instance): void {
             $instance->loadMissing('routes');
             if ($instance->routes->isNotEmpty()) {

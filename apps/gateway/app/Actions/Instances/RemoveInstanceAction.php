@@ -19,7 +19,6 @@ use App\Domain\Instances\InstanceCreationRecovery;
 use App\Domain\Instances\InstanceRemovalStatus;
 use App\Domain\Instances\InstanceRemovalStep;
 use App\Domain\Instances\InstanceRemover;
-use App\Domain\Instances\InstanceSandboxGuard;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\Removal\DevelopmentInstanceSourceFinalizer;
@@ -76,7 +75,6 @@ final readonly class RemoveInstanceAction implements InstanceRemover
 
     public function execute(Instance $instance, bool $force, bool $runTeardown = true, bool $allowCascade = true, bool $requirePreActivation = false): InstanceRemoval
     {
-        InstanceSandboxGuard::assertHostOperation($instance);
         $instanceId = $instance->id;
         $instanceName = $instance->name;
         $removal = $this->performRemoval($instance, $force, $runTeardown, $allowCascade, $requirePreActivation);

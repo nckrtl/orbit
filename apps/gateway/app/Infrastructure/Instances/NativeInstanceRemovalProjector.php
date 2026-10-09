@@ -8,7 +8,6 @@ use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Instances\InstanceSandboxGuard;
 use App\Domain\Instances\ProductionPhpRuntimeIdentity;
 use App\Domain\Instances\ProductionPhpRuntimeManager;
-use App\Domain\Instances\ProjectSandboxRuntimeGuard;
 use App\Domain\Instances\Removal\InstanceRemovalProjector;
 use App\Domain\Metrics\MetricsFleetReconciler;
 use App\Domain\Routes\PublicRouteEdgeProjector;
@@ -60,10 +59,6 @@ final readonly class NativeInstanceRemovalProjector implements InstanceRemovalPr
                 message: "Instance [{$member->name}] Route identity changed during removal.",
                 status: 409,
             );
-        }
-
-        if ($sandboxRemoval) {
-            ProjectSandboxRuntimeGuard::assertRoute($instance, $route, $member);
         }
 
         if (
