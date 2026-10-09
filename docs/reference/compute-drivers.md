@@ -20,7 +20,7 @@ Both lanes are off by default. [ADR 0200](/decisions/0200-run-each-task-group-in
 
 ## Task VMs
 
-Not built yet. The Phase 1 slices of [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm) build this section. Until they merge, no task VM code, command, or setting exists.
+Partly built. [Prepare an Incus host](#prepare-an-incus-host), [Limit fleet traffic on the hub](#limit-fleet-traffic-on-the-hub), and the address allocator's reserved range exist. The other Phase 1 slices of [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm) build the rest of this section. Until they merge, no task VM is created.
 
 A task VM is a stock Ubuntu 26.04 cloud VM on an Incus host. The Gateway creates it for one group, enrolls it as an `app-dev` Node, and destroys it when the group ends. After enrollment, the group uses the same code as a shared group, pinned to that Node.
 
@@ -86,15 +86,27 @@ Run `task-vms:prepare-host {node}` once for each host. It sends `resources/task-
 - The project's `default` profile: `eth0` on the bridge with `security.port_isolation=true`, and the root disk on the host's pool.
 - One host rule: `ufw route allow in on orbittask+ comment 'orbit-task-vms'`.
 
+The command takes these values from the host's entry in `task_vms.incus.hosts`. It refuses a bridge range that is not private, is not between /16 and /28, or overlaps the WireGuard subnet or the reserved range. The script reads its arguments again and changes nothing when one is invalid.
+
 The dropped egress ranges are `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.0.0/16`, `100.64.0.0/10`, `224.0.0.0/4`, and `240.0.0.0/4`. Port isolation blocks traffic between VMs on the same bridge. Both are needed. The ufw rule lets bridge traffic pass the host's forward policy, and replies use the existing rule for established connections.
 
 ### Limit fleet traffic on the hub
 
-Run `task-vms:prepare-hub` once. It runs `resources/task-vms/hub.sh` on the `vpn` Node with arguments that it takes from Gateway records and settings. The script installs the nft table `inet orbit_task_vms`, and a oneshot unit that loads it after `wg-quick@orbit`. The table filters only the reserved range in `task_vms.wireguard_range`.
+Run `task-vms:prepare-hub` once, and again when one of the addresses below changes. It runs `resources/task-vms/hub.sh` on the `vpn` Node. The script installs the nft table `inet orbit_task_vms` and the oneshot unit `orbit-task-vms-hub.service`, which loads the table before `wg-quick@orbit` starts. The tunnel pulls the unit in but does not depend on it, so a failed load never stops the fleet VPN. The script is idempotent and prints `{"ok":true}`.
+
+The command takes every address from Gateway records and settings:
+
+- the reserved range from `task_vms.wireguard_range`;
+- the Node with the `gateway` role;
+- Reverb at `reverb.orbit`, which is TCP 443 on the Node with the `websocket` role;
+- the host and port of `task_vms.model_proxy_origin`;
+- the router of the dev Cluster.
+
+The table filters only the reserved range. Its first rule passes every packet that has no address in the range, so traffic between other Nodes does not change. The command refuses a range that is not inside the WireGuard subnet, and a range that holds the address of any Node not named `tvm-<id>` or of an endpoint above. The range must be inside the subnet, because every Node routes only the subnet through the tunnel.
 
 | Direction | Allowed |
 | --- | --- |
-| From task VMs | The Gateway API on TCP 443, CLIProxyAPI on TCP 8317, Reverb, and DNS on the hub |
+| From task VMs | The Gateway API on TCP 443, CLIProxyAPI on TCP 8317, Reverb on TCP 443, and DNS on the hub |
 | To task VMs | The Gateway on TCP 22 and TCP 3774, and the dev Cluster router on TCP 80, 443, and 5173 |
 
 The table accepts established traffic and drops all other traffic to or from the range. The WireGuard address allocator skips the range for other Nodes. Only `AllocateTaskVmAction` assigns addresses in it. A task VM Node has no access grants to other Nodes.
@@ -111,7 +123,7 @@ These keys live in the Gateway's `config/task_vms.php`.
 | --- | --- |
 | `task_vms.enabled` | Allows new task VMs. Set with `ORBIT_TASK_VMS_ENABLED`. Default `false` |
 | `task_vms.dev_cluster_id` | The Cluster that task VM Nodes join |
-| `task_vms.wireguard_range` | The reserved WireGuard range. Default `10.44.64.0/20` |
+| `task_vms.wireguard_range` | The reserved WireGuard range. It must be inside the WireGuard subnet. Default `10.44.64.0/20` |
 | `task_vms.model_proxy_origin` | The CLIProxyAPI origin that Pi on the VM uses |
 | `task_vms.pi.artifact_path`, `task_vms.pi.artifact_sha256` | The pinned Pi executable and its SHA-256 digest |
 | `task_vms.pi.models` | The models Pi offers |
@@ -121,7 +133,7 @@ Each host has `node_id`, `project`, `network`, `cidr`, `pool`, `image`, `max_vms
 
 ### Errors
 
-`IncusTaskVmProvider` is the only place that reads host and guest output. It checks the instance state and its one IPv4 address inside the bridge range, the cloud-init status, and the host key fingerprint. Invalid output fails with `task_vm.invalid_host_output`. Every task VM error code starts with `task_vm.`. After that check, Orbit trusts its own records.
+`IncusTaskVmProvider` is the only place that reads host and guest output. It checks the instance state and its one IPv4 address inside the bridge range, the cloud-init status, and the host key fingerprint. Invalid output fails with `task_vm.invalid_host_output`. Every task VM error code starts with `task_vm.`. The setup commands report `task_vm.unknown_host`, `task_vm.settings_invalid`, `task_vm.range_outside_vpn_subnet`, `task_vm.range_in_use`, `task_vm.fleet_unavailable`, and `task_vm.setup_failed`, with the last lines of the script's error output. After that check, Orbit trusts its own records.
 
 ### Limits
 

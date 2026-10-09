@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\WireGuard;
 
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\TaskVms\TaskVmNetworkConfig;
 use App\Models\Node;
 use InvalidArgumentException;
 
@@ -12,19 +13,18 @@ final readonly class WireGuardAddressAllocator
 {
     public function __construct(
         private VpnSettings $settings,
+        private TaskVmNetworkConfig $taskVms,
     ) {}
 
+    /** The next free fleet address. It never lies in the range reserved for task VMs. */
     public function next(): string
     {
         $subnet = $this->subnet();
-        $used = Node::query()
-            ->whereNotNull('wireguard_ip')
-            ->pluck('wireguard_ip')
-            ->filter(static fn (mixed $address): bool => is_string($address))
-            ->all();
+        $reserved = $this->taskVms->wireguardRange();
+        $used = $this->nodeAddresses();
 
         foreach ($subnet->usableAddresses() as $address) {
-            if (! in_array($address, $used, strict: true)) {
+            if (! $reserved->contains($address) && ! in_array($address, $used, strict: true)) {
                 return $address;
             }
         }
@@ -32,6 +32,44 @@ final readonly class WireGuardAddressAllocator
         throw new ResourceOperationException(
             errorCode: 'vpn.peer_address_exhausted',
             message: "WireGuard subnet [{$subnet->value()}] has no free peer addresses.",
+            status: 409,
+        );
+    }
+
+    /**
+     * The next free address inside a range of the fleet subnet, such as the task VM range.
+     *
+     * @param  list<string>  $taken  addresses that are reserved but may not belong to a Node yet
+     */
+    public function nextIn(string $cidr, array $taken): string
+    {
+        try {
+            $range = Ipv4Subnet::from($cidr);
+        } catch (InvalidArgumentException) {
+            throw $this->invalidSubnet($cidr);
+        }
+
+        $subnet = $this->subnet();
+
+        if ($range->prefixLength() < $subnet->prefixLength() || ! $subnet->contains($range->networkAddress())) {
+            throw new ResourceOperationException(
+                errorCode: 'vpn.peer_address_invalid',
+                message: "Range [{$range->value()}] is not inside the WireGuard subnet [{$subnet->value()}].",
+                status: 409,
+            );
+        }
+
+        $used = [...$this->nodeAddresses(), ...$taken];
+
+        foreach ($range->usableAddresses() as $address) {
+            if (! in_array($address, $used, strict: true)) {
+                return $address;
+            }
+        }
+
+        throw new ResourceOperationException(
+            errorCode: 'vpn.peer_address_exhausted',
+            message: "WireGuard range [{$range->value()}] has no free peer addresses.",
             status: 409,
         );
     }
@@ -66,6 +104,16 @@ final readonly class WireGuardAddressAllocator
         }
 
         return $requestedAddress;
+    }
+
+    /** @return list<string> */
+    private function nodeAddresses(): array
+    {
+        return array_values(Node::query()
+            ->whereNotNull('wireguard_ip')
+            ->pluck('wireguard_ip')
+            ->filter(static fn (mixed $address): bool => is_string($address))
+            ->all());
     }
 
     private function subnet(): Ipv4Subnet
