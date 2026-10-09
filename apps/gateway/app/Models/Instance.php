@@ -78,6 +78,7 @@ use Illuminate\Support\Carbon;
  * @property bool|null $source_is_laravel
  * @property string|null $provisioning_step
  * @property string|null $failed_step
+ * @property bool $first_setup_pending
  * @property string|null $error_code
  * @property Carbon|null $runtime_definitions_captured_at
  * @property bool $development_release_layout
@@ -171,6 +172,7 @@ final class Instance extends Model
         'source_is_laravel',
         'provisioning_step',
         'failed_step',
+        'first_setup_pending',
         'runtime_definitions_captured_at',
         'status',
         'error_code',
@@ -440,6 +442,7 @@ final class Instance extends Model
             'development_release_layout' => 'boolean',
             'development_projection_pending' => 'boolean',
             'seed_selected' => 'boolean',
+            'first_setup_pending' => 'boolean',
             'status' => InstanceState::class,
         ];
     }

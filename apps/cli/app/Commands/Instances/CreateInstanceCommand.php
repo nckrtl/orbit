@@ -22,6 +22,7 @@ final class CreateInstanceCommand extends GatewayCommand
         {--root= : Optional relative web-root override}
         {--domain= : Optional explicit Route domain}
         {--branch= : Optional explicit source branch}
+        {--database-server= : Database server that gets the new Instance database before setup}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -30,6 +31,7 @@ final class CreateInstanceCommand extends GatewayCommand
     #[\Override]
     protected $help = <<<'HELP'
 Creates a development Instance. New production Instances require a candidate. Use instance:clone.
+With a Database server, Orbit creates the Instance's database there before the setup steps run.
 HELP;
 
     public function handle(
@@ -69,6 +71,7 @@ HELP;
                 root: $this->stringOption('root'),
                 domain: $this->stringOption('domain'),
                 branch: $this->stringOption('branch'),
+                databaseServer: $this->stringOption('database-server'),
             ),
             InstanceResponse::class,
             ['Create Instance', 'Creating Instance', 'Created Instance'],

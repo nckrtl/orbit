@@ -112,6 +112,19 @@ describe('Instance requests', function (): void {
         ]);
     });
 
+    it('transports an optional Database server and preserves omission', function (): void {
+        $request = new CreateInstanceRequest(projectId: 3, nodeId: 4, name: 'default', databaseServer: 'beast-mysql');
+
+        expect($request->body()->all())->toBe([
+            'project_id' => 3,
+            'node_id' => 4,
+            'name' => 'default',
+            'database_server' => 'beast-mysql',
+        ])
+            ->and((new CreateInstanceRequest(projectId: 3, nodeId: 4, name: 'default'))->body()->all())
+            ->not->toHaveKey('database_server');
+    });
+
     it('transports an optional Route domain and preserves omission', function (): void {
         $explicit = new CreateInstanceRequest(
             projectId: 3,

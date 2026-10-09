@@ -866,6 +866,7 @@
                 "apps/gateway"
             ],
             "concepts": [
+                "Access grant",
                 "Cluster",
                 "Deployment",
                 "Doctor",

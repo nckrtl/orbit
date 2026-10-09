@@ -2,12 +2,12 @@
 title: "Applications"
 description: "How a Project becomes an Instance on a Node: create or adopt a development checkout, provision its endpoint, clone to production, move, and remove."
 covers:
-  - apps/gateway/app/Actions/Instances/{CreateInstanceAction,CopyInstanceDependenciesAction,CloneInstanceDatabaseAction,RegisterInstanceAction,RenameInstanceAction,ListInstancesAction,ShowInstanceAction}.php
+  - apps/gateway/app/Actions/Instances/{CreateInstanceAction,CopyInstanceDependenciesAction,CloneInstanceDatabaseAction,CreateInstanceServerDatabaseAction,RegisterInstanceAction,RenameInstanceAction,ListInstancesAction,ShowInstanceAction}.php
   - apps/gateway/app/Domain/Instances/{DatabaseClone,DependencyCopy}/**
   - apps/gateway/app/Domain/Instances/{InstanceState,InstanceSourceLayout,InstanceDestinationGuard,ComposerSourceClassifier,Development*}.php
   - apps/gateway/app/Domain/Instances/Registration/**
   - apps/gateway/app/Infrastructure/Instances/{NativeDevelopmentInstanceProvisioner,RemoteDevelopmentInstanceSourceLifecycle,RemoteDevelopmentInstanceConfigurator,RemoteRegistrationSourceManager,RemoteInstanceDestinationGuard,RemoteInstanceSqliteCloner,RemoteInstanceDependencyCopier}.php
-  - apps/gateway/app/{Http/Controllers/Api/InstancesController.php,Http/Requests/Instances/**,Data/Instances/**,Models/Instance.php}
+  - apps/gateway/{app/Http/Controllers/Api/InstancesController.php,app/Http/Requests/Instances/**,app/Data/Instances/**,app/Models/Instance.php,database/migrations/*_record_instance_first_setup_pending.php}
   - apps/cli/app/Commands/Instances/{CreateInstanceCommand,RegisterInstanceCommand,RenameInstanceCommand,ListInstancesCommand,ShowInstanceCommand,InstanceOutput}.php
   - apps/cli/app/Services/Git/**
 ---
@@ -107,9 +107,33 @@ The clone returns these codes.
 
 No teardown step runs after a failed copy, because no setup step ran yet. When the removal cannot finish, the error has `cleanup: incomplete` and names the `instance:destroy` command that finishes it.
 
-Orbit records each finished step of the copy on its connection. When a create stops before the copy finished, an identical `instance:create` finishes the copy and then runs the setup steps. It copies the data again unless the earlier copy finished, so it never keeps a partial copy.
+Orbit records each finished step of the copy on its connection. When a create stops before the copy finished, an identical `instance:create` finishes the copy and then runs the setup steps. It copies the data again unless the earlier copy finished, so it never keeps a partial copy. Only a create that has not finished its [first setup](/reference/instance-setup#run-setup) resumes this way. A retry keeps the Instance when the copy or a setup step fails again; only the request that activated the Instance removes it.
 
 The copy holds the full data of the `default` Instance, including personal data. A Project without a `default` Instance, or whose `default` Instance has no `DB` attachment, gets no copy.
+
+### Database on a server
+
+An Instance that gets no copy, such as the `default` Instance itself, can get an empty database during create. Name a [Database server](/reference/database-servers) with `--database-server` (API field `database_server`).
+
+```bash
+orbit instance:create 12 3 default --database-server=beast-mysql
+```
+
+After the source is ready and before the setup steps, Orbit does what [`database:create --server --instance`](/reference/database-servers#create-a-database-on-a-server) does. It creates the database `<project>_<instance>`, its test database, and the Instance's user on the server, with the connection slug `<project>-<instance>`. It records the Instance as the owner and attaches the database under prefix `DB`. Then it imports and synchronizes `.env` and `.env.testing` as the clone does. A setup step such as a migration finds the database on the first create.
+
+| Code | HTTP | Cause |
+| --- | --- | --- |
+| `instance.database_server_conflict` | 422 | The new Instance gets a [copy](#database-clone) of the `default` database. Nothing changes. |
+| `instance.database_server_existing` | 409 | The Instance exists and finished its first setup. The message names the `database:create --instance` and `instance:setup` commands to run. Nothing changes. |
+| `database.server_missing` | 404 | No Database server has that slug. Nothing changes. |
+| `database.server_inactive` | 409 | The Database server is not active. Nothing changes. |
+| `instance.database_create_failed` | 502 | Orbit could not finish the database. |
+
+The other `database:create` codes, such as `database.name_conflict` and `database.slug_conflict`, pass through. On the request that creates the Instance, every failure after the check removes the Instance and the database it owns, as a failed copy does, and no setup step runs. When a create stops before the database exists, an identical `instance:create` creates it and then runs the setup steps. That retry never removes the Instance: when the database or a setup step fails, the Instance remains and the error says so.
+
+`--database-server` applies only to an Instance that `instance:create` is still creating. For an Instance that finished its first setup, Orbit refuses the option with `instance.database_server_existing` and changes nothing, even when that Instance's last `instance:setup` failed. Give it a database with [`database:create --server --instance`](/reference/database-servers#create-a-database-on-a-server), then run `instance:setup`. A repeat of a finished create whose Instance already owns a database on that server changes nothing and returns status 200. When that Instance's last `instance:setup` failed, the repeat returns `instance.setup_step_failed` instead.
+
+The caller needs an [access grant](/cli/node) to the Instance's Node and to the Gateway, the same access `database:create` needs.
 
 ## Record a renamed branch
 
@@ -265,6 +289,12 @@ An Instance is active once Orbit prepared its source, runtime, Route, and Larave
 ### Orbit owns the Laravel URL
 
 Laravel uses `APP_URL` to build links outside a request. When Orbit changes a domain and leaves `APP_URL` alone, links break. So Orbit derives `APP_URL` from the Route in development and production. Reading an existing `APP_URL` as the source of the domain was rejected: the Route decides the endpoint.
+
+### Create the database before setup
+
+A database attached with `database:create --instance` can only come after the Instance exists. By then `instance:create` has run the setup steps, so a migration step failed and rolled the whole create back. Orbit now creates the database inside the create, between activation and setup, by reusing `database:create`. Ignoring a failed setup step was rejected, because an Instance whose setup failed is not a useful result. A default server stored on the Project was rejected, because the choice belongs to each Instance and a second hidden default would compete with the [database clone](#database-clone).
+
+A create retry resumes only an Instance that carries the create's own mark, never one inferred from `failed_step: setup`. That value also follows a failed `instance:setup` on an Instance that has been live for weeks, and a retry that treated it as an unfinished create removed that Instance when the database or setup failed. For the same reason, an existing Instance gets its database from `database:create --instance`, and a retry never removes an Instance that an earlier request activated.
 
 ### Copy dependencies, not the checkout
 

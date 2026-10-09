@@ -13,5 +13,6 @@ final readonly class CreateInstanceData
         public ?string $root,
         public ?string $domain,
         public ?string $branch,
+        public ?string $databaseServer = null,
     ) {}
 }

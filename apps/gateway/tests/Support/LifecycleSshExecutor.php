@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Support;
 
+use App\Domain\Instances\Deployment\DevelopmentDeployment;
 use App\Domain\Projects\ProjectLifecycleRunner;
 use App\Domain\Projects\ProjectLifecycleStepStore;
 use App\Domain\Projects\TiaBaselineSetup;
@@ -22,13 +23,13 @@ use Closure;
 
 final class LifecycleSshExecutor implements SshExecutor
 {
-    /** @var list<array{checkout: string, command: string, timeout: int|float}> */
+    /** @var list<array{checkout: string, directory: string, environment_directory: string|null, command: string, timeout: int|float}> */
     public array $inputs = [];
 
     /** @var list<string> */
     public array $shells = [];
 
-    /** @param (Closure(array{checkout: string, command: string, timeout: int|float}): int)|null $result */
+    /** @param (Closure(array{checkout: string, directory: string, environment_directory: string|null, command: string, timeout: int|float}): int)|null $result */
     public function __construct(public ?Closure $result = null, public bool $local = false) {}
 
     public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
@@ -54,7 +55,7 @@ final class LifecycleSshExecutor implements SshExecutor
         return new CommandResult($this->result === null ? 0 : ($this->result)($payload), '', '', 1, false);
     }
 
-    /** @return array{checkout: string, command: string, timeout: int|float} */
+    /** @return array{checkout: string, directory: string, environment_directory: string|null, command: string, timeout: int|float} */
     private function decodePayload(string $input): array
     {
         $payload = json_decode($input, true, flags: JSON_THROW_ON_ERROR);
@@ -63,7 +64,9 @@ final class LifecycleSshExecutor implements SshExecutor
         if (
             ! is_array($payload)
             || ! is_string($payload['checkout'] ?? null)
+            || ! is_string($payload['directory'] ?? null)
             || ! is_string($payload['command'] ?? null)
+            || (array_key_exists('environment_directory', $payload) && ! is_string($payload['environment_directory']))
             || (! is_float($timeout) && ! is_int($timeout))
         ) {
             throw new \UnexpectedValueException('The lifecycle command payload is invalid.');
@@ -71,12 +74,14 @@ final class LifecycleSshExecutor implements SshExecutor
 
         return [
             'checkout' => $payload['checkout'],
+            'directory' => $payload['directory'],
+            'environment_directory' => $payload['environment_directory'] ?? null,
             'command' => $payload['command'],
             'timeout' => $timeout,
         ];
     }
 
-    public function runner(?CommandDeadline $deadline = null, string $vpHome = '/opt/orbit/vite-plus'): ProjectLifecycleRunner
+    public function runner(?CommandDeadline $deadline = null, string $vpHome = '/opt/orbit/vite-plus', ?DevelopmentDeployment $deployment = null): ProjectLifecycleRunner
     {
         return new ProjectLifecycleRunner(
             new ProjectLifecycleStepStore,
@@ -103,6 +108,7 @@ final class LifecycleSshExecutor implements SshExecutor
             $deadline ?? new CommandDeadline,
             ResolvedVp::manager($vpHome),
             app(TiaBaselineSetup::class),
+            $deployment ?? app(DevelopmentDeployment::class),
         );
     }
 }
