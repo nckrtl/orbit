@@ -185,7 +185,10 @@ final readonly class DeployDefaultInstanceAction
 
                 return;
             }
-            $kept = $this->deployment->removeReleases($instance, $seeded->pluck('checkout_path')->filter(static fn (mixed $path): bool => is_string($path) && $path !== '')->values()->all());
+            $kept = $this->deployment->removeReleases($instance, array_values(array_filter(
+                $seeded->map(static fn (Instance $consumer): string => $consumer->checkout_path)->all(),
+                static fn (string $path): bool => $path !== '',
+            )));
         } catch (Throwable $exception) {
             Log::warning('The old development releases remain; a later deployment retries their removal.', [
                 'instance_id' => $instance->id,
