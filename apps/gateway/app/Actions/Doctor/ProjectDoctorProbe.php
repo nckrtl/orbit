@@ -14,7 +14,6 @@ use App\Domain\Doctor\DoctorNodeContext;
 use App\Domain\Doctor\ProjectDoctorIssueCode;
 use App\Domain\Doctor\ProjectStateInspector;
 use App\Domain\Instances\InstanceProvisionProgress;
-use App\Domain\Instances\InstanceSandboxGuard;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Tasks\TaskWorkspaceLifecycle;
 use App\Models\Instance;
@@ -142,7 +141,7 @@ final readonly class ProjectDoctorProbe implements DoctorFamilyProbe
     {
         $settled = TaskWorkspaceLifecycle::settledState($instance);
 
-        return ! InstanceSandboxGuard::isSandbox($instance) && ! InstanceProvisionProgress::isInFlight($instance, $settled);
+        return ! InstanceProvisionProgress::isInFlight($instance, $settled);
     }
 
     private function hasCheckoutsOutsideRemoval(Project $project, int $nodeId): bool

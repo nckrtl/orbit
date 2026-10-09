@@ -4,10 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances\Environment;
 
-use App\Domain\Instances\InstanceSandboxGuard;
 use App\Domain\Instances\InstanceSourceProfileGuard;
 use App\Domain\Instances\InstanceState;
-use App\Domain\Instances\ProjectSandboxRuntimeGuard;
 use App\Domain\Routes\PublicRouteEligibility;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
@@ -24,7 +22,6 @@ final readonly class InstanceEnvironmentContextResolver
         bool $requireActiveNode,
         bool $lockRoute = false,
     ): InstanceEnvironmentContext {
-        ProjectSandboxRuntimeGuard::assertRuntime($instance);
         $sourceIsLaravel = $instance->source_is_laravel;
         $environment = $instance->placementEnvironment();
 
@@ -98,7 +95,6 @@ final readonly class InstanceEnvironmentContextResolver
         bool $requireActiveNode,
         bool $lockRoute = false,
     ): InstanceEnvironmentContext {
-        InstanceSandboxGuard::assertHostOperation($instance);
         $sourceIsLaravel = $instance->source_is_laravel;
         $environment = $instance->placementEnvironment();
 
@@ -175,7 +171,6 @@ final readonly class InstanceEnvironmentContextResolver
         bool $requireActiveNode,
         bool $lockRoute = false,
     ): InstanceEnvironmentContext {
-        InstanceSandboxGuard::assertHostOperation($instance);
         $sourceIsLaravel = $instance->source_is_laravel;
         $environment = $instance->placementEnvironment();
 
