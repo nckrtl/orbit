@@ -453,9 +453,9 @@ describe('Composer configuration', function (): void {
                     'Compute Pint and Rector cache prefix', 'Restore Pint and Rector caches', 'Run project quality checks',
                     'Check classification fakes', 'Require the Pest TIA graph to describe this commit', 'Export main caches',
                 ], true)) {
-                expect($if)->toContain("matrix.part != 'subprocess'", $step['name']);
+                expect($if)->toContain("matrix.part != 'subprocess'");
             } else {
-                expect($if)->not->toContain('matrix.part', $step['name']);
+                expect($if)->not->toContain('matrix.part');
             }
         }
     });
