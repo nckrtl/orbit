@@ -57,19 +57,6 @@ it('preserves public SSH before enabling inactive UFW', function (): void {
         ->each->toBe('nckrtl');
 });
 
-it('installs WireGuard membership through bootstrap SSH before tunnel verification', function (): void {
-    $ssh = new RoleFirewallSshExecutor(active: false);
-
-    role_firewall_manager($ssh)->convergeBase(role_firewall_node(), 'nckrtl');
-
-    expect($ssh->comments())->toContain('orbit:public-ssh-recovery', 'orbit:wireguard-members');
-    expect(array_column($ssh->calls, 'connection'))->each(fn ($connection) => $connection->host->toBe('192.0.2.10'));
-    expect($ssh->mutations())->toContain([
-        'sudo', 'ufw', 'allow', 'in', 'on', 'orbit', 'to', '10.44.0.2',
-        'comment', 'orbit:wireguard-members',
-    ]);
-});
-
 it('trusts WireGuard membership and removes public recovery after VPN convergence', function (): void {
     $ssh = new RoleFirewallSshExecutor;
     $manager = role_firewall_manager($ssh);

@@ -6,7 +6,6 @@ import os
 from pathlib import Path
 import pwd
 import re
-import shlex
 import stat
 import subprocess
 import sys
@@ -69,53 +68,15 @@ def align_clock(epoch, started, state=Path('/run/orbit-project-clock'),
         os.close(descriptor)
 
 
-def restore_recovery(port, ufw=Path('/usr/sbin/ufw')):
-    if not os.path.lexists(ufw):
-        return  # Native base-host bootstrap will install UFW before enabling it.
-    details = ufw.lstat()
-    if not stat.S_ISREG(details.st_mode) or details.st_uid != 0 or details.st_mode & 0o022:
-        raise ValueError('Unsafe firewall program')
-    comment = 'orbit:public-ssh-recovery'
-    prefix = '10.233.' + str(port - 24000) + '.'
-    legacy = ['ufw', 'allow', str(port) + '/tcp', 'comment', comment]
-    desired = ['ufw', 'allow', 'from', prefix + '1', 'to', prefix + '10', 'port', '22', 'proto', 'tcp', 'comment', comment]
-
-    def command(*args):
-        result = subprocess.run([str(ufw), *args], stdin=subprocess.DEVNULL, text=True, capture_output=True,
-                                env={'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LC_ALL': 'C'}, timeout=10)
-        if result.returncode or len(result.stdout) > 65536:
-            raise ValueError('Firewall recovery failed')
-        return result.stdout
-
-    def owned():
-        rows = [shlex.split(line) for line in command('show', 'added').splitlines() if comment in line]
-        if any(row not in (legacy, desired) for row in rows) or any(rows.count(row) != 1 for row in rows):
-            raise ValueError('Foreign recovery firewall rule')
-        return rows
-
-    rows = owned()
-    if desired not in rows:
-        command(*desired[1:])
-    if legacy in rows:
-        command('--force', 'delete', *legacy[1:])
-    if owned() != [desired]:
-        raise ValueError('Firewall recovery not confirmed')
-
-
 def bootstrap(request, home, uid, gid):
     started = time.monotonic()
-    if not isinstance(request, dict) or set(request) != {'public_key', 'recovery_port', 'gateway_time'}:
+    if not isinstance(request, dict) or set(request) != {'public_key', 'gateway_time'}:
         raise ValueError('Invalid Project SSH request')
     timestamp = request['gateway_time']
     if (not isinstance(timestamp, str) or not re.fullmatch(r'[0-9]{10}\.[0-9]{6}', timestamp)
             or not 1262304000 <= float(timestamp) <= 4102444800):
         raise ValueError('Invalid Gateway UTC time')
-    port = request['recovery_port']
-    if port is not None and (type(port) is not int or not 24001 <= port <= 24254):
-        raise ValueError('Invalid Project SSH proxy port')
     result = prepare({'public_key': request['public_key']}, home, uid, gid)
-    if port is not None:
-        restore_recovery(port)
     align_clock(float(timestamp), started)
     return result
 
