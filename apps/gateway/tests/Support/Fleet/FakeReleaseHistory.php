@@ -8,7 +8,12 @@ use App\Domain\Fleet\ReleaseHistory;
 
 final readonly class FakeReleaseHistory implements ReleaseHistory
 {
-    public function __construct(private int $count = 4681) {}
+    /**
+     * @param  list<string>  $ancestors  What every commit reaches, newest first.
+     * @param  array<string, int>  $counts  A count per commit, instead of `$count`.
+     * @param  list<string>  $cliChanged  Commits whose CLI build inputs differ from every other commit's.
+     */
+    public function __construct(private int $count = 4681, private array $ancestors = [], private array $counts = [], private array $cliChanged = []) {}
 
     public function commit(string $revision): ?string
     {
@@ -17,6 +22,16 @@ final readonly class FakeReleaseHistory implements ReleaseHistory
 
     public function count(string $commit): ?int
     {
-        return $this->count;
+        return $this->counts[$commit] ?? $this->count;
+    }
+
+    public function ancestors(string $commit, int $limit): array
+    {
+        return array_slice(array_values(array_diff($this->ancestors, [$commit])), 0, $limit);
+    }
+
+    public function unchanged(string $from, string $to, array $paths): bool
+    {
+        return array_intersect([$from, $to], $this->cliChanged) === [];
     }
 }

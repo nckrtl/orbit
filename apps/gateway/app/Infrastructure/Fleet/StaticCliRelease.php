@@ -35,6 +35,16 @@ final readonly class StaticCliRelease implements CliReleaseCatalog, ReleaseHisto
         return is_int($number) && $number > 0 ? $number : null;
     }
 
+    public function ancestors(string $commit, int $limit): array
+    {
+        return [];
+    }
+
+    public function unchanged(string $from, string $to, array $paths): bool
+    {
+        return false;
+    }
+
     public function find(string $commit, CliReleaseName $release): DesiredCliReleaseData
     {
         $manifest = $this->manifest();
@@ -57,7 +67,7 @@ final readonly class StaticCliRelease implements CliReleaseCatalog, ReleaseHisto
             return DesiredCliReleaseData::unavailable(CliReleaseUnavailableReason::ReleaseIncomplete);
         }
 
-        return DesiredCliReleaseData::available($release, $checksums, $assets);
+        return DesiredCliReleaseData::available($release, $commit, $checksums, $assets);
     }
 
     /** @return array<array-key, mixed> */

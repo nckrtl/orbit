@@ -4061,6 +4061,7 @@ export interface components {
             reason?: "gateway_commit_unknown" | "history_unavailable" | "release_missing" | "release_mismatch" | "release_incomplete" | "github_unavailable" | null;
             version?: string | null;
             tag?: string | null;
+            commit?: string | null;
             checksums_url?: string | null;
             assets?: components["schemas"]["FleetReleaseAsset"][];
         };
