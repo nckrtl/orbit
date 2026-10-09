@@ -90,6 +90,16 @@ final readonly class TaskVmSettings
         );
     }
 
+    /**
+     * Whether an operator has configured task VMs: enabled them, or set the Cluster, the origin, or a host.
+     * From then on the reserved range lies inside the VPN subnet, and every Node's Caddy refuses it on
+     * every site except the Gateway API and Reverb.
+     */
+    public function configured(): bool
+    {
+        return $this->enabled || $this->devClusterId !== null || $this->modelProxyOrigin !== null || $this->hosts !== [];
+    }
+
     public function host(int $nodeId): TaskVmHost
     {
         foreach ($this->hosts as $host) {

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Caddy\Build;
 
+use App\Domain\TaskVms\TaskVmException;
+use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\Caddy\CaddyGlobalOptions;
 use App\Models\Node;
@@ -23,6 +25,9 @@ final readonly class NodeCaddyfileRenderer
     /** The named matcher of the clients a site does not admit. */
     public const string OutsideMatcher = '@orbit_outside';
 
+    /** The named matcher of the task VMs a site refuses. */
+    public const string TaskVmMatcher = '@orbit_task_vms';
+
     /** @param list<NodeCaddySiteSource> $sources In render order. */
     public function __construct(
         private array $sources,
@@ -41,7 +46,15 @@ final readonly class NodeCaddyfileRenderer
             }
         }
 
-        $listeners = NodeCaddyListeners::forSites($node, $sites, app(VpnSettings::class)->subnet());
+        try {
+            $taskVms = app(TaskVmSettings::class);
+            $taskVmRange = $taskVms->configured() ? $taskVms->wireguardRange : null;
+        } catch (TaskVmException $exception) {
+            $problems[] = $exception->getMessage();
+            $taskVmRange = null;
+        }
+
+        $listeners = NodeCaddyListeners::forSites($node, $sites, app(VpnSettings::class)->subnet(), $taskVmRange);
 
         $blocks = [];
         $rendered = [];
@@ -77,9 +90,10 @@ final readonly class NodeCaddyfileRenderer
                 ? $site->body
                 : str_replace($site->bindPlaceholder, implode(' ', $bind), $site->body);
             $clients = $listeners->clients($site->listener);
+            $refused = $listeners->refused($site);
 
-            if ($clients !== null) {
-                $body = self::admitOnly($body, $clients);
+            if ($clients !== null || $refused !== null) {
+                $body = self::admitOnly($body, $clients, $refused);
             }
             $block = "# orbit: {$site->source} {$site->name}".PHP_EOL.rtrim($body).PHP_EOL;
             $blocks[] = $block;
@@ -104,17 +118,19 @@ final readonly class NodeCaddyfileRenderer
     }
 
     /**
-     * Aborts every connection from outside the admitted client ranges, right after each network `bind` line of
-     * the site. Orbit's global options order `abort` first, so no other handler answers such a client. A unix
-     * socket listener serves only local connections and keeps no guard.
+     * Aborts every connection from outside the admitted client ranges, and from inside the refused range, right
+     * after each network `bind` line of the site. Orbit's global options order `abort` first, so no other handler
+     * answers such a client. A unix socket listener serves only local connections and keeps no guard.
      */
-    public static function admitOnly(string $body, string $clients): string
+    public static function admitOnly(string $body, ?string $clients, ?string $refused = null): string
     {
         return (string) preg_replace_callback(
             '/^([ \t]*)bind (?!unix\/)[^\n]*$/m',
-            static fn (array $match): string => $match[0].PHP_EOL
-                .$match[1].self::OutsideMatcher.' not remote_ip '.$clients.PHP_EOL
-                .$match[1].'abort '.self::OutsideMatcher,
+            static fn (array $match): string => $match[0]
+                .($clients === null ? '' : PHP_EOL.$match[1].self::OutsideMatcher.' not remote_ip '.$clients
+                    .PHP_EOL.$match[1].'abort '.self::OutsideMatcher)
+                .($refused === null ? '' : PHP_EOL.$match[1].self::TaskVmMatcher.' remote_ip '.$refused
+                    .PHP_EOL.$match[1].'abort '.self::TaskVmMatcher),
             $body,
         );
     }

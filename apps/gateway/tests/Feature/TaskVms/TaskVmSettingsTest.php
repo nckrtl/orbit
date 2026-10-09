@@ -99,6 +99,18 @@ describe('off but configured', function (): void {
             ->and($settings->host(7)->bridgeAddress())->toBe('10.251.77.1');
     });
 
+    it('counts as configured once the Cluster, the origin, or a host is set, but not for the range or Pi alone', function (array $values, bool $configured): void {
+        task_vms_off($values);
+
+        expect(TaskVmSettings::fromConfig()->configured())->toBe($configured);
+    })->with([
+        'nothing set' => [[], false],
+        'range and Pi only' => [['wireguard_range' => '10.44.0.192/26', 'pi' => ['models' => ['proxy/coder-large']]], false],
+        'Cluster' => [['dev_cluster_id' => 4], true],
+        'origin' => [['model_proxy_origin' => 'http://10.44.0.3:8317'], true],
+        'host' => [task_vm_hosts([]), true],
+    ]);
+
     it('treats empty values as unset', function (): void {
         task_vms_off(['dev_cluster_id' => '', 'model_proxy_origin' => '', 'pi' => ['artifact_path' => '', 'artifact_sha256' => '']]);
 

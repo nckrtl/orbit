@@ -396,6 +396,79 @@ describe('listener selection', function (): void {
     });
 });
 
+describe('task VM guard', function (): void {
+    it('renders no task VM guard while task VMs are not configured, though the range has a default', function (): void {
+        $node = caddy_build_services_node();
+
+        expect(config('task_vms.wireguard_range'))->toBe('10.44.0.128/25')
+            ->and(caddy_build_renderer()->render($node)->content)->not->toContain('orbit_task_vms');
+    });
+
+    it('refuses the range on every site of the websocket Node except reverb.orbit once task VMs are configured', function (): void {
+        $node = caddy_build_services_node();
+        $unconfigured = caddy_build_renderer()->render($node)->content;
+        caddy_build_task_vms();
+
+        $caddyfile = caddy_build_renderer()->render($node);
+
+        expect($caddyfile->problems)->toBe([])
+            ->and($caddyfile->content)
+            ->toContain("reverb.orbit {\n    bind 10.44.0.3\n    @orbit_outside not remote_ip 10.44.0.0/24\n    abort @orbit_outside\n    tls ")
+            ->toContain("analytics.orbit {\n    bind 10.44.0.3\n    @orbit_outside not remote_ip 10.44.0.0/24\n    abort @orbit_outside\n    @orbit_task_vms remote_ip 10.44.0.128/25\n    abort @orbit_task_vms\n")
+            ->toContain("collector.cli-proxy-api.orbit {\n    bind 10.44.0.3\n    @orbit_outside not remote_ip 10.44.0.0/24\n    abort @orbit_outside\n    @orbit_task_vms remote_ip 10.44.0.128/25\n    abort @orbit_task_vms\n")
+            ->toContain("https://shop.test {\n    bind 10.44.0.3\n    @orbit_task_vms remote_ip 10.44.0.128/25\n    abort @orbit_task_vms\n")
+            ->and(str_replace(["\n    @orbit_task_vms remote_ip 10.44.0.128/25", "\n    abort @orbit_task_vms"], '', $caddyfile->content))->toBe($unconfigured);
+    });
+
+    it('refuses the range on metrics.orbit but not on gateway.orbit', function (): void {
+        caddy_build_task_vms(['wireguard_range' => '10.44.0.192/26']);
+        $gateway = caddy_build_node('gateway', '10.44.0.2');
+        $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
+        CaddySiteCertificateFixtures::recordAll($gateway);
+        caddy_build_node('beast', '10.44.0.7')->roles()->create(['role' => RoleName::Metrics, 'status' => LifecycleStatus::Active]);
+
+        $content = caddy_build_renderer()->render($gateway)->content;
+
+        expect($content)
+            ->toContain("gateway.orbit, 10.44.0.2 {\n    bind 10.44.0.2\n    @orbit_outside not remote_ip 10.44.0.0/24\n    abort @orbit_outside\n    tls ")
+            ->toContain("metrics.orbit {\n    bind 10.44.0.2\n    @orbit_outside not remote_ip 10.44.0.0/24\n    abort @orbit_outside\n    @orbit_task_vms remote_ip 10.44.0.192/26\n    abort @orbit_task_vms\n")
+            ->and(substr_count($content, 'abort @orbit_task_vms'))->toBe(1);
+    });
+
+    it('refuses the range on public and private sites of a Router and Ingress Node', function (): void {
+        caddy_build_task_vms();
+
+        $caddyfile = caddy_build_compose([
+            caddy_build_rendered_site(CaddyListenerRule::Public, host: 'shop.example.com', source: 'ingress'),
+            caddy_build_rendered_site(CaddyListenerRule::Wildcard, host: 'shop.test', source: 'app-dev'),
+        ], lan: '192.168.1.9', ingress: true);
+
+        expect($caddyfile->content)
+            ->toContain("shop.example.com {\n    bind 0.0.0.0 10.44.0.9 192.168.1.9\n    @orbit_task_vms remote_ip 10.44.0.128/25\n    abort @orbit_task_vms\n}\n")
+            ->toContain("shop.test {\n    bind 10.44.0.9 192.168.1.9\n    @orbit_outside not remote_ip private_ranges 100.64.0.0/10 10.44.0.0/24\n    abort @orbit_outside\n    @orbit_task_vms remote_ip 10.44.0.128/25\n    abort @orbit_task_vms\n}\n");
+    });
+
+    it('turns an invalid task VM config into a build problem', function (): void {
+        caddy_build_task_vms(['model_proxy_origin' => 'http://10.44.0.3:8317/v1']);
+
+        $caddyfile = caddy_build_renderer()->render(caddy_build_services_node());
+
+        expect($caddyfile->buildable())->toBeFalse()
+            ->and($caddyfile->problems)->toHaveCount(1)
+            ->and($caddyfile->problems[0])->toContain('The task VM config is invalid: model_proxy_origin');
+    });
+
+    it('validates the guarded websocket Node when a Caddy binary is installed', function (): void {
+        if (new ExecutableFinder()->find('caddy') === null) {
+            $this->markTestSkipped('Caddy is not installed.');
+        }
+
+        caddy_build_task_vms();
+
+        expect(caddy_adapt(caddy_build_renderer()->render(caddy_build_services_node())->content)->succeeded())->toBeTrue();
+    });
+});
+
 describe('duplicate addresses', function (): void {
     it('refuses two sites with the same address and names both sources', function (): void {
         $gateway = caddy_build_node('gateway', '10.44.0.1');
@@ -531,6 +604,35 @@ function caddy_build_site(
         publicListener: $publicListener,
         localUnixUpstream: $localUnixUpstream,
     );
+}
+
+/** @param array<string, mixed> $values */
+function caddy_build_task_vms(array $values = []): void
+{
+    config(['task_vms' => [
+        'enabled' => false,
+        'dev_cluster_id' => 4,
+        'wireguard_range' => '10.44.0.128/25',
+        'model_proxy_origin' => 'http://10.44.0.3:8317',
+        'pi' => ['artifact_path' => null, 'artifact_sha256' => null, 'models' => []],
+        'incus' => ['hosts' => []],
+        ...$values,
+    ]]);
+}
+
+/** The live `services` Node: Reverb, analytics, ProxyCli, and an `app-dev` workload site. */
+function caddy_build_services_node(): Node
+{
+    $router = caddy_build_node('router', '10.44.0.7');
+    [$instance] = caddy_build_private_route($router, 'shop.test');
+    $node = $instance->node;
+    $node->update(['name' => 'services', 'wireguard_ip' => '10.44.0.3']);
+    $node->roles()->create(['role' => RoleName::WebSocket, 'status' => LifecycleStatus::Active]);
+    $node->roles()->create(['role' => RoleName::Analytics, 'status' => LifecycleStatus::Active]);
+    CaddySiteCertificateFixtures::recordAll($node);
+    app(ProxyCliState::class)->enable($node->id, 'cache', 'https://cliproxy.test', 'management', 'read', 'control');
+
+    return $node->fresh() ?? $node;
 }
 
 function caddy_build_node(string $name, ?string $wireguardIp): Node
