@@ -227,7 +227,9 @@ The operation is "deploy what the branch holds now". So a deployment takes no co
 
 ### Three releases per home
 
-Each release holds a full checkout with its dependencies, so the count decides the disk use. Three keep the current code, the way back, and one more step back. The previous selection outranks newer releases that never went live, because it is the release a rollback needs first. For development, a leased seed outranks everything else, because another Instance still reads it; the limit gives way and the Gateway warns. For production, a release that a running process uses outranks the limit for the same reason: deleting it would pull the code, the dependencies, and the configuration cache out from under that process.
+Each release holds a full checkout with its dependencies, so the count decides the disk use. Three keep the current code, the way back, and one more step back. The previous selection outranks newer releases that never went live, because it is the release a rollback needs first.
+
+For development, a leased seed outranks everything else, because another Instance still reads it; the limit gives way and the Gateway warns. For production, a release that a running process uses outranks the limit for the same reason: deleting it would pull the code, the dependencies, and the configuration cache out from under that process.
 
 When pruning fails closed on a broken development release, every later deployment of that home fails too. So Orbit removes a broken release when its ownership receipt proves that Orbit created it. Without that proof, a folder in `releases/` may be someone's work, so Orbit skips it and warns.
 
