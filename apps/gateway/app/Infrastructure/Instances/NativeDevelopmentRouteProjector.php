@@ -86,7 +86,6 @@ final readonly class NativeDevelopmentRouteProjector implements DevelopmentRoute
 
     public function prepareDestinationCertificates(Instance $instance, Route $route): void
     {
-        InstanceSandboxGuard::assertHostOperation($instance);
         $instance->loadMissing('node');
         $this->certificates->convergeInstance($instance, $route);
         $router = $this->router($instance, $route);
