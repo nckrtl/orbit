@@ -104,7 +104,7 @@ NFT
 
     # The unit loads the table before the tunnel starts, so the filter is in place whenever the hub
     # forwards. The tunnel pulls it in but does not require it, so a failed load never stops the fleet VPN.
-    # It loads after nftables.service, whose boot-time `flush ruleset` would otherwise remove the table.
+    # It loads after nftables.service, whose boot-time flush of every nftables table would otherwise remove this one.
     local unit_text="[Unit]
 Description=Orbit task VM filter on the WireGuard hub
 DefaultDependencies=no
