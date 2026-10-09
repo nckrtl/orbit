@@ -851,13 +851,15 @@ final readonly class TransferInstanceAction
                 ]);
             }
 
+            $movedWebRootRouteIds = [
+                ...($sourceRoute->hasWebRoot() ? [$sourceRoute->id] : []),
+                ...$webRootRoutes->modelKeys(),
+            ];
             $lockedTransfer->update([
                 'status' => InstanceTransferStatus::InProgress,
                 'current_step' => InstanceTransferStep::Cutover,
-                'web_root_route_ids' => [
-                    ...($sourceRoute->hasWebRoot() ? [$sourceRoute->id] : []),
-                    ...$webRootRoutes->modelKeys(),
-                ],
+                // A transfer that moves no Route with a web root records nothing, as before.
+                'web_root_route_ids' => $movedWebRootRouteIds === [] ? null : $movedWebRootRouteIds,
                 'cutover_at' => now(),
                 'failed_step' => null,
                 'error_code' => null,

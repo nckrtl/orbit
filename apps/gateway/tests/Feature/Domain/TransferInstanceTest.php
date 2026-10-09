@@ -221,6 +221,7 @@ it('transfers a development Instance to another app-dev Node in the same Cluster
         ->and($transfer->status)->toBe(InstanceTransferStatus::Completed)
         ->and($transfer->current_step)->toBe(InstanceTransferStep::Completed)
         ->and($transfer->cleanup_completed ?? $transfer->completed_at)->not->toBeNull()
+        ->and($transfer->refresh()->web_root_route_ids)->toBeNull()
         ->and($this->sources->calls)->toBe(['capture', 'materialize', 'cleanup'])
         ->and($this->runtime->calls)->toBe(['pause', 'relocate', 'activate', 'cleanup'])
         ->and($this->sqlite->calls)->toBeEmpty()
