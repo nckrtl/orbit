@@ -10,6 +10,7 @@ use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\AppDev\DevelopmentCaddyConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentSite;
@@ -412,12 +413,14 @@ describe('task VM guard', function (): void {
         $caddyfile = caddy_build_renderer()->render($node);
 
         expect($caddyfile->problems)->toBe([])
-            ->and($caddyfile->content)
-            ->toContain("reverb.orbit {\n    bind 10.44.0.3\n    @orbit_outside not remote_ip 10.44.0.0/24\n    abort @orbit_outside\n    tls ")
-            ->toContain("analytics.orbit {\n    bind 10.44.0.3\n    @orbit_outside not remote_ip 10.44.0.0/24\n    abort @orbit_outside\n    @orbit_task_vms remote_ip 10.44.0.128/25\n    abort @orbit_task_vms\n")
-            ->toContain("collector.cli-proxy-api.orbit {\n    bind 10.44.0.3\n    @orbit_outside not remote_ip 10.44.0.0/24\n    abort @orbit_outside\n    @orbit_task_vms remote_ip 10.44.0.128/25\n    abort @orbit_task_vms\n")
-            ->toContain("https://shop.test {\n    bind 10.44.0.3\n    @orbit_task_vms remote_ip 10.44.0.128/25\n    abort @orbit_task_vms\n")
-            ->and(str_replace(["\n    @orbit_task_vms remote_ip 10.44.0.128/25", "\n    abort @orbit_task_vms"], '', $caddyfile->content))->toBe($unconfigured);
+            ->and(caddy_build_refuses_task_vms($caddyfile))->toBe([
+                'app-dev app-instance-'.Instance::query()->sole()->id => true,
+                'websocket reverb.orbit' => false,
+                'analytics analytics.orbit' => true,
+                'proxycli collector.cli-proxy-api.orbit' => true,
+            ])
+            ->and($caddyfile->content)->toContain("https://shop.test {\n    bind 10.44.0.3\n    @orbit_task_vms remote_ip 10.44.0.128/25\n    abort @orbit_task_vms\n")
+            ->and(preg_replace('/\n[ \t]*@orbit_task_vms remote_ip 10\.44\.0\.128\/25\n[ \t]*abort @orbit_task_vms/', '', $caddyfile->content))->toBe($unconfigured);
     });
 
     it('refuses the range on metrics.orbit but not on gateway.orbit', function (): void {
@@ -427,12 +430,13 @@ describe('task VM guard', function (): void {
         CaddySiteCertificateFixtures::recordAll($gateway);
         caddy_build_node('beast', '10.44.0.7')->roles()->create(['role' => RoleName::Metrics, 'status' => LifecycleStatus::Active]);
 
-        $content = caddy_build_renderer()->render($gateway)->content;
+        $caddyfile = caddy_build_renderer()->render($gateway);
 
-        expect($content)
-            ->toContain("gateway.orbit, 10.44.0.2 {\n    bind 10.44.0.2\n    @orbit_outside not remote_ip 10.44.0.0/24\n    abort @orbit_outside\n    tls ")
-            ->toContain("metrics.orbit {\n    bind 10.44.0.2\n    @orbit_outside not remote_ip 10.44.0.0/24\n    abort @orbit_outside\n    @orbit_task_vms remote_ip 10.44.0.192/26\n    abort @orbit_task_vms\n")
-            ->and(substr_count($content, 'abort @orbit_task_vms'))->toBe(1);
+        expect(caddy_build_refuses_task_vms($caddyfile))->toBe([
+            'gateway gateway.orbit' => false,
+            'metrics metrics.orbit' => true,
+        ])
+            ->and($caddyfile->content)->toContain("  abort @orbit_outside\n  @orbit_task_vms remote_ip 10.44.0.192/26\n  abort @orbit_task_vms\n");
     });
 
     it('refuses the range on public and private sites of a Router and Ingress Node', function (): void {
@@ -618,6 +622,19 @@ function caddy_build_task_vms(array $values = []): void
         'incus' => ['hosts' => []],
         ...$values,
     ]]);
+    app()->forgetInstance(TaskVmSettings::class);
+}
+
+/** @return array<string, bool> Each site by source and name, and whether it refuses task VMs. */
+function caddy_build_refuses_task_vms(NodeCaddyfile $caddyfile): array
+{
+    $sites = [];
+
+    foreach ($caddyfile->blocks as $block) {
+        $sites["{$block['source']} {$block['name']}"] = str_contains($block['block'], NodeCaddyfileRenderer::TaskVmMatcher.' remote_ip ');
+    }
+
+    return $sites;
 }
 
 /** The live `services` Node: Reverb, analytics, ProxyCli, and an `app-dev` workload site. */
