@@ -1,0 +1,179 @@
+{
+    "caddy": "https://shop.example.com {\n    bind 0.0.0.0\n    tls /etc/caddy/orbit-certificates/app-instance-1/current/cert.pem /etc/caddy/orbit-certificates/app-instance-1/current/key.pem\n    root * /home/orbit-shop/current/public\nencode zstd gzip\nphp_fastcgi unix//run/php/orbit-shop.sock {\n    resolve_root_symlink\n}\nfile_server\n}\n\nhttps://site.example.com {\n    bind 0.0.0.0\n    tls /etc/caddy/orbit-certificates/app-instance-2/current/cert.pem /etc/caddy/orbit-certificates/app-instance-2/current/key.pem\n    root * /home/orbit-site/current/apps/site/public\nencode zstd gzip\nphp_fastcgi unix//run/php/orbit-site.sock {\n    resolve_root_symlink\n}\nfile_server\n}\n",
+    "orbit-shop": {
+        "php_fpm": {
+            "marker": "user=orbit-shop\nhome=/home/orbit-shop\nversion=8.4\nservice=orbit-orbit-shop-php8.4-fpm.service\npool=orbit-orbit-shop\nsocket=/run/php/orbit-shop.sock\ndocument_root=/home/orbit-shop/current/public\n",
+            "plain-current": {
+                "main": "[global]\npid = /run/php/orbit-shop.pid\nerror_log = /var/log/php-fpm.log\ninclude = /etc/orbit/php-fpm/orbit-shop/generated/pool.conf\ninclude = /etc/orbit/php-fpm/orbit-shop/local.conf\n",
+                "pool": "[orbit-orbit-shop]\nuser = orbit-shop\ngroup = orbit-shop\nlisten = /run/php/orbit-shop.sock\nlisten.owner = orbit-shop\nlisten.group = caddy\nlisten.mode = 0660\nchdir = /home/orbit-shop/current\nclear_env = yes\nenv[HOME] = /home/orbit-shop\nenv[USER] = orbit-shop\nenv[PATH] = /usr/local/bin:/opt/orbit/composer/vendor/bin:/usr/bin:/bin\n",
+                "local_defaults": "[orbit-orbit-shop]\npm = ondemand\npm.max_children = 20\npm.process_idle_timeout = 10s\npm.max_requests = 500\ncatch_workers_output = yes\n",
+                "master_ini": "; Managed by Orbit for this dedicated production PHP-FPM master.\nopcache.enable = On\nopcache.memory_consumption = 256\nopcache.interned_strings_buffer = 32\nopcache.max_accelerated_files = 65407\nopcache.validate_timestamps = 0\nopcache.jit = disable\nopcache.jit_buffer_size = 0\n",
+                "unit": "[Unit]\nDescription=Orbit PHP 8.4 FPM for orbit-shop\nAfter=network.target\n\n[Service]\nType=notify\nEnvironment=PHP_INI_SCAN_DIR=/etc/php/8.4/fpm/conf.d:/etc/orbit/php-fpm/orbit-shop/generated\nExecStart=/usr/sbin/php-fpm8.4 --nodaemonize --fpm-config /etc/orbit/php-fpm/orbit-shop/generated/php-fpm.conf\nExecReload=/bin/kill -USR2 $MAINPID\nPIDFile=/run/php/orbit-shop.pid\nRestart=on-failure\n\n[Install]\nWantedBy=multi-user.target\n"
+            },
+            "plain-initial": {
+                "main": "[global]\npid = /run/php/orbit-shop.pid\nerror_log = /var/log/php-fpm.log\ninclude = /etc/orbit/php-fpm/orbit-shop/generated/pool.conf\ninclude = /etc/orbit/php-fpm/orbit-shop/local.conf\n",
+                "pool": "[orbit-orbit-shop]\nuser = orbit-shop\ngroup = orbit-shop\nlisten = /run/php/orbit-shop.sock\nlisten.owner = orbit-shop\nlisten.group = caddy\nlisten.mode = 0660\nchdir = /home/orbit-shop/releases/initial\nclear_env = yes\nenv[HOME] = /home/orbit-shop\nenv[USER] = orbit-shop\nenv[PATH] = /usr/local/bin:/opt/orbit/composer/vendor/bin:/usr/bin:/bin\n",
+                "local_defaults": "[orbit-orbit-shop]\npm = ondemand\npm.max_children = 20\npm.process_idle_timeout = 10s\npm.max_requests = 500\ncatch_workers_output = yes\n",
+                "master_ini": "; Managed by Orbit for this dedicated production PHP-FPM master.\nopcache.enable = On\nopcache.memory_consumption = 256\nopcache.interned_strings_buffer = 32\nopcache.max_accelerated_files = 65407\nopcache.validate_timestamps = 0\nopcache.jit = disable\nopcache.jit_buffer_size = 0\n",
+                "unit": "[Unit]\nDescription=Orbit PHP 8.4 FPM for orbit-shop\nAfter=network.target\n\n[Service]\nType=notify\nEnvironment=PHP_INI_SCAN_DIR=/etc/php/8.4/fpm/conf.d:/etc/orbit/php-fpm/orbit-shop/generated\nExecStart=/usr/sbin/php-fpm8.4 --nodaemonize --fpm-config /etc/orbit/php-fpm/orbit-shop/generated/php-fpm.conf\nExecReload=/bin/kill -USR2 $MAINPID\nPIDFile=/run/php/orbit-shop.pid\nRestart=on-failure\n\n[Install]\nWantedBy=multi-user.target\n"
+            },
+            "metrics-current": {
+                "main": "[global]\npid = /run/php/orbit-shop.pid\nerror_log = /var/log/php-fpm.log\ninclude = /etc/orbit/php-fpm/orbit-shop/generated/pool.conf\ninclude = /etc/orbit/php-fpm/orbit-shop/local.conf\n",
+                "pool": "[orbit-orbit-shop]\nuser = orbit-shop\ngroup = orbit-shop\nlisten = /run/php/orbit-shop.sock\nlisten.owner = orbit-shop\nlisten.group = caddy\nlisten.mode = 0660\nchdir = /home/orbit-shop/current\nclear_env = yes\nenv[HOME] = /home/orbit-shop\nenv[USER] = orbit-shop\nenv[PATH] = /usr/local/bin:/opt/orbit/composer/vendor/bin:/usr/bin:/bin\npm.status_path = /orbit-fpm-status\npm.status_listen = /run/php/orbit-shop.sock.status\n",
+                "local_defaults": "[orbit-orbit-shop]\npm = ondemand\npm.max_children = 20\npm.process_idle_timeout = 10s\npm.max_requests = 500\ncatch_workers_output = yes\n",
+                "master_ini": "; Managed by Orbit for this dedicated production PHP-FPM master.\nopcache.enable = On\nopcache.memory_consumption = 256\nopcache.interned_strings_buffer = 32\nopcache.max_accelerated_files = 65407\nopcache.validate_timestamps = 0\nopcache.jit = disable\nopcache.jit_buffer_size = 0\n",
+                "unit": "[Unit]\nDescription=Orbit PHP 8.4 FPM for orbit-shop\nAfter=network.target\n\n[Service]\nType=notify\nEnvironment=PHP_INI_SCAN_DIR=/etc/php/8.4/fpm/conf.d:/etc/orbit/php-fpm/orbit-shop/generated\nExecStart=/usr/sbin/php-fpm8.4 --nodaemonize --fpm-config /etc/orbit/php-fpm/orbit-shop/generated/php-fpm.conf\nExecReload=/bin/kill -USR2 $MAINPID\nPIDFile=/run/php/orbit-shop.pid\nRestart=on-failure\n\n[Install]\nWantedBy=multi-user.target\n"
+            },
+            "metrics-initial": {
+                "main": "[global]\npid = /run/php/orbit-shop.pid\nerror_log = /var/log/php-fpm.log\ninclude = /etc/orbit/php-fpm/orbit-shop/generated/pool.conf\ninclude = /etc/orbit/php-fpm/orbit-shop/local.conf\n",
+                "pool": "[orbit-orbit-shop]\nuser = orbit-shop\ngroup = orbit-shop\nlisten = /run/php/orbit-shop.sock\nlisten.owner = orbit-shop\nlisten.group = caddy\nlisten.mode = 0660\nchdir = /home/orbit-shop/releases/initial\nclear_env = yes\nenv[HOME] = /home/orbit-shop\nenv[USER] = orbit-shop\nenv[PATH] = /usr/local/bin:/opt/orbit/composer/vendor/bin:/usr/bin:/bin\npm.status_path = /orbit-fpm-status\npm.status_listen = /run/php/orbit-shop.sock.status\n",
+                "local_defaults": "[orbit-orbit-shop]\npm = ondemand\npm.max_children = 20\npm.process_idle_timeout = 10s\npm.max_requests = 500\ncatch_workers_output = yes\n",
+                "master_ini": "; Managed by Orbit for this dedicated production PHP-FPM master.\nopcache.enable = On\nopcache.memory_consumption = 256\nopcache.interned_strings_buffer = 32\nopcache.max_accelerated_files = 65407\nopcache.validate_timestamps = 0\nopcache.jit = disable\nopcache.jit_buffer_size = 0\n",
+                "unit": "[Unit]\nDescription=Orbit PHP 8.4 FPM for orbit-shop\nAfter=network.target\n\n[Service]\nType=notify\nEnvironment=PHP_INI_SCAN_DIR=/etc/php/8.4/fpm/conf.d:/etc/orbit/php-fpm/orbit-shop/generated\nExecStart=/usr/sbin/php-fpm8.4 --nodaemonize --fpm-config /etc/orbit/php-fpm/orbit-shop/generated/php-fpm.conf\nExecReload=/bin/kill -USR2 $MAINPID\nPIDFile=/run/php/orbit-shop.pid\nRestart=on-failure\n\n[Install]\nWantedBy=multi-user.target\n"
+            }
+        },
+        "release_environment_link": "|../../.env|.env",
+        "deployment_arguments": [
+            [
+                "bash",
+                "-seu",
+                "--",
+                "https://example.test/shop.git",
+                "orbit-shop",
+                "/home/orbit-shop",
+                "1",
+                "main",
+                "20261009-a1",
+                "public"
+            ],
+            [
+                "bash",
+                "-seu",
+                "--",
+                "https://example.test/shop.git",
+                "orbit-shop",
+                "/home/orbit-shop",
+                "1",
+                "20261009-a1",
+                "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "public"
+            ]
+        ],
+        "php_fpm_converge_arguments": [
+            "sudo",
+            "bash",
+            "-seu",
+            "--",
+            "converge",
+            "orbit-shop",
+            "/home/orbit-shop",
+            "8.4",
+            "orbit-orbit-shop-php8.4-fpm.service",
+            "orbit-orbit-shop",
+            "/run/php/orbit-shop.sock",
+            "/etc/orbit/php-fpm/orbit-shop",
+            "/etc/orbit/php-fpm/orbit-shop/generated",
+            "/etc/orbit/php-fpm/orbit-shop/local.conf",
+            "/etc/systemd/system/orbit-orbit-shop-php8.4-fpm.service",
+            "/etc/orbit/php-fpm/orbit-shop/orbit.identity",
+            "/run/lock/orbit",
+            "W2dsb2JhbF0KcGlkID0gL3J1bi9waHAvb3JiaXQtc2hvcC5waWQKZXJyb3JfbG9nID0gL3Zhci9sb2cvcGhwLWZwbS5sb2cKaW5jbHVkZSA9IC9ldGMvb3JiaXQvcGhwLWZwbS9vcmJpdC1zaG9wL2dlbmVyYXRlZC9wb29sLmNvbmYKaW5jbHVkZSA9IC9ldGMvb3JiaXQvcGhwLWZwbS9vcmJpdC1zaG9wL2xvY2FsLmNvbmYK",
+            "W29yYml0LW9yYml0LXNob3BdCnVzZXIgPSBvcmJpdC1zaG9wCmdyb3VwID0gb3JiaXQtc2hvcApsaXN0ZW4gPSAvcnVuL3BocC9vcmJpdC1zaG9wLnNvY2sKbGlzdGVuLm93bmVyID0gb3JiaXQtc2hvcApsaXN0ZW4uZ3JvdXAgPSBjYWRkeQpsaXN0ZW4ubW9kZSA9IDA2NjAKY2hkaXIgPSAvaG9tZS9vcmJpdC1zaG9wL2N1cnJlbnQKY2xlYXJfZW52ID0geWVzCmVudltIT01FXSA9IC9ob21lL29yYml0LXNob3AKZW52W1VTRVJdID0gb3JiaXQtc2hvcAplbnZbUEFUSF0gPSAvdXNyL2xvY2FsL2Jpbjovb3B0L29yYml0L2NvbXBvc2VyL3ZlbmRvci9iaW46L3Vzci9iaW46L2Jpbgo=",
+            "W29yYml0LW9yYml0LXNob3BdCnBtID0gb25kZW1hbmQKcG0ubWF4X2NoaWxkcmVuID0gMjAKcG0ucHJvY2Vzc19pZGxlX3RpbWVvdXQgPSAxMHMKcG0ubWF4X3JlcXVlc3RzID0gNTAwCmNhdGNoX3dvcmtlcnNfb3V0cHV0ID0geWVzCg==",
+            "OyBNYW5hZ2VkIGJ5IE9yYml0IGZvciB0aGlzIGRlZGljYXRlZCBwcm9kdWN0aW9uIFBIUC1GUE0gbWFzdGVyLgpvcGNhY2hlLmVuYWJsZSA9IE9uCm9wY2FjaGUubWVtb3J5X2NvbnN1bXB0aW9uID0gMjU2Cm9wY2FjaGUuaW50ZXJuZWRfc3RyaW5nc19idWZmZXIgPSAzMgpvcGNhY2hlLm1heF9hY2NlbGVyYXRlZF9maWxlcyA9IDY1NDA3Cm9wY2FjaGUudmFsaWRhdGVfdGltZXN0YW1wcyA9IDAKb3BjYWNoZS5qaXQgPSBkaXNhYmxlCm9wY2FjaGUuaml0X2J1ZmZlcl9zaXplID0gMAo=",
+            "W1VuaXRdCkRlc2NyaXB0aW9uPU9yYml0IFBIUCA4LjQgRlBNIGZvciBvcmJpdC1zaG9wCkFmdGVyPW5ldHdvcmsudGFyZ2V0CgpbU2VydmljZV0KVHlwZT1ub3RpZnkKRW52aXJvbm1lbnQ9UEhQX0lOSV9TQ0FOX0RJUj0vZXRjL3BocC84LjQvZnBtL2NvbmYuZDovZXRjL29yYml0L3BocC1mcG0vb3JiaXQtc2hvcC9nZW5lcmF0ZWQKRXhlY1N0YXJ0PS91c3Ivc2Jpbi9waHAtZnBtOC40IC0tbm9kYWVtb25pemUgLS1mcG0tY29uZmlnIC9ldGMvb3JiaXQvcGhwLWZwbS9vcmJpdC1zaG9wL2dlbmVyYXRlZC9waHAtZnBtLmNvbmYKRXhlY1JlbG9hZD0vYmluL2tpbGwgLVVTUjIgJE1BSU5QSUQKUElERmlsZT0vcnVuL3BocC9vcmJpdC1zaG9wLnBpZApSZXN0YXJ0PW9uLWZhaWx1cmUKCltJbnN0YWxsXQpXYW50ZWRCeT1tdWx0aS11c2VyLnRhcmdldAo=",
+            "dXNlcj1vcmJpdC1zaG9wCmhvbWU9L2hvbWUvb3JiaXQtc2hvcAp2ZXJzaW9uPTguNApzZXJ2aWNlPW9yYml0LW9yYml0LXNob3AtcGhwOC40LWZwbS5zZXJ2aWNlCnBvb2w9b3JiaXQtb3JiaXQtc2hvcApzb2NrZXQ9L3J1bi9waHAvb3JiaXQtc2hvcC5zb2NrCmRvY3VtZW50X3Jvb3Q9L2hvbWUvb3JiaXQtc2hvcC9jdXJyZW50L3B1YmxpYwo=",
+            "W29yYml0LW9yYml0LXNob3BdCnVzZXIgPSBvcmJpdC1zaG9wCmdyb3VwID0gb3JiaXQtc2hvcApsaXN0ZW4gPSAvcnVuL3BocC9vcmJpdC1zaG9wLnNvY2sKbGlzdGVuLm93bmVyID0gb3JiaXQtc2hvcApsaXN0ZW4uZ3JvdXAgPSBjYWRkeQpsaXN0ZW4ubW9kZSA9IDA2NjAKY2hkaXIgPSAvaG9tZS9vcmJpdC1zaG9wL3JlbGVhc2VzL2luaXRpYWwKY2xlYXJfZW52ID0geWVzCmVudltIT01FXSA9IC9ob21lL29yYml0LXNob3AKZW52W1VTRVJdID0gb3JiaXQtc2hvcAplbnZbUEFUSF0gPSAvdXNyL2xvY2FsL2Jpbjovb3B0L29yYml0L2NvbXBvc2VyL3ZlbmRvci9iaW46L3Vzci9iaW46L2Jpbgo=",
+            "/home/orbit-shop/current",
+            "/home/orbit-shop/releases/initial"
+        ]
+    },
+    "orbit-site": {
+        "php_fpm": {
+            "marker": "user=orbit-site\nhome=/home/orbit-site\nversion=8.4\nservice=orbit-orbit-site-php8.4-fpm.service\npool=orbit-orbit-site\nsocket=/run/php/orbit-site.sock\ndocument_root=/home/orbit-site/current/apps/site/public\n",
+            "plain-current": {
+                "main": "[global]\npid = /run/php/orbit-site.pid\nerror_log = /var/log/php-fpm.log\ninclude = /etc/orbit/php-fpm/orbit-site/generated/pool.conf\ninclude = /etc/orbit/php-fpm/orbit-site/local.conf\n",
+                "pool": "[orbit-orbit-site]\nuser = orbit-site\ngroup = orbit-site\nlisten = /run/php/orbit-site.sock\nlisten.owner = orbit-site\nlisten.group = caddy\nlisten.mode = 0660\nchdir = /home/orbit-site/current/apps/site\nclear_env = yes\nenv[HOME] = /home/orbit-site\nenv[USER] = orbit-site\nenv[PATH] = /usr/local/bin:/opt/orbit/composer/vendor/bin:/usr/bin:/bin\n",
+                "local_defaults": "[orbit-orbit-site]\npm = ondemand\npm.max_children = 20\npm.process_idle_timeout = 10s\npm.max_requests = 500\ncatch_workers_output = yes\n",
+                "master_ini": "; Managed by Orbit for this dedicated production PHP-FPM master.\nopcache.enable = On\nopcache.memory_consumption = 256\nopcache.interned_strings_buffer = 32\nopcache.max_accelerated_files = 65407\nopcache.validate_timestamps = 0\nopcache.jit = disable\nopcache.jit_buffer_size = 0\n",
+                "unit": "[Unit]\nDescription=Orbit PHP 8.4 FPM for orbit-site\nAfter=network.target\n\n[Service]\nType=notify\nEnvironment=PHP_INI_SCAN_DIR=/etc/php/8.4/fpm/conf.d:/etc/orbit/php-fpm/orbit-site/generated\nExecStart=/usr/sbin/php-fpm8.4 --nodaemonize --fpm-config /etc/orbit/php-fpm/orbit-site/generated/php-fpm.conf\nExecReload=/bin/kill -USR2 $MAINPID\nPIDFile=/run/php/orbit-site.pid\nRestart=on-failure\n\n[Install]\nWantedBy=multi-user.target\n"
+            },
+            "plain-initial": {
+                "main": "[global]\npid = /run/php/orbit-site.pid\nerror_log = /var/log/php-fpm.log\ninclude = /etc/orbit/php-fpm/orbit-site/generated/pool.conf\ninclude = /etc/orbit/php-fpm/orbit-site/local.conf\n",
+                "pool": "[orbit-orbit-site]\nuser = orbit-site\ngroup = orbit-site\nlisten = /run/php/orbit-site.sock\nlisten.owner = orbit-site\nlisten.group = caddy\nlisten.mode = 0660\nchdir = /home/orbit-site/releases/initial/apps/site\nclear_env = yes\nenv[HOME] = /home/orbit-site\nenv[USER] = orbit-site\nenv[PATH] = /usr/local/bin:/opt/orbit/composer/vendor/bin:/usr/bin:/bin\n",
+                "local_defaults": "[orbit-orbit-site]\npm = ondemand\npm.max_children = 20\npm.process_idle_timeout = 10s\npm.max_requests = 500\ncatch_workers_output = yes\n",
+                "master_ini": "; Managed by Orbit for this dedicated production PHP-FPM master.\nopcache.enable = On\nopcache.memory_consumption = 256\nopcache.interned_strings_buffer = 32\nopcache.max_accelerated_files = 65407\nopcache.validate_timestamps = 0\nopcache.jit = disable\nopcache.jit_buffer_size = 0\n",
+                "unit": "[Unit]\nDescription=Orbit PHP 8.4 FPM for orbit-site\nAfter=network.target\n\n[Service]\nType=notify\nEnvironment=PHP_INI_SCAN_DIR=/etc/php/8.4/fpm/conf.d:/etc/orbit/php-fpm/orbit-site/generated\nExecStart=/usr/sbin/php-fpm8.4 --nodaemonize --fpm-config /etc/orbit/php-fpm/orbit-site/generated/php-fpm.conf\nExecReload=/bin/kill -USR2 $MAINPID\nPIDFile=/run/php/orbit-site.pid\nRestart=on-failure\n\n[Install]\nWantedBy=multi-user.target\n"
+            },
+            "metrics-current": {
+                "main": "[global]\npid = /run/php/orbit-site.pid\nerror_log = /var/log/php-fpm.log\ninclude = /etc/orbit/php-fpm/orbit-site/generated/pool.conf\ninclude = /etc/orbit/php-fpm/orbit-site/local.conf\n",
+                "pool": "[orbit-orbit-site]\nuser = orbit-site\ngroup = orbit-site\nlisten = /run/php/orbit-site.sock\nlisten.owner = orbit-site\nlisten.group = caddy\nlisten.mode = 0660\nchdir = /home/orbit-site/current/apps/site\nclear_env = yes\nenv[HOME] = /home/orbit-site\nenv[USER] = orbit-site\nenv[PATH] = /usr/local/bin:/opt/orbit/composer/vendor/bin:/usr/bin:/bin\npm.status_path = /orbit-fpm-status\npm.status_listen = /run/php/orbit-site.sock.status\n",
+                "local_defaults": "[orbit-orbit-site]\npm = ondemand\npm.max_children = 20\npm.process_idle_timeout = 10s\npm.max_requests = 500\ncatch_workers_output = yes\n",
+                "master_ini": "; Managed by Orbit for this dedicated production PHP-FPM master.\nopcache.enable = On\nopcache.memory_consumption = 256\nopcache.interned_strings_buffer = 32\nopcache.max_accelerated_files = 65407\nopcache.validate_timestamps = 0\nopcache.jit = disable\nopcache.jit_buffer_size = 0\n",
+                "unit": "[Unit]\nDescription=Orbit PHP 8.4 FPM for orbit-site\nAfter=network.target\n\n[Service]\nType=notify\nEnvironment=PHP_INI_SCAN_DIR=/etc/php/8.4/fpm/conf.d:/etc/orbit/php-fpm/orbit-site/generated\nExecStart=/usr/sbin/php-fpm8.4 --nodaemonize --fpm-config /etc/orbit/php-fpm/orbit-site/generated/php-fpm.conf\nExecReload=/bin/kill -USR2 $MAINPID\nPIDFile=/run/php/orbit-site.pid\nRestart=on-failure\n\n[Install]\nWantedBy=multi-user.target\n"
+            },
+            "metrics-initial": {
+                "main": "[global]\npid = /run/php/orbit-site.pid\nerror_log = /var/log/php-fpm.log\ninclude = /etc/orbit/php-fpm/orbit-site/generated/pool.conf\ninclude = /etc/orbit/php-fpm/orbit-site/local.conf\n",
+                "pool": "[orbit-orbit-site]\nuser = orbit-site\ngroup = orbit-site\nlisten = /run/php/orbit-site.sock\nlisten.owner = orbit-site\nlisten.group = caddy\nlisten.mode = 0660\nchdir = /home/orbit-site/releases/initial/apps/site\nclear_env = yes\nenv[HOME] = /home/orbit-site\nenv[USER] = orbit-site\nenv[PATH] = /usr/local/bin:/opt/orbit/composer/vendor/bin:/usr/bin:/bin\npm.status_path = /orbit-fpm-status\npm.status_listen = /run/php/orbit-site.sock.status\n",
+                "local_defaults": "[orbit-orbit-site]\npm = ondemand\npm.max_children = 20\npm.process_idle_timeout = 10s\npm.max_requests = 500\ncatch_workers_output = yes\n",
+                "master_ini": "; Managed by Orbit for this dedicated production PHP-FPM master.\nopcache.enable = On\nopcache.memory_consumption = 256\nopcache.interned_strings_buffer = 32\nopcache.max_accelerated_files = 65407\nopcache.validate_timestamps = 0\nopcache.jit = disable\nopcache.jit_buffer_size = 0\n",
+                "unit": "[Unit]\nDescription=Orbit PHP 8.4 FPM for orbit-site\nAfter=network.target\n\n[Service]\nType=notify\nEnvironment=PHP_INI_SCAN_DIR=/etc/php/8.4/fpm/conf.d:/etc/orbit/php-fpm/orbit-site/generated\nExecStart=/usr/sbin/php-fpm8.4 --nodaemonize --fpm-config /etc/orbit/php-fpm/orbit-site/generated/php-fpm.conf\nExecReload=/bin/kill -USR2 $MAINPID\nPIDFile=/run/php/orbit-site.pid\nRestart=on-failure\n\n[Install]\nWantedBy=multi-user.target\n"
+            }
+        },
+        "release_environment_link": "application_suffix='/apps/site'\n${application_suffix}|../../../../.env|\"${application_suffix#/}/.env\"",
+        "deployment_arguments": [
+            [
+                "bash",
+                "-seu",
+                "--",
+                "https://example.test/site.git",
+                "orbit-site",
+                "/home/orbit-site",
+                "2",
+                "main",
+                "20261009-a1",
+                "apps/site/public"
+            ],
+            [
+                "bash",
+                "-seu",
+                "--",
+                "https://example.test/site.git",
+                "orbit-site",
+                "/home/orbit-site",
+                "2",
+                "20261009-a1",
+                "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "apps/site/public"
+            ]
+        ],
+        "php_fpm_converge_arguments": [
+            "sudo",
+            "bash",
+            "-seu",
+            "--",
+            "converge",
+            "orbit-site",
+            "/home/orbit-site",
+            "8.4",
+            "orbit-orbit-site-php8.4-fpm.service",
+            "orbit-orbit-site",
+            "/run/php/orbit-site.sock",
+            "/etc/orbit/php-fpm/orbit-site",
+            "/etc/orbit/php-fpm/orbit-site/generated",
+            "/etc/orbit/php-fpm/orbit-site/local.conf",
+            "/etc/systemd/system/orbit-orbit-site-php8.4-fpm.service",
+            "/etc/orbit/php-fpm/orbit-site/orbit.identity",
+            "/run/lock/orbit",
+            "W2dsb2JhbF0KcGlkID0gL3J1bi9waHAvb3JiaXQtc2l0ZS5waWQKZXJyb3JfbG9nID0gL3Zhci9sb2cvcGhwLWZwbS5sb2cKaW5jbHVkZSA9IC9ldGMvb3JiaXQvcGhwLWZwbS9vcmJpdC1zaXRlL2dlbmVyYXRlZC9wb29sLmNvbmYKaW5jbHVkZSA9IC9ldGMvb3JiaXQvcGhwLWZwbS9vcmJpdC1zaXRlL2xvY2FsLmNvbmYK",
+            "W29yYml0LW9yYml0LXNpdGVdCnVzZXIgPSBvcmJpdC1zaXRlCmdyb3VwID0gb3JiaXQtc2l0ZQpsaXN0ZW4gPSAvcnVuL3BocC9vcmJpdC1zaXRlLnNvY2sKbGlzdGVuLm93bmVyID0gb3JiaXQtc2l0ZQpsaXN0ZW4uZ3JvdXAgPSBjYWRkeQpsaXN0ZW4ubW9kZSA9IDA2NjAKY2hkaXIgPSAvaG9tZS9vcmJpdC1zaXRlL2N1cnJlbnQvYXBwcy9zaXRlCmNsZWFyX2VudiA9IHllcwplbnZbSE9NRV0gPSAvaG9tZS9vcmJpdC1zaXRlCmVudltVU0VSXSA9IG9yYml0LXNpdGUKZW52W1BBVEhdID0gL3Vzci9sb2NhbC9iaW46L29wdC9vcmJpdC9jb21wb3Nlci92ZW5kb3IvYmluOi91c3IvYmluOi9iaW4K",
+            "W29yYml0LW9yYml0LXNpdGVdCnBtID0gb25kZW1hbmQKcG0ubWF4X2NoaWxkcmVuID0gMjAKcG0ucHJvY2Vzc19pZGxlX3RpbWVvdXQgPSAxMHMKcG0ubWF4X3JlcXVlc3RzID0gNTAwCmNhdGNoX3dvcmtlcnNfb3V0cHV0ID0geWVzCg==",
+            "OyBNYW5hZ2VkIGJ5IE9yYml0IGZvciB0aGlzIGRlZGljYXRlZCBwcm9kdWN0aW9uIFBIUC1GUE0gbWFzdGVyLgpvcGNhY2hlLmVuYWJsZSA9IE9uCm9wY2FjaGUubWVtb3J5X2NvbnN1bXB0aW9uID0gMjU2Cm9wY2FjaGUuaW50ZXJuZWRfc3RyaW5nc19idWZmZXIgPSAzMgpvcGNhY2hlLm1heF9hY2NlbGVyYXRlZF9maWxlcyA9IDY1NDA3Cm9wY2FjaGUudmFsaWRhdGVfdGltZXN0YW1wcyA9IDAKb3BjYWNoZS5qaXQgPSBkaXNhYmxlCm9wY2FjaGUuaml0X2J1ZmZlcl9zaXplID0gMAo=",
+            "W1VuaXRdCkRlc2NyaXB0aW9uPU9yYml0IFBIUCA4LjQgRlBNIGZvciBvcmJpdC1zaXRlCkFmdGVyPW5ldHdvcmsudGFyZ2V0CgpbU2VydmljZV0KVHlwZT1ub3RpZnkKRW52aXJvbm1lbnQ9UEhQX0lOSV9TQ0FOX0RJUj0vZXRjL3BocC84LjQvZnBtL2NvbmYuZDovZXRjL29yYml0L3BocC1mcG0vb3JiaXQtc2l0ZS9nZW5lcmF0ZWQKRXhlY1N0YXJ0PS91c3Ivc2Jpbi9waHAtZnBtOC40IC0tbm9kYWVtb25pemUgLS1mcG0tY29uZmlnIC9ldGMvb3JiaXQvcGhwLWZwbS9vcmJpdC1zaXRlL2dlbmVyYXRlZC9waHAtZnBtLmNvbmYKRXhlY1JlbG9hZD0vYmluL2tpbGwgLVVTUjIgJE1BSU5QSUQKUElERmlsZT0vcnVuL3BocC9vcmJpdC1zaXRlLnBpZApSZXN0YXJ0PW9uLWZhaWx1cmUKCltJbnN0YWxsXQpXYW50ZWRCeT1tdWx0aS11c2VyLnRhcmdldAo=",
+            "dXNlcj1vcmJpdC1zaXRlCmhvbWU9L2hvbWUvb3JiaXQtc2l0ZQp2ZXJzaW9uPTguNApzZXJ2aWNlPW9yYml0LW9yYml0LXNpdGUtcGhwOC40LWZwbS5zZXJ2aWNlCnBvb2w9b3JiaXQtb3JiaXQtc2l0ZQpzb2NrZXQ9L3J1bi9waHAvb3JiaXQtc2l0ZS5zb2NrCmRvY3VtZW50X3Jvb3Q9L2hvbWUvb3JiaXQtc2l0ZS9jdXJyZW50L2FwcHMvc2l0ZS9wdWJsaWMK",
+            "W29yYml0LW9yYml0LXNpdGVdCnVzZXIgPSBvcmJpdC1zaXRlCmdyb3VwID0gb3JiaXQtc2l0ZQpsaXN0ZW4gPSAvcnVuL3BocC9vcmJpdC1zaXRlLnNvY2sKbGlzdGVuLm93bmVyID0gb3JiaXQtc2l0ZQpsaXN0ZW4uZ3JvdXAgPSBjYWRkeQpsaXN0ZW4ubW9kZSA9IDA2NjAKY2hkaXIgPSAvaG9tZS9vcmJpdC1zaXRlL3JlbGVhc2VzL2luaXRpYWwvYXBwcy9zaXRlCmNsZWFyX2VudiA9IHllcwplbnZbSE9NRV0gPSAvaG9tZS9vcmJpdC1zaXRlCmVudltVU0VSXSA9IG9yYml0LXNpdGUKZW52W1BBVEhdID0gL3Vzci9sb2NhbC9iaW46L29wdC9vcmJpdC9jb21wb3Nlci92ZW5kb3IvYmluOi91c3IvYmluOi9iaW4K",
+            "/home/orbit-site/current/apps/site",
+            "/home/orbit-site/releases/initial/apps/site"
+        ]
+    }
+}
