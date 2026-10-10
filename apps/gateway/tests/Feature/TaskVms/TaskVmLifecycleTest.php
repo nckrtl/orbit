@@ -207,7 +207,7 @@ function tvm_life_settings(bool $enabled = true, int $maxVms = 2, ?int $clusterI
 {
     app()->instance(TaskVmSettings::class, new TaskVmSettings(
         enabled: $enabled, devClusterId: $clusterId, wireguardRange: '10.44.0.128/25',
-        hosts: [new TaskVmHost(test()->host->id, 'orbit-tasks', 'orbittask0', '10.251.77.0/24', 'ubuntu-26.04-vm', $maxVms, 2, '4GiB', '20GiB')],
+        hosts: [new TaskVmHost(test()->host->id, 'orbit-tasks', 'orbittask0', '10.251.77.0/24', $maxVms, 2, '4GiB', '20GiB')],
         modelProxyOrigin: TVM_LIFE_ORIGIN, piArtifactPath: null, piArtifactSha256: null, piModels: [],
     ));
 }
@@ -410,7 +410,21 @@ describe(EnrollTaskVm::class, function (): void {
         app()->call([$job, 'handle']);
 
         $job->assertReleased(15);
-        expect($this->converged)->toBe([])->and(Node::query()->where('name', $vm->name)->exists())->toBeFalse();
+        expect($this->converged)->toBe([])->and(Node::query()->where('name', $vm->name)->exists())->toBeFalse()
+            ->and(array_count_values($this->provider->calls)['bootstrapReady'])->toBe(61);
+        Sleep::assertSleptTimes(60);
+    });
+
+    it('enrolls in the same run when cloud-init finishes during its polls', function (): void {
+        $this->provider->observations = [new VmObservation(true, null), new VmObservation(true, null)];
+        $vm = tvm_life_vm(tvm_life_group());
+        $job = (new EnrollTaskVm($vm->id, now()->getTimestamp()))->withFakeQueueInteractions();
+
+        app()->call([$job, 'handle']);
+
+        $job->assertNotReleased();
+        Sleep::assertSleptTimes(2);
+        expect($vm->fresh()?->node_id)->not->toBeNull();
     });
 
     it('enrolls the VM as its app-dev Node through the host, linked before any convergence', function (): void {
@@ -816,6 +830,7 @@ describe('worker', function (): void {
             ->and($worker->command)->toEndWith("'artisan' queue:work task-vms --queue=task-vms --stop-when-empty --max-time=50 --timeout=1500")
             ->and($worker)->toBe(end($events))
             ->and($worker->expression)->toBe('* * * * *')
+            ->and($worker->repeatSeconds)->toBe(10)
             ->and($worker->withoutOverlapping)->toBeTrue()
             ->and($worker->expiresAt)->toBe(30)
             ->and($worker->runInBackground)->toBeFalse()

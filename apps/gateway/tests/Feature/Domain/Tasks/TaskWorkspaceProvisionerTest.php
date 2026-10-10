@@ -842,7 +842,7 @@ it('keeps a full-node reserved workspace when it cannot prove the reservation is
 
 describe('task VMs', function (): void {
     it('keeps shared claims working while a task VM value is invalid, and makes vm groups wait', function (): void {
-        config(['task_vms.incus.hosts' => [['node_id' => 9, 'cidr' => '10.251.77.0/24', 'max_vms' => 2, 'image' => 'Bad_Image']]]);
+        config(['task_vms.incus.hosts' => [['node_id' => 9, 'cidr' => '10.251.77.0/24', 'max_vms' => 2, 'pool' => 'Bad_Pool']]]);
         app()->forgetInstance(TaskVmSettings::class);
         expect(fn () => app(TaskVmSettings::class))->toThrow(TaskVmException::class);
         $shared = provisioner_app('shared');

@@ -7,10 +7,11 @@ namespace App\Infrastructure\TaskVms;
 use App\Domain\TaskVms\TaskVmException;
 
 /**
- * The cloud-init user-data for every task VM on every provider: the `orbit` user with
- * passwordless sudo and the Gateway's SSH key, plus `openssh-server`, which the stock
- * linuxcontainers Ubuntu cloud image lacks, and Chromium's system libraries, so a
- * Project's Playwright browser tests run. Normal Node enrollment does everything else.
+ * The cloud-init user-data of task VMs: the `orbit` user with passwordless sudo and the Gateway's
+ * SSH key. A task VM boots from the host's base image, which already holds everything else, so its
+ * user-data installs nothing. The base image builder gets the same user plus a package upgrade,
+ * `openssh-server`, which the stock linuxcontainers Ubuntu cloud image lacks, and Chromium's system
+ * libraries, so a Project's Playwright browser tests run.
  *
  * It sets no SSH option such as `ssh_pwauth`: on that image cloud-init applies it before
  * `openssh-server` exists, writes a one-line `sshd_config` with `UsePAM no`, and sshd then
@@ -34,22 +35,42 @@ final readonly class TaskVmCloudInit
         'libxfixes3', 'libxkbcommon0', 'libxrandr2',
     ];
 
+    /** The user-data of a task VM, which boots from the base image. */
     public function render(string $gatewayPublicKey): string
+    {
+        return self::document(['users' => [$this->user($gatewayPublicKey)]]);
+    }
+
+    /** The user-data of the base image builder, which boots from the stock image. */
+    public function renderImageBuilder(string $gatewayPublicKey): string
+    {
+        return self::document([
+            'users' => [$this->user($gatewayPublicKey)],
+            'package_update' => true,
+            'package_upgrade' => true,
+            'packages' => ['openssh-server', ...self::ChromiumLibraries],
+        ]);
+    }
+
+    /** @return array<string, mixed> */
+    private function user(string $gatewayPublicKey): array
     {
         if (preg_match(self::PublicKeyPattern, $gatewayPublicKey) !== 1) {
             throw new TaskVmException('task_vm.invalid_gateway_key', 'The Gateway SSH public key is not a single OpenSSH public key line.', 500);
         }
 
-        return "#cloud-config\n".json_encode([
-            'users' => [[
-                'name' => 'orbit',
-                'lock_passwd' => true,
-                'shell' => '/bin/bash',
-                'sudo' => 'ALL=(ALL) NOPASSWD:ALL',
-                'ssh_authorized_keys' => [$gatewayPublicKey],
-            ]],
-            'package_update' => true,
-            'packages' => ['openssh-server', ...self::ChromiumLibraries],
-        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT)."\n";
+        return [
+            'name' => 'orbit',
+            'lock_passwd' => true,
+            'shell' => '/bin/bash',
+            'sudo' => 'ALL=(ALL) NOPASSWD:ALL',
+            'ssh_authorized_keys' => [$gatewayPublicKey],
+        ];
+    }
+
+    /** @param  array<string, mixed>  $config */
+    private static function document(array $config): string
+    {
+        return "#cloud-config\n".json_encode($config, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT)."\n";
     }
 }
