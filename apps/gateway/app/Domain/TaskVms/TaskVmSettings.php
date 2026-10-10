@@ -27,14 +27,14 @@ final readonly class TaskVmSettings
     private const array HostDefaults = [
         'project' => 'orbit-tasks',
         'network' => 'orbittask0',
-        'image' => 'ubuntu-26.04-vm',
         'cpus' => 2,
         'memory' => '4GiB',
         'disk' => '20GiB',
-        'pool' => 'default',
+        'pool' => 'orbit-tasks',
+        'zfs_dataset' => null,
     ];
 
-    private const array HostKeys = ['node_id', 'project', 'network', 'cidr', 'image', 'max_vms', 'cpus', 'memory', 'disk', 'pool'];
+    private const array HostKeys = ['node_id', 'project', 'network', 'cidr', 'max_vms', 'cpus', 'memory', 'disk', 'pool', 'zfs_dataset'];
 
     private const array PrivateRanges = ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16'];
 
@@ -196,12 +196,14 @@ final readonly class TaskVmSettings
                 project: self::name($entry['project'], '/\A[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\z/D', "incus.hosts.{$index}.project"),
                 network: self::name($entry['network'], '/\Aorbittask[a-z0-9]{1,6}\z/D', "incus.hosts.{$index}.network"),
                 cidr: self::bridge($entry['cidr'] ?? null, $vpnSubnet, "incus.hosts.{$index}.cidr"),
-                image: self::name($entry['image'], '/\A[a-z0-9][a-z0-9.-]{0,62}\z/D', "incus.hosts.{$index}.image"),
                 maxVms: self::positiveInt($entry['max_vms'] ?? null, 64, "incus.hosts.{$index}.max_vms"),
                 cpus: self::positiveInt($entry['cpus'], 64, "incus.hosts.{$index}.cpus"),
                 memory: self::name($entry['memory'], '/\A[1-9][0-9]{0,5}(?:MiB|GiB)\z/D', "incus.hosts.{$index}.memory"),
                 disk: self::name($entry['disk'], '/\A[1-9][0-9]{0,5}(?:MiB|GiB)\z/D', "incus.hosts.{$index}.disk"),
                 pool: self::name($entry['pool'], '/\A[a-z0-9](?:[a-z0-9_-]{0,61}[a-z0-9])?\z/D', "incus.hosts.{$index}.pool"),
+                // A dataset below a ZFS pool, never a whole pool: Incus takes over the dataset it creates the pool on.
+                zfsDataset: $entry['zfs_dataset'] === null ? null
+                    : self::name($entry['zfs_dataset'], '/\A(?=.{3,200}\z)[A-Za-z0-9][A-Za-z0-9_.:-]*(?:\/[A-Za-z0-9][A-Za-z0-9_.:-]*)+\z/D', "incus.hosts.{$index}.zfs_dataset"),
             );
             if (isset($hosts[$host->nodeId])) {
                 throw self::invalid("incus.hosts.{$index}.node_id is listed twice.");
