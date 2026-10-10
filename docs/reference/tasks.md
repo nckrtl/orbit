@@ -787,7 +787,7 @@ During a consult, the pending consult stays open while Orbit acquires the topolo
 
 `topology_requested` requires a summary but refuses `--question`, `--cause`, and pull request flags. It leaves question records and assistance flags as they were; it does not create or resolve a direction request. Orbit records the requesting turn before sending the reply. A lost send response or a crash after the send never changes that source turn: Orbit reconciles an accepted or later turn instead of sending the resource reply again. If the resumed turn stops without a usable receipt, the normal missing-receipt reminder applies. The original context's outcome and cause rules apply again after resumption.
 
-The topology is shared by the group's subtasks and review turns. Orbit releases it when it removes the group's workspace, including any web session and loopback publication. [Incus topologies](/reference/incus-topologies#topologies-on-the-reviewers-request) owns the guest and command contract.
+The topology is shared by the group's subtasks and review turns. Orbit releases it when it removes the group's workspace, including any web session and loopback publication. A [task VM](/reference/compute-drivers#destroy-a-task-vm) workspace never holds a topology, so its removal releases none. [Incus topologies](/reference/incus-topologies#topologies-on-the-reviewers-request) owns the guest and command contract.
 
 ### Rubric and reminders
 

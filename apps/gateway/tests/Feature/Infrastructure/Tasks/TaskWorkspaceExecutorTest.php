@@ -66,17 +66,19 @@ describe('sandbox workspace commands', function (): void {
         expect(app(RemoteTaskWorkspaceMcp::class)->installWhenMissing($workspace))->toBeTrue();
     });
 
-    it('never invokes the host topology harness for a VM group', function (string $operation, bool $missingOwnership): void {
+    it('refuses to acquire a host topology for a VM group, and releases none without the harness', function (bool $missingOwnership): void {
         $workspace = sandbox_workspace();
         $groupId = $workspace->taskSandbox->group_id;
         if ($missingOwnership) {
             $workspace->update(['task_sandbox_id' => null]);
         }
         mock(SshExecutor::class)->shouldReceive('execute')->never();
+        $topology = app(RemoteTaskWorkspaceTopology::class);
 
-        expect(fn () => app(RemoteTaskWorkspaceTopology::class)->{$operation}($workspace, $groupId))
+        expect(fn () => $topology->acquire($workspace, $groupId))
             ->toThrow(RuntimeConvergenceException::class, 'Sandbox workload nodes must be managed by the compute driver.');
-    })->with(['acquire', 'release'])->with([false, true]);
+        $topology->release($workspace, $groupId);
+    })->with(['sandbox ownership' => false, 'vm group only' => true]);
 
     it('executes only in the recorded guest and bypasses the shared worker account', function (): void {
         $workspace = sandbox_workspace();
