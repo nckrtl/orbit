@@ -104,6 +104,7 @@ use App\Domain\Instances\ProductionInstanceProvisioner;
 use App\Domain\Instances\ProductionInstanceSourceLifecycle;
 use App\Domain\Instances\ProductionPhpRuntimeManager;
 use App\Domain\Instances\ProductionReleaseLayout;
+use App\Domain\Instances\ProductionRepositoryBinding;
 use App\Domain\Instances\ProductionRouteProjector;
 use App\Domain\Instances\ProductionWebRootManager;
 use App\Domain\Instances\Queue\InstanceQueueReader;
@@ -299,6 +300,7 @@ use App\Infrastructure\Instances\RemoteInstanceTransferSource;
 use App\Infrastructure\Instances\RemoteProductionDeployment;
 use App\Infrastructure\Instances\RemoteProductionInstanceSourceLifecycle;
 use App\Infrastructure\Instances\RemoteProductionPhpRuntimeManager;
+use App\Infrastructure\Instances\RemoteProductionRepositoryBinding;
 use App\Infrastructure\Instances\RemoteProductionWebRootManager;
 use App\Infrastructure\Instances\RemoteRegistrationSourceManager;
 use App\Infrastructure\Logs\CacheLogStreamStore;
@@ -442,6 +444,7 @@ final class ApplicationServiceProvider extends ServiceProvider
         RouteApplicationUrlWriter::class => PlacementRouteApplicationUrlWriter::class,
         ProductionWebRootManager::class => RemoteProductionWebRootManager::class,
         ProjectUpdateSourceMutator::class => RemoteProjectUpdateSourceMutator::class,
+        ProductionRepositoryBinding::class => RemoteProductionRepositoryBinding::class,
         ProjectUpdateProjectionMutator::class => NativeProjectUpdateProjectionMutator::class,
         DevelopmentInstanceProvisioner::class => NativeDevelopmentInstanceProvisioner::class,
         DevelopmentRouteProjector::class => NativeDevelopmentRouteProjector::class,
