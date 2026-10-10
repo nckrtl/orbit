@@ -34,7 +34,7 @@ class OrbitServer extends Server
         - You act as the Node whose WireGuard address your connection comes from. A `403` with `peer.identity_unknown` means that address is not an active Node; `node.access_denied` means your Node has no access edge to the serving Node.
         - Tool names follow `<family>-<verb>`, for example `node-list`, `instance-show`, `process-restart`. List or show a record before changing it, and pass numeric ids unless the schema says otherwise.
         - A failed call returns the API error envelope `{"status", "error": {"code", "message", "details"}}`. Use `error.code` to decide what to do next; validation failures list the offending fields in `details`.
-        - `instance-deploy` and `instance-rollback` run to completion and return every progress event under `events`; the last event carries the result.
+        - `instance-deploy` and `instance-rollback` run to completion and return their progress events under `events`; the last event carries the result. Long step output keeps its start and end, with an `output_truncated` event in place of the middle.
         - Destructive tools are annotated as such. Confirm with the user before removing Nodes, Instances, databases, or Routes.
         MARKDOWN;
 

@@ -99,18 +99,29 @@ final readonly class ApiDispatcher
         return $preserved;
     }
 
+    /**
+     * A streamed operation, such as a deploy, flushes each event line. Flushing a plain buffer would pass the
+     * lines on to the MCP reply before its headers, so PHP would send them as text/html. The capturing
+     * handler keeps every flushed chunk in the tool result and passes nothing on.
+     */
     private function body(Response $response): string
     {
         if (! $response instanceof StreamedResponse) {
             return (string) $response->getContent();
         }
 
-        ob_start();
+        $body = '';
+
+        ob_start(static function (string $chunk) use (&$body): string {
+            $body .= $chunk;
+
+            return '';
+        });
 
         try {
             $response->sendContent();
         } finally {
-            $body = (string) ob_get_clean();
+            ob_end_flush();
         }
 
         return $body;
