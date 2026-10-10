@@ -35,7 +35,7 @@ The Gateway never ends a session because the list changed. Every request is serv
 
 - A call to a tool that still exists runs as usual.
 - A call to a tool that was removed or renamed receives HTTP 400 with the JSON-RPC error `-32602` `Tool [name] not found`. The message tells the client to list the tools again. The Gateway runs nothing.
-- A call with arguments that a changed input schema no longer accepts receives the operation's usual tool error, such as `validation.failed`.
+- A call whose arguments a changed operation rejects receives the operation's usual tool error, such as `validation.failed`.
 
 To see a new tool, reconnect the MCP server or start a new session. In Claude Code, use `/mcp` and reconnect `orbit`. `/mcp/search` lists the same two tools after every change, and `search_tools` always searches the current catalogue.
 
