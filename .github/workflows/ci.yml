@@ -27,9 +27,10 @@ jobs:
     permissions:
       actions: read
       contents: read
-    # The Gateway suite runs on the self-hosted runner on Sabre when ORBIT_SABRE_RUNNER is true.
+    # The Gateway suite runs on the self-hosted runner on Sabre when ORBIT_SABRE_RUNNER is true. Its subprocess group
+    # runs on a GitHub-hosted runner, so each Gateway run takes one Sabre runner.
     # Pull requests from forks always use a GitHub-hosted runner, so outside code never runs on Sabre.
-    runs-on: ${{ matrix.directory == 'apps/gateway' && vars.ORBIT_SABRE_RUNNER == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted", "sabre"]') || 'ubuntu-26.04' }}
+    runs-on: ${{ matrix.directory == 'apps/gateway' && matrix.part != 'subprocess' && vars.ORBIT_SABRE_RUNNER == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted", "sabre"]') || 'ubuntu-26.04' }}
     strategy:
       fail-fast: false
       matrix:
@@ -343,8 +344,8 @@ jobs:
 
   privileged:
     name: Gateway privileged
-    # Trusted branches use Sabre. Forks run the same gate on an isolated hosted runner.
-    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted", "sabre"]') || 'ubuntu-26.04' }}
+    # A GitHub-hosted runner gives every run a fresh machine with passwordless sudo and leaves Sabre to the Gateway suite.
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     defaults:
       run:

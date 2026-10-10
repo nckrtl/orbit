@@ -272,6 +272,8 @@ describe('Composer configuration', function (): void {
         // Only pushes and pull requests from this repository may reach the self-hosted Sabre runner.
         expect($project['runs-on'])
             ->toContain("matrix.directory == 'apps/gateway'")
+            // The subprocess job runs on a hosted runner, so a Gateway run takes one Sabre runner.
+            ->toContain("matrix.part != 'subprocess'")
             ->toContain("vars.ORBIT_SABRE_RUNNER == 'true'")
             ->toContain("github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository")
             ->toContain("fromJSON('[\"self-hosted\", \"sabre\"]')")
@@ -504,10 +506,10 @@ describe('Composer configuration', function (): void {
     });
 });
 
-it('keeps privileged tests required in CI on trusted and fork branches', function (): void {
+it('keeps privileged tests required in CI on a hosted runner', function (): void {
     $workflow = Yaml::parseFile(base_path('../../.github/workflows/ci.yml'));
     $job = $workflow['jobs']['privileged'];
-    expect($job['runs-on'])->toContain('self-hosted', 'sabre', 'head.repo.full_name', 'ubuntu-26.04');
+    expect($job['runs-on'])->toBe('ubuntu-26.04');
     $commands = array_column($job['steps'], 'run');
     expect(implode("\n", $commands))->toContain('--group=privileged', '--no-tia', '--fail-on-empty-test-suite');
     expect($workflow['jobs']['required']['needs'])->toContain('privileged');
