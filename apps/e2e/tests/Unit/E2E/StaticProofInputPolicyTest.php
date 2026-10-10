@@ -50,6 +50,7 @@ describe('StaticProofInputPolicy', function (): void {
         'Pi server' => ['apps/pi-server/package.json', 'non-runtime'],
         'agent instructions' => ['apps/e2e/.agents/skills/example/SKILL.md', 'non-runtime'],
         'Claude instructions link' => ['CLAUDE.md', 'non-runtime'],
+        'Vet release-age settings' => ['apps/gateway/vet.json', 'non-runtime'],
         'tests' => ['apps/e2e/tests/Unit/ExampleTest.php', 'non-runtime'],
         'CLI design fixture' => ['apps/cli/design/Flows/NodeAddFlowCommand.php', 'non-runtime'],
         'SDK response fixture' => ['packages/php-sdk/fixtures/nodes/node-list/default.json', 'non-runtime'],

@@ -189,7 +189,7 @@ final readonly class StaticProofInputPolicy
 
         return
             preg_match(
-                '~(?:\A|/)(?:\.editorconfig|\.gitattributes|\.gitignore|boost\.json|box\.json|mago\.toml|pint\.json|phpstan\.neon(?:\.dist)?|phpunit(?:\.[^/]+)?\.xml(?:\.dist)?|rector\.php)\z~D',
+                '~(?:\A|/)(?:\.editorconfig|\.gitattributes|\.gitignore|boost\.json|box\.json|mago\.toml|pint\.json|phpstan\.neon(?:\.dist)?|phpunit(?:\.[^/]+)?\.xml(?:\.dist)?|rector\.php|vet\.json)\z~D',
                 $path,
             ) === 1
             || $path === 'apps/e2e/.env.example';

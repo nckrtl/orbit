@@ -3,7 +3,8 @@ version: 2
 # One pull request a day bundles every update, so the self-hosted runners
 # see one CI run instead of a burst of one run per package.
 # Automatic updates propose only releases that are at least seven days old.
-# Security updates are not delayed. Manual updates have no wait. See the
+# Security updates are not delayed. Manual updates take only releases that
+# are at least three days old, through Vet and bunfig.toml. See the
 # Dependencies section of docs/contributor-guide.md.
 multi-ecosystem-groups:
   daily:
