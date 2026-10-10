@@ -1222,6 +1222,22 @@
             ]
         },
         {
+            "path": "docs/reference/conn.md",
+            "title": "Conn layer",
+            "kind": "reference",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Activity",
+                "Gateway",
+                "Node",
+                "Process",
+                "Project"
+            ],
+            "governing_adrs": []
+        },
+        {
             "path": "docs/reference/database-connections.md",
             "title": "Database connections",
             "kind": "reference",
@@ -2137,22 +2153,6 @@
                 "Process",
                 "Role",
                 "Route"
-            ],
-            "governing_adrs": []
-        },
-        {
-            "path": "docs/reference/t3-code.md",
-            "title": "T3 Code layer",
-            "kind": "reference",
-            "components": [
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Activity",
-                "Gateway",
-                "Node",
-                "Process",
-                "Project"
             ],
             "governing_adrs": []
         },
