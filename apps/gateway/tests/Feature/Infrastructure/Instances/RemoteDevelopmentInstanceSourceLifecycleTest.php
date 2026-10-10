@@ -62,6 +62,7 @@ use App\Models\Task;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Symfony\Component\Process\ExecutableFinder;
 use Symfony\Component\Process\Process;
 use Tests\Support\LifecycleSshExecutor;
 
@@ -716,6 +717,48 @@ describe('TaskWorkspaceAcl', function (): void {
         expect(orb76_run(['getfacl', '-cp', $instance->checkout_path.'/README.md'])->stdout)->toContain('user:nobody:rw-')
             ->and(is_dir($instance->checkout_path.'/.git/orbit'))->toBeTrue();
     });
+});
+
+describe('CheckoutProcesses', function (): void {
+    it('stops processes running inside the checkout before deleting it and leaves every other process alone', function (string $operation): void {
+        config()->set('orbit.tasks.worker_user', 'nobody');
+        $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'task-processes');
+        $sibling = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'task-processes-sibling');
+        $checkout = (string) $instance->checkout_path;
+        copy((string) new ExecutableFinder()->find('sleep'), $checkout.'/orbit-test-sleep');
+        chmod($checkout.'/orbit-test-sleep', 0o755);
+        $stopped = [
+            'own cwd' => orb_checkout_process_spawn($checkout, 'sleep'),
+            'worker cwd' => orb_checkout_process_spawn($checkout, 'sleep', 'nobody'),
+            'own executable' => orb_checkout_process_spawn($this->sandbox, $checkout.'/orbit-test-sleep'),
+        ];
+        $kept = [
+            'own sibling Instance' => orb_checkout_process_spawn((string) $sibling->checkout_path, 'sleep'),
+            'worker sibling Instance' => orb_checkout_process_spawn((string) $sibling->checkout_path, 'sleep', 'nobody'),
+            'own outside' => orb_checkout_process_spawn($this->sandbox, 'sleep'),
+        ];
+
+        try {
+            if ($operation === 'finalize') {
+                $this->removal->finalize(orb180_record_source($this->removal, $instance, true));
+            } else {
+                orb178_remove_source($this->removal, $instance, true);
+            }
+
+            expect(file_exists($checkout))->toBeFalse();
+            foreach ($stopped as $label => $pid) {
+                expect(orb_checkout_process_running($pid))->toBeFalse("{$label} process {$pid} still runs");
+            }
+            foreach ($kept as $label => $pid) {
+                expect(orb_checkout_process_running($pid))->toBeTrue("{$label} process {$pid} was stopped");
+            }
+        } finally {
+            foreach ([...$stopped, ...$kept] as $label => $pid) {
+                $user = str_starts_with($label, 'worker') ? ['sudo', '-n', '-u', 'nobody', '--'] : [];
+                orb178_run_allow_failure([...$user, 'kill', '-KILL', (string) $pid]);
+            }
+        }
+    })->with(['finalize', 'remove']);
 });
 
 it('removes receipt-owned crash states without failure fields teardown or unrelated cleanup', function (string $state, bool $force): void {
@@ -3653,6 +3696,24 @@ function orb76_run(array $arguments, ?string $input = null): CommandResult
     expect($result->succeeded())->toBeTrue($result->stderr);
 
     return $result;
+}
+
+/** Start a detached `sleep 300` in $directory, optionally as $user, and return its PID. */
+function orb_checkout_process_spawn(string $directory, string $executable, ?string $user = null): int
+{
+    $script = 'cd -- "$1" && nohup "$2" 300 >/dev/null 2>&1 </dev/null & printf %s "$!"';
+    $prefix = $user === null ? [] : ['sudo', '-n', '-u', $user, '--'];
+    $pid = (int) orb76_run([...$prefix, 'bash', '-c', $script, '_', $directory, $executable])->stdout;
+    expect(orb_checkout_process_running($pid))->toBeTrue();
+
+    return $pid;
+}
+
+function orb_checkout_process_running(int $pid): bool
+{
+    $stat = @file_get_contents("/proc/{$pid}/stat");
+
+    return is_string($stat) && preg_match('/\) Z /', $stat) !== 1;
 }
 
 /** @param non-empty-list<string> $arguments */

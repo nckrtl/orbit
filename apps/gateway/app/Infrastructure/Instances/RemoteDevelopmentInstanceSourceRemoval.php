@@ -1775,6 +1775,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
                 rm -rf -- "$scratch"
                 trap - EXIT
             fi
+            stop_tree_processes "$physical"
             if [ "$physical" = "$checkout" ]; then
                 case "$layout" in
                     worktree) git --git-dir="$common_repository/.git" worktree move "$checkout" "$quarantine" ;;
@@ -2160,6 +2161,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
                 trap - EXIT
             fi
             failure=1
+            stop_tree_processes "$checkout"
             remove_source_tree "$checkout"
             release_empty_grouping_directory "$grouping_directory"
             BASH;
@@ -2170,6 +2172,53 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
         $worker = TaskWorkerUser::name() ?? '';
 
         return 'trust_worker='.escapeshellarg($worker)."\n".<<<'BASH'
+            # Stop the caller's own processes whose working directory or executable is inside the tree.
+            # Owned Processes and Schedules are systemd units that runtime cleanup removes after ownership checks.
+            stop_own_tree_processes() {
+                local tree=$1 signal attempt entry pid target found
+                for signal in TERM KILL; do
+                    for attempt in $(seq 1 50); do
+                        found=0
+                        while IFS= read -r -d '' entry && IFS= read -r -d '' target; do
+                            case "$target" in
+                                "$tree"|"$tree"/*|"$tree (deleted)") ;;
+                                *) continue ;;
+                            esac
+                            pid=${entry#/proc/}
+                            if [ "$pid" = "$$" ] || [ "$pid" = "$BASHPID" ]; then
+                                continue
+                            fi
+                            case "$(cat -- "$entry/cgroup" 2>/dev/null || true)" in
+                                */orbit-process-*.service*|*/orbit-schedule-*.service*) continue ;;
+                            esac
+                            found=1
+                            kill -s "$signal" "$pid" 2>/dev/null || true
+                        done < <(find -P /proc -mindepth 2 -maxdepth 2 -path '/proc/[0-9]*' \
+                            \( -name cwd -o -name exe \) -user "$(id -u)" -printf '%h\0%l\0' 2>/dev/null || true)
+                        if [ "$found" = 0 ]; then
+                            return 0
+                        fi
+                        sleep 0.1
+                    done
+                done
+                printf 'Processes inside %s did not stop.\n' "$tree" >&2
+                return 1
+            }
+
+            stop_tree_processes() {
+                local tree=$1
+                stop_own_tree_processes "$tree"
+                if [ -n "$trust_worker" ] && id "$trust_worker" >/dev/null 2>&1; then
+                    test "$(id -u "$trust_worker")" != 0
+                    test "$trust_worker" != "$managed_user"
+                    (
+                        cd /
+                        sudo -n -u "$trust_worker" -- bash -eu -c \
+                            "$(declare -f stop_own_tree_processes)"'; stop_own_tree_processes "$1"' _ "$tree"
+                    )
+                fi
+            }
+
             remove_source_tree() {
                 local tree=$1
                 if [ -n "$trust_worker" ] && id "$trust_worker" >/dev/null 2>&1; then

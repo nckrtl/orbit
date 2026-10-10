@@ -124,7 +124,7 @@ Once accepted, the Gateway marks each member `removing` and completes five steps
 | --- | --- |
 | `source_preparation` | Record the source identity, or the production content to keep. |
 | `route_target_clear` | Stop the Route from sending traffic to the Instance. See [Route cleanup](#route-cleanup). |
-| `source_finalization` | Withdraw a development Instance's PHP-FPM pool, then delete its checkout. Keep production content. Remove the `<apps-root>/<project-slug>` directory when it is empty. |
+| `source_finalization` | Withdraw a development Instance's PHP-FPM pool, [stop processes inside the checkout](#processes-inside-the-checkout), then delete the checkout. Keep production content. Remove the `<apps-root>/<project-slug>` directory when it is empty. |
 | `runtime_cleanup` | Remove every owned Process and Schedule, then the PHP-FPM pool or service, Caddy site, and other runtime files. Drop every [owned database](#owned-databases). See [Runtime cleanup](#runtime-cleanup). |
 | `row_deletion` | Cancel the Instance's open annotation tasks, and their tasks when nothing else is open, and mark those annotations cancelled. Then delete the Instance record. |
 
@@ -139,6 +139,12 @@ Removal ignores `app-dev.php_pool_directory_missing` from that convergence. The 
 PHP-FPM refuses to start while any pool names a missing `chdir`, and all development Instances of one PHP version share one pool file. So `source_finalization` first converges PHP-FPM on the Node, which withdraws the Instance's pool and reloads PHP-FPM, and only then deletes the checkout. The live pool file never names the deleted directory. If that convergence fails, the checkout stays and the step stays open for retry. It ignores `app-dev.php_pool_directory_missing` for the same reason as `runtime_cleanup`.
 
 [PHP-FPM convergence](/reference/php-runtime#development-runtime) also never renders a pool for a missing directory and does not need PHP-FPM to start first, so it still repairs a Node whose source was deleted another way. Doctor reports such a pool as `role.php_pool_directory_missing`.
+
+### Processes inside the checkout
+
+Agents and checks can leave processes behind, such as a Playwright server that a browser test started. Before it moves a development checkout to its removal quarantine and deletes it, removal stops every process of the managed user and of the configured task worker whose working directory or executable is inside the checkout. It sends `SIGTERM`, waits up to 5 seconds, then sends `SIGKILL`. A process that still runs 5 seconds later fails the step, and the checkout stays for retry.
+
+Each account stops only its own processes, so removal never signals another user's process. Processes outside the checkout keep running, including the managed user's shells and the processes of other Instances. Owned [Processes and Schedules](#processes-and-schedules) are left to `runtime_cleanup`, which checks their ownership before it removes them.
 
 ### Route cleanup
 
