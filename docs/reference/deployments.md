@@ -189,6 +189,16 @@ The failed boundary decides which release stays selected.
 
 Orbit never undoes the effects of a step, of the environment sync, or of data changes. You decide how to recover.
 
+Before it prepares a release, the Gateway checks that the production home records the Project's `repository_url` in its release layout marker and in the origin of the selected release. When that check fails, the Gateway reads the recorded URLs to name the cause.
+
+| Error code | Cause | Recovery |
+| --- | --- | --- |
+| `deployment.repository_rebind_required` | The home records another URL for the same repository, for example the SSH form after the Project moved to HTTPS. | Run `orbit project:update <project> --repository=<url>` with the Project's current URL. It [re-binds the home](/reference/projects#production-instances). |
+| `deployment.repository_mismatch` | The home records another repository. | None in place. The home belongs to another repository. |
+| `deployment.selection_invalid` | Another selection check failed. | Inspect the home with [Doctor](#inspect-release-placement-with-doctor). |
+
+Rollback and the release list report the same two repository codes.
+
 ## Roll back
 
 A rollback selects one retained release through `current`. The Gateway checks that the release is inside `releases/` and that the web root stays inside it. It then switches `current`, reconciles the dedicated FPM runtime, and resets its cache, as a deployment does. A changed resolved release restarts that service with the same brief serving interruption. A rollback fetches nothing, writes no environment, runs no step, and changes no database file.
