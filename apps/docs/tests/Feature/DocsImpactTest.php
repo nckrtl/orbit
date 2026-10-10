@@ -170,7 +170,8 @@ it('docs impact reports an env call with a named key argument', function (): voi
     file_put_contents($root.'/'.$path, "<?php return env(key: 'GATEWAY_NAMED_KEY', default: null);\n");
     $report = new DocsImpact($root)->report(null, [$path]);
 
-    expect(collect($report['surfaces'])->pluck('reason')->implode(' '))->toContain('GATEWAY_NAMED_KEY in '.$path);
+    expect(collect($report['surfaces'])->pluck('reason')->implode(' '))->toContain('GATEWAY_NAMED_KEY in '.$path)
+        ->and(collect($report['impacted_pages'])->pluck('page')->all())->toBe(['docs/reference/gateway-environment.md']);
 });
 
 it('docs impact reports removed error identifiers from a retained source file', function (): void {

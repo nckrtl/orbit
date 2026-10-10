@@ -81,14 +81,14 @@ GitHub CI runs on every pull request, on every push to `main`, every night on `m
 | One job per Composer project: CLI, Docs, Gateway, E2E, PHP SDK | `composer validate --strict`, `composer check`, the classification-fakes check, and the tests |
 | Gateway subprocess, E2E subprocess | The project's `subprocess` group, beside the project's own job |
 | Docs (merge ref) | Pull requests only: `composer check` in `apps/docs` on the base repository's `refs/pull/N/merge`, with no head fallback if the merge ref is unavailable |
-| API reference | `bin/docs-openapi --check` and `bin/mcp-tools --check` |
+| API reference | `bin/project-vocabulary`, `bin/env-docs`, `bin/docs-openapi --check`, and `bin/mcp-tools --check` |
 | Web | Generated API types, formatting, lint, types, tests, and build. A run on `main` also publishes the build |
 | Pi server | Formatting, lint, types, tests, and build |
 | Agent annotation | Formatting, lint, tests, and build |
 | Rust agent | `cargo fmt`, `cargo clippy`, tests, and static builds for x86_64 and aarch64, with Cargo caches. A pull request that changes neither `apps/agent` nor `ci.yml` skips these steps |
 | Required checks | Passes only when every other job passes; expects Docs (merge ref) to succeed on pull requests and to be skipped on pushes and manual runs |
 
-On a pull request, each Composer project job runs the TIA-selected tests and the architecture tests. The architecture tests include the contract tests that read the workflow files, `CliBinaryBuildContractTest`, `ComposerConfigurationTest`, and `DocsMergeRefWorkflowTest`, because TIA does not link a workflow file to the tests that read it.
+On a pull request, each Composer project job runs the TIA-selected tests and the architecture tests. The architecture tests include the contract tests that read the workflow files, `CliBinaryBuildContractTest`, `ComposerConfigurationTest`, and `DocsMergeRefWorkflowTest`, because TIA does not link a workflow file to the tests that read it. They also include `CommandSurfaceTest`, which checks every CLI command against its section in `docs/cli`, so a pull request that changes only docs runs it too.
 
 A pull request job also runs the project's `subprocess` group when the pull request changes a file that the project's tests read. A test that starts PHP in a subprocess, such as `artisan` or a fixture script, declares `pest()->group('subprocess')` at the top of its file. PCOV records only the test's own process, so TIA does not link the code that the subprocess runs to the test.
 
@@ -208,14 +208,15 @@ Intermediate Orbit task handoffs select affected tests from the subtask's start 
 Root `composer check` runs `bin/review-check`. It checks the working tree as it is, including uncommitted and untracked files. The Orbit Project uses it as its task check, so it also runs at every subtask handoff. It runs these checks.
 
 1. It runs `bin/docs-impact --gate` against the merge base with `origin/main`. The fallback is the merge base with local `main`. Without a merge base, this check fails.
-2. It seeds absent quality and test caches with `bin/worktree-cache` and `bin/tia-cache seed`.
-3. It checks each of the five Composer projects in turn, as the next paragraph describes.
-4. When the candidate changes `apps/web`, `docs/openapi.json`, or `apps/pi-server`, it adds the matching checks, as [Web and Pi server checks](#web-and-pi-server-checks) describes.
-5. Last, when the candidate changes test sources, it runs `bin/check-classification-fakes` on them.
+2. It runs `bin/project-vocabulary` and `bin/env-docs`.
+3. It seeds absent quality and test caches with `bin/worktree-cache` and `bin/tia-cache seed`.
+4. It checks each of the five Composer projects in turn, as the next paragraph describes.
+5. When the candidate changes `apps/web`, `docs/openapi.json`, or `apps/pi-server`, it adds the matching checks, as [Web and Pi server checks](#web-and-pi-server-checks) describes.
+6. Last, when the candidate changes test sources, it runs `bin/check-classification-fakes` on them.
 
 For each Composer project, the gate runs `composer validate --strict`, `composer check`, and `composer test:affected`. The Gateway's `composer check` also runs `bin/annotator-build --check`. It verifies that the vendored annotator release in `apps/gateway/resources/annotator` matches the `@nckrtl/annotator` version that `apps/web/bun.lock` locks. After you bump the locked version, run `bin/annotator-build` and include the generated Gateway resource files. Each affected-test run records into its own copy of the project graph. That copy keeps only the `main` baseline. The gate selects tests for every change since `main`, whatever local `composer test:affected` runs happened earlier. Local runs are unchanged. Each one still writes its branch baseline into the project's own graph, and the gate leaves that graph unchanged.
 
-When the candidate changes the project, the gate runs that project's architecture tests. When that project has changed and `test:affected` selects no tests, the gate runs its full suite with `--no-tia` in four parallel processes instead of only warning. A project with changed source files but no selected tests is this case. When `test:affected` passed, the gate looks for changed test files that TIA did not select. It lists the tests of each such file and runs the file without TIA. A file without tests fails.
+When the candidate changes the project, the gate runs that project's architecture tests. A change under `docs/cli` also runs the CLI architecture tests, because `CommandSurfaceTest` reads those pages. When that project has changed and `test:affected` selects no tests, the gate runs its full suite with `--no-tia` in four parallel processes instead of only warning. A project with changed source files but no selected tests is this case. When `test:affected` passed, the gate looks for changed test files that TIA did not select. It lists the tests of each such file and runs the file without TIA. A file without tests fails.
 
 #### Web and Pi server checks
 

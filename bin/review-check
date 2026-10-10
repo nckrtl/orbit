@@ -36,6 +36,10 @@ ARCHITECTURE_TESTS = {
         'tests/Unit/Requests/Deployments/DeploymentRequestsTest.php',
     ),
 }
+# Paths outside a project that its architecture tests read, so a change there runs them too.
+ARCHITECTURE_TRIGGERS = {
+    'apps/cli': ('docs/cli/',),
+}
 BASES = ('origin/main', 'main')
 NO_SELECTION = 'No affected tests found'
 FULL_SUITE = ('../../bin/pest-plain', 'vendor/bin/pest', '--no-tia',
@@ -278,7 +282,8 @@ def main():
             subprocess.run([str(root / seed[0]), *seed[1:]], check=False)
     for project, project_commands in selected_projects(paths, root):
         commands = list(project_commands)
-        if project_commands == PHP_COMMANDS and any(path.startswith(project + '/') for path in paths):
+        triggers = (project + '/', *ARCHITECTURE_TRIGGERS.get(project, ()))
+        if project_commands == PHP_COMMANDS and any(path.startswith(triggers) for path in paths):
             commands.extend(('vendor/bin/pest', architecture_path)
                             for architecture_path in ARCHITECTURE_TESTS.get(project, ()))
         index = 0

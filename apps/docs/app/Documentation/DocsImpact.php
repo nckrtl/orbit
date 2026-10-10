@@ -576,8 +576,9 @@ final readonly class DocsImpact
         if ($keys === [] && str_contains($path, '.env')) {
             $keys[] = ['configuration', 1];
         }
+        $owner = str_starts_with($path, 'apps/gateway/') ? 'docs/reference/gateway-environment.md' : 'docs/reference/environment-variables.md';
         foreach ($keys as [$key, $line]) {
-            $this->addSurface($surfaces, $impacts, $path, 'environment_key', 'docs/reference/environment-variables.md', "{$key} in {$path}:{$line}");
+            $this->addSurface($surfaces, $impacts, $path, 'environment_key', $owner, "{$key} in {$path}:{$line}");
         }
     }
 
