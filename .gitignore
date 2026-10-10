@@ -8,3 +8,5 @@ __pycache__/
 /REVISION
 /docs/generated/*
 !/docs/generated/context.json
+
+node_modules/

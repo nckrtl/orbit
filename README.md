@@ -30,14 +30,20 @@ Maintained documentation lives in `docs/`, with Mintlify navigation in `docs/doc
 
 ## Repository
 
-Each project owns its Composer dependencies and checks:
+Orbit has nine projects. Each owns its dependencies and checks. The five PHP projects are separate Composer projects.
 
-| Path | Purpose |
-| --- | --- |
-| `apps/cli` | Laravel Zero command-line client |
-| `apps/gateway` | Laravel control plane |
-| `packages/php-sdk` | Framework-neutral HTTP client |
-| `apps/docs` | Documentation checks and context generator |
-| `apps/e2e` | Incus verification harness |
+| Path | Purpose | Tooling |
+| --- | --- | --- |
+| `apps/cli` | Laravel Zero command-line client | Composer |
+| `apps/gateway` | Laravel control plane | Composer |
+| `packages/php-sdk` | Framework-neutral HTTP client | Composer |
+| `apps/docs` | Documentation checks and context generator | Composer |
+| `apps/e2e` | Incus verification harness | Composer |
+| `apps/web` | Fleet web app that calls the Gateway API | Bun |
+| `apps/desktop` | Tauri desktop shell for the web app | Bun, Cargo |
+| `apps/agent` | Outbound-only Linux agent on Nodes | Cargo |
+| `apps/pi-server` | Pi sessions for task agents | Bun |
+
+[Tech stack](docs/tech-stack.md) lists the frameworks each project uses.
 
 The [MIT license](LICENSE) covers the project. Third-party dependencies retain their own licenses.

@@ -96,12 +96,15 @@ final readonly class DocsImpact
                     }
                 }
             }
-            if (preg_match('#(?:^|/)tests?/#', $path) === 1) {
+            if (preg_match('#(?:^|/)(?:tests?|node_modules)/#', $path) === 1) {
                 continue;
             }
 
             $source = is_file($this->root.'/'.$path) ? $this->read($path) : null;
             $baseSource = $base === null ? null : $this->gitAllowMissing(['show', $base.':'.$path]);
+            if (str_contains($source ?? '', "\0") || str_contains($baseSource ?? '', "\0")) {
+                continue;
+            }
             if ($source === null && $baseSource === null) {
                 $this->extractPlannedPath($path, $pages, $surfaces, $impacts, $errors);
 
