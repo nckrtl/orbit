@@ -155,7 +155,7 @@ it('allocates a private sandbox check directory without invoking host ACL tools'
     expect($process->getExitCode())->toBe(0);
 });
 
-it('never routes a test Gateway role through shared or project-lane transport', function (string $case): void {
+it('never routes a test Gateway role through shared or web Project transport', function (string $case): void {
     $workspace = sandbox_workspace();
     if ($case === 'shared') {
         $workspace->update(['task_sandbox_id' => null]);
@@ -196,7 +196,7 @@ it('refuses unrecorded and foreign workload roles before any guest command', fun
         'unrecorded' => $spec['images'] = [],
         'malformed image' => $spec['images']['app-dev'] = 'invalid',
         'missing source' => $spec['source_template'] = null,
-        'project lane' => $workspace->project->update(['slug' => 'dlf']),
+        'web Project' => $workspace->project->update(['slug' => 'dlf']),
         'foreign provider' => $sandbox->update(['provider' => 'upcloud']),
     };
     $sandbox->update(['spec' => $spec]);
@@ -204,7 +204,7 @@ it('refuses unrecorded and foreign workload roles before any guest command', fun
 
     expect(fn () => app(TaskWorkspaceExecutor::class)->execute($workspace, new RemoteCommand(['id']), 'proof', 'tasks.proof', role: 'app-dev'))
         ->toThrow(RuntimeConvergenceException::class, 'requested sandbox role');
-})->with(['unrecorded', 'malformed image', 'missing source', 'project lane', 'foreign provider']);
+})->with(['unrecorded', 'malformed image', 'missing source', 'web Project', 'foreign provider']);
 
 it('refuses incomplete or foreign workload source provenance before contacting compute', function (string $fault): void {
     $workspace = sandbox_workspace();

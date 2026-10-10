@@ -151,7 +151,7 @@ it('does not fall back when the local VM budget is full', function (): void {
     expect($state->calls)->toBe(['capacity'])->and(TaskSandbox::query()->count())->toBe(0);
 });
 
-it('refuses stale cancelled held and project lane claims before host contact', function (string $change): void {
+it('refuses stale cancelled held and web Project claims before host contact', function (string $change): void {
     [$group, $state] = sandbox_claim();
     match ($change) {
         'cancelled' => Task::topLevel()->whereKey($group->id)->update(['status' => 'cancelled']),
