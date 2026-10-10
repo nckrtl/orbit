@@ -292,7 +292,7 @@ The token goes only to `https://api.upcloud.com/1.3`. The sandbox sweep refuses 
 
 ### UpCloud enrollment
 
-`EnrollUpCloudSandboxAction` enrolls a running reservation as an `app-dev` Node. It needs `ORBIT_UPCLOUD_ENROLLMENT_ENABLED`, `ORBIT_UPCLOUD_DEV_CLUSTER_ID`, `ORBIT_UPCLOUD_MODEL_ADDRESS`, and `ORBIT_UPCLOUD_MODEL_PORT`. It is off by default, nothing calls it, and it starts no agent. A Node that a reservation owns stays out of the [fleet rollout](/reference/gateway-recovery#rollout-set-and-order) as `sandbox`. Sandbox destruction refuses an enrolled reservation with `compute.node_attached` until its Node is removed.
+`EnrollUpCloudSandboxAction` enrolls a running reservation as an `app-dev` Node. It needs `ORBIT_UPCLOUD_ENROLLMENT_ENABLED`, `ORBIT_UPCLOUD_DEV_CLUSTER_ID`, `ORBIT_UPCLOUD_MODEL_ADDRESS`, and `ORBIT_UPCLOUD_MODEL_PORT`. It is off by default, nothing calls it, and it starts no agent. A Node that a reservation owns stays out of the [fleet rollout](/reference/gateway-recovery#rollout-set-and-order) as `sandbox`. Orbit cannot destroy an UpCloud reservation yet: every destroy path refuses it with `compute.unknown_provider`. Phase 3 of [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm) brings UpCloud back on the task VM path.
 
 ### Why the UpCloud driver works this way
 
