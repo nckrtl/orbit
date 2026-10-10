@@ -4,13 +4,14 @@ sidebarTitle: "Contributor guide"
 description: "Prepare architecture and documentation, build a feature, and submit a complete pull request."
 covers:
   - .agents/skills/reviewing-pull-requests/references/test-*.md
-  - "{composer,vet}.json"
+  - composer.json
   - bin/{bootstrap,test,pest-plain,review-check,bug-repro,task-group-check,pr-head-check,deploy-verify,docs-merge-check,dependency-audit}
-  - "{apps/*,packages/php-sdk}/{composer,vet}.json"
+  - "{apps/*,packages/php-sdk}/composer.json"
   - "{apps/*,packages/php-sdk}/phpstan.neon"
   - apps/gateway/tests/Support/{LinuxHost,TestToolchain}.php
   - apps/docs/**
   - .github/workflows/{ci,dependency-audit}.yml
+  - .github/dependabot.yml
 ---
 
 # Contributing to Orbit
@@ -120,21 +121,11 @@ The CLI and E2E projects each keep one counted `ignoreErrors` entry for a Larast
 
 ## Dependencies
 
-Routine dependency releases wait seven days before a project takes them:
+You can update a dependency at any time. Update only the packages that you need, for example `composer update vendor/package --with-dependencies` or `bun update package`. Review the lockfile diff and run the checks.
 
-- Composer: the `laravel/vet` plugin skips releases younger than `minimum-release-age` days, as each project's `vet.json` sets.
-- Bun: `bunfig.toml` sets `install.minimumReleaseAge` to 604800 seconds in `apps/web`, `apps/pi-server`, and `apps/desktop`.
+Dependabot is the automatic updater. Every entry in `.github/dependabot.yml` sets `cooldown.default-days: 7`, so its daily pull request proposes only releases that are at least seven days old. Cooldown does not delay security updates.
 
-The wait applies only when Composer or Bun resolves a version. `composer install` and `bun install --frozen-lockfile` install the locked versions. Vet keeps no trust entries, so it prints a notice on each install.
-
-Update only the packages that you need, for example `composer update vendor/package --with-dependencies` or `bun update package`. Review the lockfile diff and run the checks.
-
-A fix for a published advisory does not wait:
-
-1. Link the CVE or GHSA advisory in the pull request.
-2. If the fixed release is younger than seven days, add its exact package name to `minimum-release-age-exclude` in `vet.json`, or to `install.minimumReleaseAgeExcludes` in `bunfig.toml`.
-3. Run `composer audit:dependencies` and the checks, and get a review.
-4. Remove the exclusion when the release is seven days old.
+To ship a fix for a published advisory, link the CVE or GHSA advisory in the pull request, update the package, run `composer audit:dependencies` and the checks, and get a review.
 
 Do not hide an advisory that has no fix. Record it in the pull request with the advisory link and the reason that the risk is acceptable.
 
@@ -233,9 +224,7 @@ The lint command reads the repository only, with no network, external service, o
 
 ### Audits stay outside the gate
 
-Advisories appear upstream at any time. An audit in `composer check` or in `Required checks` would block unrelated work for a change that the branch did not make. The nightly audit reports new advisories, and the advisory steps above ship the fix.
-
-Vet runs without a trust baseline. A baseline makes each routine update a manual approval, and the release age already holds back a compromised release while it is found and pulled.
+Advisories appear upstream at any time. An audit in `composer check` or in `Required checks` would block unrelated work for a change that the branch did not make. The nightly audit reports new advisories, and an advisory fix pull request ships the fix.
 
 ### A committed context index
 
