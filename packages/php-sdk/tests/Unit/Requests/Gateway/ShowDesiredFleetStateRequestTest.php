@@ -60,6 +60,17 @@ describe(ShowDesiredFleetStateRequest::class, function (): void {
             ->and($state->cli->reason)->toBe('release_missing');
     });
 
+    it('keeps the reason of an available fallback release', function (): void {
+        $body = desired_fleet_state_fixture_body('self-update/fallback');
+
+        $state = send_desired_fleet_state($body);
+
+        expect($state->toArray())->toBe($body['data'])
+            ->and($state->cli->isAvailable())->toBeTrue()
+            ->and($state->cli->reason)->toBe('release_missing')
+            ->and($state->cli->commit)->not->toBe($state->commit);
+    });
+
     it('rejects a desired state it cannot trust', function (Closure $change): void {
         $body = desired_fleet_state_fixture_body('self-update/available');
         $body['data'] = $change($body['data']);
@@ -83,6 +94,7 @@ describe(ShowDesiredFleetStateRequest::class, function (): void {
             return $data;
         }],
         'unavailable without a reason' => [static fn (array $data): array => [...$data, 'cli' => ['status' => 'unavailable', 'reason' => null]]],
+        'available with a malformed reason' => [static fn (array $data): array => [...$data, 'cli' => [...$data['cli'], 'reason' => 'Release Missing']]],
         'pending without a version' => [static fn (array $data): array => [...$data, 'cli' => ['status' => 'pending', 'reason' => 'release_missing', 'version' => null, 'tag' => null]]],
         'missing agent' => [static function (array $data): array {
             unset($data['agent']);

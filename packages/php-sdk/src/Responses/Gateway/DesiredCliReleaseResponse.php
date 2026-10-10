@@ -10,7 +10,8 @@ use InvalidArgumentException;
  * The CLI release the fleet should run. `status` is `available` with a version, tag, checksum file, and one
  * binary per platform; `pending` with the version and tag of a release CI has not published yet; or
  * `unavailable` with a `reason` and nothing else. `commit` is the commit CI built the release from. An
- * available release of another commit than the Gateway's is a fallback to an ancestor's release.
+ * available release of another commit than the Gateway's is a fallback to an ancestor's release, and its `reason`
+ * says why the commit's own release was not used. The commit's own available release has no `reason`.
  */
 final readonly class DesiredCliReleaseResponse
 {
@@ -66,6 +67,7 @@ final readonly class DesiredCliReleaseResponse
 
         if (
             $status !== 'available'
+            || ($reason !== null && (! is_string($reason) || preg_match('/\A[a-z][a-z0-9_]{0,63}\z/D', $reason) !== 1))
             || ! is_string($version) || preg_match('/\A0\.[1-9][0-9]{0,9}\.0\z/D', $version) !== 1
             || $tag !== 'cli-v'.$version
             || ! is_string($checksumsUrl) || ! str_starts_with($checksumsUrl, 'https://') || preg_match('/[\x00-\x20\x7F]/', $checksumsUrl) === 1
@@ -73,7 +75,7 @@ final readonly class DesiredCliReleaseResponse
             throw new InvalidArgumentException('The desired CLI release is invalid.');
         }
 
-        return new self('available', null, $version, $tag, $checksumsUrl, FleetReleaseAssetResponse::listFromGatewayData($data['assets'] ?? null), $commit);
+        return new self('available', $reason, $version, $tag, $checksumsUrl, FleetReleaseAssetResponse::listFromGatewayData($data['assets'] ?? null), $commit);
     }
 
     public function isAvailable(): bool

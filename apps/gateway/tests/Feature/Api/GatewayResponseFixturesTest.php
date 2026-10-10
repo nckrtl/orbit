@@ -55,6 +55,30 @@ describe('gateway response fixtures', function (): void {
         record_fixture($response, 'gateway/self-update/pending', ShowDesiredFleetStateRequest::class, 'GET /api/v1/gateway/desired-fleet-state');
     });
 
+    it('records the desired state fixtures while the CLI falls back to an ancestor release', function (): void {
+        desired_fleet_state_peer();
+        $commit = str_repeat('a', 40);
+        config()->set('app.version', $commit);
+        // The Gateway's commit has no release; its parent has the fixture release cli-v0.4681.0.
+        fake_release_history(commit: $commit, count: 4682, ancestors: [CLI_RELEASE_FIXTURE_COMMIT => 4681]);
+        $published = [4681 => CLI_RELEASE_FIXTURE_COMMIT];
+        fake_cli_releases($published);
+        // The first lookup starts the wait for the commit's own release.
+        app(DesiredFleetState::class)->current();
+        $this->travel(DesiredFleetState::FallbackAfterSeconds + 1)->seconds();
+
+        $response = $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.7'])
+            ->getJson('/api/v1/gateway/desired-fleet-state')
+            ->assertOk()
+            ->assertJsonPath('data.commit', $commit)
+            ->assertJsonPath('data.cli.status', 'available')
+            ->assertJsonPath('data.cli.reason', 'release_missing')
+            ->assertJsonPath('data.cli.version', '0.4681.0')
+            ->assertJsonPath('data.cli.commit', CLI_RELEASE_FIXTURE_COMMIT);
+
+        record_fixture($response, 'gateway/self-update/fallback', ShowDesiredFleetStateRequest::class, 'GET /api/v1/gateway/desired-fleet-state');
+    });
+
     it('records the Gateway status fixtures with the desired state for an active peer', function (): void {
         desired_fleet_state_peer();
         fake_cli_release_github();
