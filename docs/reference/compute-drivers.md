@@ -35,7 +35,9 @@ A claim moves a group through these steps. Steps 2 to 5 are queued [jobs](#jobs)
 
 `AllocateTaskVmAction` takes the first host in `task_vms.incus.hosts` that is an active Node and has fewer live task VMs than its `max_vms`. The row gets the name `tvm-<row id>`, the next free WireGuard address in the reserved range, and a random Pi token.
 
-Cloud-init creates the user `orbit` with passwordless sudo and the Gateway's SSH key, and installs `openssh-server`. It does nothing else.
+Cloud-init creates the user `orbit` with passwordless sudo and the Gateway's SSH key. It installs `openssh-server`, which the stock image lacks, and Chromium's system libraries, so a Project's Playwright browser tests run. It does nothing else. The libraries are Playwright's `chromium` dependency list for Ubuntu 26.04, which covers `chromium` and `chromium-headless-shell`: `libasound2t64`, `libatk-bridge2.0-0t64`, `libatk1.0-0t64`, `libatspi2.0-0t64`, `libcairo2`, `libcups2t64`, `libdbus-1-3`, `libdrm2`, `libgbm1`, `libglib2.0-0t64`, `libnspr4`, `libnss3`, `libpango-1.0-0`, `libx11-6`, `libxcb1`, `libxcomposite1`, `libxdamage1`, `libxext6`, `libxfixes3`, `libxkbcommon0`, and `libxrandr2`. Playwright's xvfb and font list for headed runs is left out. The libraries add about 6 seconds to cloud-init on beast.
+
+The VM then has only what the stock image, cloud-init, and the `app-dev` role provide. The `app-dev` convergence installs PHP, Composer, Caddy, Docker, Vite+, and the agent. The Project's setup steps install the rest, for example its Playwright browsers.
 
 `EnrollTaskVm` checks the VM every 15 seconds. It goes on when cloud-init reports `done` with no errors and the guest has its bridge address. It reads the guest values only then, before any code but cloud-init has run in the VM. A guest reboot shows the VM stopped for about a second, so a stopped VM gets a second reading 5 seconds later before enrollment fails.
 
@@ -56,7 +58,7 @@ The Node `tvm-<id>` has user `orbit`, role `app-dev`, the dev Cluster, and the r
 
 ### Destroy a task VM
 
-When the group ends, Orbit removes its workspace Instance with force, as for a shared group. This withdraws the Route. A cancelled group first pushes its stored approval. Pushes, fetches, checks, and agent turns need the VM `ready`, so they finish before the VM is destroyed.
+When the group ends, Orbit removes its workspace Instance with force, as for a shared group. This withdraws the Route. A cancelled group first pushes its stored approval. A task VM workspace never holds a host [discovery topology](/reference/incus-topologies): Orbit refuses to acquire one there, so removal skips the topology release. Pushes, fetches, checks, and agent turns need the VM `ready`, so they finish before the VM is destroyed.
 
 Each `tasks:tick` queues `DestroyTaskVm` for every task VM that is not `destroyed` when its group is `completed` or `cancelled`, no claim of the group is in flight, and no Instance is left on its Node. Its unique lock has no expiry, so the tick never queues a second copy while one waits or runs. `DestroyTaskVm` then runs these steps:
 
@@ -71,7 +73,7 @@ Keep a host in `task_vms.incus.hosts` until it has no task VM that is not `destr
 
 #### A VM that dies before its group ends
 
-Workspace removal needs SSH to the VM. When the VM is gone, removal fails and the group asks for assistance with the reason `Workspace removal failed:` or `Merged pull request cleanup failed:`. When the group is `cancelled`, `completed`, `settling`, or `waiting_for_review`, each tick then also queues `DestroyTaskVm` for that task VM. A group in another state, for example one whose cancel failed while the VM ran, keeps its workspace and its assistance request.
+Workspace removal needs SSH to the VM. When the VM is gone, removal fails and the group asks for assistance with the reason `Workspace removal failed:` or `Merged pull request cleanup failed:`. When the group is `cancelled`, `completed`, `settling`, or `waiting_for_review`, each tick then also queues `DestroyTaskVm` for that task VM. A group in another state, for example one whose cancel failed while the VM ran, keeps its workspace and its assistance request. Cancel it again: while the VM runs, cancel removes the workspace normally, and the next tick queues `DestroyTaskVm`.
 
 The job reads the VM on its host. While the VM runs, it leaves the workspace to the normal removal. When the VM is absent, or still stopped 5 seconds after a stopped reading, it deletes the VM and then removes the workspace offline:
 
