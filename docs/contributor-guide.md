@@ -10,8 +10,7 @@ covers:
   - "{apps/*,packages/php-sdk}/phpstan.neon"
   - apps/gateway/tests/Support/{LinuxHost,TestToolchain}.php
   - apps/docs/**
-  - .github/workflows/{ci,dependency-audit}.yml
-  - .github/dependabot.yml
+  - .github/{dependabot,workflows/ci,workflows/dependency-audit}.yml
 ---
 
 # Contributing to Orbit
@@ -121,13 +120,11 @@ The CLI and E2E projects each keep one counted `ignoreErrors` entry for a Larast
 
 ## Dependencies
 
-You can update a dependency at any time. Update only the packages that you need, for example `composer update vendor/package --with-dependencies` or `bun update package`. Review the lockfile diff and run the checks.
+You can update a dependency at any time. For example, run `composer update vendor/package --with-dependencies` or `bun update package`. Update only the packages that you need, review the lockfile diff, and run the checks.
 
 Dependabot is the automatic updater. Every entry in `.github/dependabot.yml` sets `cooldown.default-days: 7`, so its daily pull request proposes only releases that are at least seven days old. Cooldown does not delay security updates.
 
-To ship a fix for a published advisory, link the CVE or GHSA advisory in the pull request, update the package, run `composer audit:dependencies` and the checks, and get a review.
-
-Do not hide an advisory that has no fix. Record it in the pull request with the advisory link and the reason that the risk is acceptable.
+When a published advisory has a fix, link the CVE or GHSA advisory in the pull request, update the package, run `composer audit:dependencies` and the checks, and get a review. If an advisory has no fix, do not hide it. Record it in the pull request with the advisory link and the reason that the risk is acceptable.
 
 From the repository root, `composer audit:dependencies` runs `composer audit --locked` for each Composer lockfile and `bun audit` for each Bun lockfile. The Dependency audit workflow runs it every night and on manual dispatch.
 
