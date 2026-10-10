@@ -759,11 +759,9 @@ The rollout visits a Node when all of these hold:
 
 Roleless Nodes, such as operator machines, and macOS Nodes stay out. Their operators run `orbit self-update`. The Gateway's own Node stays out too. Each release's [runtime handoff](#gateway-node-agent) updates its agent, and its CLI is the release's own `apps/cli`. `fleet:rollout:status` lists every Node it leaves out, with the reason `sandbox`, `inactive`, `platform`, `unmanaged`, `gateway`, `roleless`, or `foreign_cli`.
 
-A task sandbox is an `app-dev` Node that a [task VM](/reference/compute-drivers#task-vms) or an [UpCloud sandbox reservation](/reference/compute-drivers#enroll-an-owned-project-vm) owns. The rollout leaves out the Node of every task VM that is not `destroyed`, with the reason `sandbox`. The Gateway creates a task VM for one task group and destroys it when the group ends. Provisioning links its Node to the task VM before any convergence, so the Node never gets the Orbit CLI.
+A task sandbox is an `app-dev` Node that a [task VM](/reference/compute-drivers#task-vms) or an [UpCloud sandbox reservation](/reference/compute-drivers#upcloud-enrollment) owns. The rollout leaves out the Node of every task VM that is not `destroyed`, with the reason `sandbox`. The Gateway creates a task VM for one task group and destroys it when the group ends. Provisioning links its Node to the task VM before any convergence, so the Node never gets the Orbit CLI. Orbit creates no UpCloud reservation now.
 
-The Gateway creates an UpCloud sandbox for one task group and removes it when the group ends or its review window expires. Provisioning gives it the agent and footprint of the Gateway's release at that time.
-
-The rollout and the catch-up never visit a task sandbox, provisioning installs no Orbit CLI on it, and Doctor reports no `node.release_lag` for it. A group that resumes after its sandbox was destroyed gets a new sandbox Node, provisioned from the current release. The `sandbox` reason comes first, so a sandbox shows it in every state.
+The rollout and the catch-up never visit a task sandbox, provisioning installs no Orbit CLI on it, and Doctor reports no `node.release_lag` for it. The `sandbox` reason comes first, so a sandbox shows it in every state.
 
 A Node leaves the rollout set as `foreign_cli` when the [CLI install](/reference/node-provisioning#orbit-cli) finds a link, a script, or another program at `/usr/local/bin/orbit`. That visit is `skipped`, never `failed`, and Doctor reports `node.cli_foreign`. Every later run probes the Node and, when it answers, inspects the path again, so the Node rejoins once an operator moved the file aside.
 

@@ -62,7 +62,6 @@ use App\Http\Controllers\Api\ResolveDirectoryInstanceController;
 use App\Http\Controllers\Api\RootCaCertificatesController;
 use App\Http\Controllers\Api\RoutesController;
 use App\Http\Controllers\Api\RuntimeActivationsController;
-use App\Http\Controllers\Api\SandboxGitHubTokensController;
 use App\Http\Controllers\Api\ScheduleCompletionsController;
 use App\Http\Controllers\Api\SchedulesController;
 use App\Http\Controllers\Api\T3EnvironmentsController;
@@ -83,11 +82,6 @@ use App\Http\Middleware\RequireNodeAgentSecret;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->group(function (): void {
-    Route::post('compute/github-token', [SandboxGitHubTokensController::class, 'store'])
-        ->middleware([RequireActiveWireGuardPeer::class, RequireNodeAccess::class])
-        ->withoutMiddleware(RecordCommandActivity::class)
-        ->name('compute:github-token');
-
     Route::middleware([RequireActiveWireGuardPeer::class, RequireNodeAccess::class])
         ->prefix('instances/{instance}/annotations')->group(function (): void {
             Route::get('', [AnnotationsController::class, 'index'])->name('annotation:list');

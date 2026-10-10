@@ -71,7 +71,9 @@ Keep a host in `task_vms.incus.hosts` until it has no task VM that is not `destr
 
 #### A VM that dies before its group ends
 
-Workspace removal needs SSH to the VM. When the VM is gone, removal fails and the group asks for assistance with the reason `Workspace removal failed:` or `Merged pull request cleanup failed:`. Each tick then also queues `DestroyTaskVm` for that task VM. The job reads the VM on its host. While the VM runs, it leaves the workspace to the normal removal. When the VM is absent, or still stopped 5 seconds after a stopped reading, it deletes the VM and then removes the workspace offline:
+Workspace removal needs SSH to the VM. When the VM is gone, removal fails and the group asks for assistance with the reason `Workspace removal failed:` or `Merged pull request cleanup failed:`. When the group is `cancelled`, `completed`, `settling`, or `waiting_for_review`, each tick then also queues `DestroyTaskVm` for that task VM. A group in another state, for example one whose cancel failed while the VM ran, keeps its workspace and its assistance request.
+
+The job reads the VM on its host. While the VM runs, it leaves the workspace to the normal removal. When the VM is absent, or still stopped 5 seconds after a stopped reading, it deletes the VM and then removes the workspace offline:
 
 - It records the normal removal journal, with the source steps marked done, because the checkout is gone with the VM.
 - It clears the Route through the normal removal projector. The projector skips the VM's Node for a task VM that is `destroying`. The router withdraws the site.
@@ -266,7 +268,7 @@ These alternatives were rejected:
 
 ## UpCloud driver
 
-The UpCloud driver creates, observes, parks, resumes, and destroys VMs at UpCloud through its HTTPS API. Task claims use it only through the [first-build project lane](#project-lane-being-removed), which is off and is being removed. UpCloud task VMs move to the [task VM](#task-vms) path in Phase 3 of [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm).
+The UpCloud driver creates, observes, parks, resumes, and destroys VMs at UpCloud through its HTTPS API. It stays in the code for Phase 3 of [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm), which moves UpCloud to the [task VM](#task-vms) path. No claim, command, or job calls it now, so Orbit creates no UpCloud VM and its settings have no effect. Leave `ORBIT_UPCLOUD_ENABLED` and `ORBIT_UPCLOUD_ENROLLMENT_ENABLED` at `false`.
 
 `ProvisionTaskSandboxAction` reserves one VM with the pinned Ubuntu image and the `starter-small` size. The reservation records its UUID, image, plan, network, and the Gateway's public SSH key before the request. Cloud-init creates the `orbit` user with only the Gateway's key. It carries no provider, GitHub, Pi, or model credential.
 
@@ -286,29 +288,15 @@ Set these values in the Gateway environment.
 | `ORBIT_UPCLOUD_WIREGUARD_ADDRESS` | Public IPv4 address of the WireGuard hub | Unset |
 | `ORBIT_UPCLOUD_WIREGUARD_PORT` | WireGuard UDP port | `51820` |
 
-The token goes only to `https://api.upcloud.com/1.3`. Changed settings apply to new reservations. Turning provisioning off does not stop observation or cleanup.
+The token goes only to `https://api.upcloud.com/1.3`. The sandbox sweep refuses an UpCloud reservation with `compute.unknown_provider`, so a leftover UpCloud VM needs manual cleanup.
 
-### Enroll an owned project VM
+### UpCloud enrollment
 
-`EnrollUpCloudSandboxAction` enrolls a running reservation as an `app-dev` Node. It needs `ORBIT_UPCLOUD_ENROLLMENT_ENABLED`, `ORBIT_UPCLOUD_DEV_CLUSTER_ID`, `ORBIT_UPCLOUD_MODEL_ADDRESS`, and `ORBIT_UPCLOUD_MODEL_PORT`. It is off by default and starts no agent. The Node stays out of the [fleet rollout](/reference/gateway-recovery#rollout-set-and-order) as `sandbox`. Cleanup removes the Node before the VM.
+`EnrollUpCloudSandboxAction` enrolls a running reservation as an `app-dev` Node. It needs `ORBIT_UPCLOUD_ENROLLMENT_ENABLED`, `ORBIT_UPCLOUD_DEV_CLUSTER_ID`, `ORBIT_UPCLOUD_MODEL_ADDRESS`, and `ORBIT_UPCLOUD_MODEL_PORT`. It is off by default, nothing calls it, and it starts no agent. A Node that a reservation owns stays out of the [fleet rollout](/reference/gateway-recovery#rollout-set-and-order) as `sandbox`. Sandbox destruction refuses an enrolled reservation with `compute.node_attached` until its Node is removed.
 
 ### Why the UpCloud driver works this way
 
 A started cloud server does not prove that a task can run, so provider state and task state stay separate. Ownership recorded before each request lets cleanup find the VM after a Gateway restart. Refusing a second create when a response is lost prevents duplicate billed VMs.
-
-## Project lane (being removed)
-
-The first build of the web lane is still in the code, but no claim reaches it: `vm` groups of web Projects use [task VMs](#task-vms). The Phase 1 slices of [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm) delete it. Keep it off. These Gateway settings still exist, with their required values:
-
-| Setting | Required value |
-| --- | --- |
-| `ORBIT_SANDBOX_PROJECT_CLAIMS_ENABLED` | `false` |
-| `ORBIT_INCUS_ENROLLMENT_ENABLED` | `false` |
-| `ORBIT_INCUS_PROJECT_WORKSPACES_ENABLED` | `false` |
-| `ORBIT_INCUS_DEV_CLUSTER_ID`, `ORBIT_INCUS_MODEL_ADDRESS`, `ORBIT_INCUS_MODEL_PORT` | Unset |
-| `ORBIT_SANDBOX_PI_ARTIFACT_PATH`, `ORBIT_SANDBOX_PI_ARTIFACT_SHA256` | Unset |
-
-`bin/sandbox-project-image` still builds Project images for this lane; do not use it. The optional `project_bootstrap` object in `/etc/orbit/sandbox-network.json`, and the helper's `project_enabled` operation, serve only this lane. Leave `project_bootstrap` out.
 
 ## Local Incus control
 
@@ -446,6 +434,8 @@ This prepares source only; the claim gate still requires the runtime, model prox
 ### Durable firewall policy on an Incus host
 
 Install the fixed `apps/agent/resources/incus-host-network.py` helper as root-owned `/usr/local/libexec/orbit-sandbox-network` with mode `0755`. Grant the trusted compute account passwordless sudo for that exact executable with no arguments. Never grant a caller-supplied Python script or interpreter. The helper accepts only a bounded JSON request with `operation` (`enabled`, `project_enabled`, `verify`, `ensure`, or `remove`), `project`, and `sandbox_id` on standard input.
+
+The `project_enabled` operation, and an optional `project_bootstrap` object in the configuration below, served the first web-lane build, which is deleted. No Gateway request uses them. Leave `project_bootstrap` out.
 
 The root-owned `/etc/orbit/sandbox-network.json` file opts in selected Incus projects. Its required fields are `version: 1`, `projects`, `pi_host`, `gateway_address`, `wireguard_interface`, and `blocked_networks`.
 

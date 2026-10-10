@@ -34,7 +34,7 @@ function expandable_sandbox(): array
         'checkout_path' => '/home/orbit/orbit', 'status' => 'source_resolved', 'task_sandbox_id' => $sandbox->id]);
     $group->update(['taskable_type' => $workspace->getMorphClass(), 'taskable_id' => $workspace->id]);
     config(['compute.incus.hosts' => [['node_id' => $host->id, 'project' => 'orbit-task-sandboxes', 'pool' => 'proof', 'max_vms' => 4,
-        'orbit_images' => [...$images, 'app-dev' => str_repeat('c', 64)], 'orbit_source_template' => $sandbox->spec['source_template'], 'project_images' => [], 'blocked_networks' => ['192.168.0.0/16']]]]);
+        'orbit_images' => [...$images, 'app-dev' => str_repeat('c', 64)], 'orbit_source_template' => $sandbox->spec['source_template'], 'blocked_networks' => ['192.168.0.0/16']]]]);
     mock(SshKeyProvider::class)->shouldReceive('privateKeyPath')->andReturn('/keys/private');
     mock(KnownHostsStore::class)->shouldReceive('path')->andReturn('/keys/known_hosts');
     $state = (object) ['available' => 2, 'fail' => false, 'calls' => []];

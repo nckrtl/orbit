@@ -39,7 +39,7 @@ function sandbox_workspace(): Instance
         'checkout_path' => '/home/orbit/orbit', 'task_sandbox_id' => $sandbox->id]);
     $group->update(['taskable_type' => $workspace->getMorphClass(), 'taskable_id' => $workspace->id]);
     config(['compute.incus.hosts' => [['node_id' => $host->id, 'project' => 'orbit-task-sandboxes', 'pool' => 'proof', 'max_vms' => 4,
-        'orbit_images' => [], 'project_images' => [], 'blocked_networks' => ['192.168.0.0/16']]], 'orbit.tasks.worker_user' => 'orbit-worker']);
+        'orbit_images' => [], 'blocked_networks' => ['192.168.0.0/16']]], 'orbit.tasks.worker_user' => 'orbit-worker']);
 
     return $workspace;
 }

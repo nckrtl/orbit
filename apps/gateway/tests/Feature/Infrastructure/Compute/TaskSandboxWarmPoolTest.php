@@ -30,7 +30,7 @@ function warm_fixture(int $available = 2): array
     app(TaskExtensionState::class)->enable();
     $host = Node::query()->create(['name' => 'warm-host', 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.20', 'public_ssh_host' => '192.0.2.20', 'user' => 'orbit']);
     $settings = ['node_id' => $host->id, 'project' => 'orbit-task-sandboxes', 'pool' => 'proof', 'max_vms' => 2, 'warm_pairs' => 1,
-        'orbit_images' => ['operator' => str_repeat('a', 64), 'gateway' => str_repeat('b', 64)], 'project_images' => [],
+        'orbit_images' => ['operator' => str_repeat('a', 64), 'gateway' => str_repeat('b', 64)],
         'orbit_source_template' => ['id' => 'e2d3499f-37bc-4e2e-91c0-1d6fd13a11a2', 'repository' => 'https://github.com/acme/orbit.git', 'base' => 'main', 'commit' => str_repeat('c', 40)],
         'blocked_networks' => ['192.168.0.0/16'], 'gateway_address' => '10.44.0.2', 'model_proxy_origin' => 'http://127.0.0.1:28317'];
     config(['compute.incus.enabled' => true, 'compute.incus.hosts' => [$settings], 'compute.orbit_claims_enabled' => true]);

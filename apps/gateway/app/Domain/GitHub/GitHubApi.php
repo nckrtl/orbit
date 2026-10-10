@@ -41,13 +41,6 @@ interface GitHubApi
         GitHubRepository $repository,
     ): string;
 
-    /**
-     * A token that pushes to this one repository and opens its pull requests, and expires after one hour.
-     *
-     * @throws GitHubApiException
-     */
-    public function repositorySandboxToken(GitHubAppCredentials $credentials, int $installationId, GitHubRepository $repository): string;
-
     public function repositoryPullRequestToken(
         GitHubAppCredentials $credentials,
         int $installationId,

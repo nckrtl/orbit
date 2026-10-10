@@ -83,7 +83,6 @@ it('declares node access scope on every active-peer API route', function (): voi
         'cluster:router:unset' => ServingNode::ClusterOwning,
         'cluster:show' => ServingNode::ClusterOwning,
         'cluster:update' => ServingNode::ClusterOwning,
-        'compute:github-token' => ServingNode::Caller,
         'database:create' => ServingNode::Gateway,
         'database:describe' => ServingNode::Gateway,
         'database:destroy' => ServingNode::Gateway,

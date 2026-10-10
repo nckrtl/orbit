@@ -33,7 +33,7 @@ function review_sandbox_group(): array
     $host = Node::query()->create(['name' => 'compute', 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.20', 'public_ssh_host' => '192.0.2.20', 'user' => 'orbit']);
     $settings = ['node_id' => $host->id, 'project' => 'orbit-task-sandboxes', 'pool' => 'proof', 'max_vms' => 2,
         'orbit_images' => ['operator' => str_repeat('a', 64), 'gateway' => str_repeat('b', 64)],
-        'project_images' => [], 'blocked_networks' => ['192.168.0.0/16']];
+        'blocked_networks' => ['192.168.0.0/16']];
     config(['compute.incus.hosts' => [$settings]]);
     $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Review work', 'brief' => 'Work', 'status' => TaskGroupStatus::WaitingForReview, 'task_compute' => TaskCompute::Vm, 'pr_url' => 'https://github.com/acme/orbit/pull/42']);
     $id = (string) Str::uuid();

@@ -21,8 +21,6 @@ use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
-use Tests\Support\IncusRuntimeWorkspace;
-use Tests\Support\UpCloudRuntimeWorkspace;
 
 /** @return array{Instance, TaskSandbox, AgentThread} */
 function sandbox_pi_workspace(?Node $host = null, int $port = 22000): array
@@ -39,7 +37,7 @@ function sandbox_pi_workspace(?Node $host = null, int $port = 22000): array
         'checkout_path' => '/home/orbit/orbit', 'task_sandbox_id' => $sandbox->id]);
     $group->update(['taskable_type' => $workspace->getMorphClass(), 'taskable_id' => $workspace->id]);
     config(['compute.incus.hosts' => [['node_id' => $host->id, 'project' => 'orbit-task-sandboxes', 'pool' => 'proof', 'max_vms' => 4,
-        'orbit_images' => [], 'project_images' => [], 'blocked_networks' => ['192.168.0.0/16']]], 'orbit.pi.token' => 'global-secret']);
+        'orbit_images' => [], 'blocked_networks' => ['192.168.0.0/16']]], 'orbit.pi.token' => 'global-secret']);
     $thread = AgentThread::query()->create(['task_group_id' => $group->id, 'node_id' => $host->id, 'driver' => 'pi',
         'runtime_key' => 'sandbox:'.$sandbox->id, 'external_id' => 'session-'.$group->id, 'role' => 'implementer']);
 
@@ -156,17 +154,4 @@ describe('sandbox Pi identity', function (): void {
         expect($result['error'])->toBe('token [REDACTED] model [REDACTED]');
         expect($result['entries'][0]['text'])->toBe('token [REDACTED] model [REDACTED]');
     })->with([false, true]);
-
-    it('connects Project sandboxes only through their enrolled guest Node', function (string $provider): void {
-        $workspace = $provider === 'incus' ? IncusRuntimeWorkspace::create() : UpCloudRuntimeWorkspace::create();
-        $sandbox = $workspace->taskSandbox;
-        $thread = AgentThread::query()->create(['task_group_id' => $sandbox->group_id, 'node_id' => $workspace->node_id,
-            'driver' => 'pi', 'runtime_key' => 'sandbox:'.$sandbox->id, 'external_id' => 'session-'.$sandbox->group_id, 'role' => 'implementer']);
-        Http::fake(['http://'.$workspace->node->wireguard_ip.':3774/sessions/*/interrupt' => Http::response([])]);
-
-        app(PiDriver::class)->interrupt($thread->fresh());
-
-        Http::assertSent(fn (Request $request): bool => $request->hasHeader('Authorization', 'Bearer '.$sandbox->pi_token));
-        Http::assertSentCount(1);
-    })->with(['incus', 'upcloud']);
 });
