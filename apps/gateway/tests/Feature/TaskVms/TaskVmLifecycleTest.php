@@ -2,12 +2,14 @@
 
 declare(strict_types=1);
 
+use App\Actions\Tasks\CancelTaskGroupAction;
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Actions\TaskVms\AllocateTaskVmAction;
 use App\Actions\TaskVms\DestroyEndedTaskVmsAction;
 use App\Domain\AppDev\PrivateDnsManager;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Instances\InstanceRemovalStatus;
+use App\Domain\Instances\InstanceRemover;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\Removal\InstanceRemovalProjector;
 use App\Domain\Metrics\ExporterDegradationReason;
@@ -28,7 +30,9 @@ use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskCompute;
+use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskWorkspaceTopology;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmProvider;
@@ -37,7 +41,9 @@ use App\Domain\TaskVms\TaskVmState;
 use App\Domain\TaskVms\VmObservation;
 use App\Domain\Tools\ToolManagerMaterializer;
 use App\Infrastructure\Metrics\ServiceMetricsRuntime;
+use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\Tasks\RemoteTaskWorkspaceTopology;
 use App\Infrastructure\TaskVms\TaskVmWorkspace;
 use App\Jobs\TaskVms\DestroyTaskVm;
 use App\Jobs\TaskVms\EnrollTaskVm;
@@ -45,6 +51,7 @@ use App\Jobs\TaskVms\PrepareTaskVmRuntime;
 use App\Jobs\TaskVms\ProvisionTaskVm;
 use App\Models\Cluster;
 use App\Models\Instance;
+use App\Models\InstanceRemoval;
 use App\Models\InstanceRemovalMember;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -627,6 +634,57 @@ describe(DestroyTaskVm::class, function (): void {
             ->and($group->fresh()?->taskable_id)->toBeNull()
             ->and($group->fresh()?->assistance_requested)->toBeFalse();
     });
+
+    it('cancels a running group, removes its workspace without a host topology, then destroys the VM', function (bool $earlierFailure): void {
+        $node = tvm_life_node('tvm-node', '10.44.0.129', role: RoleName::AppDev);
+        $group = tvm_life_group(TaskGroupStatus::Running);
+        $vm = tvm_life_vm($group, TaskVmState::Ready, $node);
+        $instance = Instance::query()->create(['project_id' => $this->project->id, 'node_id' => $node->id, 'name' => 'task-'.$group->id,
+            'checkout_path' => '/home/orbit/apps/dlf/task-'.$group->id, 'status' => InstanceState::SourceResolved]);
+        $group->taskable()->associate($instance);
+        $group->save();
+        if ($earlierFailure) {
+            // The stuck state an earlier cancel left: the group still runs and asks for help, the VM still runs.
+            TaskAssistance::apply($group, AssistanceKind::Failure, null, RemoveTaskWorkspaceAction::RemovalFailedPrefix.'Sandbox workload nodes must be managed by the compute driver.');
+        }
+        app(TaskExtensionState::class)->enable();
+        bind_task_node_reachability();
+        mock(SshExecutor::class)->shouldReceive('execute')->never();
+        app()->instance(TaskWorkspaceTopology::class, app(RemoteTaskWorkspaceTopology::class));
+        $removed = new ArrayObject;
+        app()->instance(InstanceRemover::class, new class($removed) implements InstanceRemover
+        {
+            public function __construct(private ArrayObject $removed) {}
+
+            public function execute(Instance $instance, bool $force): InstanceRemoval
+            {
+                $this->removed->append($instance->id);
+                $instance->delete();
+
+                return new InstanceRemoval;
+            }
+        });
+
+        $cancelled = app(CancelTaskGroupAction::class)->execute($group);
+
+        expect($cancelled->status)->toBe(TaskGroupStatus::Cancelled)
+            ->and($cancelled->taskable_id)->toBeNull()
+            ->and($cancelled->assistance_requested)->toBeFalse()
+            ->and($removed->getArrayCopy())->toBe([$instance->id])
+            ->and($this->provider->calls)->toBe([]);
+
+        Queue::fake();
+        expect(app(DestroyEndedTaskVmsAction::class)->execute())->toBe(1);
+        Queue::assertPushed(DestroyTaskVm::class, fn (DestroyTaskVm $job): bool => $job->taskVmId === $vm->id);
+
+        bind_task_node_reachability(unreachable: true);
+        app()->call([new DestroyTaskVm($vm->id), 'handle']);
+
+        // A normal destroy: no VM check and no offline forget, because the workspace is already gone.
+        expect($this->provider->calls)->toBe(['destroy'])
+            ->and(Node::query()->find($node->id))->toBeNull()
+            ->and($vm->fresh()?->state)->toBe(TaskVmState::Destroyed);
+    })->with(['first cancel' => false, 'retry after an earlier failure' => true]);
 });
 
 describe(DestroyEndedTaskVmsAction::class, function (): void {
