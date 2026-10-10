@@ -213,11 +213,10 @@ describe('Composer configuration', function (): void {
             ]);
         expect($project['defaults']['run']['working-directory'])->toBe('${{ matrix.directory }}');
         expect($steps['Run project quality checks'])
-            ->toMatchArray(['run' => 'composer check'])
-            ->not->toHaveKey('if');
+            ->toMatchArray(['if' => "matrix.part != 'subprocess'", 'run' => 'composer check']);
         expect($steps['Run affected tests'])
             ->toMatchArray([
-                'if' => "github.event_name == 'pull_request'",
+                'if' => "matrix.part != 'subprocess' && github.event_name == 'pull_request'",
                 'run' => 'vendor/bin/pest --parallel '.CI_PEST_PROCESSES.' --tia --compact',
             ]);
         // Every run on main chooses its selection from the restored main graph: a push tests what changed since that
@@ -240,7 +239,7 @@ describe('Composer configuration', function (): void {
             ]);
         expect($steps['Run tests affected since the main graph'])
             ->toMatchArray([
-                'if' => "steps.orbit-tia-plan.outputs.mode == 'affected'",
+                'if' => "matrix.part != 'subprocess' && steps.orbit-tia-plan.outputs.mode == 'affected'",
                 // The bash shell sets pipefail, so a failing Pest run still fails the step.
                 'shell' => 'bash',
                 'run' => 'vendor/bin/pest --parallel '.CI_PEST_PROCESSES.' --tia --compact | tee "$RUNNER_TEMP/orbit-tia-pest.log"',
@@ -248,14 +247,14 @@ describe('Composer configuration', function (): void {
         // The fresh TIA run executes every test, so one run is both the full-suite gate and the graph refresh.
         expect($steps['Run full test suite and refresh Pest TIA graph'])
             ->toMatchArray([
-                'if' => "steps.orbit-tia-plan.outputs.mode == 'full'",
+                'if' => "matrix.part != 'subprocess' && steps.orbit-tia-plan.outputs.mode == 'full'",
                 'run' => 'vendor/bin/pest --parallel '.CI_PEST_PROCESSES.' --tia --fresh --compact',
             ]);
         // The cache and the main cache artifact get the graph only when it describes the tested commit.
         expect($steps['Require the Pest TIA graph to describe this commit'])
             ->toMatchArray([
                 // A manual run on another branch records that branch's baseline, not main's.
-                'if' => "github.ref == 'refs/heads/main' && github.event_name != 'pull_request'",
+                'if' => "matrix.part != 'subprocess' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'",
                 'run' => '../../bin/ci-tia finish --mode "$MODE" --base "$BASE" --log "$RUNNER_TEMP/orbit-tia-pest.log"',
                 'env' => ['MODE' => '${{ steps.orbit-tia-plan.outputs.mode }}', 'BASE' => '${{ steps.orbit-tia-plan.outputs.base }}'],
             ]);
@@ -273,6 +272,8 @@ describe('Composer configuration', function (): void {
         // Only pushes and pull requests from this repository may reach the self-hosted Sabre runner.
         expect($project['runs-on'])
             ->toContain("matrix.directory == 'apps/gateway'")
+            // The subprocess job runs on a hosted runner, so a Gateway run takes one Sabre runner.
+            ->toContain("matrix.part != 'subprocess'")
             ->toContain("vars.ORBIT_SABRE_RUNNER == 'true'")
             ->toContain("github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository")
             ->toContain("fromJSON('[\"self-hosted\", \"sabre\"]')")
@@ -280,7 +281,7 @@ describe('Composer configuration', function (): void {
         // TIA does not link these contracts to the files they read, so pull requests and affected runs on main run them.
         expect($steps['Run architecture tests'])
             ->toMatchArray([
-                'if' => "always() && (github.event_name == 'pull_request' || steps.orbit-tia-plan.outputs.mode == 'affected')",
+                'if' => "always() && matrix.part != 'subprocess' && (github.event_name == 'pull_request' || steps.orbit-tia-plan.outputs.mode == 'affected')",
             ])
             ->and($steps['Run architecture tests']['run'])
             ->toContain('tests/Feature/CommandSurfaceTest.php')
@@ -306,7 +307,7 @@ describe('Composer configuration', function (): void {
             ->toBe([
                 'name' => 'Choose whether to run subprocess tests',
                 'id' => 'orbit-subprocess',
-                'if' => "always() && (github.event_name == 'pull_request' || steps.orbit-tia-plan.outputs.mode == 'affected')",
+                'if' => "always() && matrix.part != 'tests' && (github.event_name == 'pull_request' || steps.orbit-tia-plan.outputs.mode == 'affected')",
                 // A pull request compares with its base, and a push to main with the commit of the restored graph.
                 'env' => ['BASE' => '${{ github.event.pull_request.base.sha || steps.orbit-tia-plan.outputs.base }}'],
                 'run' => '../../bin/ci-tia subprocess --base "$BASE"',
@@ -314,7 +315,7 @@ describe('Composer configuration', function (): void {
         expect($steps['Run subprocess tests'])
             ->toBe([
                 'name' => 'Run subprocess tests',
-                'if' => "always() && steps.orbit-subprocess.outputs.run == 'true'",
+                'if' => "always() && matrix.part != 'tests' && steps.orbit-subprocess.outputs.run == 'true'",
                 // Only the PHP SDK, which has no subprocess tests, may pass with an empty group. Another project with
                 // an empty group fails, so an exclusion cannot silently skip its subprocess tests.
                 'run' => 'vendor/bin/pest --parallel '.CI_PEST_PROCESSES.' --no-tia --group=subprocess --compact'
@@ -425,7 +426,39 @@ describe('Composer configuration', function (): void {
         // actions/cache tries every restore key in a pull request's own scope before main's, so a saved pull request
         // cache would shadow the main cache on the next run of that pull request.
         foreach (['Save PHPStan result cache', 'Save Pint and Rector caches', 'Save Pest TIA graph'] as $name) {
-            expect($steps[$name]['if'])->toBe("success() && github.event_name != 'pull_request'");
+            expect($steps[$name]['if'])->toBe("success() && matrix.part != 'subprocess' && github.event_name != 'pull_request'");
+        }
+    });
+
+    it('runs the Gateway and E2E subprocess groups in their own jobs beside the rest of the suite', function (): void {
+        $workflow = Yaml::parseFile(base_path('../../.github/workflows/ci.yml'));
+        $include = $workflow['jobs']['project']['strategy']['matrix']['include'];
+        $steps = $workflow['jobs']['project']['steps'];
+
+        // New entries go last, so the job index in each main cache artifact name stays with its project.
+        expect(array_column($include, 'name'))->toBe(['CLI', 'Docs', 'Gateway', 'E2E', 'PHP SDK', 'Gateway subprocess', 'E2E subprocess'])
+            ->and(array_column($include, 'part', 'name'))->toBe([
+                'Gateway' => 'tests', 'E2E' => 'tests', 'Gateway subprocess' => 'subprocess', 'E2E subprocess' => 'subprocess',
+            ]);
+
+        // A subprocess job sets up the project, restores the graph, and reads the main selection, then runs only the
+        // subprocess group. It checks nothing else and saves or publishes nothing. A tests job never runs the group.
+        foreach ($steps as $step) {
+            $if = $step['if'] ?? '';
+            if (in_array($step['name'], ['Choose whether to run subprocess tests', 'Run subprocess tests'], true)) {
+                expect($if)->toContain("matrix.part != 'tests'");
+            } elseif (isset($step['run']) && str_contains($step['run'], 'vendor/bin/pest')
+                || str_starts_with($step['uses'] ?? '', 'actions/cache/save')
+                || str_starts_with($step['uses'] ?? '', 'actions/upload-artifact')
+                || in_array($step['name'], [
+                    'Validate Composer metadata', 'Compute PHPStan result cache prefix', 'Restore PHPStan result cache',
+                    'Compute Pint and Rector cache prefix', 'Restore Pint and Rector caches', 'Run project quality checks',
+                    'Check classification fakes', 'Require the Pest TIA graph to describe this commit', 'Export main caches',
+                ], true)) {
+                expect($if)->toContain("matrix.part != 'subprocess'");
+            } else {
+                expect($if)->not->toContain('matrix.part');
+            }
         }
     });
 
@@ -473,10 +506,10 @@ describe('Composer configuration', function (): void {
     });
 });
 
-it('keeps privileged tests required in CI on trusted and fork branches', function (): void {
+it('keeps privileged tests required in CI on a hosted runner', function (): void {
     $workflow = Yaml::parseFile(base_path('../../.github/workflows/ci.yml'));
     $job = $workflow['jobs']['privileged'];
-    expect($job['runs-on'])->toContain('self-hosted', 'sabre', 'head.repo.full_name', 'ubuntu-26.04');
+    expect($job['runs-on'])->toBe('ubuntu-26.04');
     $commands = array_column($job['steps'], 'run');
     expect(implode("\n", $commands))->toContain('--group=privileged', '--no-tia', '--fail-on-empty-test-suite');
     expect($workflow['jobs']['required']['needs'])->toContain('privileged');

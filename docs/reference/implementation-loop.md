@@ -79,6 +79,7 @@ GitHub CI runs on every pull request, on every push to `main`, every night on `m
 | Job | Checks |
 | --- | --- |
 | One job per Composer project: CLI, Docs, Gateway, E2E, PHP SDK | `composer validate --strict`, `composer check`, the classification-fakes check, and the tests |
+| Gateway subprocess, E2E subprocess | The project's `subprocess` group, beside the project's own job |
 | Docs (merge ref) | Pull requests only: `composer check` in `apps/docs` on the base repository's `refs/pull/N/merge`, with no head fallback if the merge ref is unavailable |
 | API reference | `bin/docs-openapi --check` and `bin/mcp-tools --check` |
 | Web | Generated API types, formatting, lint, types, tests, and build. A run on `main` also publishes the build |
@@ -92,6 +93,8 @@ On a pull request, each Composer project job runs the TIA-selected tests and the
 A pull request job also runs the project's `subprocess` group when the pull request changes a file that the project's tests read. A test that starts PHP in a subprocess, such as `artisan` or a fixture script, declares `pest()->group('subprocess')` at the top of its file. PCOV records only the test's own process, so TIA does not link the code that the subprocess runs to the test.
 
 `bin/ci-tia subprocess` makes the choice. It compares the pull request with its merge base, and a push to `main` with the commit of the restored graph. A change inside the project, or outside it on a path that `bin/ci-tia` does not list as unrelated, runs the group. When the changes cannot be read, the group runs. The PHP SDK has no subprocess tests, so only its step passes with an empty group.
+
+Gateway and E2E run their `subprocess` group in a separate job, so it runs at the same time as the rest of the project's checks instead of after them. That job installs the project, restores the graph, and makes the same choice. It runs no other check and saves no cache. When a run on `main` is full, the project's own job runs the group with the whole suite, and the subprocess job runs nothing.
 
 The E2E contract `SubprocessTestGroupTest` fails when a test names `PHP_BINARY` or `PhpExecutableFinder`, or starts a `php` or `composer` command, without the group. It also follows a test helper under `tests/` that does so to the tests that use it.
 
@@ -150,7 +153,7 @@ Hosted jobs run on `ubuntu-26.04`, the Ubuntu release that Nodes run, so tests u
 
 ### Self-hosted Gateway runner
 
-When the repository variable `ORBIT_SABRE_RUNNER` is `true`, the Gateway job runs on the self-hosted runner on Sabre, with the labels `self-hosted` and `sabre`. Pushes, manual dispatches, and pull requests from branches in this repository use it. A pull request from a fork always uses a GitHub-hosted runner, so code from outside the repository never runs on Sabre. Set the variable to anything else to move the job back to GitHub-hosted runners.
+When the repository variable `ORBIT_SABRE_RUNNER` is `true`, the Gateway job runs on the self-hosted runner on Sabre, with the labels `self-hosted` and `sabre`. The Gateway subprocess and Gateway privileged jobs always run on GitHub-hosted runners, so each run takes one Sabre runner. Pushes, manual dispatches, and pull requests from branches in this repository use it. A pull request from a fork always uses a GitHub-hosted runner, so code from outside the repository never runs on Sabre. Set the variable to anything else to move the job back to GitHub-hosted runners.
 
 On Sabre the job skips the PHP setup, Homebrew, and system package steps, because Sabre already has PHP 8.5 with PCOV, Caddy, `acl`, `attr`, and `wireguard-tools`. Its PHP CLI sets `zend.exception_ignore_args=0` in `99-github-actions.ini`.
 
@@ -328,7 +331,7 @@ The worker uses `git` and the GitHub CLI with the login of the user who runs it.
 4. finds the newest commit on which the project's jobs passed;
 5. downloads, checks, and publishes that commit's graph and quality caches.
 
-The worker skips the download when the store already holds that commit. It ignores pull request runs and runs from forks. The Gateway has two jobs, `Gateway` and `Gateway privileged`. The other projects have one job each.
+The worker skips the download when the store already holds that commit. It ignores pull request runs and runs from forks. The Gateway has three jobs: `Gateway`, `Gateway subprocess`, and `Gateway privileged`. E2E has two, `E2E` and `E2E subprocess`. The other projects have one job each. A failure in any of a project's jobs counts as a failure of the project.
 
 Before it publishes, the worker checks that:
 
