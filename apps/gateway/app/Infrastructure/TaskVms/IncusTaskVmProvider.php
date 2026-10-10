@@ -5,34 +5,28 @@ declare(strict_types=1);
 namespace App\Infrastructure\TaskVms;
 
 use App\Domain\TaskVms\TaskVmException;
+use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\VmObservation;
 use App\Domain\WireGuard\Ipv4Subnet;
 use App\Infrastructure\Processes\CommandResult;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshExecutor;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\TaskVm;
-use JsonException;
 
 /**
  * Runs task VMs on an Incus host Node with `sudo -n incus --project <project> …` over SSH, as the
- * host's managed user. `incus-host.sh` prepared the project, the bridge with its ACL, the default
- * profile and the image. The provider never creates a network: it pins the VM's profile NIC to the
- * host's configured bridge with port isolation. This class is the one place that validates Incus
- * output. Every VM name follows `--`, so no name can be read as an option.
+ * host's managed user. `incus-host.sh` prepared the project, the bridge with its ACL and the default
+ * profile, and `IncusTaskVmImageBuilder` the base image that every VM launches. The provider never
+ * creates a network: it pins the VM's profile NIC to the host's configured bridge with port isolation.
+ * This class validates the instance output of Incus. Every VM name follows `--`, so no name can be
+ * read as an option.
  */
 final readonly class IncusTaskVmProvider implements TaskVmProvider
 {
     private const string FingerprintPattern = '/\A256 (SHA256:[A-Za-z0-9+\/]{43}) .* \(ED25519\)\n?\z/D';
 
     public function __construct(
-        private SshExecutor $ssh,
-        private SshKeyProvider $keys,
-        private KnownHostsStore $knownHosts,
+        private IncusHost $incus,
         private TaskVmSettings $settings,
     ) {}
 
@@ -47,18 +41,15 @@ final readonly class IncusTaskVmProvider implements TaskVmProvider
         }
 
         $host = $this->settings->host($vm->host_node_id);
-        // `incus launch` reads instance config as YAML from a stdin that is not a terminal. JSON is YAML,
-        // but YAML knows no `\/` escape.
-        $result = $this->incus($vm, [
-            'launch', '--vm',
-            '--config', "limits.cpu={$host->cpus}", '--config', "limits.memory={$host->memory}",
-            '--device', "root,size={$host->disk}",
-            '--device', "eth0,network={$host->network}", '--device', 'eth0,security.port_isolation=true',
-            '--', $host->image, $vm->name,
-        ], json_encode(['config' => ['cloud-init.user-data' => $userData]], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+        $result = $this->incus->launch($host, $vm->hostNode, $vm->name, TaskVmHost::BaseImage, $userData);
 
         // Only a launch whose answer was lost and whose VM runs counts: a VM that did not start keeps the launch error.
         if (! $result->succeeded() && $this->observe($vm)?->running !== true) {
+            // A missing base image is a setup step, not a launch problem, and the stock image would never enroll.
+            if ($this->incus->aliasTarget($host, $vm->hostNode, TaskVmHost::BaseImage) === null) {
+                throw new TaskVmException('task_vm.base_image_missing', "The Incus project [{$host->project}] on the host of task VM [{$vm->name}] has no base image [".TaskVmHost::BaseImage.']. Build it with task-vms:build-image.');
+            }
+
             throw $this->failed($vm, 'launch', $result);
         }
     }
@@ -71,7 +62,7 @@ final readonly class IncusTaskVmProvider implements TaskVmProvider
             throw $this->failed($vm, 'list', $result);
         }
 
-        $instances = $this->json($vm, $result);
+        $instances = IncusHost::json("task VM [{$vm->name}]", $result);
         if (! array_is_list($instances)) {
             throw $this->invalid($vm, 'the instance list is not a JSON list');
         }
@@ -101,7 +92,7 @@ final readonly class IncusTaskVmProvider implements TaskVmProvider
         }
 
         // `cloud-init status` exits 1 or 2 after errors, but still prints its JSON.
-        $status = $this->json($vm, $result);
+        $status = IncusHost::json("task VM [{$vm->name}]", $result);
         $errors = $status['errors'] ?? null;
         if (! is_string($status['status'] ?? null) || ! is_array($errors) || ! array_is_list($errors)) {
             throw $this->invalid($vm, 'the cloud-init status has no status or errors');
@@ -170,44 +161,18 @@ final readonly class IncusTaskVmProvider implements TaskVmProvider
     }
 
     /** @param  list<string>  $arguments */
-    private function incus(TaskVm $vm, array $arguments, ?string $input = null): CommandResult
+    private function incus(TaskVm $vm, array $arguments): CommandResult
     {
-        $project = $this->settings->host($vm->host_node_id)->project;
-        $node = $vm->hostNode;
-
-        return $this->ssh->execute(
-            new SshConnection(
-                host: $node->wireguard_ip ?? throw new TaskVmException('task_vm.unknown_host', "Host Node [{$node->name}] has no WireGuard address."),
-                user: $node->user,
-                port: 22,
-                identityFile: $this->keys->privateKeyPath(),
-                knownHostsFile: $this->knownHosts->path(),
-            ),
-            new RemoteCommand(['sudo', '-n', 'incus', '--project', $project, ...$arguments], $input, maxOutputBytes: 1_048_576),
-        );
-    }
-
-    /** @return array<mixed> */
-    private function json(TaskVm $vm, CommandResult $result): array
-    {
-        try {
-            $value = $result->truncated ? null : json_decode($result->stdout, true, 64, JSON_THROW_ON_ERROR);
-        } catch (JsonException) {
-            $value = null;
-        }
-
-        return is_array($value) ? $value : throw $this->invalid($vm, 'the output is not complete JSON');
+        return $this->incus->run($this->settings->host($vm->host_node_id), $vm->hostNode, $arguments);
     }
 
     private function invalid(TaskVm $vm, string $reason): TaskVmException
     {
-        return new TaskVmException('task_vm.invalid_host_output', "Incus on the host of task VM [{$vm->name}] returned invalid output: {$reason}.", 502);
+        return IncusHost::invalid("task VM [{$vm->name}]", $reason);
     }
 
     private function failed(TaskVm $vm, string $operation, CommandResult $result): TaskVmException
     {
-        $detail = mb_substr(implode("\n", array_slice(explode("\n", trim($result->stderr)), -5)), 0, 2000);
-
-        return new TaskVmException('task_vm.host_command_failed', "`incus {$operation}` for task VM [{$vm->name}] failed with exit code [{$result->exitCode}].".($detail === '' ? '' : "\n{$detail}"), 502);
+        return IncusHost::failed("task VM [{$vm->name}]", $operation, $result);
     }
 }

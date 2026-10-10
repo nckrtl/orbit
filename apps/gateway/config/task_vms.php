@@ -20,8 +20,9 @@ return [
     'incus' => [
         /*
          * A JSON list of hosts: node_id, cidr (the bridge network) and max_vms are required;
-         * project (orbit-tasks), network (orbittask0), image (ubuntu-26.04-vm), cpus (2),
-         * memory (4GiB), disk (20GiB) and pool (default) are optional.
+         * project (orbit-tasks), network (orbittask0), cpus (2),
+         * memory (4GiB), disk (20GiB), pool (orbit-tasks, a ZFS pool) and zfs_dataset (to create
+         * the pool) are optional. Task VMs launch the base image `orbit-task-base`.
          */
         'hosts' => json_decode((string) (env('ORBIT_TASK_VMS_INCUS_HOSTS') ?: '[]'), true),
     ],

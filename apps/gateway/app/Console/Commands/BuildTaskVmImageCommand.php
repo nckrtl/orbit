@@ -9,35 +9,35 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmSettings;
-use App\Infrastructure\TaskVms\TaskVmSetupScript;
+use App\Infrastructure\TaskVms\IncusTaskVmImageBuilder;
 use App\Models\Node;
 use Illuminate\Console\Command;
 
-/** Runs `incus-host.sh` on one host with the values that `TaskVmSettings` validated. */
-final class PrepareTaskVmHostCommand extends Command
+/** Builds the base image of one task VM host and prints each stage with its time. */
+final class BuildTaskVmImageCommand extends Command
 {
     #[\Override]
-    protected $signature = 'task-vms:prepare-host {node : Id or name of the Incus host Node}';
+    protected $signature = 'task-vms:build-image {node : Id or name of the Incus host Node}';
 
     #[\Override]
-    protected $description = 'Prepare an Incus host for task VMs: ZFS pool, project, stock image, bridge, egress ACL, profile and the ufw route rule.';
+    protected $description = 'Build the task VM base image of an Incus host and point orbit-task-base at it.';
 
-    public function handle(TaskVmSetupScript $script): int
+    public function handle(IncusTaskVmImageBuilder $builder): int
     {
+        $started = microtime(true);
         try {
             $node = $this->node((string) $this->argument('node'));
             $host = resolve(TaskVmSettings::class)->host($node->id);
-            $script->run($node, TaskVmSetupScript::HostScript, [
-                $host->project, $host->network, $host->cidr, $host->pool, TaskVmHost::SourceImage,
-                ...($host->zfsDataset === null ? [] : [$host->zfsDataset]),
-            ]);
+            $fingerprint = $builder->build($host, $node, function (string $stage, float $seconds): void {
+                $this->line(sprintf('%-22s %7.1fs', $stage, $seconds));
+            });
         } catch (ResourceOperationException $exception) {
             $this->error("[{$exception->errorCode}] {$exception->getMessage()}");
 
             return self::FAILURE;
         }
 
-        $this->info("Node [{$node->name}] is ready for task VMs on bridge [{$host->network}]. Build its base image with task-vms:build-image.");
+        $this->info(sprintf('Node [%s] has the base image [%s] (%s) after %.1fs.', $node->name, TaskVmHost::BaseImage, substr($fingerprint, 0, 12), microtime(true) - $started));
 
         return self::SUCCESS;
     }

@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Prepares one Incus host for task VMs. Idempotent. Runs as root.
-# Usage: incus-host.sh <project> <network> <cidr> <pool> <image-alias>
+# Usage: incus-host.sh <project> <network> <cidr> <pool> <image-alias> [<zfs-dataset>]
 #   <network> is a bridge under the reserved `orbittask` prefix.
 #   <cidr> is the bridge network, for example 10.251.77.0/24. The bridge owns its first usable address.
+#   <pool> is a ZFS storage pool. When it is missing, the script creates it on <zfs-dataset>.
+#   <image-alias> names the stock Ubuntu cloud image that the base image build starts from.
 # Prints one JSON line {"ok":true} on success. Everything else goes to stderr.
 set -euo pipefail
 
@@ -20,14 +22,17 @@ exists() {
 main() {
     exec 3>&1 1>&2 </dev/null
 
-    [ "$#" -eq 5 ] || fail 'usage: incus-host.sh <project> <network> <cidr> <pool> <image-alias>'
+    { [ "$#" -eq 5 ] || [ "$#" -eq 6 ]; } ||
+        fail 'usage: incus-host.sh <project> <network> <cidr> <pool> <image-alias> [<zfs-dataset>]'
 
-    local project=$1 network=$2 cidr=$3 pool=$4 image=$5
+    local project=$1 network=$2 cidr=$3 pool=$4 image=$5 dataset=${6:-}
 
     [[ $project =~ ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$ ]] || fail "invalid project [$project]"
     [[ $network =~ ^orbittask[a-z0-9]{1,6}$ ]] || fail "invalid network [$network]"
     [[ $pool =~ ^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$ ]] || fail "invalid pool [$pool]"
     [[ $image =~ ^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$ ]] || fail "invalid image alias [$image]"
+    [ -z "$dataset" ] || [[ $dataset =~ ^[A-Za-z0-9][A-Za-z0-9_.:-]*(/[A-Za-z0-9][A-Za-z0-9_.:-]*)+$ ]] ||
+        fail "invalid ZFS dataset [$dataset]"
     [[ $cidr =~ ^([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})/([0-9]{1,2})$ ]] ||
         fail "invalid cidr [$cidr]"
 
@@ -46,6 +51,18 @@ main() {
 
     command -v incus >/dev/null || fail 'incus is not installed'
     command -v ufw >/dev/null || fail 'ufw is not installed'
+
+    # ZFS pool: every VM and the base image volume are clones on it. An existing pool is only checked.
+    if ! exists incus storage show "$pool"; then
+        [ -n "$dataset" ] || fail "storage pool [$pool] does not exist and no ZFS dataset is set to create it"
+        incus storage create "$pool" zfs "source=$dataset"
+    fi
+    [ "$(incus storage show "$pool" | sed -n 's/^driver: //p')" = zfs ] || fail "storage pool [$pool] is not a zfs pool"
+    if [ -n "$dataset" ]; then
+        local source
+        source=$(incus storage get "$pool" source)
+        [ "$source" = "$dataset" ] || fail "storage pool [$pool] uses [$source], expected [$dataset]"
+    fi
 
     # Project: images and profiles are per project; networks and ACLs stay in `default`, named explicitly.
     if ! exists incus project show "$project"; then

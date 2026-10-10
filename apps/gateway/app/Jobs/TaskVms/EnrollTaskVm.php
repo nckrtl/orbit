@@ -25,8 +25,8 @@ final class EnrollTaskVm implements ShouldBeUnique, ShouldQueue
 {
     use ProvisionsTaskVm;
 
-    /** Each poll releases the job and counts as a try. 60 tries cover the boot window many times over; they also bound a job that a worker stop keeps cutting off. */
-    public int $tries = 60;
+    /** Each poll releases the job and counts as a try. 150 tries of 5 seconds cover the 10-minute boot window; they also bound a job that a worker stop keeps cutting off. */
+    public int $tries = 150;
 
     public int $maxExceptions = 3;
 
@@ -34,7 +34,8 @@ final class EnrollTaskVm implements ShouldBeUnique, ShouldQueue
 
     public int $timeout = 1500;
 
-    private const int PollSeconds = 15;
+    /** A VM from the base image is done with cloud-init about 20 seconds after launch. */
+    private const int PollSeconds = 5;
 
     private const int BootstrapMinutes = 10;
 

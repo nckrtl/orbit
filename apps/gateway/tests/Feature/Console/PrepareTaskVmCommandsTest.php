@@ -33,7 +33,7 @@ describe('task-vms:prepare-host', function (): void {
         ]]);
 
         $this->artisan('task-vms:prepare-host', ['node' => 'beast'])
-            ->expectsOutputToContain('Node [beast] is ready for task VMs on bridge [orbittask0].')
+            ->expectsOutputToContain('Node [beast] is ready for task VMs on bridge [orbittask0]. Build its base image with task-vms:build-image.')
             ->assertSuccessful();
 
         $command = $this->ssh->commands[0];
@@ -43,6 +43,17 @@ describe('task-vms:prepare-host', function (): void {
                 'sudo', '-n', 'bash', '-s', '--', 'orbit-tasks', 'orbittask0', '10.252.0.0/24', 'orbit-e2e', 'ubuntu-26.04-vm',
             ])
             ->and($command->input)->toBe(file_get_contents(resource_path('task-vms/incus-host.sh')));
+    });
+
+    it('passes the ZFS dataset that creates a missing pool', function (): void {
+        $beast = task_vm_fleet_node('beast', '10.44.0.7', [RoleName::AppDev]);
+        config()->set('task_vms.incus.hosts', [['node_id' => $beast->id, 'cidr' => '10.252.0.0/24', 'max_vms' => 4, 'zfs_dataset' => 'fast/orbit-tasks']]);
+
+        $this->artisan('task-vms:prepare-host', ['node' => 'beast'])->assertSuccessful();
+
+        expect($this->ssh->commands[0]->arguments)->toBe([
+            'sudo', '-n', 'bash', '-s', '--', 'orbit-tasks', 'orbittask0', '10.252.0.0/24', 'orbit-tasks', 'ubuntu-26.04-vm', 'fast/orbit-tasks',
+        ]);
     });
 
     it('refuses invalid host settings before it connects', function (array $host, string $message): void {
@@ -181,7 +192,7 @@ describe('task VM setup scripts', function (): void {
         $syntax->run();
 
         expect($syntax->getExitCode())->toBe(0, $syntax->getErrorOutput());
-    })->with(['incus-host.sh', 'hub.sh']);
+    })->with(['incus-host.sh', 'hub.sh', 'base-image-clean.sh']);
 
     it('pass shellcheck when it is installed', function (): void {
         $finder = new ExecutableFinder;
@@ -195,6 +206,7 @@ describe('task VM setup scripts', function (): void {
             $shellcheck,
             resource_path('task-vms/incus-host.sh'),
             resource_path('task-vms/hub.sh'),
+            resource_path('task-vms/base-image-clean.sh'),
         ]);
         $check->run();
 
@@ -216,6 +228,8 @@ describe('task VM setup scripts', function (): void {
         'host cidr not a network' => ['incus-host.sh', ['orbit-tasks', 'orbittask0', '10.252.0.1/24', 'default', 'img'], 'not a network address'],
         'host cidr too wide' => ['incus-host.sh', ['orbit-tasks', 'orbittask0', '10.0.0.0/8', 'default', 'img'], 'prefix must be /16 to /28'],
         'host argument count' => ['incus-host.sh', ['orbit-tasks'], 'usage: incus-host.sh'],
+        'host ZFS pool as dataset' => ['incus-host.sh', ['orbit-tasks', 'orbittask0', '10.252.0.0/24', 'orbit-tasks', 'img', 'fast'], 'invalid ZFS dataset [fast]'],
+        'host ZFS dataset as an option' => ['incus-host.sh', ['orbit-tasks', 'orbittask0', '10.252.0.0/24', 'orbit-tasks', 'img', '-o/x'], 'invalid ZFS dataset [-o/x]'],
         'hub range not a network' => ['hub.sh', ['10.44.0.129/25', '10.44.0.1', '10.44.0.2', '3774', '10.44.0.3:443', '10.44.0.3:8317', '10.44.0.7'], 'range is not a network address'],
         'hub port out of range' => ['hub.sh', ['10.44.0.128/25', '10.44.0.1', '10.44.0.2', '3774', '10.44.0.3:99999', '10.44.0.3:8317', '10.44.0.7'], 'invalid Reverb endpoint'],
         'hub router with rule text' => ['hub.sh', ['10.44.0.128/25', '10.44.0.1', '10.44.0.2', '3774', '10.44.0.3:443', '10.44.0.3:8317', '10.44.0.7 accept'], 'invalid router address'],

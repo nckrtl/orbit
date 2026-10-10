@@ -207,7 +207,7 @@ function tvm_life_settings(bool $enabled = true, int $maxVms = 2, ?int $clusterI
 {
     app()->instance(TaskVmSettings::class, new TaskVmSettings(
         enabled: $enabled, devClusterId: $clusterId, wireguardRange: '10.44.0.128/25',
-        hosts: [new TaskVmHost(test()->host->id, 'orbit-tasks', 'orbittask0', '10.251.77.0/24', 'ubuntu-26.04-vm', $maxVms, 2, '4GiB', '20GiB')],
+        hosts: [new TaskVmHost(test()->host->id, 'orbit-tasks', 'orbittask0', '10.251.77.0/24', $maxVms, 2, '4GiB', '20GiB')],
         modelProxyOrigin: TVM_LIFE_ORIGIN, piArtifactPath: null, piArtifactSha256: null, piModels: [],
     ));
 }
@@ -359,7 +359,7 @@ describe(ProvisionTaskVm::class, function (): void {
 
         expect($job->tries)->toBe(2)->and($job->uniqueId())->toBe('7')->and($job->queue)->toBe('task-vms')
             ->and($job->failOnTimeout)->toBeTrue()
-            ->and((new EnrollTaskVm(7, 0))->tries)->toBe(60)
+            ->and((new EnrollTaskVm(7, 0))->tries)->toBe(150)
             ->and((new EnrollTaskVm(7, 0))->failOnTimeout)->toBeTrue()
             ->and((new PrepareTaskVmRuntime(7))->failOnTimeout)->toBeTrue();
     });
@@ -409,7 +409,7 @@ describe(EnrollTaskVm::class, function (): void {
 
         app()->call([$job, 'handle']);
 
-        $job->assertReleased(15);
+        $job->assertReleased(5);
         expect($this->converged)->toBe([])->and(Node::query()->where('name', $vm->name)->exists())->toBeFalse();
     });
 
