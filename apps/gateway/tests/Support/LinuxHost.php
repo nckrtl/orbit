@@ -15,10 +15,10 @@ use Symfony\Component\Process\Process;
  *
  * A few tests execute Node programs that depend on Linux kernel interfaces with no equivalent elsewhere, such as
  * `os.O_PATH` with `/proc/self/fd` reopening, the `/proc/net/tcp` listener tables, or POSIX ACLs. On Linux, such as
- * in CI or on beast, the test runs directly. On another host, such as macOS, `delegate()` copies the Gateway
- * directory to the Linux test host, runs the same test there over SSH, and asserts that it passed. The host is
- * beast, an Ubuntu machine like the Nodes, unless ORBIT_LINUX_TEST_HOST names another SSH host. Beast has `acl`, a
- * `caddy` service account, and passwordless `sudo`, as the CI host does.
+ * in CI, the test runs directly. On another host, such as macOS, `delegate()` copies the Gateway directory to the
+ * Linux SSH host that ORBIT_LINUX_TEST_HOST names, runs the same test there, and asserts that it passed. The host
+ * needs `acl`, a `caddy` service account, and passwordless `sudo`, as the CI host has. When the variable is unset,
+ * `delegate()` skips the test and names the variable.
  *
  * Each test process copies the Gateway once and reuses the copy for every test it delegates. The copy holds only
  * the files Git would track, as `git ls-files --cached --others --exclude-standard` lists them, and `vendor/`, so
@@ -34,8 +34,6 @@ final class LinuxHost
 
     /** Overrides how many seconds a delegated test may run on the Linux test host. */
     public const string TimeoutVariable = 'ORBIT_LINUX_TEST_TIMEOUT';
-
-    private const string DefaultHost = 'beast';
 
     /** The remote account's base directory; `id -u` keeps accounts apart. */
     private const string RemoteBase = '/tmp/orbit-gateway-linux-tests-$(id -u)';
@@ -62,6 +60,7 @@ final class LinuxHost
             return false;
         }
 
+        self::requireHost();
         $root = base_path();
         // Pest compiles each test file into a class that records its source file.
         $file = $test::$__filename ?? throw new RuntimeException('The test does not name its Pest source file.');
@@ -87,7 +86,7 @@ final class LinuxHost
             $process->run();
         } catch (ProcessTimedOutException) {
             self::ssh(self::stopScript($directory), 30)->run();
-            Assert::fail('The test did not finish on the Linux test host (ssh '.self::host().'), so it was stopped there.');
+            Assert::fail('The test did not finish on the Linux test host (ssh '.self::requireHost().'), so it was stopped there.');
         }
 
         $output = $process->getOutput().$process->getErrorOutput();
@@ -95,18 +94,18 @@ final class LinuxHost
         // timeout(1) exits with 124 when it stopped the test, or 137 when it had to kill it.
         if (in_array($process->getExitCode(), [124, 137], true)) {
             Assert::fail('The test ran longer than '.self::timeoutSeconds().' seconds on the Linux test host (ssh '
-                .self::host()."), so it was stopped there:\n{$output}");
+                .self::requireHost()."), so it was stopped there:\n{$output}");
         }
 
         Assert::assertSame(
             0,
             $process->getExitCode(),
-            'The test failed on the Linux test host (ssh '.self::host()."):\n{$output}",
+            'The test failed on the Linux test host (ssh '.self::requireHost()."):\n{$output}",
         );
         Assert::assertMatchesRegularExpression(
             '/Tests:\s+1 passed/',
             $output,
-            'The Linux test host (ssh '.self::host().") did not run exactly this test:\n{$output}",
+            'The Linux test host (ssh '.self::requireHost().") did not run exactly this test:\n{$output}",
         );
 
         return true;
@@ -119,11 +118,21 @@ final class LinuxHost
         return is_string($seconds) && ctype_digit($seconds) && (int) $seconds > 0 ? (int) $seconds : self::DefaultTimeoutSeconds;
     }
 
-    public static function host(): string
+    /** The Linux SSH host that ORBIT_LINUX_TEST_HOST names, or null when it names none. */
+    public static function host(): ?string
     {
         $host = getenv(self::HostVariable);
 
-        return is_string($host) && $host !== '' ? $host : self::DefaultHost;
+        return is_string($host) && $host !== '' ? $host : null;
+    }
+
+    /** Returns the Linux test host, or skips the running test when ORBIT_LINUX_TEST_HOST names none. */
+    public static function requireHost(): string
+    {
+        return self::host() ?? Assert::markTestSkipped(
+            'This test needs Linux kernel interfaces. Run it on Linux, or set '.self::HostVariable
+            .' to a Linux SSH host that accepts `ssh` without a prompt.',
+        );
     }
 
     /**
@@ -240,8 +249,8 @@ final class LinuxHost
 
         if ($prepare->run() !== 0) {
             throw new RuntimeException(
-                'This test runs a Linux-only Node program on the Linux test host, but `ssh '.self::host().'` failed. '
-                .'Make `ssh '.self::host().'` work without a prompt, or set '.self::HostVariable.' to another '
+                'This test runs a Linux-only Node program on the Linux test host, but `ssh '.self::requireHost().'` failed. '
+                .'Make `ssh '.self::requireHost().'` work without a prompt, or set '.self::HostVariable.' to another '
                 ."Linux SSH host, then run the tests again.\n".trim($prepare->getErrorOutput()),
             );
         }
@@ -261,13 +270,13 @@ final class LinuxHost
             'rsync', '--archive', '--recursive', '--from0', '--files-from=-',
             '--rsh', 'ssh -o BatchMode=yes -o ConnectTimeout=10',
             $root.'/',
-            self::host().':'.$directory.'/gateway/',
+            self::requireHost().':'.$directory.'/gateway/',
         ], timeout: 600);
         $sync->setInput(implode("\0", self::syncPaths($root))."\0");
 
         if ($sync->run() !== 0) {
             throw new RuntimeException(
-                'Could not copy the Gateway to the Linux test host with rsync over `ssh '.self::host().'`:'
+                'Could not copy the Gateway to the Linux test host with rsync over `ssh '.self::requireHost().'`:'
                 ."\n".trim($sync->getErrorOutput()),
             );
         }
@@ -279,7 +288,7 @@ final class LinuxHost
     private static function ssh(string $script, float $timeout): Process
     {
         return new Process(
-            ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', self::host(), 'sh -c '.escapeshellarg($script)],
+            ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', self::requireHost(), 'sh -c '.escapeshellarg($script)],
             timeout: $timeout,
         );
     }
