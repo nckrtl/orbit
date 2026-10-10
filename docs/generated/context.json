@@ -461,6 +461,7 @@
                 "Process",
                 "Project",
                 "Project Documents",
+                "Role",
                 "Route",
                 "Schedule",
                 "Task",
@@ -1404,6 +1405,23 @@
                 "Task",
                 "Task definition",
                 "Turn receipt"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/gateway-environment.md",
+            "title": "Gateway environment",
+            "kind": "reference",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Instance",
+                "Node",
+                "Node agent",
+                "Role",
+                "Task"
             ],
             "governing_adrs": []
         },

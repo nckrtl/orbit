@@ -101,7 +101,7 @@ A task of a review-and-merge Project, or one that reviews an incoming pull reque
 Create a task. It starts in `backlog` unless you ask for `todo`.
 
 ```bash
-orbit tasks:create [title] [--project=ID] [--brief=TEXT] [--status=STATUS] [--subtasks=FILE] [--notify-coder] [--json]
+orbit tasks:create [title] [--project=ID] [--brief=TEXT] [--status=STATUS] [--subtasks=FILE] [--notify-coder] [--preview] [--json]
 ```
 
 | Input | Default | Meaning |
@@ -112,6 +112,7 @@ orbit tasks:create [title] [--project=ID] [--brief=TEXT] [--status=STATUS] [--su
 | `--status=STATUS` | `backlog` | `backlog` or `todo`. `todo` needs at least one subtask, each with deliverables, and asks the scheduler to claim the task. |
 | `--subtasks=FILE` | none | JSON file with an ordered array of at most 50 objects, each with a string `title` and `brief` and an optional `deliverables` array. |
 | `--notify-coder` | off | Post the Coder settle webhook when the task settles. |
+| `--preview` | off | Keep the task's sandbox running during review. See [Request a preview](/reference/compute-drivers#request-a-preview). |
 
 
 ```bash
@@ -136,7 +137,7 @@ The CLI does not prompt for the status, the subtasks, or the notification. After
 Change a task's title, brief, or status. Title and brief change only while the task is in `backlog`. The status moves between `backlog` and `todo`. A move to `todo` asks the scheduler to claim the task.
 
 ```bash
-orbit tasks:update [group] [--title=TEXT] [--brief=TEXT] [--status=STATUS] [--json]
+orbit tasks:update [group] [--title=TEXT] [--brief=TEXT] [--status=STATUS] [--preview | --no-preview] [--json]
 ```
 
 | Option | Meaning |
@@ -144,6 +145,8 @@ orbit tasks:update [group] [--title=TEXT] [--brief=TEXT] [--status=STATUS] [--js
 | `--title=TEXT` | New title. |
 | `--brief=TEXT` | New brief. |
 | `--status=STATUS` | `backlog` or `todo`. |
+| `--preview` | Keep the sandbox running during review. It can change while the task is in `backlog`, waiting, or active. |
+| `--no-preview` | Let the sandbox park during review. Do not combine it with `--preview`. |
 
 ```bash
 orbit tasks:update 13 --status=todo
@@ -194,7 +197,7 @@ In a terminal, the task list shows only `settling` tasks. Pass the task id to co
 Append one subtask to a task at the next position, with status `todo`. This works in every task status except `completed` and `cancelled`. Outside `backlog`, the subtask needs deliverables. When the task is `settling` or `waiting_for_review` with an open pull request, or with no pull request, the next tick returns the task to `running` and starts this subtask. Another assistance cause keeps the task `settling`. The [tasks reference](/reference/tasks#fix-a-settling-pull-request) owns that transition.
 
 ```bash
-orbit tasks:subtask:create [group] [title] [--brief=TEXT] [--deliverables=FILE] [--json]
+orbit tasks:subtask:create [group] [title] [--brief=TEXT] [--deliverables=FILE] [--topology=JSON] [--json]
 ```
 
 | Input | Default | Meaning |
@@ -202,6 +205,7 @@ orbit tasks:subtask:create [group] [title] [--brief=TEXT] [--deliverables=FILE] 
 | `title` | prompt | Short name of the step. |
 | `--brief=TEXT` | prompt | Goal and acceptance of the step. |
 | `--deliverables=FILE` | none | JSON file with an array of at most five [deliverables](/reference/tasks#deliverables), of type `file`, `command`, or `review`. Only a command deliverable may set `fails_on_base` to `true` or `false` and supply `paths`. When `fails_on_base` is `true`, `paths` must list at least one workspace-relative file for the base run. The CLI refuses these fields on any other type. |
+| `--topology=JSON` | none | JSON array of the workload Nodes the subtask needs, such as `["app-dev","app-prod"]`. See [compute drivers](/reference/compute-drivers). |
 
 ```bash
 orbit tasks:subtask:create 13 "Document the export" --brief="$(cat step.md)" --deliverables=deliverables.json
@@ -221,7 +225,7 @@ A `--json` or `-n` call fails with `tasks.title_required` or `tasks.brief_requir
 Change a subtask's title, brief, position, or deliverables while its task is in `backlog`. In `todo`, `running`, `reviewing`, `settling`, or `waiting_for_review` tasks, change any of those fields only while the subtask is `todo`. Deliverables cannot be empty. A new position moves only among `todo` subtasks; it cannot put one before a started or finished subtask. Positions stay gapless. Started subtasks keep their existing restrictions, and tasks in `completed` or `cancelled` are read-only.
 
 ```bash
-orbit tasks:subtask:update [group] [subtask] [--title=TEXT] [--brief=TEXT] [--position=N] [--deliverables=FILE] [--json]
+orbit tasks:subtask:update [group] [subtask] [--title=TEXT] [--brief=TEXT] [--position=N] [--deliverables=FILE] [--topology=JSON] [--json]
 ```
 
 | Option | Meaning |
@@ -230,6 +234,7 @@ orbit tasks:subtask:update [group] [subtask] [--title=TEXT] [--brief=TEXT] [--po
 | `--brief=TEXT` | New brief. |
 | `--position=N` | New position, starting at 1. |
 | `--deliverables=FILE` | JSON file with an array of at most five [deliverables](/reference/tasks#deliverables). It replaces the whole list. |
+| `--topology=JSON` | JSON array of the workload Nodes the subtask needs. `[]` removes the declaration. Only a subtask that has not started can change it. |
 
 ```bash
 orbit tasks:subtask:update 58 88 --deliverables=deliverables.json

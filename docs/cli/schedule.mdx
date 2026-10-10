@@ -106,10 +106,10 @@ orbit schedule:run <uuid> [--json]
 
 ## orbit schedule:logs
 
-Return the newest complete lines of the Schedule's service journal.
+Return the newest complete lines of the Schedule's service journal. `schedule` is the UUID of an installed Schedule.
 
 ```bash
-orbit schedule:logs <uuid> [--lines=COUNT] [--json]
+orbit schedule:logs <schedule> [--lines=COUNT] [--json]
 ```
 
 | Option | Default | Meaning |
@@ -120,10 +120,10 @@ The Gateway returns at most 1 MiB and sets `truncated` when that limit removed o
 
 ## orbit schedule:enable
 
-Enable and start the timer of one Instance Schedule. The command is idempotent. Use it after `schedule:create --no-start`, or for a copy that production preparation installed stopped.
+Enable and start the timer of one Instance Schedule. The command is idempotent. Use it after `schedule:create --no-start`, or for a copy that production preparation installed stopped. `schedule` is the UUID of an installed Schedule.
 
 ```bash
-orbit schedule:enable <uuid> [--json]
+orbit schedule:enable <schedule> [--json]
 ```
 
 ## orbit schedule:destroy

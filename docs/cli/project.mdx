@@ -23,21 +23,33 @@ A Project records one Git repository and the defaults for running it. [Projects]
 | [`project:dev-deploy-step:create`](#orbit-projectdev-deploy-stepcreate) | Record a development deploy step. |
 | [`project:dev-deploy-step:update`](#orbit-projectdev-deploy-stepupdate) | Change a development deploy step. |
 | [`project:dev-deploy-step:destroy`](#orbit-projectdev-deploy-stepdestroy) | Remove a development deploy step. |
+| [`project:excluded-node:add`](#orbit-projectexcluded-nodeadd) | Keep a Project off an `app-dev` Node. |
+| [`project:excluded-node:list`](#orbit-projectexcluded-nodelist) | List the Nodes a Project cannot use. |
+| [`project:excluded-node:remove`](#orbit-projectexcluded-noderemove) | Let a Project use an `app-dev` Node again. |
+| [`project:document:list`](#orbit-projectdocumentlist) | List the entries in a Project Documents folder. |
+| [`project:document:search`](#orbit-projectdocumentsearch) | Find Project Document entries by name or path. |
+| [`project:document:show`](#orbit-projectdocumentshow) | Show the metadata of one entry. |
+| [`project:document:create`](#orbit-projectdocumentcreate) | Create a folder or a file. |
+| [`project:document:update`](#orbit-projectdocumentupdate) | Rename or move an entry. |
+| [`project:document:read`](#orbit-projectdocumentread) | Print a file's text. |
+| [`project:document:upload`](#orbit-projectdocumentupload) | Write local bytes as a new file version. |
+| [`project:document:write`](#orbit-projectdocumentwrite) | Write text as a new file version. |
+| [`project:document:download`](#orbit-projectdocumentdownload) | Save a file version to a new local file. |
+| [`project:document:versions`](#orbit-projectdocumentversions) | List a file's versions. |
+| [`project:document:restore-version`](#orbit-projectdocumentrestore-version) | Make an earlier version the newest one. |
+| [`project:document:archive`](#orbit-projectdocumentarchive) | Archive an entry. |
+| [`project:document:restore`](#orbit-projectdocumentrestore) | Restore an archived entry. |
+| [`project:document:remove`](#orbit-projectdocumentremove) | Permanently remove an entry. |
+| [`project:document-storage:show`](#orbit-projectdocument-storageshow) | Show the private document storage and its status. |
+| [`project:document-storage:update`](#orbit-projectdocument-storageupdate) | Configure the private document storage. |
 
-Every command accepts `--json`. [`project:excluded-node`](/reference/development-node-exclusions) keeps a Project off selected `app-dev` Nodes.
+Every command accepts `--json`.
 
 ## Project Documents
 
-Use `project:document:<verb>` with a Project ID or slug. The [Project Documents command contract](/reference/project-documents#cli-contract) lists browsing, search, folder creation, file input/output, metadata changes, archive, restore, version history, and removal. `project:document-storage:show` and `project:document-storage:update` configure Gateway-owned storage without a Project selector.
+The `project:document` commands browse, change, and version the documents of a Project. The `project:document-storage` commands configure the Gateway's private storage for them. Each command has its own section below, and [Project Documents](/reference/project-documents#cli-contract) owns the full contract.
 
 Mutations require an observed `--expected-revision`; permanent removal also requires `--yes` without a terminal. JSON mode preserves the API envelope. Local validation uses `input.invalid` and exit 2. Local download integrity or filesystem failures use `project_documents.local_io_failed` and exit 1. On `project_documents.revision_conflict`, preserve the draft and reread metadata rather than retrying automatically.
-
-```bash
-orbit project:document:list acme
-orbit project:document:create acme notes --kind=folder
-orbit project:document:upload acme 12 --from=spec.pdf --expected-revision=3
-orbit project:document:download acme 12 --output=downloaded-spec.pdf
-```
 
 ## orbit project:create
 
@@ -59,6 +71,7 @@ orbit project:create <slug> <type> <repository> [options]
 | `--root=PATH` | `.` for `laravel-package` and `node-package`; `public` otherwise | Normalized repository-relative root that Instances inherit. `.` means the repository root. |
 | `--task-check=COMMAND` | none | Command that task baselines and handoffs run in the workspace. See [Project check](/reference/tasks#project-check). |
 | `--task-workspace-routed=true\|false` | true | Whether new task workspaces get a Route. See [Task workspace routing](/reference/projects#task-workspace-routing). |
+| `--task-compute=shared\|vm` | `shared` | Where future task groups run. See [Task compute](/reference/projects#task-compute). |
 
 ```bash
 orbit project:create acme laravel-app git@github.com:acme/site.git
@@ -90,7 +103,7 @@ orbit project:show <project> [--json]
 Change a Project's type, source access, source defaults, task check, task workspace routing, or review and merge. Omitted fields stay unchanged. The Gateway reconciles affected development sources, checkouts, Routes, inherited web roots, and runtimes before publishing the change. It does not start a production deployment. See [Update a Project](/reference/projects#update-a-project) for validation, rollback, and retry behavior.
 
 ```bash
-orbit project:update <project> [--type=TYPE] [--slug=SLUG] [--repository=URL] [--source-access=VALUE] [--default-branch=BRANCH] [--root=PATH] [--task-check=COMMAND] [--clear-task-check] [--task-workspace-routed=true|false] [--review-and-merge=true|false] [--merge-check=NAME] [--clear-merge-check]
+orbit project:update <project> [--type=TYPE] [--slug=SLUG] [--repository=URL] [--source-access=VALUE] [--default-branch=BRANCH] [--root=PATH] [--task-check=COMMAND] [--clear-task-check] [--task-workspace-routed=true|false] [--task-compute=shared|vm] [--review-and-merge=true|false] [--merge-check=NAME] [--clear-merge-check]
 ```
 
 | Option | Meaning |
@@ -104,6 +117,7 @@ orbit project:update <project> [--type=TYPE] [--slug=SLUG] [--repository=URL] [-
 | `--task-check=COMMAND` | New command that task baselines and handoffs run. A type change does not change it. |
 | `--clear-task-check` | Remove the task check so tasks run no check command. Combining it with `--task-check` fails with `project.task_check_conflict`. |
 | `--task-workspace-routed=true\|false` | Change routing for future task workspaces. Invalid values return `project.task_workspace_routed_invalid` before a request. Existing workspaces keep their mode. |
+| `--task-compute=shared\|vm` | Change where future task groups run. A group keeps the mode of its first reservation. See [Task compute](/reference/projects#task-compute). |
 | `--review-and-merge=true\|false` | Switch the [review-and-merge flow](/reference/tasks#review-and-merge). Invalid values return `project.review_and_merge_invalid` before a request. |
 | `--merge-check=NAME` | The check that must pass on a head before Orbit merges it, such as `Required checks`. |
 | `--clear-merge-check` | Remove the merge check. Combining it with `--merge-check` fails with `project.merge_check_conflict`. The Gateway refuses it while the flow is on. |
@@ -131,8 +145,11 @@ orbit project:dev-deploy-step:list --project=4 [--json]
 Record a named step without starting a deployment. Human step results show control characters as visible escapes and preserve literal text such as `<error>` tags; JSON preserves the stored command unchanged. [Development deploy steps](/reference/deployments#development-deploy-steps) owns the limits, placement rules, and required-versus-best-effort behavior.
 
 ```bash
-orbit project:dev-deploy-step:create install --project=4 --command="composer install --no-interaction" [--timeout=300] [--required=true|false] [--before=NAME | --after=NAME] [--json]
+orbit project:dev-deploy-step:create <name> --project=ID --command=COMMAND [--timeout=300] [--required=true|false] [--before=NAME | --after=NAME] [--json]
+orbit project:dev-deploy-step:create install --project=4 --command="composer install --no-interaction"
 ```
+
+`name` is the step name, unique within the Project.
 
 | Option | Meaning |
 | --- | --- |
@@ -156,8 +173,228 @@ orbit project:dev-deploy-step:update cache --project=4 --required=false [--comma
 Remove a named step. The remaining steps keep their order. `--yes` confirms without prompting and is required for JSON and noninteractive calls.
 
 ```bash
-orbit project:dev-deploy-step:destroy cache --project=4 [--yes] [--json]
+orbit project:dev-deploy-step:destroy <name> --project=ID [--yes] [--json]
+orbit project:dev-deploy-step:destroy cache --project=4
 ```
+
+## orbit project:excluded-node:add
+
+Keep a Project off an `app-dev` Node for development placement. The Node must have an active `app-dev` role. A second `add` of the same pair returns the stored exclusion. [Development node exclusions](/reference/development-node-exclusions) owns the rules.
+
+```bash
+orbit project:excluded-node:add <node> --project=ID [--json]
+orbit project:excluded-node:add sabre --project=4
+```
+
+| Argument or option | Meaning |
+| --- | --- |
+| `node` | Node ID or name. |
+| `--project=ID` | Numeric Project ID. |
+
+In a terminal, an omitted Project or Node opens a searchable selector. JSON and noninteractive calls must name both.
+
+## orbit project:excluded-node:list
+
+List the `app-dev` Nodes the Project cannot use. Each entry shows the Node and the number of development Instances of the Project already on it.
+
+```bash
+orbit project:excluded-node:list --project=ID [--json]
+```
+
+## orbit project:excluded-node:remove
+
+Let the Project use the Node again. It asks for no confirmation, because it moves and stops nothing.
+
+```bash
+orbit project:excluded-node:remove <node> --project=ID [--json]
+```
+
+## orbit project:document:list
+
+List the direct children of a folder, or of the root. Columns are ID, KIND, NAME, REVISION, SIZE, and ARCHIVED. [Project Documents](/reference/project-documents#cli-contract) owns the full command contract.
+
+```bash
+orbit project:document:list <project> [--parent=ID] [--state=active|archived|all] [--kind=folder|file] [--cursor=CURSOR] [--limit=50] [--json]
+```
+
+| Argument or option | Meaning |
+| --- | --- |
+| `project` | Project ID or slug. Every `project:document` command takes it first. |
+| `--parent=ID` | Folder to list. The root by default. |
+| `--state=active\|archived\|all` | Archive state. Default `active`. |
+| `--kind=folder\|file` | Show only one kind. |
+| `--cursor=CURSOR` | Page cursor from the previous page. |
+| `--limit=N` | Page size. Default 50. |
+
+## orbit project:document:search
+
+Find entries whose name or path contains the query. Columns are ID, KIND, PATH, REVISION, SIZE, and ARCHIVED.
+
+```bash
+orbit project:document:search <project> <query> [--state=active|archived|all] [--kind=folder|file] [--cursor=CURSOR] [--limit=50] [--json]
+```
+
+`query` is a name or path substring. The options work as for `project:document:list`.
+
+## orbit project:document:show
+
+Show the metadata of one entry. It never prints the body.
+
+```bash
+orbit project:document:show <project> <entry> [--json]
+```
+
+`entry` is a numeric entry ID, never a path. Every command that acts on one entry takes it second.
+
+## orbit project:document:create
+
+Create a folder or a file.
+
+```bash
+orbit project:document:create <project> <name> --kind=folder|file [--parent=ID] [--from=PATH|-] [--content=TEXT] [--media-type=TYPE] [--json]
+orbit project:document:create acme notes --kind=folder
+```
+
+| Argument or option | Meaning |
+| --- | --- |
+| `name` | Name of the new entry. |
+| `--kind=folder\|file` | Required. |
+| `--parent=ID` | Folder to create it in. The root by default. |
+| `--from=PATH` | File body from a local file. `-` reads stdin. |
+| `--content=TEXT` | File body as exact inline text. Do not combine it with `--from`. |
+| `--media-type=TYPE` | Media type of the file body. |
+
+## orbit project:document:update
+
+Rename or move an entry.
+
+```bash
+orbit project:document:update <project> <entry> [--name=NAME] [--parent=ID|root] --expected-revision=N [--json]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--name=NAME` | New name. |
+| `--parent=ID\|root` | Destination folder, or `root`. |
+| `--expected-revision=N` | Revision you observed. Every mutation needs it. On `project_documents.revision_conflict`, read the metadata again rather than retrying. |
+
+## orbit project:document:read
+
+Print a file's exact text on stdout with no added newline. Diagnostics go to stderr. `--json` returns the API envelope.
+
+```bash
+orbit project:document:read <project> <entry> [--version=ID] [--json]
+```
+
+`--version=ID` reads an earlier version. The newest version by default.
+
+## orbit project:document:upload
+
+Write local bytes as a new version of a file.
+
+```bash
+orbit project:document:upload <project> <entry> --from=PATH|- [--media-type=TYPE] --expected-revision=N [--json]
+orbit project:document:upload acme 12 --from=spec.pdf --expected-revision=3
+```
+
+`--from=-` reads stdin. The CLI checks the local size before sending, and the server checks it again.
+
+## orbit project:document:write
+
+Write UTF-8 text as a new version of a file.
+
+```bash
+orbit project:document:write <project> <entry> --content=TEXT|--from=PATH [--media-type=TYPE] --expected-revision=N [--json]
+```
+
+Give the text with `--content` or read it with `--from`. `--from=-` reads stdin.
+
+## orbit project:document:download
+
+Save a file version to a new local file, or print it to stdout.
+
+```bash
+orbit project:document:download <project> <entry> --output=PATH|- [--version=ID] [--json]
+orbit project:document:download acme 12 --output=downloaded-spec.pdf
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--output=PATH` | New local file. Download never overwrites an existing file. `-` writes raw bytes to stdout, which must not be a terminal. |
+| `--version=ID` | Version to download. The newest version by default. |
+
+The CLI verifies the size and digest before it publishes the file. `--json` returns the body as base64 instead, and refuses `--output`. A local failure returns `project_documents.local_io_failed` and exit 1.
+
+## orbit project:document:versions
+
+List a file's versions. Columns are NUMBER, ID, TYPE, SIZE, SHA256, and CREATED.
+
+```bash
+orbit project:document:versions <project> <entry> [--cursor=CURSOR] [--limit=50] [--json]
+```
+
+## orbit project:document:restore-version
+
+Create a new version from an earlier one. It asks for no confirmation, because the history keeps every version.
+
+```bash
+orbit project:document:restore-version <project> <entry> --version=ID --expected-revision=N [--json]
+```
+
+## orbit project:document:archive
+
+Archive an entry. Archiving is not removal: `project:document:restore` brings it back.
+
+```bash
+orbit project:document:archive <project> <entry> --expected-revision=N [--json]
+```
+
+## orbit project:document:restore
+
+Restore an archived entry.
+
+```bash
+orbit project:document:restore <project> <entry> --expected-revision=N [--json]
+```
+
+## orbit project:document:remove
+
+Permanently remove an entry. The confirmation names the Project, the entry, and whether the removal is recursive.
+
+```bash
+orbit project:document:remove <project> <entry> --expected-revision=N [--recursive] [--yes] [--json]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--recursive` | Also remove the descendants of a folder. |
+| `--yes` | Confirm without a prompt. Required for JSON and noninteractive calls. |
+
+## orbit project:document-storage:show
+
+Show the private object storage that holds document bodies, and its status. Credentials are always redacted. It takes no Project selector.
+
+```bash
+orbit project:document-storage:show [--json]
+```
+
+## orbit project:document-storage:update
+
+Configure the private object storage. Omitted settings stay unchanged. In a terminal, credentials use masked prompts. Secret values are never command-line arguments.
+
+```bash
+orbit project:document-storage:update [--endpoint=URL] [--region=REGION] [--bucket=BUCKET] [--access-key-id-file=PATH --secret-access-key-file=PATH] [--json]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--endpoint=URL` | HTTPS storage origin. |
+| `--region=REGION` | Signing region. |
+| `--bucket=BUCKET` | Bucket name. |
+| `--access-key-id-file=PATH` | File that holds the access key ID. |
+| `--secret-access-key-file=PATH` | File that holds the secret access key. Give both credential files together in noninteractive mode. |
+
+A credential file is UTF-8. One final newline is stripped.
 
 ## Related
 

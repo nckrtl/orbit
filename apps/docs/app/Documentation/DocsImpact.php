@@ -567,7 +567,7 @@ final readonly class DocsImpact
             if (preg_match('/^(?:\/\/|\*|#)/', ltrim($line)) === 1) {
                 continue;
             }
-            if (preg_match_all('/env\s*\(\s*[\'"]([A-Z][A-Z0-9_]*)[\'"]/', $line, $matches) > 0) {
+            if (preg_match_all('/env\s*\(\s*(?:key\s*:\s*)?[\'"]([A-Z][A-Z0-9_]*)[\'"]/', $line, $matches) > 0) {
                 foreach ($matches[1] as $key) {
                     $keys[] = [$key, $index + 1];
                 }

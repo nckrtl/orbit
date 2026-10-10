@@ -60,10 +60,6 @@ return [
     'gateway_release_smoke_timeout' => max(1, min(600, (int) env('ORBIT_GATEWAY_RELEASE_SMOKE_TIMEOUT', 90))),
     // A Project id or slug turns on the smoke write check, which writes one Project Document per release.
     'gateway_release_smoke_project' => trim((string) env('ORBIT_GATEWAY_RELEASE_SMOKE_PROJECT', '')),
-    'app_dev_domain' => trim(
-        string: env(key: 'ORBIT_APP_DEV_DOMAIN', default: 'orbit'),
-        characters: '.',
-    ),
     // PHP-FPM and Caddy end a Gateway request after 600 seconds. The command deadline ends remote
     // work 30 seconds earlier, so a slow command fails with an error and records its Activity.
     'command_timeout' => 570.0,

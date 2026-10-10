@@ -25,11 +25,13 @@ function orb247_gate_fixture(): array
     copy(base_path('../../bin/review-check'), $root.'/bin/review-check');
     copy($fixture.'/docs-impact', $root.'/bin/docs-impact');
     file_put_contents($root.'/bin/project-vocabulary', "#!/usr/bin/env sh\nexit 0\n");
+    file_put_contents($root.'/bin/env-docs', "#!/usr/bin/env sh\nexit 0\n");
     copy($fixture.'/tia-cache', $root.'/bin/tia-cache');
     copy($fixture.'/composer', $root.'/tooling/composer');
     chmod($root.'/bin/review-check', 0o700);
     chmod($root.'/bin/docs-impact', 0o700);
     chmod($root.'/bin/project-vocabulary', 0o700);
+    chmod($root.'/bin/env-docs', 0o700);
     chmod($root.'/bin/tia-cache', 0o700);
     chmod($root.'/tooling/composer', 0o700);
 

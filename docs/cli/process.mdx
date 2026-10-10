@@ -139,10 +139,10 @@ orbit process:show <name> --project=ID [--json]
 
 ## orbit process:update
 
-Replace one Project process definition with a complete specification. The command takes the runtime options of `process:create` and requires `--project` and `--for`. The change affects later copies only.
+Replace one Project process definition with a complete specification. It requires `--project` and `--for`, and takes the same runtime options as [`process:create`](#orbit-processcreate). The change affects later copies only.
 
 ```bash
-orbit process:update <name> --project=ID --for=production [runtime options] [--json]
+orbit process:update <name> --project=ID --for=production [--runtime=systemd|docker] [--command=ARG ...] [--image=IMAGE] [--working-directory=PATH] [--environment=NAME=VALUE ...] [--port=HOST:CONTAINER ...] [--volume=SOURCE:TARGET ...] [--restart=POLICY] [--keep-alive] [--json]
 ```
 
 ## orbit process:start

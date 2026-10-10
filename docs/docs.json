@@ -73,6 +73,7 @@
               "reference/project-documents",
               "reference/routes",
               "reference/environment-variables",
+              "reference/gateway-environment",
               "reference/database-connections",
               "reference/database-servers",
               "reference/processes-and-schedules",

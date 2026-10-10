@@ -74,6 +74,13 @@ Analytics commands publish the tracking hosts that send visits to the [analytics
 | [`instance:analytics:show`](#orbit-instanceanalyticsshow) | Show the tracking hosts, their DNS records, and the script tag. |
 | [`instance:analytics:disable`](#orbit-instanceanalyticsdisable) | Remove every tracking host. |
 
+Dependency commands read and update the root packages of an Instance. [Instance dependencies](/reference/instance-dependencies) owns the inventory and refresh rules.
+
+| Command | Result |
+| --- | --- |
+| [`instance:dependencies:scan`](#orbit-instancedependenciesscan) | Record the Composer and JavaScript packages of one or every Instance. |
+| [`instance:dependencies:update`](#orbit-instancedependenciesupdate) | Update the packages of a development Instance within their constraints. |
+
 ## orbit instance:create
 
 Create a development Instance on a Node with the active `app-dev` role. A Node with the active `app-prod` role returns `instance.candidate_required`, including a repeat for an existing production Instance. Create a production Instance with [`instance:clone`](#orbit-instanceclone).
@@ -787,6 +794,39 @@ Use these options to select the destination and confirm downtime.
 | `--json` | Return machine-readable output without prompts. Requires `--force` for consent. |
 
 Without `--force`, an interactive call asks for default-No consent naming the source, destination and effect. JSON and noninteractive calls without `--force` return `instance.confirmation_required` before mutation.
+
+## orbit instance:dependencies:scan
+
+Read the root manifests and lockfiles of an Instance and record its package inventory. The Gateway changes no file.
+
+```bash
+orbit instance:dependencies:scan [--project=DOMAIN | --all] [--json]
+orbit instance:dependencies:scan --project=commander.test
+```
+
+| Option | Meaning |
+| --- | --- |
+| none | Scan the registered Instance whose checkout or production home holds the current directory. |
+| `--project=DOMAIN` | Scan the one Instance behind this full Route domain. It takes precedence over the directory. |
+| `--all` | Scan every Instance that `instance:list` returns, one by one. Combining it with `--project` returns `dependencies.target_conflict`. |
+
+The exit status is zero only when every scanned ecosystem succeeds. See [Scan](/reference/instance-dependencies#scan) for the output and errors.
+
+## orbit instance:dependencies:update
+
+Update the Composer and JavaScript packages of one development Instance within their declared constraints, then scan it again. A production Instance returns `dependencies.production_update_forbidden`.
+
+```bash
+orbit instance:dependencies:update [--project=DOMAIN] [--json]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--project=DOMAIN` | Update the Instance behind this full Route domain instead of the one in the current directory. |
+| `--all` | Refused before any request. Updates run on one Instance at a time. |
+| `--latest` | Refused before any request. Updates stay within the declared constraints. |
+
+See [Update a development Instance](/reference/instance-dependencies#update-a-development-instance) for the steps it runs.
 
 ## Related
 

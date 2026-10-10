@@ -124,7 +124,7 @@ The Gateway's own `orbit-gateway` pool uses 8 children and a 600-second request 
 A production master keeps compiled code until a cache refresh. Each [deployment](/reference/deployments) and rollback refreshes the cache of its own service:
 
 1. The Gateway checks that the service is active and owns the expected socket.
-2. It asks for `opcache_reset()` through that socket, inside the service.
+2. It asks for `opcache_reset()` through that socket, inside the service. The FastCGI request sets the parameter `ORBIT_OPCACHE_ACTION=reset`. A request without it only reads the cache status.
 3. It reports success only after a later request shows the reset finished.
 
 The refresh never touches another Instance's socket and never reloads a service. `opcache_reset()` from the PHP CLI cannot reach the service's cache. Laravel's `php artisan optimize` is an application deploy step.
