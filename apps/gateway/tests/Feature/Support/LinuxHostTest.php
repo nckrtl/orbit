@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Illuminate\Filesystem\Filesystem;
+use PHPUnit\Framework\SkippedWithMessageException;
 use Symfony\Component\Process\Process;
 use Tests\Support\LinuxHost;
 
@@ -203,14 +204,20 @@ describe('the Linux test host copy', function (): void {
         }
     });
 
-    it('uses beast unless ORBIT_LINUX_TEST_HOST names another host', function (): void {
+    it('uses the host that ORBIT_LINUX_TEST_HOST names and skips the test when it names none', function (): void {
         $previous = getenv(LinuxHost::HostVariable);
 
         try {
-            putenv(LinuxHost::HostVariable);
-            expect(LinuxHost::host())->toBe('beast');
             putenv(LinuxHost::HostVariable.'=linux-builder');
-            expect(LinuxHost::host())->toBe('linux-builder');
+            expect(LinuxHost::host())->toBe('linux-builder')
+                ->and(LinuxHost::requireHost())->toBe('linux-builder');
+
+            foreach ([LinuxHost::HostVariable, LinuxHost::HostVariable.'='] as $unset) {
+                putenv($unset);
+                expect(LinuxHost::host())->toBeNull()
+                    ->and(fn (): string => LinuxHost::requireHost())
+                    ->toThrow(SkippedWithMessageException::class, 'set ORBIT_LINUX_TEST_HOST to a Linux SSH host');
+            }
         } finally {
             putenv($previous === false ? LinuxHost::HostVariable : LinuxHost::HostVariable.'='.$previous);
         }
