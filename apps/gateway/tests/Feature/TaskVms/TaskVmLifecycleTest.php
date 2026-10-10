@@ -594,8 +594,9 @@ describe(DestroyTaskVm::class, function (): void {
     })->with(['removal not failed' => false, 'VM still runs' => true]);
 
     it('keeps the workspace of a group that still runs after its removal failed, even when the VM is gone', function (TaskGroupStatus $status): void {
-        [$vm, $instance, , $group] = tvm_life_stranded_workspace(true);
+        [$vm, $instance, , $group] = tvm_life_stranded_workspace(false);
         $group->update(['status' => $status]);
+        TaskAssistance::apply($group, AssistanceKind::Failure, null, RemoveTaskWorkspaceAction::RemovalFailedPrefix.'The teardown step failed.');
         $this->provider->observations = [null];
 
         app()->call([new DestroyTaskVm($vm->id), 'handle']);
@@ -649,8 +650,11 @@ describe(DestroyEndedTaskVmsAction::class, function (): void {
 
     it('queues destruction for a workspace whose removal failed after its group ended, so the job can check the VM', function (bool $removalFailed, TaskGroupStatus $status): void {
         Queue::fake();
-        [$vm, , , $group] = tvm_life_stranded_workspace($removalFailed);
+        [$vm, , , $group] = tvm_life_stranded_workspace(false);
         $group->update(['status' => $status]);
+        if ($removalFailed) {
+            TaskAssistance::apply($group, AssistanceKind::Failure, null, RemoveTaskWorkspaceAction::RemovalFailedPrefix.'The Node is unreachable.');
+        }
         $queued = $removalFailed && $status !== TaskGroupStatus::Running;
 
         expect(app(DestroyEndedTaskVmsAction::class)->execute())->toBe($queued ? 1 : 0);

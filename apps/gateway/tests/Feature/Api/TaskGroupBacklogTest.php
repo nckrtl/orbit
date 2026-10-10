@@ -797,11 +797,11 @@ it('reports observed sandbox power independently of review status', function (Sa
     ]);
     $sandbox = TaskSandbox::query()->create([
         'id' => '11111111-1111-4111-8111-111111111111', 'group_id' => $group->id,
-        'node_id' => Node::query()->firstOrFail()->id, 'provider' => 'incus', 'name' => 'power-proof',
-        'state' => $state, 'desired_power' => 'running', 'spec' => [],
+        'provider' => 'incus', 'name' => 'power-proof',
+        'state' => $state, 'desired_power' => 'running', 'spec' => ['host_id' => Node::query()->firstOrFail()->id],
     ]);
     $workspace = Instance::query()->create([
-        'project_id' => $group->project_id, 'node_id' => $sandbox->node_id,
+        'project_id' => $group->project_id, 'node_id' => $sandbox->spec['host_id'],
         'name' => 'task-'.$group->id, 'task_sandbox_id' => $sandbox->id, 'checkout_path' => '/home/orbit/orbit',
     ]);
     $group->update(['taskable_type' => Instance::class, 'taskable_id' => $workspace->id]);
