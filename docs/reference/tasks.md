@@ -611,6 +611,8 @@ A group of a web Project with `task_compute: vm` skips this selection. It gets i
 
 When the workspace is ready, the task becomes `running`, and its first subtask starts. When a claim fails, the task returns to `todo`, and the claim continues with the next task. A tick tries each failing task once.
 
+The claim records `reserved_at` when it reserves the task. It clears `reserved_at` when the task starts, or when the claim ends without starting it. While `reserved_at` is set and younger than `ORBIT_TASKS_RESERVED_TIMEOUT_SECONDS`, the claim is in flight. A cancel can end the task while its claim is in flight. The sweeps of ended tasks then wait for the claim, which removes the workspace it created. A claim that stopped part way leaves `reserved_at` set, so the sweeps wait until the timeout passes.
+
 | Cause | Result |
 | --- | --- |
 | Every fitting Node is full | The task waits without a reason. When no `app-dev` Node has capacity, claims stop until the next tick. |
@@ -1485,7 +1487,7 @@ Cancel uses forced [Instance removal](/reference/instance-removal), including Pr
 - **Review and merge.** Cancel pushes only an approved commit that a final review approved. It removes approved work that no final review saw.
 - **Node unreachable.** Cancel still ends the task and keeps the Instance attached. The task does not ask for assistance. It keeps the reason `Workspace removal failed: The Node is unreachable.` The sweep removes the workspace later.
 - **Removal refused.** Cancel returns the error and keeps the task. A task other than `cancelled` asks for assistance with `Workspace removal failed: `. A `cancelled` task keeps that reason and does not ask for assistance.
-- **Claim in flight.** A task `reserved` within `ORBIT_TASKS_RESERVED_TIMEOUT_SECONDS` becomes `cancelled`, and the claim removes the workspace it provisions.
+- **Claim in flight.** A task `reserved` within `ORBIT_TASKS_RESERVED_TIMEOUT_SECONDS` becomes `cancelled`, and the [claim](#claim-and-provision) removes the workspace it provisions.
 
 Uncommitted changes are never pushed. Git refuses the push when `origin` holds an unrelated `task-{id}` branch, for example after a Gateway rebuild reused the id. Rename that branch on `origin`, then cancel again.
 
@@ -1526,7 +1528,7 @@ When a manual complete cannot remove the workspace, the task is already `complet
 
 Each tick sweeps workspaces that still exist:
 
-- of a `cancelled` or `completed` task, attached or found by the `task-{id}` name and branch. A workspace that a live claim still owns waits.
+- of a `cancelled` or `completed` task, attached or found by the `task-{id}` name and branch. A workspace that a [claim in flight](#claim-and-provision) still owns waits.
 - of a `settling` task whose merged pull request cleanup failed.
 
 For a cancelled task, the sweep first pushes the latest approved commit, under the same review-and-merge rule as cancel. A failed push stops that removal. The task does not ask for assistance, and the reason names the push error.

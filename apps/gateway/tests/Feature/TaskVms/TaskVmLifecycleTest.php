@@ -27,11 +27,14 @@ use App\Domain\ProxyCli\ProxyCliState;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AssistanceKind;
+use App\Domain\Tasks\InstanceProvisioning;
+use App\Domain\Tasks\InstanceProvisionIntent;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskWorkspaceTopology;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmHost;
@@ -725,7 +728,83 @@ describe(DestroyEndedTaskVmsAction::class, function (): void {
         'removal failed, group still runs' => [true, TaskGroupStatus::Running],
         'removal pending' => [false, TaskGroupStatus::Cancelled],
     ]);
+
+    it('queues destruction on the next tick for a group that completes soon after its claim', function (): void {
+        $node = tvm_life_node('tvm-node', '10.44.0.129', role: RoleName::AppDev);
+        $group = tvm_life_group(TaskGroupStatus::Todo);
+        $vm = tvm_life_vm($group, TaskVmState::Ready, $node);
+        app(TaskExtensionState::class)->enable();
+        tvm_life_provision(static fn (InstanceProvisionIntent $intent): Instance => tvm_life_workspace($intent->group, $node));
+
+        expect(app(TaskScheduler::class)->claimNext()?->status)->toBe(TaskGroupStatus::Running);
+
+        $this->travel(10)->minutes();
+        $group->refresh()->taskable?->delete();
+        $group->update(['status' => TaskGroupStatus::Completed, 'taskable_type' => null, 'taskable_id' => null]);
+        Queue::fake();
+
+        expect(app(DestroyEndedTaskVmsAction::class)->execute())->toBe(1);
+        Queue::assertPushed(DestroyTaskVm::class, fn (DestroyTaskVm $job): bool => $job->taskVmId === $vm->id);
+    });
+
+    it('waits for a claim in flight when its group is cancelled, and queues destruction once the claim ends', function (): void {
+        $node = tvm_life_node('tvm-node', '10.44.0.129', role: RoleName::AppDev);
+        $group = tvm_life_group(TaskGroupStatus::Todo);
+        $vm = tvm_life_vm($group, TaskVmState::Ready, $node);
+        app(TaskExtensionState::class)->enable();
+        bind_task_node_reachability();
+        app()->instance(InstanceRemover::class, new class implements InstanceRemover
+        {
+            public function execute(Instance $instance, bool $force): InstanceRemoval
+            {
+                $instance->delete();
+
+                return new InstanceRemoval;
+            }
+        });
+        Queue::fake();
+        $whileClaiming = [];
+        tvm_life_provision(static function (InstanceProvisionIntent $intent) use ($node, &$whileClaiming): Instance {
+            app(CancelTaskGroupAction::class)->execute($intent->group);
+            $whileClaiming[] = app(DestroyEndedTaskVmsAction::class)->execute();
+            $workspace = tvm_life_workspace($intent->group, $node);
+            $whileClaiming[] = app(DestroyEndedTaskVmsAction::class)->execute();
+
+            return $workspace;
+        });
+
+        expect(app(TaskScheduler::class)->claimNext())->toBeNull()
+            ->and($whileClaiming)->toBe([0, 0])
+            ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Cancelled)
+            ->and(Instance::query()->where('node_id', $node->id)->exists())->toBeFalse();
+        Queue::assertNothingPushed();
+
+        expect(app(DestroyEndedTaskVmsAction::class)->execute())->toBe(1);
+        Queue::assertPushed(DestroyTaskVm::class, fn (DestroyTaskVm $job): bool => $job->taskVmId === $vm->id);
+    });
 });
+
+/** Binds a workspace provisioner for claims that runs the given closure. */
+function tvm_life_provision(Closure $provision): void
+{
+    app()->instance(InstanceProvisioning::class, new class($provision) implements InstanceProvisioning
+    {
+        public function __construct(private Closure $provision) {}
+
+        public function provision(InstanceProvisionIntent $intent): ?Instance
+        {
+            return ($this->provision)($intent);
+        }
+    });
+}
+
+function tvm_life_workspace(Task $group, Node $node): Instance
+{
+    return Instance::query()->create([
+        'project_id' => test()->project->id, 'node_id' => $node->id, 'name' => 'task-'.$group->id, 'branch_override' => 'task-'.$group->id,
+        'checkout_path' => '/home/orbit/apps/dlf/task-'.$group->id, 'status' => InstanceState::SourceResolved,
+    ]);
+}
 
 describe('worker', function (): void {
     it('runs from the Gateway scheduler, last and in the foreground, only while a task VM job waits', function (): void {
