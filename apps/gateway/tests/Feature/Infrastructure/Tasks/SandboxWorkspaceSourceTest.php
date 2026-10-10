@@ -18,7 +18,6 @@ use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskSandbox;
 use Symfony\Component\Process\Process;
-use Tests\Support\IncusRuntimeWorkspace;
 
 use function Pest\Laravel\mock;
 
@@ -34,7 +33,7 @@ function source_group(): Task
         'checkout_path' => '/home/orbit/orbit', 'task_sandbox_id' => $sandbox->id]);
     $group->update(['taskable_type' => $workspace->getMorphClass(), 'taskable_id' => $workspace->id]);
     config(['compute.incus.hosts' => [['node_id' => $host->id, 'project' => 'orbit-task-sandboxes', 'pool' => 'proof', 'max_vms' => 4,
-        'orbit_images' => [], 'project_images' => [], 'blocked_networks' => ['192.168.0.0/16']]]]);
+        'orbit_images' => [], 'blocked_networks' => ['192.168.0.0/16']]]]);
 
     return $group;
 }
@@ -124,22 +123,4 @@ it('refuses a template from another Project before guest contact or fetching cre
 
     expect(fn () => app(SandboxWorkspaceSource::class)->prepare($group->fresh()))->toThrow(TaskPullRequestException::class);
     expect($group->taskable->fresh()->status)->toBe(InstanceState::Reserved);
-});
-
-it('prepares project-lane source through initialization and checkout only', function (): void {
-    $workspace = IncusRuntimeWorkspace::create();
-    $group = $workspace->taskSandbox->group;
-    $operations = [];
-    mock(SshExecutor::class)->shouldReceive('execute')->twice()->andReturnUsing(function ($connection, RemoteCommand $command) use ($workspace, &$operations): CommandResult {
-        expect($connection->host)->toBe($workspace->node->wireguard_ip);
-        $request = json_decode($command->input, true, flags: JSON_THROW_ON_ERROR);
-        $operations[] = $request['operation'];
-        $response = $request['operation'] === 'initialize' ? ['initialized' => true] : ['starting_commit' => str_repeat('a', 40)];
-
-        return new CommandResult(0, json_encode($response), '', 1, false);
-    });
-    mock(TaskBaseBranchFetcher::class)->shouldReceive('fetchForTurn')->once();
-
-    expect(app(SandboxWorkspaceSource::class)->prepare($group->fresh())->status)->toBe(InstanceState::SourceResolved);
-    expect($operations)->toBe(['initialize', 'checkout']);
 });

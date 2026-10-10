@@ -25,6 +25,7 @@ use Illuminate\Support\Carbon;
  * @property string $wireguard_ip
  * @property string $pi_token
  * @property string|null $model_key
+ * @property string|null $model_proxy_origin
  * @property string|null $error_code
  * @property string|null $error_message
  * @property Carbon|null $ready_at
@@ -41,7 +42,7 @@ final class TaskVm extends Model
     #[\Override]
     protected $fillable = [
         'group_id', 'host_node_id', 'node_id', 'provider', 'name', 'state', 'address', 'wireguard_ip',
-        'pi_token', 'model_key', 'error_code', 'error_message', 'ready_at', 'destroyed_at',
+        'pi_token', 'model_key', 'model_proxy_origin', 'error_code', 'error_message', 'ready_at', 'destroyed_at',
     ];
 
     /** @var list<string> */

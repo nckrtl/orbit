@@ -24,6 +24,7 @@ use App\Infrastructure\Fleet\Footprint\CaddyPackageFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\PrivateDnsFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\ProxyCliFootprintArtifact;
 use App\Infrastructure\Fleet\Footprint\RouteResidueFootprintArtifact;
+use App\Infrastructure\Fleet\Footprint\TmpfilesFootprintArtifact;
 use App\Infrastructure\Fleet\NativeFleetConvergeUnits;
 use App\Infrastructure\GatewayReleases\GatewayReleasePromoter;
 use App\Infrastructure\GatewayReleases\GatewayRuntimeHandoff;
@@ -66,6 +67,7 @@ describe('fleet container wiring', function (): void {
                 ProxyCliFootprintArtifact::class,
                 AnnotatorFootprintArtifact::class,
                 RouteResidueFootprintArtifact::class,
+                TmpfilesFootprintArtifact::class,
             ]);
     });
 

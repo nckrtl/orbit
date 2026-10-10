@@ -77,7 +77,6 @@ use App\Domain\Tasks\TaskWorkspaceSigner;
 use App\Domain\Tasks\TaskWorkspaceStateReader;
 use App\Domain\Tasks\TaskWorkspaceTopology;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
-use App\Infrastructure\Compute\SandboxFleetIdentity;
 use App\Infrastructure\Compute\TaskSandboxDrivers;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshKeyProvider;
@@ -5445,7 +5444,7 @@ it('supersedes an uncertain correction after completed direction without erasing
     $keys->shouldReceive('privateKeyPath')->andReturn('/unused-local-fixture-key');
     $hosts = Mockery::mock(KnownHostsStore::class);
     $hosts->shouldReceive('path')->andReturn('/unused-local-fixture-known-hosts');
-    $nativeReceipts = new RemoteTaskTurnReceipts(new TaskWorkspaceExecutor(new DevelopmentSshExecutor(new LocalShellSshExecutor, $keys, $hosts), app(IncusSandboxHost::class), app(TaskSandboxDrivers::class), app(SandboxFleetIdentity::class)));
+    $nativeReceipts = new RemoteTaskTurnReceipts(new TaskWorkspaceExecutor(new DevelopmentSshExecutor(new LocalShellSshExecutor, $keys, $hosts), app(IncusSandboxHost::class), app(TaskSandboxDrivers::class)));
     $receipts = Mockery::mock(TaskTurnReceipts::class);
     $receipts->shouldReceive('prepare')->andReturnUsing(function (Instance $instance, TaskThreadRole $role, bool $final, array $deliverables, ?int $threadId, ?TaskTurnMode $mode = null, ?string $context = null) use ($nativeReceipts, &$preparations): void {
         $preparations[] = $mode?->deliveryKey;

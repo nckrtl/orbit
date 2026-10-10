@@ -18,6 +18,8 @@ use RuntimeException;
 /**
  * Runs the workspace's own `bin/e2e-topology` as the managed user. Acquiring changes host firewall rules, which the
  * task worker cannot do; agents only use the topology. A workspace without the harness has no topology.
+ *
+ * A `vm` group's workspace never gets a host topology: acquire refuses it, so release has nothing to do there.
  */
 final readonly class RemoteTaskWorkspaceTopology implements TaskWorkspaceTopology
 {
@@ -68,6 +70,10 @@ final readonly class RemoteTaskWorkspaceTopology implements TaskWorkspaceTopolog
 
     public function acquire(Instance $workspace, int $groupId): bool
     {
+        if (self::inVmGroup($workspace)) {
+            throw new RuntimeConvergenceException('task-topology-acquire', 'tasks.topology_failed', 'Sandbox workload nodes must be managed by the compute driver.');
+        }
+
         try {
             $result = $this->run($workspace, $groupId, 'acquire');
         } catch (RuntimeConvergenceException $exception) {
@@ -93,15 +99,21 @@ final readonly class RemoteTaskWorkspaceTopology implements TaskWorkspaceTopolog
 
     public function release(Instance $workspace, int $groupId): void
     {
+        if (self::inVmGroup($workspace)) {
+            return;
+        }
+
         $this->run($workspace, $groupId, 'release');
+    }
+
+    private static function inVmGroup(Instance $workspace): bool
+    {
+        return $workspace->task_sandbox_id !== null
+            || Task::topLevel()->where('taskable_type', $workspace->getMorphClass())->where('taskable_id', $workspace->id)->where('task_compute', TaskCompute::Vm->value)->exists();
     }
 
     private function run(Instance $workspace, int $groupId, string $operation): CommandResult
     {
-        if ($workspace->task_sandbox_id !== null
-            || Task::topLevel()->where('taskable_type', $workspace->getMorphClass())->where('taskable_id', $workspace->id)->where('task_compute', TaskCompute::Vm->value)->exists()) {
-            throw new RuntimeConvergenceException('task-topology-'.$operation, 'tasks.topology_failed', 'Sandbox workload nodes must be managed by the compute driver.');
-        }
         $workspace->loadMissing('node');
 
         return $this->ssh->execute(

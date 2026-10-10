@@ -29,7 +29,9 @@ use App\Domain\WireGuard\GatewayPeerProjectionManager;
 use App\Models\DatabaseServer;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\TaskVm;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -291,7 +293,11 @@ final readonly class RemoveNodeAction
         }
 
         try {
-            $node->delete();
+            DB::transaction(static function () use ($node): void {
+                // Only destroyed task VM rows can be left here: the guard refused live ones. They are audit rows of this host.
+                TaskVm::query()->where('host_node_id', $node->id)->delete();
+                $node->delete();
+            });
         } catch (Throwable $exception) {
             $node->update(['status' => $priorStatus]);
             $rollbackFailure = null;
@@ -354,6 +360,13 @@ final readonly class RemoveNodeAction
             throw $this->conflict(
                 'node.has_instances',
                 "Node [{$node->name}] still owns Instances.",
+            );
+        }
+
+        if (TaskVm::query()->live()->where('host_node_id', $node->id)->exists()) {
+            throw $this->conflict(
+                'node.has_task_vms',
+                "Node [{$node->name}] still hosts task VMs that are not destroyed.",
             );
         }
 

@@ -25,13 +25,16 @@ final readonly class FleetReleaseLag
         private bool $enabled,
     ) {}
 
-    /** Whether a converged Node drifted since its visit: its agent, CLI, or footprint differs. */
+    /**
+     * Whether a converged Node drifted since its visit: its agent, CLI, or footprint differs. Only an available
+     * CLI release counts, because a pending version is no release a Node could run.
+     */
     public function drifted(FleetRolloutNode $row, Node $node, DesiredFleetStateData $state): bool
     {
         $reported = $this->versions->get($node->id)['version'] ?? null;
 
         return ($reported !== null && $reported !== $state->agent->version)
-            || ($row->cli_version !== null && $state->cli->version !== null && $row->cli_version !== $state->cli->version)
+            || ($row->cli_version !== null && $state->cli->isAvailable() && $row->cli_version !== $state->cli->version)
             || $this->footprint->drifted($node);
     }
 

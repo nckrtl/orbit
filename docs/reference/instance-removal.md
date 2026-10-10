@@ -114,7 +114,7 @@ A checkout with registered worktrees needs `--force`. Then Orbit removes every w
 
 ### Teardown
 
-Before it accepts removal of an active development Instance, the Gateway runs the Project [teardown steps](/reference/instance-setup#run-teardown). A failed step stops the removal and keeps the Instance. A `default` Instance with the release layout tears down in its active release, or in its checkout when Orbit cannot read that release, so a broken `current` does not block removal. Then the Gateway checks the source again. A teardown that changed the source identity returns `instance.remove_refused`. Production removal runs no teardown.
+Before it accepts removal of an active development Instance, the Gateway runs the Project [teardown steps](/reference/instance-setup#run-teardown). A failed step stops the removal and keeps the Instance. Then the Gateway checks the source again. A teardown that changed the source identity returns `instance.remove_refused`. Production removal runs no teardown.
 
 ## Removal steps
 
@@ -145,6 +145,8 @@ PHP-FPM refuses to start while any pool names a missing `chdir`, and all develop
 A Route that loses its last target is deleted, with its Caddy, certificate, DNS, and firewall projections, and its domain is released. A shared production Route keeps serving its other targets, and Orbit republishes it.
 
 Between `route_target_clear` and Route deletion, a request to a development domain gets `503 Service Unavailable` with the body `Orbit Route unavailable`. It never reaches the old target.
+
+For a workspace on a [task VM](/reference/compute-drivers#a-vm-that-dies-before-its-group-ends) that is `destroying`, the VM is already gone. Route cleanup then leaves that Node alone and withdraws the Route only on the router.
 
 ### Processes and Schedules
 

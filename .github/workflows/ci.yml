@@ -27,9 +27,10 @@ jobs:
     permissions:
       actions: read
       contents: read
-    # The Gateway suite runs on the self-hosted runner on Sabre when ORBIT_SABRE_RUNNER is true.
+    # The Gateway suite runs on the self-hosted runner on Sabre when ORBIT_SABRE_RUNNER is true. Its subprocess group
+    # runs on a GitHub-hosted runner, so each Gateway run takes one Sabre runner.
     # Pull requests from forks always use a GitHub-hosted runner, so outside code never runs on Sabre.
-    runs-on: ${{ matrix.directory == 'apps/gateway' && vars.ORBIT_SABRE_RUNNER == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted", "sabre"]') || 'ubuntu-26.04' }}
+    runs-on: ${{ matrix.directory == 'apps/gateway' && matrix.part != 'subprocess' && vars.ORBIT_SABRE_RUNNER == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted", "sabre"]') || 'ubuntu-26.04' }}
     strategy:
       fail-fast: false
       matrix:
@@ -40,10 +41,20 @@ jobs:
             directory: apps/docs
           - name: Gateway
             directory: apps/gateway
+            part: tests
           - name: E2E
             directory: apps/e2e
+            part: tests
           - name: PHP SDK
             directory: packages/php-sdk
+          # The subprocess groups of the two largest suites run in their own jobs, beside the rest of the suite. A
+          # project without a part runs everything in one job. New entries go last, so each job keeps its job index.
+          - name: Gateway subprocess
+            directory: apps/gateway
+            part: subprocess
+          - name: E2E subprocess
+            directory: apps/e2e
+            part: subprocess
 
     env:
       ORBIT_TIA_DIRECTORY: .orbit-tia
@@ -58,8 +69,11 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
-          ref: ${{ github.head_ref || github.ref_name }}
-          repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+          # A pull request tests its merge ref, the tree that would land on main. Its commit descends from the main
+          # commit that the restored main graph records, so TIA selects only the tests that the pull request affects.
+          # Pest reads the graph on that detached HEAD and does not write it.
+          ref: ${{ github.event_name == 'pull_request' && github.ref || github.ref_name }}
+          repository: ${{ github.repository }}
 
       # The checkout above names the branch, and a later push can move it before this job starts. A running main run
       # is never cancelled, so it must test exactly its own commit: its Required checks result releases that commit.
@@ -118,31 +132,37 @@ jobs:
         run: bin/bootstrap --skip-checks
 
       - name: Validate Composer metadata
+        if: matrix.part != 'subprocess'
         run: composer validate --strict
 
+      # A pull request restores the quality caches only from main and saves none, as it does the Pest TIA graph below.
       - name: Compute PHPStan result cache prefix
+        if: matrix.part != 'subprocess'
         id: orbit-phpstan-key
         working-directory: .
         run: |
           printf 'prefix=%s\n' "orbit-phpstan-php8.5-${{ matrix.directory }}-${{ hashFiles(format('{0}/composer.lock', matrix.directory), format('{0}/phpstan.neon', matrix.directory)) }}" >> "$GITHUB_OUTPUT"
 
       - name: Restore PHPStan result cache
+        if: matrix.part != 'subprocess'
         uses: actions/cache/restore@v6
         with:
           path: ${{ matrix.directory }}/vendor/phpstan/cache/resultCache.php
           key: ${{ steps.orbit-phpstan-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-${{ github.sha }}
           restore-keys: |
-            ${{ steps.orbit-phpstan-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-
+            ${{ github.event_name != 'pull_request' && format('{0}-{1}-', steps.orbit-phpstan-key.outputs.prefix, github.ref_name) || '' }}
             ${{ steps.orbit-phpstan-key.outputs.prefix }}-main-
-            orbit-phpstan-php8.5-${{ matrix.directory }}-
+            ${{ github.event_name != 'pull_request' && format('orbit-phpstan-php8.5-{0}-', matrix.directory) || '' }}
 
       - name: Compute Pint and Rector cache prefix
+        if: matrix.part != 'subprocess'
         id: orbit-lint-key
         working-directory: .
         run: |
           printf 'prefix=%s\n' "orbit-lint-php8.5-${{ matrix.directory }}-${{ hashFiles(format('{0}/composer.lock', matrix.directory), format('{0}/pint.json', matrix.directory), format('{0}/rector.php', matrix.directory)) }}" >> "$GITHUB_OUTPUT"
 
       - name: Restore Pint and Rector caches
+        if: matrix.part != 'subprocess'
         uses: actions/cache/restore@v6
         with:
           path: |
@@ -150,25 +170,27 @@ jobs:
             ${{ matrix.directory }}/vendor/rector/cache
           key: ${{ steps.orbit-lint-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-${{ github.sha }}
           restore-keys: |
-            ${{ steps.orbit-lint-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-
+            ${{ github.event_name != 'pull_request' && format('{0}-{1}-', steps.orbit-lint-key.outputs.prefix, github.ref_name) || '' }}
             ${{ steps.orbit-lint-key.outputs.prefix }}-main-
-            orbit-lint-php8.5-${{ matrix.directory }}-
+            ${{ github.event_name != 'pull_request' && format('orbit-lint-php8.5-{0}-', matrix.directory) || '' }}
 
       - name: Run project quality checks
+        if: matrix.part != 'subprocess'
         run: composer check
 
       - name: Check classification fakes
+        if: matrix.part != 'subprocess'
         run: php ../../bin/check-classification-fakes tests
 
       - name: Save PHPStan result cache
-        if: success()
+        if: success() && matrix.part != 'subprocess' && github.event_name != 'pull_request'
         uses: actions/cache/save@v6
         with:
           path: ${{ matrix.directory }}/vendor/phpstan/cache/resultCache.php
           key: ${{ steps.orbit-phpstan-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-${{ github.sha }}
 
       - name: Save Pint and Rector caches
-        if: success()
+        if: success() && matrix.part != 'subprocess' && github.event_name != 'pull_request'
         uses: actions/cache/save@v6
         with:
           path: |
@@ -182,8 +204,10 @@ jobs:
         run: |
           printf 'prefix=%s\n' "orbit-tia-php8.5-${{ matrix.directory }}-${{ hashFiles(format('{0}/composer.lock', matrix.directory), format('{0}/tests/Pest.php', matrix.directory), format('{0}/phpunit.xml', matrix.directory), format('{0}/phpunit.xml.dist', matrix.directory)) }}" >> "$GITHUB_OUTPUT"
 
-      # Each run saves its graph under its own key, so a full run on an already tested commit still refreshes the cache.
-      # A restore takes the newest graph for the branch, then for main.
+      # Each run on main saves its graph under its own key, so a full run on an already tested commit still refreshes
+      # the cache. A pull request restores only a main graph, first the one for its base commit, and saves none:
+      # actions/cache tries every restore key in the pull request's own scope before main's, and an older graph of the
+      # pull request would count every main change since it as changed.
       - name: Restore Pest TIA graph
         id: orbit-tia-restore
         uses: actions/cache/restore@v6
@@ -191,12 +215,13 @@ jobs:
           path: ${{ matrix.directory }}/.orbit-tia
           key: ${{ steps.orbit-tia-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            ${{ steps.orbit-tia-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-
+            ${{ github.event_name != 'pull_request' && format('{0}-{1}-', steps.orbit-tia-key.outputs.prefix, github.ref_name) || '' }}
+            ${{ github.event_name == 'pull_request' && format('{0}-main-{1}-', steps.orbit-tia-key.outputs.prefix, github.event.pull_request.base.sha) || '' }}
             ${{ steps.orbit-tia-key.outputs.prefix }}-main-
-            orbit-tia-php8.5-${{ matrix.directory }}-
+            ${{ github.event_name != 'pull_request' && format('orbit-tia-php8.5-{0}-', matrix.directory) || '' }}
 
       - name: Run affected tests
-        if: github.event_name == 'pull_request'
+        if: matrix.part != 'subprocess' && github.event_name == 'pull_request'
         run: vendor/bin/pest --parallel --processes=${{ runner.environment == 'self-hosted' && 6 || 4 }} --tia --compact
 
       # A push to main tests the changes since the commit its restored main graph describes. It runs the full suite when
@@ -213,17 +238,17 @@ jobs:
         run: ../../bin/ci-tia plan --event "$EVENT" --prefix "$PREFIX" --restored-key "$RESTORED_KEY" --repository "$GITHUB_REPOSITORY"
 
       - name: Run tests affected since the main graph
-        if: steps.orbit-tia-plan.outputs.mode == 'affected'
+        if: matrix.part != 'subprocess' && steps.orbit-tia-plan.outputs.mode == 'affected'
         shell: bash
         run: vendor/bin/pest --parallel --processes=${{ runner.environment == 'self-hosted' && 6 || 4 }} --tia --compact | tee "$RUNNER_TEMP/orbit-tia-pest.log"
 
       - name: Run full test suite and refresh Pest TIA graph
-        if: steps.orbit-tia-plan.outputs.mode == 'full'
+        if: matrix.part != 'subprocess' && steps.orbit-tia-plan.outputs.mode == 'full'
         run: vendor/bin/pest --parallel --processes=${{ runner.environment == 'self-hosted' && 6 || 4 }} --tia --fresh --compact
 
       # TIA does not link these contracts to the files they read, so every affected run also runs them.
       - name: Run architecture tests
-        if: always() && (github.event_name == 'pull_request' || steps.orbit-tia-plan.outputs.mode == 'affected')
+        if: always() && matrix.part != 'subprocess' && (github.event_name == 'pull_request' || steps.orbit-tia-plan.outputs.mode == 'affected')
         env:
           PROJECT: ${{ matrix.directory }}
         run: |
@@ -240,46 +265,55 @@ jobs:
 
       # TIA does not link code that a test runs in a PHP subprocess to that test, so a run that is not full also runs
       # them when a change since the pull request base, or since the commit of the main graph, reaches the project.
+      # Gateway and E2E run them in their subprocess jobs; a full run in the tests job runs them with the whole suite.
       - name: Choose whether to run subprocess tests
         id: orbit-subprocess
-        if: always() && (github.event_name == 'pull_request' || steps.orbit-tia-plan.outputs.mode == 'affected')
+        if: always() && matrix.part != 'tests' && (github.event_name == 'pull_request' || steps.orbit-tia-plan.outputs.mode == 'affected')
         env:
           BASE: ${{ github.event.pull_request.base.sha || steps.orbit-tia-plan.outputs.base }}
         run: ../../bin/ci-tia subprocess --base "$BASE"
 
       # The PHP SDK has no subprocess tests. Every other project's group must find tests.
       - name: Run subprocess tests
-        if: always() && steps.orbit-subprocess.outputs.run == 'true'
+        if: always() && matrix.part != 'tests' && steps.orbit-subprocess.outputs.run == 'true'
         run: vendor/bin/pest --parallel --processes=${{ runner.environment == 'self-hosted' && 6 || 4 }} --no-tia --group=subprocess --compact${{ matrix.directory == 'packages/php-sdk' && ' --do-not-fail-on-empty-test-suite' || '' }}
 
       - name: Require the Pest TIA graph to describe this commit
-        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        if: matrix.part != 'subprocess' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         env:
           MODE: ${{ steps.orbit-tia-plan.outputs.mode }}
           BASE: ${{ steps.orbit-tia-plan.outputs.base }}
         run: ../../bin/ci-tia finish --mode "$MODE" --base "$BASE" --log "$RUNNER_TEMP/orbit-tia-pest.log"
 
       - name: Save Pest TIA graph
-        if: success()
+        if: success() && matrix.part != 'subprocess' && github.event_name != 'pull_request'
         uses: actions/cache/save@v6
         with:
           path: ${{ matrix.directory }}/.orbit-tia
           key: ${{ steps.orbit-tia-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       # A full run records this commit in the graph, and the step that requires it records it after an affected run.
-      - name: Export sandbox TIA baseline
-        if: success() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+      # Sandbox images and the shared main cache store import this artifact. The Pint and
+      # PHPStan caches that composer check just wrote travel with it.
+      - name: Export main caches
+        if: success() && matrix.part != 'subprocess' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         env:
           PROJECT: ${{ matrix.directory }}
         run: |
           python3 - <<'PY'
-          import hashlib, json, os
+          import hashlib, json, os, shutil, subprocess
           from pathlib import Path
           graph = Path('.orbit-tia/graph.json')
           data = json.loads(graph.read_text())
           baseline = data['baselines']['main']
           if data.get('schema') != 1 or baseline.get('sha') != os.environ['GITHUB_SHA'] or not baseline.get('results'):
-              raise SystemExit('The sandbox baseline must describe this tested main commit.')
+              raise SystemExit('The main graph must describe this tested commit.')
+          quality = {}
+          Path('.orbit-tia/quality').mkdir(exist_ok=True)
+          for tool, source in (('pint', 'vendor/pint.cache'), ('phpstan', 'vendor/phpstan/cache/resultCache.php')):
+              if Path(source).is_file() and Path(source).stat().st_size:
+                  shutil.copyfile(source, f'.orbit-tia/quality/{tool}')
+                  quality[tool] = hashlib.sha256(Path(source).read_bytes()).hexdigest()
           files = ['composer.lock', 'tests/Pest.php', 'phpunit.xml', 'phpunit.xml.dist']
           manifest = {
               'schema': 1,
@@ -288,26 +322,30 @@ jobs:
               'run_id': os.environ['GITHUB_RUN_ID'],
               'graph_sha256': hashlib.sha256(graph.read_bytes()).hexdigest(),
               'inputs': {name: hashlib.sha256(Path(name).read_bytes()).hexdigest() for name in files if Path(name).is_file()},
+              'php': subprocess.run(['php', '-r', 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;'],
+                                    check=True, capture_output=True, text=True).stdout,
+              'quality': quality,
           }
           Path('.orbit-tia/manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
           PY
 
-      - name: Publish sandbox TIA baseline
-        if: success() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+      - name: Publish main caches
+        if: success() && matrix.part != 'subprocess' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         uses: actions/upload-artifact@v7
         with:
           name: sandbox-tia-${{ strategy.job-index }}-${{ github.sha }}
           path: |
             ${{ matrix.directory }}/.orbit-tia/graph.json
             ${{ matrix.directory }}/.orbit-tia/manifest.json
+            ${{ matrix.directory }}/.orbit-tia/quality/
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 14
 
   privileged:
     name: Gateway privileged
-    # Trusted branches use Sabre. Forks run the same gate on an isolated hosted runner.
-    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted", "sabre"]') || 'ubuntu-26.04' }}
+    # A GitHub-hosted runner gives every run a fresh machine with passwordless sudo and leaves Sabre to the Gateway suite.
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     defaults:
       run:

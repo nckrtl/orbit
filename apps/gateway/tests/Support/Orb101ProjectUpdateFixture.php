@@ -6,6 +6,7 @@ namespace Tests\Support;
 
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Instances\ProductionRepositoryBinding;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Projects\ProjectUpdateProjectionMutator;
@@ -30,6 +31,7 @@ final class Orb101ProjectUpdateFixture
         public Route $defaultRoute,
         public FakeProjectUpdateSourceMutator $sources,
         public FakeProjectUpdateProjectionMutator $projections,
+        public FakeProductionRepositoryBinding $production,
     ) {}
 
     public static function bind(TestCase $test): self
@@ -38,6 +40,8 @@ final class Orb101ProjectUpdateFixture
         $projections = new FakeProjectUpdateProjectionMutator;
         app()->instance(ProjectUpdateSourceMutator::class, $sources);
         app()->instance(ProjectUpdateProjectionMutator::class, $projections);
+        $production = new FakeProductionRepositoryBinding;
+        app()->instance(ProductionRepositoryBinding::class, $production);
         app()->instance(
             RepositoryDefaultBranchResolver::class,
             new class implements RepositoryDefaultBranchResolver
@@ -91,6 +95,6 @@ final class Orb101ProjectUpdateFixture
         $route->targets()->create(['instance_id' => $default->id, 'position' => 0]);
         $route->update(['status' => RouteStatus::Active]);
 
-        return new self($project, $node, $default, $route, $sources, $projections);
+        return new self($project, $node, $default, $route, $sources, $projections, $production);
     }
 }

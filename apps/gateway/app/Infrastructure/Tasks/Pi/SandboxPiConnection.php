@@ -10,16 +10,14 @@ use App\Domain\Tasks\AgentDriverException;
 use App\Domain\Tasks\TaskCompute;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmPlacement;
-use App\Infrastructure\Compute\SandboxFleetIdentity;
 use App\Infrastructure\Compute\TaskSandboxDrivers;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\TaskSandbox;
-use Throwable;
 
 final readonly class SandboxPiConnection
 {
-    public function __construct(private TaskSandboxDrivers $drivers, private SandboxFleetIdentity $identity) {}
+    public function __construct(private TaskSandboxDrivers $drivers) {}
 
     public function endpoint(Instance $workspace, Node $node): PiEndpoint|Node
     {
@@ -45,27 +43,12 @@ final readonly class SandboxPiConnection
             || ! is_string($token) || preg_match('/\A[a-f0-9]{64}\z/D', $token) !== 1) {
             throw $this->unavailable();
         }
-        $port = 3774;
-        if ($group->project->slug === 'orbit') {
-            $host = array_find($this->drivers->localHosts(), fn (array $host): bool => $host['node_id'] === $node->id);
-            $port = $sandbox->spec['pi_port'] ?? null;
-            if ($sandbox->provider !== 'incus' || ($sandbox->spec['host_id'] ?? null) !== $node->id
-                || $host === null || ($sandbox->spec['project'] ?? null) !== $host['project']
-                || ! is_int($port) || $port < 20000 || $port > 60999) {
-                throw $this->unavailable();
-            }
-        } elseif (! in_array($sandbox->provider, ['incus', 'upcloud'], true) || $sandbox->node_id !== $node->id) {
+        $host = array_find($this->drivers->localHosts(), fn (array $host): bool => $host['node_id'] === $node->id);
+        $port = $sandbox->spec['pi_port'] ?? null;
+        if ($group->project->slug !== 'orbit' || $sandbox->provider !== 'incus' || ($sandbox->spec['host_id'] ?? null) !== $node->id
+            || $host === null || ($sandbox->spec['project'] ?? null) !== $host['project']
+            || ! is_int($port) || $port < 20000 || $port > 60999) {
             throw $this->unavailable();
-        }
-        if ($group->project->slug !== 'orbit') {
-            try {
-                $this->identity->assertReady($sandbox, $node);
-                if ($sandbox->pi_ready_at === null || $sandbox->model_key === null || $sandbox->model_key_registered_at === null || $sandbox->model_key_revoked_at !== null) {
-                    throw $this->unavailable();
-                }
-            } catch (Throwable) {
-                throw $this->unavailable();
-            }
         }
         $address = $node->wireguard_ip;
         if (! is_string($address) || filter_var($address, FILTER_VALIDATE_IP) === false) {

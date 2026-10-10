@@ -176,7 +176,10 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
             // The check runs as the managed user, so host-dependent tests keep its sudo, ACL and caddy access.
             // It shares what it creates with the task worker before it reports a result.
             $worker = TaskWorkerUser::name($instance) ?? '';
-            $prefix = $environment."checkout=\$1\nworker=".escapeshellarg($worker)."\nseed_path=".escapeshellarg($instance->task_sandbox_id === null ? ($instance->seed_path ?? '') : '')."\nseed_commit=".escapeshellarg($instance->task_sandbox_id === null ? ($instance->seed_commit ?? '') : '')."\n".<<<'BASH'
+            // Read the seed now: converting an old default release layout moves it to the checkout, and
+            // removes the releases only while no baseline that started earlier still runs.
+            $seed = $instance->task_sandbox_id === null ? Instance::query()->whereKey($instance->id)->first(['seed_path', 'seed_commit']) : null;
+            $prefix = $environment."checkout=\$1\nworker=".escapeshellarg($worker)."\nseed_path=".escapeshellarg($seed->seed_path ?? '')."\nseed_commit=".escapeshellarg($seed->seed_commit ?? '')."\n".<<<'BASH'
                 dir="$(git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" rev-parse --absolute-git-dir)/orbit"
                 check_python() {
                     ORBIT_TASK_WORKER_USER="$worker" ORBIT_SEED_PATH="$seed_path" ORBIT_SEED_COMMIT="$seed_commit" python3 "$@"

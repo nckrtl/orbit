@@ -180,7 +180,7 @@ it('keeps both Web roots readable when a Git worktree is nested inside another c
     }
 });
 
-it('restores checkout and shared Git ACLs or retains its snapshot when recovery also fails', function (bool $failRecovery, bool $linked): void {
+it('restores what it grants and keeps the source denied, or retains its snapshot when recovery also fails', function (bool $failRecovery, bool $linked): void {
     if (LinuxHost::delegate($this)) {
         return;
     }
@@ -214,21 +214,33 @@ it('restores checkout and shared Git ACLs or retains its snapshot when recovery 
                 BASH);
             chmod("$root/bin/sudo", 0o700);
         }
-        $before = new Process(['getfacl', '-R', '-p', $root])->mustRun()->getOutput();
+        // The walk grants the Web root, its ancestors, and the shared Git directory; it denies the rest.
+        $ancestors = [];
+        for ($ancestor = "$checkout/web"; $ancestor !== dirname($root); $ancestor = dirname($ancestor)) {
+            $ancestors[] = $ancestor;
+        }
+        $granted = static fn (): string => new Process(['getfacl', '-R', '-p', "$checkout/web/site"])->mustRun()->getOutput()
+            .new Process(['getfacl', '-p', ...$ancestors, "$root/checkout/.git"])->mustRun()->getOutput();
+        $before = $granted();
         $command = new DevelopmentCaddyAccessCommand()->command(collect([
             development_caddy_access_site($checkout, 'web/site'),
         ]));
 
-        expect(new Process($command->arguments, env: ['PATH' => "$root/bin:".getenv('PATH'), 'TMPDIR' => $root])
+        expect(new Process($command->arguments, env: ['PATH' => "$root/bin:".getenv('PATH')])
             ->setInput($command->input)->run())->not->toBe(0);
+        $snapshots = new Filesystem()->glob("$root/checkout/.git/orbit-caddy-acl.*");
         if ($failRecovery) {
-            $snapshots = new Filesystem()->glob("$root/tmp.*");
             expect($snapshots)->toHaveCount(1);
             expect(fileperms($snapshots[0]) & 0o777)->toBe(0o600);
             new Process(['sudo', '-n', 'setfacl', '--restore='.$snapshots[0]])->mustRun();
             unlink($snapshots[0]);
+        } else {
+            expect($snapshots)->toBe([]);
         }
-        expect(new Process(['getfacl', '-R', '-p', $root])->mustRun()->getOutput())->toBe($before);
+        expect($granted())->toBe($before);
+        foreach (['.env', 'source.txt', 'web/private.txt'] as $private) {
+            expect(new Process(['getfacl', '-cp', "$checkout/$private"])->mustRun()->getOutput())->toContain('user:caddy:---');
+        }
     } finally {
         new Filesystem()->deleteDirectory($root);
     }

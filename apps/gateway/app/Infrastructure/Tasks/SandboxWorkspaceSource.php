@@ -19,7 +19,7 @@ final readonly class SandboxWorkspaceSource
 {
     public function __construct(private TaskWorkspaceExecutor $guest, private TaskBaseBranchFetcher $fetcher) {}
 
-    public function prepare(Task $group, ?string $requiredCommit = null): Instance
+    public function prepare(Task $group): Instance
     {
         $group->loadMissing(['project', 'taskable']);
         $workspace = $group->taskable;
@@ -33,12 +33,6 @@ final readonly class SandboxWorkspaceSource
         }
         $request = ['sandbox_id' => $workspace->task_sandbox_id, 'checkout' => $workspace->checkout_path,
             'repository' => 'https://github.com/'.$repository->owner.'/'.$repository->name.'.git', 'branch' => 'task-'.$group->id, 'base' => $base];
-        if ($requiredCommit !== null) {
-            if (preg_match('/\A[a-f0-9]{40}\z/D', $requiredCommit) !== 1) {
-                throw new TaskPullRequestException('The published recovery commit is invalid.');
-            }
-            $request['required_commit'] = $requiredCommit;
-        }
         $template = $workspace->taskSandbox?->spec['source_template'] ?? null;
         if ($template !== null) {
             if (! is_array($template) || ($template['repository'] ?? null) !== $request['repository'] || ($template['base'] ?? null) !== $base) {
@@ -47,10 +41,7 @@ final readonly class SandboxWorkspaceSource
             $request['source_template'] = $template;
         }
         if (in_array($workspace->status, [InstanceState::SourceResolved, InstanceState::Active], true)) {
-            $result = $this->execute($workspace, ['operation' => 'inspect', ...$request]);
-            if ($requiredCommit !== null && (($result['starting_commit'] ?? null) !== $requiredCommit || $workspace->starting_commit !== $requiredCommit)) {
-                throw new TaskPullRequestException('The recorded recovery commit changed.');
-            }
+            $this->execute($workspace, ['operation' => 'inspect', ...$request]);
 
             return $workspace;
         }
@@ -60,7 +51,7 @@ final readonly class SandboxWorkspaceSource
         $this->fetcher->fetchForTurn($group);
         $result = $this->execute($workspace, ['operation' => 'checkout', ...$request]);
         $commit = $result['starting_commit'] ?? null;
-        if (($requiredCommit !== null && $commit !== $requiredCommit) || ! is_string($commit) || preg_match('/\A[a-f0-9]{40}(?:[a-f0-9]{24})?\z/D', $commit) !== 1) {
+        if (! is_string($commit) || preg_match('/\A[a-f0-9]{40}(?:[a-f0-9]{24})?\z/D', $commit) !== 1) {
             throw new TaskPullRequestException('The sandbox source returned an invalid starting commit.');
         }
         $workspace->update(['status' => InstanceState::SourceResolved, 'starting_commit' => $workspace->starting_commit ?? $commit]);

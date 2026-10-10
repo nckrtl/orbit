@@ -65,6 +65,8 @@ An existing directory must be a real directory, not a symlink, owned by the mana
 
 Caddy runs as its own user and must reach each development site's document root, also when the apps root lies outside the managed user's home. When a development site publishes, the Gateway adds execute access for the `caddy` user on each ancestor directory of the document root that Caddy cannot enter yet. It adds no read access to those directories, so Caddy can pass through them but cannot list them. Inside the checkout, Caddy can read only the document root and the public storage target.
 
+Before it changes access, the Gateway saves the access lists of what it grants: the document root, its ancestor directories, the public storage target, and the shared Git directory. It saves them in the checkout's Git directory, which is on disk, not in a `/tmp` that can be a memory-backed tmpfs. When the publication fails, it restores what it saved, so the site keeps the access it had. The rest of the checkout stays closed to Caddy. When the restore also fails, the saved file stays in the Git directory and the error names it.
+
 ## Failure codes
 
 The CLI refuses a bad option before it sends a request.

@@ -34,14 +34,6 @@ final readonly class RepositoryPullRequestAccess
         return $this->github->repositoryReadToken($credentials, $installation, $repository);
     }
 
-    /** Fresh repository-scoped access for a disposable development VM, never cached. */
-    public function sandboxToken(GitHubRepository $repository): string
-    {
-        [$credentials, $installation] = $this->installation($repository);
-
-        return $this->github->repositorySandboxToken($credentials, $installation, $repository);
-    }
-
     /** A separate read-only review token. Missing access is an error, never anonymous or empty success. */
     public function reviewsToken(GitHubRepository $repository): string
     {

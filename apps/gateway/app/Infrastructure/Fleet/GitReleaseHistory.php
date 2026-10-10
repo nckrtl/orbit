@@ -53,6 +53,39 @@ final readonly class GitReleaseHistory implements ReleaseHistory
         return preg_match('/\A[1-9][0-9]{0,9}\z/D', $value) === 1 ? (int) $value : null;
     }
 
+    public function ancestors(string $commit, int $limit): array
+    {
+        if (preg_match('/\A[0-9a-f]{40}\z/D', $commit) !== 1 || $limit < 1) {
+            return [];
+        }
+
+        // Releases exist only for main's own commits, so the walk skips the commits of merged branches.
+        $result = $this->git(['rev-list', '--first-parent', '--max-count='.($limit + 1), $commit]);
+
+        if (! $result instanceof CommandResult || ! $result->succeeded()) {
+            return [];
+        }
+
+        $commits = array_values(array_filter(
+            explode("\n", trim($result->stdout)),
+            static fn (string $line): bool => preg_match('/\A[0-9a-f]{40}\z/D', $line) === 1 && $line !== $commit,
+        ));
+
+        return array_slice($commits, 0, $limit);
+    }
+
+    public function unchanged(string $from, string $to, array $paths): bool
+    {
+        if (preg_match('/\A[0-9a-f]{40}\z/D', $from) !== 1 || preg_match('/\A[0-9a-f]{40}\z/D', $to) !== 1 || $paths === []) {
+            return false;
+        }
+
+        $result = $this->git(['diff', '--quiet', $from, $to, '--', ...$paths]);
+
+        // Exit status 1 means a difference; anything but 0 is not proof that the paths match.
+        return $result instanceof CommandResult && $result->succeeded();
+    }
+
     /** @param  list<string>  $arguments */
     private function git(array $arguments): ?CommandResult
     {

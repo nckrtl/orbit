@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Refresh main test and quality caches through one durable background worker."""
+"""Seed checkouts from the main caches that main CI publishes, and refresh them through one background worker."""
 import argparse
 import base64
 from contextlib import contextmanager
@@ -14,18 +14,26 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import time
 from datetime import datetime, timezone
 
 PROJECTS = ('apps/cli', 'apps/docs', 'apps/gateway', 'apps/e2e', 'packages/php-sdk')
 QUALITY = {
-    'pint': ('pint.json', 'vendor/pint.cache', 'format:check'),
-    'phpstan': ('phpstan.neon', 'vendor/phpstan/cache/resultCache.php', 'analyse'),
+    'pint': ('pint.json', 'vendor/pint.cache'),
+    'phpstan': ('phpstan.neon', 'vendor/phpstan/cache/resultCache.php'),
 }
-COMMAND_LOG = None
-COMMAND_LOCK = None
-CACHE_BRANCH_LOCK = None
-COMMAND_TIMEOUT = 1800
+# The CI jobs that test each project on main. A failure of any of them is a correctness failure of the project.
+CI_JOBS = {
+    'apps/cli': ('CLI',), 'apps/docs': ('Docs',),
+    'apps/gateway': ('Gateway', 'Gateway subprocess', 'Gateway privileged'),
+    'apps/e2e': ('E2E', 'E2E subprocess'), 'packages/php-sdk': ('PHP SDK',),
+}
+CI_WORKFLOW = 'ci.yml'
+CI_EVENTS = ('push', 'schedule', 'workflow_dispatch')
+CI_RUNS = 30
+CI_ARTIFACTS = 'sandbox-tia-*'
+TEST_INPUTS = ('composer.lock', 'tests/Pest.php', 'phpunit.xml', 'phpunit.xml.dist')
+SHA = re.compile(r'[0-9a-f]{40}|[0-9a-f]{64}')
+COMMAND_TIMEOUT = 600
 FAILURE_OUTPUT_LIMIT = 65536
 ISOLATED_ENVIRONMENT_PREFIXES = ('APP_', 'DB_', 'ORBIT_')
 ISOLATED_ENVIRONMENT_NAMES = frozenset((
@@ -37,8 +45,6 @@ Pest\Plugins\Tia\Storage::useDirectory($argv[1].'/.orbit-tia');
 echo json_encode([
     'cache' => Pest\Plugins\Tia\Storage::tempDir($argv[1]),
     'fingerprint' => Pest\Plugins\Tia\Fingerprint::compute($argv[1]),
-    'coverage' => (extension_loaded('pcov') && ini_get('pcov.enabled'))
-        || (extension_loaded('xdebug') && in_array('coverage', xdebug_info('mode'), true)),
 ], JSON_THROW_ON_ERROR);
 '''
 
@@ -49,17 +55,12 @@ class CommandFailure(RuntimeError):
         self.exit_code = exit_code
 
 
-class RecoveryNotExecuted(RuntimeError):
-    pass
-
-
 def maintenance_environment():
     environment = {
         name: value for name, value in os.environ.items()
         if name not in ISOLATED_ENVIRONMENT_NAMES
         and not name.startswith(ISOLATED_ENVIRONMENT_PREFIXES)
     }
-    environment['COMPOSER_PROCESS_TIMEOUT'] = '0'
     # An agent session that queues a refresh must not switch its commands to agent output (laravel/pao).
     environment['PAO_DISABLE'] = '1'
     return environment
@@ -76,48 +77,38 @@ def command_failure_message(command, returncode, *parts):
     return tail[newline + 1:] if newline != -1 else tail
 
 
-def run(root, *command, capture=True, tia_directory=None):
-    options = {'cwd': root, 'text': True, 'start_new_session': True,
-               'pass_fds': tuple(fd for fd in (COMMAND_LOCK, CACHE_BRANCH_LOCK) if fd is not None),
-               'env': maintenance_environment()}
-    if tia_directory is not None:
-        options['env']['ORBIT_TIA_DIRECTORY'] = str(tia_directory)
-    def execute(**streams):
-        # Descendants inherit maintenance ownership if the worker is interrupted.
-        process = subprocess.Popen(command, **streams, **options)
-        try:
-            stdout, stderr = process.communicate(timeout=COMMAND_TIMEOUT)
-        except subprocess.TimeoutExpired as error:
-            for termination in (signal.SIGTERM, signal.SIGKILL):
+def run(root, *command):
+    process = subprocess.Popen(command, cwd=root, text=True, start_new_session=True,
+                               stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=maintenance_environment())
+    try:
+        stdout, stderr = process.communicate(timeout=COMMAND_TIMEOUT)
+    except subprocess.TimeoutExpired as error:
+        for termination in (signal.SIGTERM, signal.SIGKILL):
+            try:
+                os.killpg(process.pid, termination)
+            except ProcessLookupError:
+                pass
+            if termination == signal.SIGTERM:
                 try:
-                    os.killpg(process.pid, termination)
-                except ProcessLookupError:
+                    process.communicate(timeout=5)
+                except subprocess.TimeoutExpired:
                     pass
-                if termination == signal.SIGTERM:
-                    try:
-                        process.communicate(timeout=5)
-                    except subprocess.TimeoutExpired:
-                        pass
-            process.communicate()
-            raise CommandFailure(f'{command[0]} timed out after {COMMAND_TIMEOUT}s') from error
-        return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
-
-    if not capture and COMMAND_LOG is not None:
-        with COMMAND_LOG.open('a') as output:
-            output.write(' '.join(command) + '\n')
-            output.flush()
-            result = execute(stdout=output, stderr=subprocess.STDOUT)
-        streams = (COMMAND_LOG.read_text(),) if result.returncode else ()
-    else:
-        result = execute(**({'stdout': subprocess.PIPE, 'stderr': subprocess.PIPE} if capture else {}))
-        streams = (result.stdout, result.stderr)
-    if result.returncode:
-        raise CommandFailure(command_failure_message(command, result.returncode, *streams), result.returncode)
-    return result.stdout.strip() if capture else None
+        process.communicate()
+        raise CommandFailure(f'{command[0]} timed out after {COMMAND_TIMEOUT}s') from error
+    if process.returncode:
+        raise CommandFailure(command_failure_message(command, process.returncode, stdout, stderr), process.returncode)
+    return stdout.strip()
 
 
 def git(root, *args):
     return run(root, 'git', *args)
+
+
+def blob(repository, commit, path):
+    """Return a file's bytes at a commit, or None when the commit has no such file."""
+    result = subprocess.run(['git', '-C', str(repository), 'cat-file', 'blob', f'{commit}:{path}'],
+                            capture_output=True)
+    return result.stdout if result.returncode == 0 else None
 
 
 def common_directory(repository):
@@ -214,15 +205,19 @@ def atomic_write(path, data, replace=True):
             temporary.unlink(missing_ok=True)
 
 
+def runner_identity(lock, bootstrap):
+    return digest(lock + bootstrap)
+
+
 def metadata(root, project):
     data = json.loads(run(root, 'php', '-r', PHP_METADATA, str(root / project)))
-    data['runner'] = digest((root / project / 'composer.lock').read_bytes()
-                            + (root / project / 'tests/Pest.php').read_bytes())
+    data['runner'] = runner_identity((root / project / 'composer.lock').read_bytes(),
+                                     (root / project / 'tests/Pest.php').read_bytes())
     return data
 
 
 def require_ancestor(root, ancestor, head):
-    if not isinstance(ancestor, str) or not re.fullmatch(r'[0-9a-f]{40,64}', ancestor):
+    if not isinstance(ancestor, str) or not SHA.fullmatch(ancestor):
         raise ValueError('Invalid baseline commit.')
     git(root, 'merge-base', '--is-ancestor', ancestor, head)
 
@@ -242,7 +237,6 @@ def validate_graph(root, graph_text, info, tested_commit):
     if any(not isinstance(result, dict) or result.get('status') not in range(7)
            for result in main['results'].values()):
         raise ValueError('Main graph contains failed or unknown results.')
-    # A no-affected-tests run can leave the graph anchored at an older main.
     require_ancestor(root, main.get('sha'), tested_commit)
     files = graph.get('files', [])
     if not isinstance(files, (dict, list)):
@@ -259,23 +253,36 @@ def publication_path(store, project):
     return store / 'published' / (project.replace('/', '-') + '.json')
 
 
-def import_ci(root, project, artifact, commit):
-    if project not in PROJECTS:
-        raise ValueError('Unknown baseline project.')
-    require_ancestor(root, commit, git(root, 'rev-parse', 'HEAD'))
-    manifest = json.loads((artifact / 'manifest.json').read_text())
+def artifact_file(artifact, name):
+    path = artifact / name
+    if path.is_symlink() or not path.is_file():
+        raise ValueError(f'The CI artifact has no regular {name}.')
+    return path.read_bytes()
+
+
+def read_artifact(project, artifact, commit, inputs):
+    """Check an extracted main CI artifact against the tested commit and the expected test configuration."""
+    manifest = json.loads(artifact_file(artifact, 'manifest.json'))
     if (not isinstance(manifest, dict) or manifest.get('schema') != 1
             or manifest.get('project') != project or manifest.get('commit') != commit
             or not re.fullmatch(r'[1-9][0-9]*', str(manifest.get('run_id', '')))):
         raise ValueError('The CI baseline identity differs.')
-    inputs = {name: digest((root / project / name).read_bytes())
-              for name in ('composer.lock', 'tests/Pest.php', 'phpunit.xml', 'phpunit.xml.dist')
-              if (root / project / name).is_file()}
     if not inputs or manifest.get('inputs') != inputs:
         raise ValueError('The CI baseline test configuration differs.')
-    graph = (artifact / 'graph.json').read_bytes()
+    graph = artifact_file(artifact, 'graph.json')
     if manifest.get('graph_sha256') != digest(graph):
         raise ValueError('The CI baseline checksum differs.')
+    return manifest, graph
+
+
+def import_ci(root, project, artifact, commit):
+    """Seed a checkout's private graph from an extracted main CI artifact, without publishing it."""
+    if project not in PROJECTS:
+        raise ValueError('Unknown baseline project.')
+    require_ancestor(root, commit, git(root, 'rev-parse', 'HEAD'))
+    inputs = {name: digest((root / project / name).read_bytes())
+              for name in TEST_INPUTS if (root / project / name).is_file()}
+    _, graph = read_artifact(project, artifact, commit, inputs)
     info = metadata(root, project)
     if validate_graph(root, graph.decode(), info, commit) != commit:
         raise ValueError('The CI graph does not describe the tested commit.')
@@ -332,7 +339,7 @@ def is_ancestor(repository, ancestor, descendant):
 
 
 def request_refresh(root, store):
-    """Queue maintenance of a registered store that lags this checkout's main, without retrying a failed target."""
+    """Queue an import for a store that lags this checkout's main, without retrying a failed target."""
     target = known_main(common_directory(root))
     if target is None:
         return
@@ -356,203 +363,6 @@ def request_refresh(root, store):
         start_background(common, store, lagging)
 
 
-def development_owner(store):
-    path = store / 'development-instance.json'
-    if not path.exists():
-        return None
-    owner = json.loads(path.read_text())
-    if not isinstance(owner.get('instance'), int) or owner['instance'] <= 0:
-        raise ValueError('Invalid development cache owner.')
-    return owner
-
-
-@contextmanager
-def cache_branch_journal(root, common, owner, commit, branch):
-    """Publish a locked, durable transition receipt before creating or attaching the private ref."""
-    global CACHE_BRANCH_LOCK
-    state = common / 'orbit-development-releases'
-    identity = base64.b64encode(f'{owner["instance"]}\0{common.parent}\0{git(common, "remote", "get-url", "origin")}\0'.encode()).decode()
-    for directory in (state, root):
-        if directory.is_symlink() or directory.stat().st_uid != os.geteuid():
-            raise ValueError('Cache candidate ownership differs.')
-    for path, value in ((state / 'identity', identity), (state / ('release-' + root.name), identity + ':' + root.name)):
-        if path.is_symlink() or path.stat().st_uid != os.geteuid() or path.read_text().strip() != value:
-            raise ValueError('Cache candidate release receipt differs.')
-    if git(root, 'for-each-ref', '--format=%(refname)', 'refs/heads/' + branch):
-        raise ValueError('The private cache branch already exists; retain it for diagnosis.')
-    journal = state / ('cache-branch-' + root.name)
-    descriptor, temporary = tempfile.mkstemp(prefix='.cache-branch-', dir=state)
-    lock_fd = None
-    try:
-        with os.fdopen(descriptor, 'wb') as stream:
-            stream.write(f'{identity}:{root.name}:{commit}:{branch}\n'.encode())
-            stream.flush()
-            os.fsync(stream.fileno())
-            # Children keep the lease alive without receiving a writable ownership receipt.
-            lock_fd = os.open(temporary, os.O_RDONLY | os.O_NOFOLLOW)
-            fcntl.flock(lock_fd, fcntl.LOCK_EX)
-            os.link(temporary, journal, follow_symlinks=False)
-            os.unlink(temporary)
-            with_directory = os.open(state, os.O_RDONLY | os.O_DIRECTORY)
-            try:
-                os.fsync(with_directory)
-            finally:
-                os.close(with_directory)
-            CACHE_BRANCH_LOCK = lock_fd
-            yield journal, identity
-    finally:
-        CACHE_BRANCH_LOCK = None
-        if lock_fd is not None:
-            os.close(lock_fd)
-        Path(temporary).unlink(missing_ok=True)
-
-
-def warm_release(root, common, store, projects):
-    owner = development_owner(store)
-    home = common.parent
-    if (owner is None or root.parent != home / 'releases'
-            or (home / 'current').resolve() == root
-            or common_directory(root) != common or git(root, 'status', '--porcelain')):
-        raise ValueError('Warm-up requires a clean, unselected default release candidate.')
-    commit = git(root, 'rev-parse', 'HEAD')
-    if not is_ancestor(root, commit, 'refs/remotes/origin/main'):
-        raise ValueError('Only default-branch commits may publish main caches.')
-    directory = Path(tempfile.mkdtemp(prefix='run-', dir=store))
-    failed = False
-    branch = 'orbit-cache-' + root.name
-    # Pest deliberately does not record detached HEADs. Use a disposable candidate
-    # branch, then detach again before the deployment validates or selects it.
-    with cache_branch_journal(root, common, owner, commit, branch) as (journal, identity):
-        receipt = f'orbit cache {identity}:{root.name}:{commit}'
-        git(root, 'update-ref', '--create-reflog', '-m', receipt, 'refs/heads/' + branch, commit, '0' * len(commit))
-        try:
-            git(root, 'symbolic-ref', 'HEAD', 'refs/heads/' + branch)
-            for project in projects:
-                outcome = project_checks(root, store, project, commit, directory)
-                with queue_lock(store):
-                    state = load_requests(store)
-                    record_outcome(state, project, outcome)
-                    save_requests(store, state)
-                failed |= not outcome['success']
-        finally:
-            git(root, '-c', 'core.hooksPath=/dev/null', 'checkout', '--quiet', '--detach', '--force', commit)
-            git(root, 'branch', '-D', branch)
-            journal.unlink()
-    return int(failed)
-
-
-def prepare_checkout(common, store):
-    # This private repository can use branch main while the user's main is dirty.
-    # A .git file gives Pest a cache key distinct from other checkouts of this origin.
-    checkout = store / 'checkout'
-    origin = git(common, 'remote', 'get-url', 'origin')
-    if not checkout.exists():
-        checkout.mkdir(parents=True)
-        git(checkout, 'init', '--initial-branch=main', '--separate-git-dir=' + str(store / 'repository'))
-        git(checkout, 'remote', 'add', 'origin', origin)
-        git(checkout, 'config', 'orbit.tiaCacheOwner', str(common))
-    if (git(checkout, 'config', '--get', 'orbit.tiaCacheOwner') != str(common)
-            or git(checkout, 'remote', 'get-url', 'origin') != origin
-            or not (checkout / '.git').is_file()):
-        raise RuntimeError('Cache checkout ownership differs.')
-    if git(checkout, 'status', '--porcelain'):
-        raise RuntimeError(f'Cache checkout contains edits: {checkout}')
-    if git(checkout, 'symbolic-ref', '--short', 'HEAD') != 'main':
-        raise RuntimeError('Cache checkout must remain on main.')
-    git(checkout, 'fetch', str(common), 'refs/remotes/origin/main:refs/remotes/origin/main')
-    git(checkout, 'symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main')
-    if subprocess.run(['git', 'rev-parse', '--verify', 'HEAD'], cwd=checkout,
-                      capture_output=True).returncode:
-        git(checkout, 'checkout', '-B', 'main', 'origin/main')
-    else:
-        git(checkout, 'merge', '--ff-only', 'origin/main')
-    return checkout
-
-
-def install_project(root, project):
-    directory = root / project
-    if (directory / '.env.example').exists() and not (directory / '.env').exists():
-        shutil.copyfile(directory / '.env.example', directory / '.env')
-    run(directory, 'composer', 'install', '--no-interaction', '--prefer-dist', capture=False)
-
-
-def refresh_project(root, store, project, commit, installed=False, recover=False):
-    if not installed:
-        install_project(root, project)
-    info = metadata(root, project)
-    if not info['coverage']:
-        raise RuntimeError('PCOV or Xdebug coverage must be enabled to refresh a baseline.')
-    baseline = None
-    try:
-        snapshot = read_publication(store, project)
-        compatible(root, project, snapshot, info)
-        if snapshot['tested_commit'] == commit and not recover:
-            print(f'[{project}] already published at {commit[:12]}', flush=True)
-            return
-        baseline = snapshot['graph']
-    except (RuntimeError, OSError, ValueError, KeyError, TypeError):
-        pass
-    graph_path = Path(info['cache']) / 'graph.json'
-    # Only the maintenance checkout writes here. Start from its last successful,
-    # compatible publication, never an unverified graph left by a failed run or
-    # by another runner version. Runner identity also includes the locked release.
-    if baseline is None:
-        graph_path.unlink(missing_ok=True)
-    else:
-        atomic_write(graph_path, baseline.encode())
-    command = ['composer', 'test:affected']
-    if recover:
-        command += ['--', '--fresh']
-    run(root / project, *command, capture=False, tia_directory=graph_path.parent)
-    if git(root, 'status', '--porcelain') or git(root, 'rev-parse', 'HEAD') != commit:
-        raise RuntimeError('Cache checkout changed during testing; publication refused.')
-    graph = graph_path.read_text()
-    if development_owner(store) is not None:
-        branch = git(root, 'branch', '--show-current')
-        recorded = json.loads(graph)
-        baselines = recorded['baselines']
-        if not branch.startswith('orbit-cache-') or set(baselines) - {'main', branch}:
-            raise ValueError('Only the candidate cache branch may publish.')
-        if branch in baselines:
-            own = baselines.pop(branch)
-            if own.get('sha') != commit or own.get('complete') is not True or own.get('tree') not in ({}, []):
-                raise ValueError('Candidate baseline is not complete and clean.')
-            results = baselines.get('main', {}).get('results', {})
-            covered = {result.get('file') for result in own['results'].values()}
-            results = {key: value for key, value in results.items() if value.get('file') not in covered}
-            baselines['main'] = {**own, 'results': {**results, **own['results']}}
-        graph = json.dumps(recorded)
-    anchor = validate_graph(root, graph, info, commit)
-    if recover and anchor != commit:
-        raise RecoveryNotExecuted(
-            f'TIA recovery at {commit} did not record executed tests; graph remains at {anchor}.')
-    publish_graph(root, store, project, commit, info, graph)
-
-
-def publish_graph(root, store, project, commit, info, graph):
-    anchor = validate_graph(root, graph, info, commit)
-    snapshot = {
-        'schema': 1, 'project': project, 'tested_commit': commit, 'graph_commit': anchor,
-        'published_at': datetime.now(timezone.utc).isoformat(),
-        'fingerprint': info['fingerprint'], 'runner': info['runner'],
-        'sha256': digest(graph.encode()), 'graph': graph,
-    }
-    publish_snapshot(root, publication_path(store, project), snapshot)
-    announce(root, store)
-    print(f'[{project}] published main {commit[:12]}', flush=True)
-
-
-def php_runtime(root):
-    return run(root, 'php', '-r', 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')
-
-
-def quality_fingerprint(root, project, tool):
-    config, _, _ = QUALITY[tool]
-    return digest((root / project / 'composer.lock').read_bytes()
-                  + b'\0' + (root / project / config).read_bytes()
-                  + b'\0' + php_runtime(root).encode())
-
-
 def quality_path(store, project, tool):
     return store / 'quality' / project.replace('/', '-') / (tool + '.json')
 
@@ -566,44 +376,6 @@ def quality_data(snapshot, project, tool):
     return data
 
 
-def refresh_quality(root, store, project, commit, tool, force=False):
-    _, relative, script = QUALITY[tool]
-    path = quality_path(store, project, tool)
-    fingerprint = quality_fingerprint(root, project, tool)
-    destination = root / project / relative
-    try:
-        snapshot = json.loads(path.read_text())
-        data = quality_data(snapshot, project, tool)
-        if snapshot['fingerprint'] != fingerprint:
-            raise ValueError('Quality dependencies or configuration differ.')
-        require_ancestor(root, snapshot['tested_commit'], commit)
-        if snapshot['tested_commit'] == commit and not force:
-            return
-        atomic_write(destination, data)
-    except (OSError, RuntimeError, ValueError, KeyError, TypeError, AttributeError):
-        # The maintenance checkout owns this disposable tool cache, not its publication.
-        destination.unlink(missing_ok=True)
-    run(root / project, 'composer', script, capture=False)
-    if git(root, 'status', '--porcelain') or git(root, 'rev-parse', 'HEAD') != commit:
-        raise RuntimeError('Cache checkout changed during quality checks; publication refused.')
-    publish_quality(root, store, project, commit, tool)
-
-
-def publish_quality(root, store, project, commit, tool):
-    destination = root / project / QUALITY[tool][1]
-    if destination.is_symlink() or not destination.is_file():
-        raise RuntimeError('Quality check did not produce a regular result cache.')
-    data = destination.read_bytes()
-    if not data:
-        raise RuntimeError('Quality check produced an empty cache.')
-    snapshot = {'schema': 1, 'project': project, 'tool': tool, 'tested_commit': commit,
-                'fingerprint': quality_fingerprint(root, project, tool), 'sha256': digest(data),
-                'data': base64.b64encode(data).decode(),
-                'published_at': datetime.now(timezone.utc).isoformat()}
-    publish_snapshot(root, quality_path(store, project, tool), snapshot)
-    announce(root, store)
-
-
 def announce(root, store):
     try:
         if register_store(root, store):
@@ -612,61 +384,70 @@ def announce(root, store):
         print(f'Main cache store not registered: {error}', file=sys.stderr, flush=True)
 
 
+def newer_publication(repository, path, commit):
+    """Return whether the store already holds this commit or a descendant of it."""
+    try:
+        previous = json.loads(path.read_text())['tested_commit']
+    except FileNotFoundError:
+        return False
+    return previous == commit or is_ancestor(repository, commit, previous)
+
+
 def publish_snapshot(root, path, snapshot):
-    # Both callers hold the existing maintenance lock.
+    # Callers hold the worker lock.
     if path.exists():
         previous = json.loads(path.read_text())
         require_ancestor(root, previous['tested_commit'], snapshot['tested_commit'])
     atomic_write(path, json.dumps(snapshot).encode())
 
 
-def publish_bootstrap(root, store, projects, commit):
-    if development_owner(store) is not None:
-        print('Development deployment owns main cache publication; bootstrap caches stay private.', flush=True)
-        return
-    if (os.environ.get('ORBIT_MAIN_CACHE_STORE')
-            or os.environ.get('ORBIT_TIA_DIRECTORY', '.orbit-tia') != '.orbit-tia'):
-        raise ValueError('Imported or custom caches stay private.')
-    if (git(root, 'status', '--porcelain') or git(root, 'rev-parse', 'HEAD') != commit
-            or git(root, 'rev-parse', 'refs/remotes/origin/main') != commit):
-        raise ValueError('Only an unchanged clean bootstrap at fetched main can share caches.')
-    branch = git(root, 'symbolic-ref', '--short', 'HEAD')
-    store.mkdir(parents=True, exist_ok=True)
-    lock = acquire_worker(store)
-    if lock is None:
-        print('Main cache maintenance is active; bootstrap caches stay private.', flush=True)
-        return
-    with lock:
-        for project in projects:
-            try:
-                if load_requests(store).get('correctness_failures', {}).get(project):
-                    raise ValueError('Main has an unresolved maintenance failure.')
-                info = metadata(root, project)
-                graph = json.loads((Path(info['cache']) / 'graph.json').read_text())
-                baselines = graph['baselines']
-                if set(baselines) - {'main', branch}:
-                    raise ValueError('Unrelated branch history stays private.')
-                for baseline in baselines.values():
-                    if baseline.get('tree') not in ({}, []):
-                        raise ValueError('Working-edit history stays private.')
-                    require_ancestor(root, baseline.get('sha'), commit)
-                if branch != 'main' and branch in baselines:
-                    own = baselines[branch]
-                    if own.get('sha') != commit or own.get('complete') is not True:
-                        raise ValueError('The task baseline is not complete at the checked commit.')
-                    results = baselines.get('main', {}).get('results', {})
-                    covered = {result.get('file') for result in own['results'].values()}
-                    # Pest replaces whole files covered by the task, retaining unaffected results.
-                    results = {key: value for key, value in results.items() if value.get('file') not in covered}
-                    baselines['main'] = {**own, 'results': {**results, **own['results']}}
-                    del baselines[branch]
-                if git(root, 'status', '--porcelain') or git(root, 'rev-parse', 'HEAD') != commit:
-                    raise ValueError('The checkout changed during publication.')
-                publish_graph(root, store, project, commit, info, json.dumps(graph))
-                for tool in QUALITY:
-                    publish_quality(root, store, project, commit, tool)
-            except (RuntimeError, OSError, ValueError, KeyError, TypeError) as error:
-                print(f'[{project}] bootstrap caches not published: {error}', file=sys.stderr, flush=True)
+def publish_artifact(common, store, project, artifact, commit, run_id):
+    """Publish one validated main CI artifact into the store. The worker runs no tests."""
+    files = {name: blob(common, commit, f'{project}/{name}') for name in TEST_INPUTS}
+    if files['composer.lock'] is None or files['tests/Pest.php'] is None:
+        raise ValueError(f'{project} has no locked test configuration at {commit}.')
+    inputs = {name: digest(data) for name, data in files.items() if data is not None}
+    manifest, graph = read_artifact(project, artifact, commit, inputs)
+    if str(manifest['run_id']) != str(run_id):
+        raise ValueError('The CI baseline belongs to another run.')
+    text = graph.decode()
+    fingerprint = json.loads(text).get('fingerprint')
+    if validate_graph(common, text, {'fingerprint': fingerprint}, commit) != commit:
+        raise ValueError('The CI graph does not describe the tested commit.')
+    published = datetime.now(timezone.utc).isoformat()
+    source = {'run_id': int(run_id)}
+    path = publication_path(store, project)
+    if not newer_publication(common, path, commit):
+        publish_snapshot(common, path, {
+            'schema': 1, 'project': project, 'tested_commit': commit, 'graph_commit': commit,
+            'published_at': published, 'fingerprint': fingerprint,
+            'runner': runner_identity(files['composer.lock'], files['tests/Pest.php']),
+            'sha256': digest(graph), 'graph': text, 'source': source,
+        })
+        print(f'[{project}] published main {commit[:12]} from CI run {run_id}', flush=True)
+    quality = manifest.get('quality') or {}
+    php = manifest.get('php')
+    if not isinstance(quality, dict) or (quality and not (isinstance(php, str) and re.fullmatch(r'\d+\.\d+', php))):
+        raise ValueError('The CI quality caches are invalid.')
+    for tool, expected in quality.items():
+        if tool not in QUALITY:
+            continue
+        data = artifact_file(artifact, 'quality/' + tool)
+        if not data or digest(data) != expected:
+            raise ValueError(f'The CI {tool} cache checksum differs.')
+        configuration = blob(common, commit, f'{project}/{QUALITY[tool][0]}')
+        path = quality_path(store, project, tool)
+        if configuration is None or newer_publication(common, path, commit):
+            continue
+        # bin/worktree-cache checks the same lock file, tool configuration, and PHP minor version before it seeds.
+        identity = digest(files['composer.lock'] + b'\0' + configuration + b'\0' + php.encode())
+        publish_snapshot(common, path, {
+            'schema': 1, 'project': project, 'tool': tool, 'tested_commit': commit, 'fingerprint': identity,
+            'sha256': digest(data), 'data': base64.b64encode(data).decode(), 'published_at': published,
+            'source': source,
+        })
+    announce(common, store)
+    return commit
 
 
 @contextmanager
@@ -681,7 +462,7 @@ def load_requests(store):
     try:
         state = json.loads((store / 'requests.json').read_text())
     except FileNotFoundError:
-        return {'schema': 1, 'generation': 0, 'pending': {}, 'results': {}}
+        return {'schema': 1, 'generation': 0, 'pending': {}, 'results': {}, 'correctness_failures': {}}
     if (not isinstance(state, dict) or state.get('schema') != 1
             or not isinstance(state.get('pending'), dict) or not isinstance(state.get('results'), dict)
             or type(state.get('generation')) is not int
@@ -691,16 +472,12 @@ def load_requests(store):
             or any(project not in PROJECTS or not isinstance(result, dict)
                    for project, result in state['results'].items())):
         raise ValueError('Invalid maintenance requests; retain the file for diagnosis.')
-    if 'correctness_failures' not in state:
-        state['correctness_failures'] = {
-            project: {check['tool']: {**check, 'commit': result.get('commit')}
-                      for check in result.get('checks', []) if check.get('kind') == 'check_failure'}
-            for project, result in state['results'].items()
-            if any(check.get('kind') == 'check_failure' for check in result.get('checks', []))}
+    state.setdefault('correctness_failures', {})
     failures = state['correctness_failures']
+    # tia, pint, and phpstan entries come from the local checks that earlier versions ran.
     if (not isinstance(failures, dict) or any(
             project not in PROJECTS or not isinstance(checks, dict)
-            or any(tool not in ('tia', *QUALITY) or not isinstance(check, dict)
+            or any(tool not in ('ci', 'tia', *QUALITY) or not isinstance(check, dict)
                    or check.get('tool') != tool or check.get('kind') != 'check_failure'
                    for tool, check in checks.items()) for project, checks in failures.items())):
         raise ValueError('Invalid correctness failures; retain the file for diagnosis.')
@@ -712,17 +489,12 @@ def save_requests(store, state):
 
 
 def record_outcome(state, project, outcome):
-    """Infrastructure failures cannot erase an observed correctness failure."""
-    unresolved = state.setdefault('correctness_failures', {}).setdefault(project, {})
-    for check in outcome['checks']:
-        tool = check['tool']
-        if check.get('kind') == 'check_failure':
-            unresolved[tool] = {**check, 'commit': outcome['commit']}
-        elif check['exit_code'] == 0 and (tool != 'tia' or tool not in unresolved
-                                          or check.get('recovery') == 'executed'):
-            unresolved.pop(tool, None)
-    if not unresolved:
-        del state['correctness_failures'][project]
+    """Only a readable CI history sets or clears a project's correctness failure."""
+    if 'ci' in outcome:
+        if outcome['ci'] is None:
+            state['correctness_failures'].pop(project, None)
+        else:
+            state['correctness_failures'][project] = {'ci': outcome['ci']}
     state['results'][project] = outcome
 
 
@@ -736,20 +508,21 @@ def known_main(common):
 def publications_current(store, project, commit):
     try:
         snapshot = read_publication(store, project)
-        if snapshot['tested_commit'] != commit or digest(snapshot['graph'].encode()) != snapshot['sha256']:
-            return False
-        for tool in QUALITY:
-            snapshot = json.loads(quality_path(store, project, tool).read_text())
-            quality_data(snapshot, project, tool)
-            if snapshot['tested_commit'] != commit:
-                return False
-        return True
+        return snapshot['tested_commit'] == commit and digest(snapshot['graph'].encode()) == snapshot['sha256']
     except (OSError, RuntimeError, ValueError, KeyError, TypeError, AttributeError):
         return False
 
 
+def worker_source(common):
+    """Return the tool as main holds it. A checkout on another branch must never run its copy against the store."""
+    source = blob(common, 'refs/remotes/origin/main', 'bin/tia-cache')
+    if not source:
+        raise RuntimeError('origin/main of the store repository has no bin/tia-cache to run as the worker.')
+    return source
+
+
 def worker_key(common):
-    return digest(Path(__file__).read_bytes() + php_runtime(common).encode())
+    return digest(worker_source(common))
 
 
 def enqueue(common, store, projects):
@@ -763,8 +536,7 @@ def enqueue(common, store, projects):
         if request.get('worker_key') != key:
             request.update(worker_key=key, generation=state['generation'])
     for project in projects:
-        # The worker must fetch even when the caller's remote-tracking ref is stale.
-        # It skips checks after that fetch when successful publications are current.
+        # The worker fetches main itself, so a stale remote-tracking ref here only names the target.
         pending = state['pending'].get(project)
         if pending and pending.get('target') == target and pending.get('worker_key') == key:
             continue
@@ -794,45 +566,128 @@ def active_worker(store):
     return False
 
 
-def project_checks(root, store, project, commit, directory):
-    global COMMAND_LOG
-    checks = []
-    unresolved = load_requests(store).get('correctness_failures', {}).get(project, {})
-    recovering_tia = 'tia' in unresolved
-    operations = [('install', lambda: install_project(root, project), False),
-                  ('tia', lambda: refresh_project(root, store, project, commit, installed=True,
-                                                  recover=recovering_tia), recovering_tia)]
-    operations += [(tool, lambda tool=tool: refresh_quality(root, store, project, commit, tool,
-                                                            force=tool in unresolved), False)
-                   for tool in QUALITY]
-    for tool, operation, recovering in operations:
-        COMMAND_LOG = directory / (project.replace('/', '-') + '-' + tool + '.log')
-        COMMAND_LOG.write_text(f'{project}: {tool} at {commit}\n')
-        entry = {'tool': tool, 'log': str(COMMAND_LOG), 'exit_code': 0}
+def github_repository(common):
+    url = git(common, 'remote', 'get-url', 'origin')
+    match = re.fullmatch(r'(?:[a-z][a-z0-9+.-]*://)?(?:[^@/]+@)?github\.com[:/]([^/]+)/([^/]+?)(?:\.git)?/*',
+                         url, re.IGNORECASE)
+    if not match:
+        raise ValueError(f'Main caches come from GitHub Actions, but origin is not a GitHub repository: {url}')
+    return f'{match.group(1)}/{match.group(2)}'
+
+
+def ci_runs(common, repository):
+    """Return the finished CI runs on main of this repository, the newest finished first."""
+    data = json.loads(run(common, 'gh', 'api', f'repos/{repository}/actions/workflows/{CI_WORKFLOW}/runs'
+                                               f'?branch=main&status=completed&per_page={CI_RUNS}'))
+    runs = [item for item in data['workflow_runs']
+            if item.get('event') in CI_EVENTS and item.get('head_branch') == 'main'
+            and (item.get('head_repository') or {}).get('full_name') == repository
+            and type(item.get('id')) is int and isinstance(item.get('head_sha'), str)
+            and SHA.fullmatch(item['head_sha']) and isinstance(item.get('updated_at'), str)]
+    return sorted(runs, key=lambda item: item['updated_at'], reverse=True)
+
+
+def ci_jobs(common, repository, run_id):
+    return json.loads(run(common, 'gh', 'api', f'repos/{repository}/actions/runs/{run_id}/jobs?per_page=100'))['jobs']
+
+
+def job_result(jobs, project):
+    """Return success, failure, or None when the run did not finish the project's jobs."""
+    names = CI_JOBS[project]
+    found = {job.get('name'): job.get('conclusion') for job in jobs if job.get('name') in names}
+    failed = sorted(name for name, conclusion in found.items() if conclusion in ('failure', 'timed_out'))
+    if failed:
+        return 'failure', failed
+    if names[0] in found and all(conclusion == 'success' for conclusion in found.values()):
+        return 'success', []
+    return None, []
+
+
+def ci_history(common, repository, projects):
+    """Find each project's newest tested main commit and the failure on main that no later success covers.
+
+    A failure stays open until a run that finished after it passes on the same commit or a descendant. So a newer
+    commit's affected-only run cannot clear a failure that a slower full run found later.
+    """
+    runs = ci_runs(common, repository)
+    jobs = {}
+    history = {}
+    for project in projects:
+        successes, failure = [], None
+        for item in runs:
+            if any(is_ancestor(common, item['head_sha'], success['head_sha']) for success in successes):
+                continue
+            if item['id'] not in jobs:
+                jobs[item['id']] = ci_jobs(common, repository, item['id'])
+            result, failed = job_result(jobs[item['id']], project)
+            if result == 'success':
+                successes.append(item)
+            elif result == 'failure' and failure is None:
+                failure = {**item, 'failed_jobs': failed}
+        newest = None
+        for success in successes:
+            if newest is None or is_ancestor(common, newest['head_sha'], success['head_sha']):
+                newest = success
+        history[project] = {'success': newest, 'failure': failure}
+    return history
+
+
+def download_artifacts(common, repository, run_id, destination):
+    destination.mkdir(parents=True)
+    run(common, 'gh', 'run', 'download', str(run_id), '-R', repository, '-p', CI_ARTIFACTS, '-D', str(destination))
+    return destination
+
+
+def project_artifact(directory, project):
+    for manifest in sorted(directory.glob('*/manifest.json')):
         try:
-            operation()
-            if recovering:
-                entry['recovery'] = 'executed'
+            if json.loads(manifest.read_text()).get('project') == project:
+                return manifest.parent
+        except (OSError, ValueError, AttributeError):
+            continue
+    raise ValueError(f'The CI run has no main cache artifact for {project}.')
+
+
+def refresh_project(common, store, project, commit, repository, history, directory, downloads):
+    """Record the project's CI result on main and publish its newest successful CI artifact."""
+    checks = []
+    outcome = {'commit': commit, 'checks': checks, 'worker_key': worker_key(common)}
+    success, failure = history['success'], history['failure']
+    if success is None and failure is None:
+        checks.append({'tool': 'import', 'kind': 'maintenance_failure', 'exit_code': 1,
+                       'error': f'No finished CI job for {project} in the newest {CI_RUNS} main runs.'})
+    else:
+        outcome['ci'] = None if failure is None else {
+            'tool': 'ci', 'kind': 'check_failure', 'exit_code': 1, 'commit': failure['head_sha'],
+            'run_id': failure['id'], 'run_url': failure.get('html_url'), 'jobs': failure['failed_jobs'],
+            'error': f'{", ".join(failure["failed_jobs"])} failed on main at {failure["head_sha"][:12]}: '
+                     f'{failure.get("html_url")}'}
+        if failure is not None:
+            checks.append(outcome['ci'])
+    if success is not None:
+        log = directory / (project.replace('/', '-') + '-import.log')
+        try:
+            if not publications_current(store, project, success['head_sha']) or any(
+                    not newer_publication(common, quality_path(store, project, tool), success['head_sha'])
+                    for tool in QUALITY if quality_path(store, project, tool).exists()):
+                if success['id'] not in downloads:
+                    downloads[success['id']] = download_artifacts(
+                        common, repository, success['id'], directory / f'artifacts-{success["id"]}')
+                artifact = project_artifact(downloads[success['id']], project)
+                publish_artifact(common, store, project, artifact, success['head_sha'], success['id'])
+            outcome['published'] = read_publication(store, project)['tested_commit']
+            outcome['run_id'] = success['id']
+            checks.append({'tool': 'import', 'exit_code': 0, 'run_id': success['id']})
         except (RuntimeError, OSError, ValueError, KeyError, TypeError) as error:
-            entry.update(exit_code=getattr(error, 'exit_code', None) or 1, error=str(error),
-                         kind='check_failure' if tool != 'install' and isinstance(error, CommandFailure)
-                         and error.exit_code is not None else 'maintenance_failure')
-            if recovering:
-                entry['recovery'] = ('not_executed' if isinstance(error, RecoveryNotExecuted) else 'failed')
-            with COMMAND_LOG.open('a') as output:
-                output.write(str(error) + '\n')
-        finally:
-            COMMAND_LOG = None
-        checks.append(entry)
-        if tool == 'install' and entry['exit_code']:
-            break
-    return {'commit': commit, 'success': all(item['exit_code'] == 0 for item in checks), 'checks': checks}
+            log.write_text(str(error) + '\n')
+            checks.append({'tool': 'import', 'kind': 'maintenance_failure', 'exit_code': 1,
+                           'error': str(error), 'log': str(log), 'run_id': success['id']})
+    outcome['success'] = all(check['exit_code'] == 0 for check in checks)
+    return outcome
 
 
 def drain(common, store, lock):
     """Drain durable generations; a crash leaves the unacknowledged batch pending."""
-    global COMMAND_LOCK
-    COMMAND_LOCK = lock.fileno()
     failed = False
     try:
         while True:
@@ -848,33 +703,14 @@ def drain(common, store, lock):
             commit = known_main(common)
             outcomes = {}
             try:
-                owner = development_owner(store)
-                if owner is not None:
-                    # Deployment owns candidate creation, warm-up, switching and pruning.
-                    # Never install or run checks in the immutable selected release.
-                    run(common, 'orbit', 'instance:deploy', str(owner['instance']), '--json', capture=False)
-                    commit = git(common.parent / 'current', 'rev-parse', 'HEAD')
-                    results = load_requests(store)['results']
-                    for project in batch:
-                        previous = results.get(project, {})
-                        if previous.get('commit') != commit or not publications_current(store, project, commit):
-                            raise RuntimeError(f'Development deployment did not warm {project} at {commit}.')
-                        outcomes[project] = previous
-                else:
-                    git(common, 'fetch', 'origin', 'refs/heads/main:refs/remotes/origin/main')
-                    checkout = prepare_checkout(common, store)
-                    commit = git(checkout, 'rev-parse', 'HEAD')
-                key = worker_key(common)
-                for project in (() if owner is not None else batch):
-                    previous = state['results'].get(project, {})
-                    if (previous.get('success') and previous.get('worker_key') == key
-                            and not state.get('correctness_failures', {}).get(project)
-                            and publications_current(store, project, commit)):
-                        outcomes[project] = {**previous, 'commit': commit}
-                    else:
-                        outcomes[project] = {**project_checks(checkout, store, project, commit, directory),
-                                             'worker_key': key}
-                    # Expose a correctness failure before the remaining projects finish.
+                git(common, 'fetch', 'origin', 'refs/heads/main:refs/remotes/origin/main')
+                commit = known_main(common)
+                repository = github_repository(common)
+                history = ci_history(common, repository, list(batch))
+                downloads = {}
+                for project in batch:
+                    outcomes[project] = refresh_project(common, store, project, commit, repository,
+                                                        history[project], directory, downloads)
                     with queue_lock(store):
                         progress = load_requests(store)
                         record_outcome(progress, project, outcomes[project])
@@ -882,9 +718,14 @@ def drain(common, store, lock):
             except (RuntimeError, OSError, ValueError, KeyError, TypeError) as error:
                 log = directory / 'setup.log'
                 log.write_text(str(error) + '\n')
-                outcomes = {project: {'commit': commit, 'success': False, 'checks': [
-                    {'tool': 'setup', 'kind': 'maintenance_failure', 'exit_code': 1,
-                     'error': str(error), 'log': str(log)}]} for project in batch}
+                for project in batch:
+                    outcomes.setdefault(project, {'commit': commit, 'success': False, 'checks': [
+                        {'tool': 'setup', 'kind': 'maintenance_failure', 'exit_code': 1,
+                         'error': str(error), 'log': str(log)}]})
+            finally:
+                # Downloaded artifacts are only inputs; the publications hold what the worker accepted.
+                for artifacts in directory.glob('artifacts-*'):
+                    shutil.rmtree(artifacts, ignore_errors=True)
             with queue_lock(store):
                 state = load_requests(store)
                 for project, request in batch.items():
@@ -897,7 +738,6 @@ def drain(common, store, lock):
                 prune_runs(store, state, directory)
             print(f'Main cache refresh at {commit}: {"FAILED" if any(not o["success"] for o in outcomes.values()) else "passed"}; logs: {directory}', flush=True)
     finally:
-        COMMAND_LOCK = None
         lock.close()
 
 
@@ -921,13 +761,29 @@ def prune_runs(store, state, current):
             shutil.rmtree(run, ignore_errors=True)
 
 
+def freeze_worker(common, store):
+    """Write main's copy of the tool into the store, so the worker survives the caller and its checkout."""
+    source = worker_source(common)
+    runner = store / 'runners' / (digest(source) + '.py')
+    atomic_write(runner, source)
+    return runner
+
+
+def worker_command(common, runner, lock):
+    return [sys.executable, str(runner), 'work', '--repository', str(common), '--worker-fd', str(lock.fileno())]
+
+
 def refresh(common, store, projects):
     with queue_lock(store):
         enqueue(common, store, projects)
     lock = acquire_worker(store, blocking=True)
-    result = drain(common, store, lock)
+    try:
+        subprocess.run(worker_command(common, freeze_worker(common, store), lock), cwd=common,
+                       stdin=subprocess.DEVNULL, pass_fds=(lock.fileno(),), env=maintenance_environment())
+    finally:
+        lock.close()
     state = load_requests(store)
-    return int(bool(result) or any(not state['results'].get(project, {}).get('success') for project in projects))
+    return int(any(not state['results'].get(project, {}).get('success') for project in projects))
 
 
 def start_background(common, store, projects):
@@ -941,17 +797,13 @@ def start_background(common, store, projects):
             print(f'Cache request retained by active worker; log: {store / "refresh.log"}')
             return
         try:
-            # Frozen, standalone runner and inherited lock survive caller/worktree removal.
-            source = Path(__file__).read_bytes()
-            runner = store / 'runners' / (digest(source) + '.py')
-            atomic_write(runner, source)
+            runner = freeze_worker(common, store)
             log = store / 'refresh.log'
             with log.open('ab') as output:
                 process = subprocess.Popen(
-                    [sys.executable, str(runner), 'work', '--repository', str(common),
-                     '--worker-fd', str(lock.fileno())],
-                    cwd=common, stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT,
-                    start_new_session=True, pass_fds=(lock.fileno(),), env=maintenance_environment(),
+                    worker_command(common, runner, lock), cwd=common, stdin=subprocess.DEVNULL, stdout=output,
+                    stderr=subprocess.STDOUT, start_new_session=True, pass_fds=(lock.fileno(),),
+                    env=maintenance_environment(),
                 )
             print(f'Main cache refresh queued (pid {process.pid}); log: {log}')
         finally:
@@ -972,41 +824,36 @@ def status(common, store, remote=False):
     failures = {project: result for project, result in state['results'].items() if not result.get('success')}
     return {'schema': 1, 'main': main, 'worker_active': active, 'pending': state['pending'],
             'current': current, 'results': state['results'], 'failures': failures,
-            'correctness_failures': state.get('correctness_failures', {}),
+            'correctness_failures': state['correctness_failures'],
             'needed': not all(current.values()), 'refresh_log': str(store / 'refresh.log')}
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=('seed', 'refresh', 'status', 'work', 'publish', 'register', 'warm', 'import-ci'))
+    parser.add_argument('action', choices=('seed', 'refresh', 'status', 'work', 'register', 'import-ci'))
     parser.add_argument('--repository', default='.')
     parser.add_argument('--project', action='append', choices=PROJECTS)
     parser.add_argument('--background', action='store_true')
-    parser.add_argument('--development-instance', type=int, help='Default Instance that owns cache deployments (register only)')
     parser.add_argument('--json', action='store_true', help='Print machine-readable maintenance status')
     parser.add_argument('--remote', action='store_true', help='Read authoritative remote main for status')
     parser.add_argument('--worker-fd', type=int, help=argparse.SUPPRESS)
-    parser.add_argument('--commit', help=argparse.SUPPRESS)
+    parser.add_argument('--commit', help='Tested commit of the extracted CI artifact (import-ci only)')
     parser.add_argument('--artifact', type=Path, help='Extracted successful main CI baseline (import-ci only)')
     args = parser.parse_args()
-    if args.development_instance is not None and (args.action != 'register' or args.development_instance <= 0):
-        parser.error('--development-instance requires register and a positive Instance ID')
     if args.background and args.action != 'refresh':
         parser.error('--background requires refresh')
     if (args.json or args.remote) and args.action != 'status':
         parser.error('--json and --remote require status')
     if args.action == 'work' and args.worker_fd is None:
         parser.error('work requires an inherited worker lock')
-    if args.action == 'publish' and args.commit is None:
-        parser.error('publish requires the commit checked by bootstrap')
     if args.action == 'import-ci':
         if args.artifact is None or args.commit is None or not args.project or len(args.project) != 1:
             parser.error('import-ci requires --artifact, --commit, and one --project')
         root = Path(git(args.repository, 'rev-parse', '--show-toplevel')).resolve()
         import_ci(root, args.project[0], args.artifact, args.commit)
         return 0
-    if args.artifact is not None:
-        parser.error('--artifact requires import-ci')
+    if args.artifact is not None or args.commit is not None:
+        parser.error('--artifact and --commit require import-ci')
     common = common_directory(args.repository)
     store = cache_store(common)
     projects = args.project or PROJECTS
@@ -1016,26 +863,16 @@ def main():
         if registered:
             print(f'Seeding from the main cache store registered for this origin: {store}', flush=True)
         seed(root, store, projects)
-        if registered or development_owner(store) is not None:
+        if not os.environ.get('ORBIT_MAIN_CACHE_STORE') and has_publications(store):
             try:
                 request_refresh(root, store)
             except (RuntimeError, OSError, ValueError, KeyError, TypeError) as error:
                 print(f'Main cache refresh not requested: {error}', flush=True)
-    elif args.action == 'warm':
-        root = Path(git(args.repository, 'rev-parse', '--show-toplevel')).resolve()
-        return warm_release(root, common, store, projects)
     elif args.action == 'register':
-        if args.development_instance is not None:
-            if not (common.parent / '.git/orbit-development-releases-owner').is_file():
-                raise ValueError('Development cache owner requires an initialized default repository.')
-            atomic_write(store / 'development-instance.json', json.dumps({'instance': args.development_instance}).encode())
-        if not has_publications(store) and args.development_instance is None:
+        if not has_publications(store):
             raise ValueError(f'{store} has no main publications to register.')
-        register_store(common_directory(args.repository), store, force=True)
-        print(f'Registered {store} for clones of this origin: {registry_path(common_directory(args.repository))}')
-    elif args.action == 'publish':
-        root = Path(git(args.repository, 'rev-parse', '--show-toplevel'))
-        publish_bootstrap(root, store, projects, args.commit)
+        register_store(common, store, force=True)
+        print(f'Registered {store} for clones of this origin: {registry_path(common)}')
     elif args.action == 'status':
         if args.json:
             print(json.dumps(status(common, store, args.remote), sort_keys=True))

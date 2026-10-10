@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Tests\Support;
 
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
-use App\Infrastructure\Compute\SandboxFleetIdentity;
 use App\Infrastructure\Compute\TaskSandboxDrivers;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
@@ -89,7 +88,7 @@ final class DeliverablePathWorkspace
 
                 public function put(string $host, int $port, HostKey $key): void {}
             },
-        ), app(IncusSandboxHost::class), app(TaskSandboxDrivers::class), app(SandboxFleetIdentity::class));
+        ), app(IncusSandboxHost::class), app(TaskSandboxDrivers::class));
     }
 
     /** @param list<string> $arguments */

@@ -97,7 +97,7 @@ orbit project:update <project> [--type=TYPE] [--slug=SLUG] [--repository=URL] [-
 | --- | --- |
 | `--type=TYPE` | New Project type. A change to `laravel-app` or `symfony-app` is refused while an active Instance has no Route. |
 | `--slug=SLUG` | New Project slug. Generated development domains follow it; recorded paths stay unchanged. |
-| `--repository=URL` | New Git access URL. The Gateway validates ownership before updating checkout origins. |
+| `--repository=URL` | New Git access URL. The Gateway validates ownership before updating checkout origins and re-binding production homes. The current URL repairs a home left on an older URL. See [Production Instances](/reference/projects#production-instances). |
 | `--default-branch=BRANCH` | New default branch for development sources that inherit it. |
 | `--source-access=VALUE` | `github_app` or `gh_cli`. Applies at once after the Gateway reads the remote with the new value. |
 | `--root=PATH` | New normalized repository-relative root for Instances without an override. Package types may use `.`. |

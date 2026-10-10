@@ -13,7 +13,6 @@ use App\Domain\Tasks\TaskExecutionMode;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
-use App\Infrastructure\Tasks\ProjectSandboxWorkspaceProvisioner;
 use App\Models\Instance;
 use App\Models\Task;
 use App\Models\TaskSandbox;
@@ -25,11 +24,11 @@ final readonly class TaskSandboxGroupLifecycle
 {
     private const string WaitPrefix = 'Sandbox compute: ';
 
-    public function __construct(private TaskExecutionLock $execution, private TaskSandboxDrivers $drivers, private TaskSandboxLifecycle $lifecycle, private ProjectSandboxWorkspaceProvisioner $projects) {}
+    public function __construct(private TaskExecutionLock $execution, private TaskSandboxDrivers $drivers, private TaskSandboxLifecycle $lifecycle) {}
 
     public function review(Task $group): void
     {
-        if ($group->task_compute !== TaskCompute::Vm) {
+        if (! self::orbitLane($group)) {
             return;
         }
         $this->execution->synchronized($group->id, function () use ($group): void {
@@ -41,13 +40,7 @@ final readonly class TaskSandboxGroupLifecycle
             }
             try {
                 $sandbox = $this->sandbox($group);
-                if ($group->preview && $sandbox->provider === 'upcloud' && ($sandbox->state !== SandboxState::Running || $sandbox->desired_power !== 'running')) {
-                    throw new ComputeException('compute.rebuild_required', 'The cloud sandbox must be rebuilt from its published branch before preview resumes.');
-                }
                 $this->lifecycle->review($sandbox, $this->drivers->forSandbox($sandbox), $group->preview ?? false, $this->capacityWaiting($group));
-                if ($group->preview && $sandbox->provider === 'incus' && $group->project->slug !== 'orbit') {
-                    $this->projects->resumeLocal($group);
-                }
                 $this->clearWait($group);
             } catch (Throwable $exception) {
                 $this->wait($group, $exception);
@@ -58,7 +51,7 @@ final readonly class TaskSandboxGroupLifecycle
     /** A failed restore never admits a fetch, an implementer, or a reviewer. */
     public function resume(Task $group): bool
     {
-        if ($group->task_compute !== TaskCompute::Vm) {
+        if (! self::orbitLane($group)) {
             return true;
         }
 
@@ -70,29 +63,9 @@ final readonly class TaskSandboxGroupLifecycle
             }
             try {
                 $sandbox = $this->sandbox($group);
-                if ($sandbox->provider === 'upcloud') {
-                    if ($sandbox->desired_power === 'destroyed' && $sandbox->state !== SandboxState::Destroyed) {
-                        $sandbox = $this->lifecycle->destroy($sandbox, $this->drivers->forSandbox($sandbox));
-                    }
-                    if ($sandbox->state === SandboxState::Destroyed || isset($sandbox->spec['restore_commit']) && $sandbox->pi_ready_at === null) {
-                        $workspace = $this->projects->restore($group);
-                        $sandbox = $workspace->taskSandbox;
-                        if (! $sandbox instanceof TaskSandbox || $sandbox->pi_ready_at === null) {
-                            throw new ComputeException('compute.starting', 'The replacement runtime is still starting.');
-                        }
-                        $this->clearWait($group);
-
-                        return true;
-                    } elseif ($sandbox->state !== SandboxState::Running || $sandbox->desired_power !== 'running') {
-                        throw new ComputeException('compute.rebuild_required', 'The cloud sandbox must be rebuilt from its published branch before work resumes.');
-                    }
-                }
                 $result = $this->lifecycle->activate($sandbox, $this->drivers->forSandbox($sandbox));
                 if ($result->state !== SandboxState::Running || $result->desired_power !== 'running') {
                     throw new ComputeException('compute.starting', 'The sandbox is still starting.');
-                }
-                if ($result->provider === 'incus' && $group->project->slug !== 'orbit') {
-                    $this->projects->resumeLocal($group);
                 }
                 $this->clearWait($group);
 
@@ -105,30 +78,23 @@ final readonly class TaskSandboxGroupLifecycle
         });
     }
 
+    /** Only Orbit-lane sandboxes park and resume. A task VM stays up until its group ends. */
+    private static function orbitLane(Task $group): bool
+    {
+        return $group->task_compute === TaskCompute::Vm && $group->project->slug === 'orbit';
+    }
+
     private function sandbox(Task $group): TaskSandbox
     {
         $group->load(['project', 'taskable']);
         $workspace = $group->taskable;
-        if ($workspace === null && $group->taskable_id === null) {
-            $replacement = TaskSandbox::query()->where('group_id', $group->id)->where('provider', 'upcloud')
-                ->where('state', '!=', SandboxState::Destroyed)->first();
-            if ($replacement !== null && isset($replacement->spec['restore_commit'])) {
-                return $replacement;
-            }
-            $cleanup = TaskSandbox::query()->where('group_id', $group->id)->where('provider', 'upcloud')->where('desired_power', 'destroyed')->latest('created_at')->first();
-            if ($cleanup !== null) {
-                return $cleanup;
-            }
-        }
         $sandbox = $workspace instanceof Instance ? $workspace->taskSandbox : null;
         if (! $workspace instanceof Instance || ! $sandbox instanceof TaskSandbox || $sandbox->group_id !== $group->id
             || $workspace->project_id !== $group->project_id || $group->parent_id !== null || $group->task_compute !== TaskCompute::Vm) {
             throw new ComputeException('compute.ownership_mismatch', 'The task has no matching sandbox workspace.');
         }
-        $expectedNode = $group->project->slug === 'orbit' && $sandbox->provider === 'incus'
-            ? ($sandbox->spec['host_id'] ?? null)
-            : $sandbox->node_id;
-        if ($expectedNode === null || $workspace->node_id !== $expectedNode || ($group->project->slug === 'orbit' && $sandbox->node_id !== null)) {
+        $expectedNode = $sandbox->provider === 'incus' ? ($sandbox->spec['host_id'] ?? null) : null;
+        if ($expectedNode === null || $workspace->node_id !== $expectedNode || $sandbox->node_id !== null) {
             throw new ComputeException('compute.ownership_mismatch', 'The task workspace does not match its sandbox Node.');
         }
 

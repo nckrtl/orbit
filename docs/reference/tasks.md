@@ -602,7 +602,7 @@ A claim takes the oldest `todo` task that fits and moves it to `reserved`. The p
 - an active Linux Node with an active `app-dev` role and a WireGuard address;
 - not excluded from the Project by a [development node exclusion](/reference/development-node-exclusions);
 - an active `pi-server` Process with desired state `running`;
-- not a [task VM](/reference/compute-drivers#task-vms) Node (not built yet);
+- not the Node of a [task VM](/reference/compute-drivers#task-vms) that is not `destroyed`;
 - with fewer than 10 active tasks. Active tasks are `reserved`, `running`, `reviewing`, and `settling`.
 
 Among the Nodes that fit, the one with the fewest active tasks wins. There is no per-Project limit, and the scheduler never polls Nodes for capacity.
@@ -759,9 +759,7 @@ When the acting thread stops, the tick reads `$(git rev-parse --git-path orbit)/
 
 ### Task VM workspace
 
-Partly built. The agents, the checks, fetch, and push work on a task VM Node as `orbit`. The claim, the VM itself, and its workspace are not built yet. The Phase 1 slices of ADR 0200 build them.
-
-A group of a Project other than `orbit`, with `task_compute: vm`, runs in its own [task VM](/reference/compute-drivers#task-vms). The claim creates the VM and waits until it is `ready`. Until then, the task returns to `todo` with the reason `Task VM: <state or error>`, and the next tick tries again. Then Orbit creates the workspace on the VM's Node, as for a shared group: the Instance `task-{id}`, and its private Route when the workspace is routed.
+A group of a Project other than `orbit`, with `task_compute: vm`, runs in its own [task VM](/reference/compute-drivers#task-vms). The claim creates the VM and waits until it is `ready`. Until then, the task returns to `todo` with a [`Task VM:` reason](/reference/compute-drivers#from-claim-to-workspace), and the next tick tries again. Then Orbit creates the workspace on the VM's Node, as for a shared group: the Instance `task-{id}`, and its private Route when the workspace is routed.
 
 Inside the VM, everything runs as the managed user `orbit`, which has passwordless sudo. There is no `orbit-worker`, so the workspace needs no ACLs and no `safe.directory` entry. Implementers and reviewers run on the VM's own [Pi server](/reference/pi-server#run-pi-on-a-task-vm). The baseline and handoff checks run over SSH as `orbit`. The Gateway fetches and pushes over SSH with the token on standard input, as for a shared group. No GitHub token enters the VM.
 
@@ -789,7 +787,7 @@ During a consult, the pending consult stays open while Orbit acquires the topolo
 
 `topology_requested` requires a summary but refuses `--question`, `--cause`, and pull request flags. It leaves question records and assistance flags as they were; it does not create or resolve a direction request. Orbit records the requesting turn before sending the reply. A lost send response or a crash after the send never changes that source turn: Orbit reconciles an accepted or later turn instead of sending the resource reply again. If the resumed turn stops without a usable receipt, the normal missing-receipt reminder applies. The original context's outcome and cause rules apply again after resumption.
 
-The topology is shared by the group's subtasks and review turns. Orbit releases it when it removes the group's workspace, including any web session and loopback publication. [Incus topologies](/reference/incus-topologies#topologies-on-the-reviewers-request) owns the guest and command contract.
+The topology is shared by the group's subtasks and review turns. Orbit releases it when it removes the group's workspace, including any web session and loopback publication. A [task VM](/reference/compute-drivers#destroy-a-task-vm) workspace never holds a topology, so its removal releases none. [Incus topologies](/reference/incus-topologies#topologies-on-the-reviewers-request) owns the guest and command contract.
 
 ### Rubric and reminders
 
@@ -955,7 +953,9 @@ The check directory has mode `0711` and no inherited sharing ACL, so another use
 
 Checkout inspection and the access grants before and after a check skip the resolved workspace temp subtrees, including those in linked-worktree common metadata. The parent retains the workspace's sharing ACL. Agent temp files stay outside the tracked tree and disappear with the workspace. The check `TMPDIR` lives under `/tmp`, outside the ACL-shared checkout, and is not reused as the agent directory. Orbit does not change host-wide caches or application PHPStan configuration.
 
-Tests that switch Unix users need fixtures with traversable ancestors; granting access on a fixture cannot open a private `0700` `TMPDIR` parent. The check `TMPDIR` is already traversable. When a test process inherits a workspace role directory or that check directory, Gateway test bootstrap gives it a fresh canonical `/tmp/orbit-gateway-tests-<random>` fixture root with mode `0755`, replacing `TMPDIR` only inside that test process. Pi's cross-user test uses a fresh `/tmp/pi-shared-fixture-<random>` root instead of its inherited agent `TMPDIR`. Tests grant access on their own fixtures and clean them up. Tool caches outside those test processes still use the private role directories.
+Tests that switch Unix users need fixtures with traversable ancestors; granting access on a fixture cannot open a private `0700` `TMPDIR` parent. The check `TMPDIR` is already traversable.
+
+Gateway test bootstrap gives each test process a fresh canonical `orbit-gateway-tests-<pid>-<random>` fixture root with mode `0755` and replaces `TMPDIR` only inside that test process. The root is under the inherited `TMPDIR`, or under `/tmp` when the process inherits a workspace role directory or that check directory. A process that a test starts reuses the root it inherits. Pi's cross-user test uses a fresh `/tmp/pi-shared-fixture-<random>` root instead of its inherited agent `TMPDIR`. Tests grant access on their own fixtures and clean them up. Tool caches outside those test processes still use the private role directories.
 
 The check process runs as the Node's managed user, the account the Gateway connects as. A Project check can need that account's passwordless sudo, ACL tools, or access to the `caddy` account. The Gateway writes metadata only into administration directories owned by the managed user, without following symbolic links. It validates a linked worktree's `.git` pointer and its return pointer before opening that worktree's private administration directory. Status, cancel, and the workspace snapshot run as the same user. [The candidate gate runs as the managed user](/reference/pi-server#the-candidate-gate-runs-as-the-managed-user) explains the choice and its cost.
 
@@ -1566,13 +1566,13 @@ The engine knows the configured check, lifecycle steps, workspace routing, and t
 
 Task create accepts no planner. There is no `plan` field, no planner thread, and no stored planner state. An external ADE plans and steers the work. Orbit runs the assigned work.
 
-### Starting from the default release
+### Starting from the default checkout
 
-A new task workspace is a linked worktree of the Project's `default` repository on the selected Node. Its task branch starts at the current successful release's commit, not a newer fetched default branch. Orbit reads the authoritative `current` selection under the Node source lock, records `seed_path` and `seed_commit` on the new Instance before preparing its source, and preserves that selection on retries. An empty selection is recorded too: a later default deployment does not reseed a clone that already started without a release.
+A new task workspace is a linked worktree of the Project's `default` repository on the selected Node. Its task branch starts at the last commit that [deployed](/reference/deployments#development-defaults) in the default's checkout, not a newer fetched default branch. Orbit reads that commit under the Node source lock, records `seed_path` and `seed_commit` on the new Instance before preparing its source, and preserves that selection on retries. An empty selection is recorded too: a later default deployment does not reseed a clone that already started without a seed.
 
-The default Instance API also reads that selection, so an interrupted release switch cannot expose stale database fields. Both explicit Instance setup and asynchronous task baseline setup receive the recorded `ORBIT_SEED_PATH` and `ORBIT_SEED_COMMIT`; the Project copies its own dependency and cache folders from that release with reflinks. The workspace never writes back to the seed.
+Both explicit Instance setup and asynchronous task baseline setup receive the recorded `ORBIT_SEED_PATH` and `ORBIT_SEED_COMMIT`; the Project copies its own dependency and cache folders from the default checkout with reflinks, then runs its locked installs. A deployment of the default can change those folders during the copy. The workspace never writes back to the seed.
 
-When the Project has no development release on that Node, Orbit creates an independent clone and resolves its branch as before. The seed variables are empty and setup must install dependencies from its lock files. There is no automatic root-only dependency copy. External `instance:register` callers read `seed_path` and `seed_commit` from the `default` Instance API, create a branch and linked worktree at that commit, then register it and run setup.
+When the Project's default has not deployed on that Node, Orbit creates an independent clone and resolves its branch as before. The seed variables are empty and setup must install dependencies from its lock files. There is no automatic root-only dependency copy. External `instance:register` callers read `seed_path` and `seed_commit` from the `default` Instance API, create a branch and linked worktree at that commit, then register it and run setup.
 
 ### Routing and cleanup
 

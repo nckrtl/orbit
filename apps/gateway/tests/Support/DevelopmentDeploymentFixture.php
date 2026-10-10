@@ -25,7 +25,7 @@ use Illuminate\Filesystem\Filesystem;
 use Mockery;
 use Symfony\Component\Process\Process;
 
-/** Real release programs and Git, with only SSH replaced by local process execution. */
+/** Real checkout programs and Git, with only SSH replaced by local process execution. */
 final class DevelopmentDeploymentFixture
 {
     public readonly string $sandbox;
@@ -42,8 +42,6 @@ final class DevelopmentDeploymentFixture
 
     public readonly string $initialCommit;
 
-    private int $sequence = 0;
-
     public function __construct()
     {
         $this->sandbox = storage_path('framework/testing/dev935-'.bin2hex(random_bytes(8)));
@@ -58,6 +56,9 @@ final class DevelopmentDeploymentFixture
         mkdir($this->source.'/public');
         file_put_contents($this->source.'/public/index.php', '<?php echo "initial";');
         file_put_contents($this->source.'/old.txt', 'obsolete');
+        // A package that the next commit removes. Its ignored dependencies stay behind on a plain checkout.
+        new Filesystem()->makeDirectory($this->source.'/packages/gone', 0o755, true);
+        file_put_contents($this->source.'/packages/gone/package.json', '{}');
         self::command(['git', '-C', $this->source, 'add', '.']);
         self::command(['git', '-C', $this->source, 'commit', '-m', 'initial']);
         $this->initialCommit = trim(self::command(['git', '-C', $this->source, 'rev-parse', 'HEAD']));
@@ -73,6 +74,8 @@ final class DevelopmentDeploymentFixture
         file_put_contents($this->home.'/apps/gateway/vendor/dependency.bin', random_bytes(1024 * 1024));
         file_put_contents($this->home.'/.cache/warm', 'previous-cache');
         file_put_contents($this->home.'/.env', "APP_ENV=development\n");
+        new Filesystem()->makeDirectory($this->home.'/packages/gone/node_modules/dep', 0o755, true);
+        file_put_contents($this->home.'/packages/gone/node_modules/dep/index.js', 'dependency');
         self::command(['git', '-C', $this->home, 'worktree', 'add', '-b', 't3code-ab12', $this->sandbox.'/apps/dev935/t3code-ab12', 'HEAD']);
         self::command(['git', '-C', $this->home, 'worktree', 'add', '-b', 'task-935-e2e', $this->sandbox.'/apps/dev935/task-935-e2e', 'HEAD']);
 
@@ -109,7 +112,6 @@ final class DevelopmentDeploymentFixture
             $accounts,
             app(CheckoutRemovalBoundary::class),
             app(RepositoryReadAccess::class),
-            fn (): string => 'release-'.++$this->sequence,
         );
     }
 
@@ -117,6 +119,7 @@ final class DevelopmentDeploymentFixture
     {
         file_put_contents($this->source.'/public/index.php', '<?php echo '.var_export($message, true).';');
         @unlink($this->source.'/old.txt');
+        new Filesystem()->deleteDirectory($this->source.'/packages');
         self::command(['git', '-C', $this->source, 'add', '-A']);
         self::command(['git', '-C', $this->source, 'commit', '-m', $message]);
         self::command(['git', '-C', $this->source, 'push', 'origin', 'main']);
@@ -124,12 +127,47 @@ final class DevelopmentDeploymentFixture
         return trim(self::command(['git', '-C', $this->source, 'rev-parse', 'HEAD']));
     }
 
-    public function supportsReflinks(): bool
+    /**
+     * Builds the release layout that older Gateways made: detached worktrees under `releases/`, their
+     * ownership receipts, and `current`. Each release starts as a copy of the checkout's untracked files.
+     *
+     * @param  array<string, string>  $releases  Release name to commit.
+     */
+    public function releaseLayout(array $releases, string $selected): void
     {
-        $process = new Process(['cp', '--reflink=always', $this->home.'/apps/gateway/vendor/dependency.bin', $this->sandbox.'/probe']);
-        $process->run();
+        $identity = base64_encode($this->instance->id."\0".$this->home."\0".'https://example.test/dev935.git'."\0");
+        $state = $this->home.'/.git/orbit-development-releases';
+        mkdir($state, 0o700);
+        file_put_contents($this->home.'/.git/orbit-development-releases-owner', $identity."\n");
+        file_put_contents($state.'/identity', $identity."\n");
+        mkdir($this->home.'/releases');
+        foreach ($releases as $name => $commit) {
+            $release = $this->home.'/releases/'.$name;
+            self::command(['git', '-C', $this->home, 'worktree', 'add', '--detach', $release, $commit]);
+            foreach (['apps/gateway/vendor', '.cache', '.env'] as $entry) {
+                new Filesystem()->ensureDirectoryExists(dirname($release.'/'.$entry));
+                self::command(['cp', '-a', $this->home.'/'.$entry, $release.'/'.$entry]);
+            }
+            file_put_contents($state.'/release-'.$name, $identity.':'.$name."\n");
+        }
+        symlink('releases/'.$selected, $this->home.'/current');
+        $this->instance->update([
+            'development_release_layout' => true,
+            'seed_path' => $this->home.'/releases/'.$selected,
+            'seed_commit' => $releases[$selected],
+            'seed_repository' => $this->home,
+        ]);
+    }
 
-        return $process->isSuccessful();
+    /** Holds the lock that a setup or teardown step holds on a checkout, until the handle closes. */
+    public static function holdLifecycleLock(string $checkout): mixed
+    {
+        $handle = fopen('/tmp/orbit-lifecycle-'.trim(self::command(['id', '-u'])).'-'.hash('sha256', $checkout).'.lock', 'c');
+        if ($handle === false || ! flock($handle, LOCK_EX | LOCK_NB)) {
+            throw new \RuntimeException('The lifecycle lock is not available.');
+        }
+
+        return $handle;
     }
 
     public function cleanup(): void

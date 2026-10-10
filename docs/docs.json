@@ -121,6 +121,7 @@
               "reference/tasks",
               "reference/compute-drivers",
               "reference/pi-server",
+              "reference/t3-code",
               "reference/cli-binaries",
               "reference/self-update",
               "reference/events",
@@ -583,6 +584,23 @@
             ]
           },
           {
+            "group": "T3 Code",
+            "openapi": "/openapi.json",
+            "pages": [
+              "GET /api/v1/t3/environments",
+              "POST /api/v1/t3/environments",
+              "GET /api/v1/t3/environments/{environment}/pairings",
+              "POST /api/v1/t3/environments/{environment}/pairings",
+              "POST /api/v1/t3/environments/{environment}/pairings/revoke",
+              "GET /api/v1/t3/me",
+              "PUT /api/v1/t3/me/profile",
+              "GET /api/v1/t3/profiles",
+              "POST /api/v1/t3/profiles",
+              "GET /api/v1/t3/profiles/{profile}/settings",
+              "PUT /api/v1/t3/profiles/{profile}/settings"
+            ]
+          },
+          {
             "group": "Realtime",
             "openapi": "/openapi.json",
             "pages": [
@@ -598,7 +616,6 @@
               "GET /api/v1/agent/log-streams",
               "GET /api/v1/agent/realtime",
               "GET /api/v1/agent/workspaces",
-              "POST /api/v1/compute/github-token",
               "GET /api/v1/github/app/callback",
               "GET /api/v1/github/app/register",
               "GET /api/v1/metrics/grafana/authorize",
@@ -1282,7 +1299,7 @@
     },
     {
       "source": "/decisions/0119-publish-main-caches-from-clean-bootstrap-runs",
-      "destination": "/reference/implementation-loop#publish-from-bootstrap"
+      "destination": "/reference/implementation-loop#only-main-ci-publishes"
     },
     {
       "source": "/decisions/0166-raise-phpstan-one-level-at-a-time",

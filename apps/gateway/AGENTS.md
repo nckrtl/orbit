@@ -8,7 +8,7 @@ Laravel 13 control plane for Orbit.
 - Keep infrastructure execution synchronous and idempotent.
 - Use Pest 5 with `describe()` and `it()`.
 - Use Pint for formatting and Larastan for static analysis.
-- Do not add queues, a UI, Docker orchestration, or Node agents that run commands. `orbit-agent` only observes and publishes ([Node agent](../../docs/reference/node-agent.md#the-agent-only-observes)).
+- Do not add queues other than the `task-vms` database queue of [task VM jobs](../../docs/reference/compute-drivers.md#jobs). Do not add a UI, Docker orchestration, or Node agents that run commands. `orbit-agent` only observes and publishes ([Node agent](../../docs/reference/node-agent.md#the-agent-only-observes)).
 - Enforce binary directed node access at the HTTP boundary. One access edge permits all commands for its serving node. The active Gateway peer is implicit authority, and access to the Gateway is fleet-wide. Do not add granular permissions, presets, wildcards, or permission compatibility code.
 
 ## Track tool intent, not host inventory

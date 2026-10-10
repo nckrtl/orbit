@@ -13,7 +13,6 @@ use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskWorkspaceMcp;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
-use App\Infrastructure\Compute\SandboxFleetIdentity;
 use App\Infrastructure\Compute\TaskSandboxDrivers;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\NativeProcessRunner;
@@ -87,7 +86,7 @@ it('reads tracked and untracked review diff without updating the index', functio
 
             public function put(string $host, int $port, HostKey $key): void {}
         },
-    ), app(IncusSandboxHost::class), app(TaskSandboxDrivers::class), app(SandboxFleetIdentity::class)));
+    ), app(IncusSandboxHost::class), app(TaskSandboxDrivers::class)));
 
     $diff = $reader->read($instance, $start);
     $cached = new Process(['git', '-C', $checkout, 'diff', '--cached', '--name-only']);
@@ -316,7 +315,7 @@ function review_diff_reader(SshExecutor $ssh): RemoteTaskReviewDiff
 
             public function put(string $host, int $port, HostKey $key): void {}
         },
-    ), app(IncusSandboxHost::class), app(TaskSandboxDrivers::class), app(SandboxFleetIdentity::class)));
+    ), app(IncusSandboxHost::class), app(TaskSandboxDrivers::class)));
 }
 
 function review_diff_result(CommandResult $result): SshExecutor

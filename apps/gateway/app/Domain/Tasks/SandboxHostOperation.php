@@ -13,6 +13,4 @@ enum SandboxHostOperation: string
     case Resume = 'resume';
     case Destroy = 'destroy';
     case GuestCommand = 'guest_command';
-    case ProjectIdentity = 'project_identity';
-    case ProjectFleetIdentity = 'project_fleet_identity';
 }
