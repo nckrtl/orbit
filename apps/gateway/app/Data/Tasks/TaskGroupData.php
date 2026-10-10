@@ -151,10 +151,8 @@ final class TaskGroupData extends Data
         if (! $sandbox instanceof TaskSandbox || $sandbox->group_id !== $group->id || $workspace->project_id !== $group->project_id) {
             return null;
         }
-        $expectedNode = $group->project->slug === 'orbit' && $sandbox->provider === 'incus'
-            ? ($sandbox->spec['host_id'] ?? null) : $sandbox->node_id;
-        if ($expectedNode === null || $workspace->node_id !== $expectedNode
-            || ($group->project->slug === 'orbit' && $sandbox->node_id !== null)) {
+        $expectedNode = $sandbox->provider === 'incus' ? ($sandbox->spec['host_id'] ?? null) : null;
+        if ($expectedNode === null || $workspace->node_id !== $expectedNode || $sandbox->node_id !== null) {
             return null;
         }
 

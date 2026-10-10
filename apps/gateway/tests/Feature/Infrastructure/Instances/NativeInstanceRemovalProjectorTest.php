@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Actions\Routes\CreateRouteAction;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Clusters\ClusterState;
@@ -11,7 +10,6 @@ use App\Domain\Instances\InstanceRemovalStep;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\ProductionPhpRuntimeIdentity;
 use App\Domain\Instances\ProductionPhpRuntimeManager;
-use App\Domain\Instances\Removal\InstanceRemovalProjector;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
@@ -32,7 +30,6 @@ use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
 use App\Infrastructure\AppDev\RemoteAppDevPhpFpmManager;
 use App\Infrastructure\AppDev\RemoteAppDevRouteFirewallManager;
-use App\Infrastructure\Compute\ProjectSandboxInstanceRemoval;
 use App\Infrastructure\Instances\NativeInstanceRemovalProjector;
 use App\Infrastructure\Nodes\RemotePhpPackageManager;
 use App\Infrastructure\Processes\CommandResult;
@@ -51,10 +48,10 @@ use App\Models\InstanceRemovalMember;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
+use App\Models\TaskSandbox;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Tests\Support\FakePublicRouteEdgeProjector;
-use Tests\Support\IncusRuntimeWorkspace;
 use Tests\Support\SshNodeCaddyBuilds;
 
 afterEach(function (): void {
@@ -189,6 +186,19 @@ it('withdraws the second placement of a Route that waits for its placement withd
             "app-instance-{$member->instance_id}",
             "app-instance-{$member->instance_id}-hostname-change",
         );
+});
+
+it('refuses an Orbit-lane sandbox workspace before touching its Route or Nodes', function (): void {
+    [$member, $route] = orb181_projector_development_member();
+    [$projector, $ssh] = orb181_removal_projector($this);
+    $sandbox = TaskSandbox::query()->create(['id' => (string) Str::uuid(), 'provider' => 'incus', 'name' => 'ot-removal',
+        'state' => 'running', 'desired_power' => 'running', 'spec' => []]);
+    Instance::query()->whereKey($member->instance_id)->update(['task_sandbox_id' => $sandbox->id]);
+
+    expect(fn () => $projector->clearRouteTarget($member))
+        ->toThrow(ResourceOperationException::class, 'Remove a sandbox workspace through its task group.');
+    expect($ssh->commands)->toBe([])
+        ->and(Route::query()->find($route->id))->not->toBeNull();
 });
 
 it('keeps the final Route row until every projection cleanup succeeds', function (): void {
@@ -645,29 +655,6 @@ function orb181_removal_projector(
         $processes,
     ];
 }
-
-it('withdraws a parked Project sandbox preview through native projection without reaching its guest', function (): void {
-    $workspace = IncusRuntimeWorkspace::create();
-    $workspace->project->update(['type' => 'laravel-app', 'root' => 'public']);
-    $workspace->update(['task_workspace_routed' => true, 'root' => 'public', 'starting_commit' => str_repeat('a', 40)]);
-    $route = app(CreateRouteAction::class)->ensureForInstance($workspace, null);
-    $route->update(['status' => RouteStatus::Active, 'sites_published' => true]);
-    $workspace->update(['status' => InstanceState::Active]);
-    $sandbox = $workspace->taskSandbox;
-    $sandbox->forceFill(['desired_power' => 'destroyed', 'model_key' => null])->save();
-    $sandbox->update(['state' => 'stopped']);
-    [$projector, $ssh] = orb181_removal_projector($this);
-    app()->instance(InstanceRemovalProjector::class, $projector);
-    app(ProjectSandboxInstanceRemoval::class)->remove($workspace);
-    $this->assertModelMissing($route);
-    $this->assertModelMissing($workspace);
-    $member = InstanceRemovalMember::query()->where('instance_id', $workspace->id)->sole();
-    expect($member->removal->status->value)->toBe('completed');
-    expect($member->finalization_receipt)->toStartWith('retained-in-sandbox:'.$sandbox->id.':');
-    expect(collect($ssh->commands)->pluck('input')->implode("\n"))->not->toContain('git worktree remove', 'source-prepare.py', 'source-finalize.py');
-    expect(collect($ssh->connections)->pluck('host')->all())->not->toContain($workspace->node->wireguard_ip);
-    $this->assertModelExists($workspace->node);
-});
 
 final class Orb214RemovalPhpRuntimeManager implements ProductionPhpRuntimeManager
 {

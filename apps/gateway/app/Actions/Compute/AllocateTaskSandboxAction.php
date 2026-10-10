@@ -18,10 +18,10 @@ use App\Models\TaskSandbox;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
-/** Reserve local capacity first. Cloud overspill is restricted to the project lane. */
+/** Reserve an Orbit pair on a local Incus host. */
 final readonly class AllocateTaskSandboxAction
 {
-    public function __construct(private TaskSandboxDrivers $drivers, private ProvisionTaskSandboxAction $cloud, private TaskSandboxLifecycle $lifecycle, private TaskSandboxWarmPool $warmPool) {}
+    public function __construct(private TaskSandboxDrivers $drivers, private TaskSandboxLifecycle $lifecycle, private TaskSandboxWarmPool $warmPool) {}
 
     public function execute(Task $group): TaskSandbox
     {
@@ -38,13 +38,11 @@ final readonly class AllocateTaskSandboxAction
         $candidates = [];
         if (config('compute.incus.enabled', false)) {
             foreach ($this->drivers->localHosts() as $settings) {
-                $images = $group->project->slug === 'orbit'
-                    ? array_intersect_key($settings['orbit_images'], array_flip(['operator', 'gateway']))
-                    : (isset($settings['project_images'][$group->project->slug]) ? ['operator' => $settings['project_images'][$group->project->slug]] : []);
-                if (count($images) !== ($group->project->slug === 'orbit' ? 2 : 1)) {
+                $images = array_intersect_key($settings['orbit_images'], array_flip(['operator', 'gateway']));
+                if (count($images) !== 2) {
                     continue;
                 }
-                $template = $group->project->slug === 'orbit' ? $settings['orbit_source_template'] : null;
+                $template = $settings['orbit_source_template'];
                 if ($template !== null) {
                     $repository = GitHubRepository::fromOrigin((string) $group->project->repository_url);
                     if (! $repository instanceof GitHubRepository || $template['repository'] !== 'https://github.com/'.$repository->owner.'/'.$repository->name.'.git'
@@ -52,7 +50,7 @@ final readonly class AllocateTaskSandboxAction
                         throw new ComputeException('compute.template_mismatch', 'The source template does not match the Project repository and default branch.');
                     }
                 }
-                // A failed observation is not evidence of a full host. Do not silently move to cloud.
+                // A failed observation is not evidence of a full host.
                 $available = $this->drivers->local($settings)->capacity();
                 $candidates[] = ['settings' => $settings, 'images' => $images, 'available' => $available, 'template' => $template];
             }
@@ -99,24 +97,13 @@ final readonly class AllocateTaskSandboxAction
                     continue;
                 }
                 $proxy = [];
-                if ($group->project->slug === 'orbit' && $settings['gateway_address'] !== null) {
+                if ($settings['gateway_address'] !== null) {
                     $address = $hostNodes->get($settings['node_id'])?->wireguard_ip;
                     if (! is_string($address) || filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false || ! str_starts_with($address, '10.44.')) {
                         throw new ComputeException('compute.invalid_configuration', 'The Incus Pi proxy needs the host WireGuard address.');
                     }
                     // The subnet remains reserved while stopped, so its proxy port does too.
                     $proxy = ['pi_host' => $address, 'pi_port' => 23000 + $index, 'gateway_address' => $settings['gateway_address']];
-                }
-                if ($group->project->slug !== 'orbit' && $settings['project_bootstrap'] !== null) {
-                    $address = $hostNodes->get($settings['node_id'])?->wireguard_ip;
-                    if (! is_string($address) || filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false
-                        || ! str_starts_with($address, '10.44.') || $address === $settings['gateway_address']) {
-                        throw new ComputeException('compute.invalid_configuration', 'The Project bootstrap needs a distinct host WireGuard address.');
-                    }
-                    $proxy = ['project_bootstrap' => [
-                        'ssh_host' => $address, 'ssh_port' => 24000 + $index,
-                        'gateway_address' => $settings['gateway_address'], ...$settings['project_bootstrap'],
-                    ]];
                 }
                 $id = (string) Str::uuid();
 
@@ -126,9 +113,8 @@ final readonly class AllocateTaskSandboxAction
                     'desired_power' => 'running', 'spec' => [
                         'host_id' => $settings['node_id'], 'project' => $settings['project'], 'pool' => $settings['pool'],
                         ...($candidate['template'] === null ? [] : ['source_template' => $candidate['template']]),
-                        ...($locked->project->slug === 'orbit' ? [] : ['project_slug' => $locked->project->slug]),
                         'images' => $candidate['images'], 'subnet' => $subnet, 'blocked_networks' => $settings['blocked_networks'], ...$proxy,
-                        ...($group->project->slug !== 'orbit' || $settings['model_proxy_origin'] === null ? [] : ['model_proxy_origin' => $settings['model_proxy_origin']]),
+                        ...($settings['model_proxy_origin'] === null ? [] : ['model_proxy_origin' => $settings['model_proxy_origin']]),
                     ],
                 ]);
             }
@@ -138,11 +124,7 @@ final readonly class AllocateTaskSandboxAction
         if ($sandbox instanceof TaskSandbox) {
             return $this->activate($sandbox);
         }
-        if ($group->project->slug === 'orbit') {
-            throw new ComputeException('compute.capacity', 'No local Incus host has capacity for the Orbit sandbox pair.');
-        }
-
-        return $this->cloud->execute($group);
+        throw new ComputeException('compute.capacity', 'No local Incus host has capacity for the Orbit sandbox pair.');
     }
 
     private function activate(TaskSandbox $sandbox): TaskSandbox

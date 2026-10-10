@@ -6,7 +6,6 @@ namespace App\Actions\Tasks;
 
 use App\Domain\Compute\SandboxState;
 use App\Domain\Instances\InstanceRemover;
-use App\Domain\Instances\InstanceSandboxGuard;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskCompute;
@@ -96,7 +95,7 @@ final readonly class RemoveTaskWorkspaceAction
     /** Releases the group's topology first; a failed release keeps the workspace for a retry. */
     public function remove(Instance $instance, ?Task $expectedGroup = null): void
     {
-        if (InstanceSandboxGuard::isSandbox($instance)) {
+        if ($instance->task_sandbox_id !== null) {
             app(RemoveTaskSandboxAction::class)->workspace($instance, $expectedGroup);
 
             return;

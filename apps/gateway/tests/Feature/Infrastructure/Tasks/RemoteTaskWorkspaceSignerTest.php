@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
-use App\Infrastructure\Compute\SandboxFleetIdentity;
 use App\Infrastructure\Compute\TaskSandboxDrivers;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
@@ -93,7 +92,7 @@ it('commits every workspace change with the message from stdin and returns the n
     $message = "Models\n\nChecked the export and its test. It's \$ready; `no` shell expansion.";
 
     try {
-        $sha = new RemoteTaskWorkspaceSigner(new TaskWorkspaceExecutor(task_signer_ssh(new LocalShellSshExecutor), app(IncusSandboxHost::class), app(TaskSandboxDrivers::class), app(SandboxFleetIdentity::class)))->commit(task_signer_instance($checkout), $message);
+        $sha = new RemoteTaskWorkspaceSigner(new TaskWorkspaceExecutor(task_signer_ssh(new LocalShellSshExecutor), app(IncusSandboxHost::class), app(TaskSandboxDrivers::class)))->commit(task_signer_instance($checkout), $message);
 
         expect($sha)->toBe(task_signer_git($checkout, ['rev-parse', 'HEAD']))
             ->and(task_signer_git($checkout, ['log', '-1', '--format=%B']))->toBe($message)
@@ -111,7 +110,7 @@ it('returns HEAD without a new commit when the workspace has no changes', functi
     $head = task_signer_git($checkout, ['rev-parse', 'HEAD']);
 
     try {
-        expect(new RemoteTaskWorkspaceSigner(new TaskWorkspaceExecutor(task_signer_ssh(new LocalShellSshExecutor), app(IncusSandboxHost::class), app(TaskSandboxDrivers::class), app(SandboxFleetIdentity::class)))->commit(task_signer_instance($checkout), 'Models'))->toBe($head);
+        expect(new RemoteTaskWorkspaceSigner(new TaskWorkspaceExecutor(task_signer_ssh(new LocalShellSshExecutor), app(IncusSandboxHost::class), app(TaskSandboxDrivers::class)))->commit(task_signer_instance($checkout), 'Models'))->toBe($head);
     } finally {
         File::deleteDirectory($checkout);
     }
@@ -139,7 +138,7 @@ describe('TaskGitHardening', function (): void {
         }
 
         try {
-            $sha = new RemoteTaskWorkspaceSigner(new TaskWorkspaceExecutor(task_signer_ssh($transport), app(IncusSandboxHost::class), app(TaskSandboxDrivers::class), app(SandboxFleetIdentity::class)))->commit(task_signer_instance($checkout), 'Orbit commit');
+            $sha = new RemoteTaskWorkspaceSigner(new TaskWorkspaceExecutor(task_signer_ssh($transport), app(IncusSandboxHost::class), app(TaskSandboxDrivers::class)))->commit(task_signer_instance($checkout), 'Orbit commit');
 
             expect($sha)->not->toBeNull()
                 ->and(file_exists($checkout.'/.git/hook-ran'))->toBeFalse()
@@ -160,7 +159,7 @@ describe('TaskCheckWorkerUser', function (): void {
         task_signer_git($checkout, ['config', 'filter.uid.clean', 'id -u > .git/filter-user; cat']);
 
         try {
-            expect(new RemoteTaskWorkspaceSigner(new TaskWorkspaceExecutor(task_signer_ssh(new LocalShellSshExecutor), app(IncusSandboxHost::class), app(TaskSandboxDrivers::class), app(SandboxFleetIdentity::class)))->commit(task_signer_instance($checkout), 'commit'))->toBeNull()
+            expect(new RemoteTaskWorkspaceSigner(new TaskWorkspaceExecutor(task_signer_ssh(new LocalShellSshExecutor), app(IncusSandboxHost::class), app(TaskSandboxDrivers::class)))->commit(task_signer_instance($checkout), 'commit'))->toBeNull()
                 ->and(file_exists($checkout.'/.git/filter-user'))->toBeFalse();
         } finally {
             File::deleteDirectory($checkout);
@@ -179,7 +178,7 @@ describe('TaskCheckWorkerUser', function (): void {
         (new Process(['setfacl', '-R', '-m', 'u:nobody:rwX,d:u:nobody:rwX,d:u:'.posix_geteuid().':rwX', $checkout]))->mustRun();
 
         try {
-            $sha = new RemoteTaskWorkspaceSigner(new TaskWorkspaceExecutor(task_signer_ssh($transport), app(IncusSandboxHost::class), app(TaskSandboxDrivers::class), app(SandboxFleetIdentity::class)))->commit(task_signer_instance($checkout), 'Start commit');
+            $sha = new RemoteTaskWorkspaceSigner(new TaskWorkspaceExecutor(task_signer_ssh($transport), app(IncusSandboxHost::class), app(TaskSandboxDrivers::class)))->commit(task_signer_instance($checkout), 'Start commit');
 
             expect($sha)->not->toBeNull()
                 ->and(trim((string) file_get_contents($checkout.'/.git/filter-user')))->toBe('nobody')
@@ -194,7 +193,7 @@ describe('TaskCheckWorkerUser', function (): void {
 it('returns null when the remote git commit fails', function (): void {
     $transport = new AppDevFakeSshExecutor([new CommandResult(1, '', 'failed', 1, false)]);
 
-    expect(new RemoteTaskWorkspaceSigner(new TaskWorkspaceExecutor(task_signer_ssh($transport), app(IncusSandboxHost::class), app(TaskSandboxDrivers::class), app(SandboxFleetIdentity::class)))->commit(
+    expect(new RemoteTaskWorkspaceSigner(new TaskWorkspaceExecutor(task_signer_ssh($transport), app(IncusSandboxHost::class), app(TaskSandboxDrivers::class)))->commit(
         task_signer_instance(),
         'Models',
     ))->toBeNull();

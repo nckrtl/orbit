@@ -7,7 +7,6 @@ namespace App\Infrastructure\Compute;
 use App\Actions\Compute\ReserveSandboxPiTokenAction;
 use App\Domain\Compute\ComputeDriver;
 use App\Domain\Compute\ComputeException;
-use App\Domain\Compute\SandboxFleetRemover;
 use App\Domain\Compute\SandboxState;
 use App\Domain\Tasks\TaskExecutionLock;
 use App\Models\TaskSandbox;
@@ -16,7 +15,7 @@ use Closure;
 /** Serialize credential and compute transitions for one reservation. */
 final readonly class TaskSandboxLifecycle
 {
-    public function __construct(private ComputeLocks $locks, private SandboxModelKeys $keys, private ReserveSandboxPiTokenAction $pi, private SandboxFleetRemover $fleet, private TaskExecutionLock $groups) {}
+    public function __construct(private ComputeLocks $locks, private SandboxModelKeys $keys, private ReserveSandboxPiTokenAction $pi, private TaskExecutionLock $groups) {}
 
     public function activate(TaskSandbox $sandbox, ComputeDriver $driver): TaskSandbox
     {
@@ -58,11 +57,6 @@ final readonly class TaskSandboxLifecycle
                 return $sandbox->state === SandboxState::Running && $sandbox->desired_power === 'running'
                     ? $sandbox
                     : $this->activateOwned($sandbox, $driver);
-            }
-            if ($sandbox->provider === 'upcloud') {
-                return $sandbox->review_started_at->copy()->addHour()->lessThanOrEqualTo(now())
-                    ? $this->destroyOwned($sandbox, $driver)
-                    : $sandbox;
             }
             if ($capacityWaiting || $sandbox->review_started_at->copy()->addMinutes(5)->lessThanOrEqualTo(now())
                 || $sandbox->desired_power === 'stopped') {
@@ -113,18 +107,11 @@ final readonly class TaskSandboxLifecycle
 
     private function destroyOwned(TaskSandbox $sandbox, ComputeDriver $driver): TaskSandbox
     {
-        $enrolled = in_array($sandbox->provider, ['upcloud', 'incus'], true) && $sandbox->enrollment !== null;
-        if ($enrolled) {
-            $this->fleet->assertRemovable($sandbox);
-        } elseif ($sandbox->node_id !== null) {
+        if ($sandbox->node_id !== null || $sandbox->enrollment !== null) {
             throw new ComputeException('compute.node_attached', 'Remove the sandbox Node from the fleet before destroying its VM.');
         }
         $sandbox->update(['desired_power' => 'destroyed']);
         $this->keys->revoke($sandbox);
-        if ($enrolled) {
-            $this->fleet->remove($sandbox);
-            $sandbox->refresh();
-        }
         $sandbox->pi_ready_at = null;
         $sandbox->save();
         $result = $driver->destroy($sandbox);

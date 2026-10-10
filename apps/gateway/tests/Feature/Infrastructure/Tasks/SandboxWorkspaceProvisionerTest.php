@@ -34,7 +34,7 @@ function sandbox_claim(): array
     config(['compute.orbit_claims_enabled' => true, 'compute.incus.enabled' => true,
         'compute.pi.models' => [['id' => 'gpt-5.4', 'name' => 'GPT', 'reasoning' => true, 'input' => ['text'], 'contextWindow' => 128000, 'maxTokens' => 16384]],
         'compute.incus.hosts' => [['node_id' => $host->id, 'project' => 'orbit-task-sandboxes', 'pool' => 'proof', 'max_vms' => 2,
-            'orbit_images' => ['operator' => str_repeat('a', 64), 'gateway' => str_repeat('b', 64)], 'project_images' => [],
+            'orbit_images' => ['operator' => str_repeat('a', 64), 'gateway' => str_repeat('b', 64)],
             'orbit_source_template' => ['id' => '9862e1aa-605c-4b49-a65b-6cf0b3a96dfe', 'repository' => 'https://github.com/acme/orbit.git', 'base' => 'main', 'commit' => str_repeat('c', 40)],
             'blocked_networks' => ['192.168.0.0/16'], 'gateway_address' => '10.44.0.2', 'model_proxy_origin' => 'http://127.0.0.1:28317']]]);
     mock(SshKeyProvider::class)->shouldReceive('privateKeyPath')->andReturn('/keys/private');
@@ -151,7 +151,7 @@ it('does not fall back when the local VM budget is full', function (): void {
     expect($state->calls)->toBe(['capacity'])->and(TaskSandbox::query()->count())->toBe(0);
 });
 
-it('refuses stale cancelled held and project lane claims before host contact', function (string $change): void {
+it('refuses stale cancelled held and web Project claims before host contact', function (string $change): void {
     [$group, $state] = sandbox_claim();
     match ($change) {
         'cancelled' => Task::topLevel()->whereKey($group->id)->update(['status' => 'cancelled']),

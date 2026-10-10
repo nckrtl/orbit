@@ -9,6 +9,7 @@ use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Actions\TaskVms\ForgetTaskVmWorkspacesAction;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmState;
@@ -89,12 +90,26 @@ final class DestroyTaskVm implements ShouldBeUnique, ShouldQueue
         }
     }
 
-    /** Set by a failed workspace removal of an ended group, or of a merged group's cleanup. */
+    /**
+     * Set by a failed workspace removal of an ended group, or of a merged group's cleanup. A group that still
+     * runs keeps its workspace, even when an earlier removal failed, so the VM's death is not forgotten silently.
+     */
     public static function removalFailed(Task $group): bool
     {
         $reason = (string) $group->assistance_reason;
 
-        return str_starts_with($reason, RemoveTaskWorkspaceAction::RemovalFailedPrefix) || str_starts_with($reason, RemoveTaskWorkspaceAction::MergeCleanupFailedPrefix);
+        return in_array($group->status, self::endedStatuses(), true)
+            && (str_starts_with($reason, RemoveTaskWorkspaceAction::RemovalFailedPrefix) || str_starts_with($reason, RemoveTaskWorkspaceAction::MergeCleanupFailedPrefix));
+    }
+
+    /**
+     * A cancelled or completed group, or one whose pull request merged and now waits for completion.
+     *
+     * @return list<TaskGroupStatus>
+     */
+    public static function endedStatuses(): array
+    {
+        return [TaskGroupStatus::Completed, TaskGroupStatus::Cancelled, ...TaskGroupStatus::awaitingCompletion()];
     }
 
     /** Whether the VM runs. A guest reboot shows it stopped for about a second, so a stopped VM gets a second reading. */
