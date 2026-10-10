@@ -779,6 +779,27 @@ it('docs impact ignores unchanged unowned error identifiers moved by a comment',
     expect($report['errors'])->toBe([]);
 });
 
+it('docs impact ignores vendored dependencies and binary files removed from the base', function (): void {
+    $root = docsImpactFixture();
+    $vendored = 'apps/desktop/node_modules/@tauri-apps/cli/index.js';
+    $binary = 'apps/desktop/assets/cli.node';
+    mkdir(dirname($root.'/'.$vendored), 0777, true);
+    mkdir(dirname($root.'/'.$binary), 0777, true);
+    file_put_contents($root.'/'.$vendored, "module.exports = { code: 'tauri-apps.tauri-vscode' };\n");
+    file_put_contents($root.'/'.$binary, "\x7fELF\0\0code: \"tauri-apps.tauri-vscode\"\0");
+    exec('git -C '.escapeshellarg($root).' add .');
+    exec('git -C '.escapeshellarg($root).' -c user.name=Docs -c user.email=docs@example.test commit -qm vendored');
+    $base = trim(shell_exec('git -C '.escapeshellarg($root).' rev-parse HEAD'));
+    unlink($root.'/'.$vendored);
+    unlink($root.'/'.$binary);
+
+    $report = new DocsImpact($root)->report($base, []);
+
+    expect($report['paths'])->toContain($vendored, $binary)
+        ->and($report['errors'])->toBe([])
+        ->and($report['surfaces'])->toBe([]);
+});
+
 it('docs impact reports unowned error identifiers genuinely added and removed', function (): void {
     $root = docsImpactFixture();
     $path = 'apps/gateway/app/Domain/Unmapped/UnownedIdentifier.php';
