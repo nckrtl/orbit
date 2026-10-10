@@ -77,7 +77,7 @@ final class FakeIncusImageHost implements SshExecutor
                 $this->images,
             ))),
             $operation[0] === 'launch' => $this->answer('launch', fn () => $this->instances[end($operation)] = $this->fingerprintOf($operation[count($operation) - 2])),
-            $operation[0] === 'exec' => $this->exec($operation[2], array_slice($operation, 3)),
+            $operation[0] === 'exec' => $this->exec($operation[array_search('--', $operation, true) + 1], array_slice($operation, array_search('--', $operation, true) + 2)),
             $operation[0] === 'stop' => $this->answer('stop'),
             $operation[0] === 'publish' => $this->answer('publish', fn () => $this->images[IMAGE_NEW] = [$operation[4]]),
             $operation[0] === 'delete' => $this->answer('delete '.end($operation), function () use ($operation): void {
@@ -107,7 +107,7 @@ final class FakeIncusImageHost implements SshExecutor
             'bash' => $command[1] === '-s'
                 ? ($this->fail === 'clean' ? new CommandResult(1, '', "base-image-clean: an SSH host key remains\n", 1, false) : new CommandResult(0, "{\"ok\":true}\n", '', 1, false))
                 : $this->answer('agent'),
-            default => $this->answer($command[0] === 'sudo' ? 'program' : 'exec'),
+            default => $this->answer($command[0] === 'runuser' ? 'program' : 'exec'),
         };
     }
 
@@ -196,12 +196,14 @@ describe('a build', function (): void {
             app(NodeRolePrerequisiteCommandFactory::class)->caddyPackage($node, RoleName::AppDev),
             app(NodeRolePrerequisiteCommandFactory::class)->make($node, RoleName::AppDev, new ManagedUserAccount('orbit', 'orbit', '/home/orbit')),
         ];
-        $execs = array_values(array_filter($this->incus->commands, static fn (RemoteCommand $command): bool => array_slice($command->arguments, 5, 3) === ['exec', '--', 'tvm-image-20261010030000'] && $command->arguments[8] === 'sudo'));
+        $execs = array_values(array_filter($this->incus->commands, static fn (RemoteCommand $command): bool => array_slice($command->arguments, 5, 11) === [
+            'exec', '--cwd', '/home/orbit', '--env', 'HOME=/home/orbit', '--env', 'USER=orbit', '--', 'tvm-image-20261010030000', 'runuser', '-u',
+        ]));
         $launches = array_values(array_filter($this->incus->commands, static fn (RemoteCommand $command): bool => $command->arguments[5] === 'launch'));
 
         expect($fingerprint)->toBe(IMAGE_NEW)
             ->and($stages)->toBe(['sweep', 'launch', 'cloud-init', 'bootstrap', 'caddy-package', 'app-dev-prerequisites', 'agent-binary', 'clean', 'publish', 'delete-builder', 'smoke', 'promote', 'prune'])
-            ->and(array_map(static fn (RemoteCommand $command): array => [array_slice($command->arguments, 8), $command->input], $execs))
+            ->and(array_map(static fn (RemoteCommand $command): array => [array_slice($command->arguments, 18), $command->input], $execs))
             ->toBe(array_map(static fn (?RemoteCommand $program): array => [$program?->arguments, $program?->input], $programs))
             ->and(array_slice($launches[0]->arguments, -3))->toBe(['--', 'ubuntu-26.04-vm', 'tvm-image-20261010030000'])
             ->and($launches[0]->input)->toContain('package_upgrade')->toContain('libnss3')->toContain('openssh-server')
@@ -257,6 +259,7 @@ describe('a build', function (): void {
 
 describe('a failed build', function (): void {
     it('keeps the current image and leaves nothing behind', function (string $fail, string $stage, array $images): void {
+        $this->travelTo('2026-10-10 03:00:00');
         $this->incus->images += [IMAGE_OLD => ['orbit-task-base-20261009030000', TaskVmHost::BaseImage]];
         $this->incus->fail = $fail;
 

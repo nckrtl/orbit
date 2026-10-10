@@ -37,7 +37,7 @@ A claim moves a group through these steps. Steps 2 to 5 are queued [jobs](#jobs)
 
 Cloud-init creates the user `orbit` with passwordless sudo and the Gateway's SSH key. It does nothing else, because the base image already holds `openssh-server`, Chromium's system libraries, and the software of the `app-dev` role. Enrollment finds that software installed, so its package steps change nothing. The Project's setup steps install the rest, for example its Playwright browsers.
 
-`EnrollTaskVm` checks the VM every 5 seconds. It goes on when cloud-init reports `done` with no errors and the guest has its bridge address. It reads the guest values only then, before any code but cloud-init has run in the VM. A guest reboot shows the VM stopped for about a second, so a stopped VM gets a second reading 5 seconds later before enrollment fails.
+`EnrollTaskVm` checks the VM every 2 seconds, for up to 2 minutes in one run, and then again 15 seconds later. It goes on when cloud-init reports `done` with no errors and the guest has its bridge address. It reads the guest values only then, before any code but cloud-init has run in the VM. A guest reboot shows the VM stopped for about a second, so a stopped VM gets a second reading 5 seconds later before enrollment fails.
 
 Provisioning links the new Node to the row when it creates the Node record, before any convergence. So the Node is a task VM Node from the start: the fleet rollout skips it, and it gets no Orbit CLI.
 
@@ -97,7 +97,7 @@ Orbit derives progress inside `provisioning` from facts: the VM exists, the row 
 
 ### Jobs
 
-The four jobs run on the `task-vms` database queue, in the Gateway's own database. Each job loads its row again, does nothing when the row has moved on, and is unique for its task VM. While a job waits on that queue, the Gateway scheduler starts this worker every minute:
+The task VM jobs run on the `task-vms` database queue, in the Gateway's own database. Each job loads its row again, does nothing when the row has moved on, and is unique for its task VM. While a job waits on that queue, the Gateway scheduler starts this worker every 10 seconds:
 
 ```text
 queue:work task-vms --queue=task-vms --stop-when-empty --max-time=50 --timeout=1500
@@ -108,9 +108,10 @@ The worker stops when the queue is empty, or takes no new job after 50 seconds. 
 | Job | Retries |
 | --- | --- |
 | `ProvisionTaskVm` | Once after 30 seconds |
-| `EnrollTaskVm` | Fails at once on a cloud-init error, an absent or stopped VM, or a boot over 10 minutes. Retries other errors twice. Stops after 150 tries, polls included |
+| `EnrollTaskVm` | Fails at once on a cloud-init error, an absent or stopped VM, or a boot over 10 minutes. Retries other errors twice. Stops after 60 tries, waits included |
 | `PrepareTaskVmRuntime` | Twice, 30 seconds apart |
 | `DestroyTaskVm` | Until it succeeds |
+| `RefreshTaskVmBaseImages` | Never. The next night runs it again |
 
 When a job of the first three has no retries left, or runs past its timeout, the row becomes `failed` with the job's error code, or `task_vm.job_failed` when the error has none. The group asks for assistance with the reason `Task VM failed: <code>: <message>`, so `tasks:status` lists it. `EnrollTaskVm` never creates the VM again. The jobs run one at a time, so the 10-minute boot limit counts from the moment `ProvisionTaskVm` launched the VM, not from the row.
 

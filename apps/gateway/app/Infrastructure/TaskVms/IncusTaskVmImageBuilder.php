@@ -86,24 +86,23 @@ final readonly class IncusTaskVmImageBuilder
         $alias = TaskVmHost::BaseImage.'-'.$stamp;
         $programs = $this->enrollmentPrograms();
         $unused = null;
-        $stage = fn (string $name, Closure $work): mixed => $this->stage($node, $name, $progress, $work);
 
         try {
-            $stage('sweep', fn () => $this->sweep($host, $node));
-            $stage('launch', fn () => $this->launch($host, $node, $builder, TaskVmHost::SourceImage, $this->cloudInit->renderImageBuilder($this->keys->publicKey())));
-            $stage('cloud-init', fn () => $this->awaitCloudInit($host, $node, $builder));
+            $this->stage($node, 'sweep', $progress, fn () => $this->sweep($host, $node));
+            $this->stage($node, 'launch', $progress, fn () => $this->launch($host, $node, $builder, TaskVmHost::SourceImage, $this->cloudInit->renderImageBuilder($this->keys->publicKey())));
+            $this->stage($node, 'cloud-init', $progress, fn () => $this->awaitCloudInit($host, $node, $builder));
             foreach ($programs as $name => $program) {
-                $stage($name, fn () => $this->runProgram($host, $node, $builder, $name, $program));
+                $this->stage($node, $name, $progress, fn () => $this->runProgram($host, $node, $builder, $name, $program));
             }
-            $stage('agent-binary', fn () => $this->installAgent($host, $node, $builder));
-            $stage('clean', fn () => $this->clean($host, $node, $builder));
+            $this->stage($node, 'agent-binary', $progress, fn () => $this->installAgent($host, $node, $builder));
+            $this->stage($node, 'clean', $progress, fn () => $this->clean($host, $node, $builder));
             $unused = $published = $this->stage($node, 'publish', $progress, fn (): string => $this->publish($host, $node, $builder, $alias));
-            $stage('delete-builder', fn () => $this->delete($host, $node, $builder));
-            $stage('smoke', fn () => $this->smoke($host, $node, $smoke, $alias));
-            $stage('promote', fn () => $this->promote($host, $node, $published));
+            $this->stage($node, 'delete-builder', $progress, fn () => $this->delete($host, $node, $builder));
+            $this->stage($node, 'smoke', $progress, fn () => $this->smoke($host, $node, $smoke, $alias));
+            $this->stage($node, 'promote', $progress, fn () => $this->promote($host, $node, $published));
             // The new image is the base image now, so a failed prune leaves it in place.
             $unused = null;
-            $stage('prune', fn (): array => $this->prune($host, $node, $published));
+            $this->stage($node, 'prune', $progress, fn (): array => $this->prune($host, $node, $published));
 
             return $published;
         } catch (TaskVmException $exception) {
@@ -207,9 +206,16 @@ final readonly class IncusTaskVmImageBuilder
         return $programs;
     }
 
+    /**
+     * Runs one enrollment program as `orbit` from its home, as enrollment does over SSH: each program
+     * starts with `sudo`, and the Vite+ installer needs a working directory that `orbit` can read.
+     */
     private function runProgram(TaskVmHost $host, Node $node, string $name, string $stage, RemoteCommand $program): void
     {
-        $result = $this->exec($host, $node, $name, $program->arguments, $program->input);
+        $result = $this->incus->run($host, $node, [
+            'exec', '--cwd', '/home/orbit', '--env', 'HOME=/home/orbit', '--env', 'USER=orbit',
+            '--', $name, 'runuser', '-u', 'orbit', '--', ...$program->arguments,
+        ], $program->input);
         if (! $result->succeeded()) {
             throw IncusHost::failed("the base image build VM [{$name}]", "exec {$stage}", $result);
         }
