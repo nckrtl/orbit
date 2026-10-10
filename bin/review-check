@@ -36,6 +36,10 @@ ARCHITECTURE_TESTS = {
         'tests/Unit/Requests/Deployments/DeploymentRequestsTest.php',
     ),
 }
+# Paths outside a project that its architecture tests read, so a change there runs them too.
+ARCHITECTURE_TRIGGERS = {
+    'apps/cli': ('docs/cli/',),
+}
 BASES = ('origin/main', 'main')
 NO_SELECTION = 'No affected tests found'
 FULL_SUITE = ('../../bin/pest-plain', 'vendor/bin/pest', '--no-tia',
@@ -258,18 +262,19 @@ def main():
                                  'exit_code': 1, 'seconds': 0, 'log': str(log)})
         print(f'[repository] bin/docs-impact --gate: FAILED ({log})', flush=True)
         print(log.read_text(), flush=True)
-    log = directory / 'project-vocabulary.log'
-    started = time.monotonic()
-    with log.open('w') as output:
-        result = subprocess.run([str(root / 'bin/project-vocabulary')], cwd=root,
-                                stdout=output, stderr=subprocess.STDOUT)
-    report['checks'].append({'project': 'repository', 'command': ['bin/project-vocabulary'],
-                             'exit_code': result.returncode,
-                             'seconds': round(time.monotonic() - started, 3), 'log': str(log)})
-    print(f'[repository] bin/project-vocabulary: '
-          f'{"passed" if result.returncode == 0 else "FAILED"} ({log})', flush=True)
-    if result.returncode:
-        print(log.read_text(), flush=True)
+    for check_name in ('project-vocabulary', 'env-docs'):
+        log = directory / f'{check_name}.log'
+        started = time.monotonic()
+        with log.open('w') as output:
+            result = subprocess.run([str(root / 'bin' / check_name)], cwd=root,
+                                    stdout=output, stderr=subprocess.STDOUT)
+        report['checks'].append({'project': 'repository', 'command': [f'bin/{check_name}'],
+                                 'exit_code': result.returncode,
+                                 'seconds': round(time.monotonic() - started, 3), 'log': str(log)})
+        print(f'[repository] bin/{check_name}: '
+              f'{"passed" if result.returncode == 0 else "FAILED"} ({log})', flush=True)
+        if result.returncode:
+            print(log.read_text(), flush=True)
     # Seed absent quality and test caches first, so a fresh clone does not run every check cold.
     # A cache miss or a missing seeding script only makes the checks slower.
     for seed in (['bin/worktree-cache', '--worktree', str(root)], ['bin/tia-cache', 'seed', '--repository', str(root)]):
@@ -277,7 +282,8 @@ def main():
             subprocess.run([str(root / seed[0]), *seed[1:]], check=False)
     for project, project_commands in selected_projects(paths, root):
         commands = list(project_commands)
-        if project_commands == PHP_COMMANDS and any(path.startswith(project + '/') for path in paths):
+        triggers = (project + '/', *ARCHITECTURE_TRIGGERS.get(project, ()))
+        if project_commands == PHP_COMMANDS and any(path.startswith(triggers) for path in paths):
             commands.extend(('vendor/bin/pest', architecture_path)
                             for architecture_path in ARCHITECTURE_TESTS.get(project, ()))
         index = 0

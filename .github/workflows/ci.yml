@@ -455,6 +455,9 @@ jobs:
       - name: Reject App-domain names
         run: php bin/project-vocabulary
 
+      - name: Check that every environment variable is documented
+        run: php bin/env-docs
+
       - name: Install Gateway and CLI dependencies
         run: |
           for project in apps/gateway apps/cli; do

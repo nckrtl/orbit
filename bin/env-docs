@@ -1,0 +1,176 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+/**
+ * Fail when an environment variable that Orbit reads is missing from the docs, or when an example file lists one
+ * that nothing reads.
+ *
+ * Run from any directory:
+ *
+ *     bin/env-docs
+ *
+ * The script reads the runtime code of the Gateway, the CLI, and the PHP SDK. It finds keys read through env(),
+ * env(key: ...), getenv(), Env::get(), $_SERVER, and $_ENV. Every key that starts with ORBIT_ must appear in a
+ * maintained docs page. Other keys belong to Laravel, PHP, or the operating system, and their own docs cover them.
+ *
+ * Every key in apps/gateway/.env.example must also appear in docs/reference/gateway-environment.md, and Gateway
+ * code or Laravel itself must read it. ADRs do not count as documentation: they record why, not how to configure
+ * Orbit.
+ */
+
+const ENV_DOCS_SOURCES = [
+    'apps/gateway/app',
+    'apps/gateway/bootstrap',
+    'apps/gateway/config',
+    'apps/gateway/database',
+    'apps/gateway/routes',
+    'apps/cli/app',
+    'apps/cli/bootstrap',
+    'apps/cli/config',
+    'packages/php-sdk/src',
+];
+
+/** Each example file, the page that documents its keys, and the code that reads them. */
+const ENV_DOCS_EXAMPLES = [
+    'apps/gateway/.env.example' => [
+        'page' => 'docs/reference/gateway-environment.md',
+        'sources' => [
+            'apps/gateway/app',
+            'apps/gateway/bootstrap',
+            'apps/gateway/config',
+            'apps/gateway/database',
+            'apps/gateway/routes',
+        ],
+    ],
+];
+
+/** Keys in an example file that Laravel reads itself, so no Gateway source mentions them. */
+const ENV_DOCS_FRAMEWORK_KEYS = [
+    'BCRYPT_ROUNDS',
+    'PHP_CLI_SERVER_WORKERS',
+];
+
+const ENV_DOCS_PAGES = 'docs';
+
+const ENV_DOCS_EXCLUDED_PAGES = [
+    'docs/decisions/',
+    'docs/generated/',
+];
+
+const ENV_DOCS_READ_PATTERN = '/(?:\benv\s*\(\s*(?:key\s*:\s*)?|\bgetenv\s*\(\s*(?:name\s*:\s*)?|\bEnv::get\s*\(\s*(?:key\s*:\s*)?|\$_(?:SERVER|ENV)\s*\[\s*)[\'"]([A-Z][A-Z0-9_]*)[\'"]/';
+
+/**
+ * @return list<string>
+ */
+function env_docs_files(string $root, string $relative, array $extensions): array
+{
+    $path = $root.'/'.$relative;
+    if (is_file($path)) {
+        return [$relative];
+    }
+    if (! is_dir($path)) {
+        return [];
+    }
+
+    $files = [];
+    $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($path, FilesystemIterator::SKIP_DOTS));
+    foreach ($iterator as $file) {
+        if ($file->isFile() && in_array($file->getExtension(), $extensions, true)) {
+            $files[] = substr($file->getPathname(), strlen($root) + 1);
+        }
+    }
+    sort($files);
+
+    return $files;
+}
+
+/**
+ * @param  list<string>  $roots
+ * @return array<string, list<string>> key => list of "path:line"
+ */
+function env_docs_reads(string $root, array $roots): array
+{
+    $reads = [];
+    foreach ($roots as $relative) {
+        foreach (env_docs_files($root, $relative, ['php']) as $path) {
+            foreach (file($root.'/'.$path) ?: [] as $index => $line) {
+                if (preg_match_all(ENV_DOCS_READ_PATTERN, $line, $matches) > 0) {
+                    foreach ($matches[1] as $key) {
+                        $reads[$key][] = $path.':'.($index + 1);
+                    }
+                }
+            }
+        }
+    }
+    ksort($reads);
+
+    return $reads;
+}
+
+/**
+ * @return array<string, int> key => line
+ */
+function env_docs_example_keys(string $root, string $path): array
+{
+    $keys = [];
+    foreach (file($root.'/'.$path) ?: [] as $index => $line) {
+        if (preg_match('/^\s*#?\s*([A-Z][A-Z0-9_]*)\s*=/', $line, $match) === 1) {
+            $keys[$match[1]] ??= $index + 1;
+        }
+    }
+
+    return $keys;
+}
+
+function env_docs_text(string $root): string
+{
+    $text = '';
+    foreach (env_docs_files($root, ENV_DOCS_PAGES, ['md', 'mdx']) as $path) {
+        foreach (ENV_DOCS_EXCLUDED_PAGES as $excluded) {
+            if (str_starts_with($path, $excluded)) {
+                continue 2;
+            }
+        }
+        $text .= file_get_contents($root.'/'.$path)."\n";
+    }
+
+    return $text;
+}
+
+function env_docs_documented(string $text, string $key): bool
+{
+    return preg_match('/(?<![A-Z0-9_])'.preg_quote($key, '/').'(?![A-Z0-9_])/', $text) === 1;
+}
+
+$root = dirname(__DIR__);
+$docs = env_docs_text($root);
+$failures = [];
+
+foreach (env_docs_reads($root, ENV_DOCS_SOURCES) as $key => $locations) {
+    if (str_starts_with($key, 'ORBIT_') && ! env_docs_documented($docs, $key)) {
+        $failures[] = "{$key} is read at {$locations[0]} but no docs page mentions it.";
+    }
+}
+
+foreach (ENV_DOCS_EXAMPLES as $example => ['page' => $page, 'sources' => $sources]) {
+    $reads = env_docs_reads($root, $sources);
+    $pageText = (string) file_get_contents($root.'/'.$page);
+    foreach (env_docs_example_keys($root, $example) as $key => $line) {
+        if (! env_docs_documented($pageText, $key)) {
+            $failures[] = "{$key} is listed at {$example}:{$line} but {$page} does not mention it.";
+        }
+        if (! isset($reads[$key]) && ! in_array($key, ENV_DOCS_FRAMEWORK_KEYS, true)) {
+            $failures[] = "{$key} is listed at {$example}:{$line} but nothing reads it.";
+        }
+    }
+}
+
+if ($failures !== []) {
+    fwrite(STDERR, implode("\n", $failures)."\n\n");
+    fwrite(STDERR, "Document each key in the page that owns its setting, or remove a key that nothing reads.\n");
+    exit(1);
+}
+
+echo "Every environment variable that Orbit reads is documented.\n";

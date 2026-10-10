@@ -570,7 +570,7 @@ final readonly class DocsImpact
             if (preg_match('/^(?:\/\/|\*|#)/', ltrim($line)) === 1) {
                 continue;
             }
-            if (preg_match_all('/env\s*\(\s*[\'"]([A-Z][A-Z0-9_]*)[\'"]/', $line, $matches) > 0) {
+            if (preg_match_all('/env\s*\(\s*(?:key\s*:\s*)?[\'"]([A-Z][A-Z0-9_]*)[\'"]/', $line, $matches) > 0) {
                 foreach ($matches[1] as $key) {
                     $keys[] = [$key, $index + 1];
                 }
@@ -579,8 +579,9 @@ final readonly class DocsImpact
         if ($keys === [] && str_contains($path, '.env')) {
             $keys[] = ['configuration', 1];
         }
+        $owner = str_starts_with($path, 'apps/gateway/') ? 'docs/reference/gateway-environment.md' : 'docs/reference/environment-variables.md';
         foreach ($keys as [$key, $line]) {
-            $this->addSurface($surfaces, $impacts, $path, 'environment_key', 'docs/reference/environment-variables.md', "{$key} in {$path}:{$line}");
+            $this->addSurface($surfaces, $impacts, $path, 'environment_key', $owner, "{$key} in {$path}:{$line}");
         }
     }
 

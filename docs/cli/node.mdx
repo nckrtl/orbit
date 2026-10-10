@@ -33,7 +33,9 @@ A Node is a machine that the Gateway manages over SSH and reaches over WireGuard
 | [`node:access:add`](#orbit-nodeaccessadd) | Grant one Node access to another. |
 | [`node:access:remove`](#orbit-nodeaccessremove) | Remove an access grant. |
 | [`node:remove`](#orbit-noderemove) | Remove a Node and hand the machine back. |
-| `node:excluded-project:add`, `node:excluded-project:list`, `node:excluded-project:remove` | Keep a Project off an `app-dev` Node. See [Development node exclusions](/reference/development-node-exclusions). |
+| [`node:excluded-project:add`](#orbit-nodeexcluded-projectadd) | Keep a Project off an `app-dev` Node. |
+| [`node:excluded-project:list`](#orbit-nodeexcluded-projectlist) | List the Projects that cannot use a Node. |
+| [`node:excluded-project:remove`](#orbit-nodeexcluded-projectremove) | Let a Project use the Node again. |
 
 Every command accepts `--json`. `node:show`, `node:remove`, and `node:access:*` take a numeric Node ID. The other commands also accept a Node name.
 
@@ -314,6 +316,38 @@ Use `--offline` when the Node does not answer. The Gateway probes first. A Node 
 Removing a macOS Node also reports what stays on the machine. JSON includes `retained_on_node`, and the human output lists the same values: `user`, `package-managers`, and `host-wireguard`. Those are the account, the package managers, and the host WireGuard configuration. Declining the confirmation, or omitting `--force` without a terminal, cancels before the Gateway removes anything.
 
 [Remove a Node](/reference/node-provisioning#remove-a-node) lists each step and failure code.
+
+## orbit node:excluded-project:add
+
+Keep a Project off this `app-dev` Node for development placement. The Node must have an active `app-dev` role. `project:excluded-node:add` writes the same exclusion from the Project side. [Development node exclusions](/reference/development-node-exclusions) owns the rules.
+
+```bash
+orbit node:excluded-project:add <project> --node=NODE [--json]
+orbit node:excluded-project:add 4 --node=sabre
+```
+
+| Argument or option | Meaning |
+| --- | --- |
+| `project` | Numeric Project ID. |
+| `--node=NODE` | Node ID or name. |
+
+In a terminal, an omitted Project or Node opens a searchable selector. JSON and noninteractive calls must name both.
+
+## orbit node:excluded-project:list
+
+List the Projects that cannot use the Node for development.
+
+```bash
+orbit node:excluded-project:list --node=NODE [--json]
+```
+
+## orbit node:excluded-project:remove
+
+Let the Project use the Node again. It asks for no confirmation, because it moves and stops nothing.
+
+```bash
+orbit node:excluded-project:remove <project> --node=NODE [--json]
+```
 
 ## Why it works this way
 

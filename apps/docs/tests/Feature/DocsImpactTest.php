@@ -163,6 +163,17 @@ it('docs impact reports the last env call removed from a retained config file', 
     expect(collect($report['surfaces'])->pluck('reason')->implode(' '))->toContain('Removed from current source: GATEWAY_DOCTOR_KEY');
 });
 
+it('docs impact reports an env call with a named key argument', function (): void {
+    $root = docsImpactFixture();
+    mkdir($root.'/apps/gateway/config', 0777, true);
+    $path = 'apps/gateway/config/doctor.php';
+    file_put_contents($root.'/'.$path, "<?php return env(key: 'GATEWAY_NAMED_KEY', default: null);\n");
+    $report = new DocsImpact($root)->report(null, [$path]);
+
+    expect(collect($report['surfaces'])->pluck('reason')->implode(' '))->toContain('GATEWAY_NAMED_KEY in '.$path)
+        ->and(collect($report['impacted_pages'])->pluck('page')->all())->toBe(['docs/reference/gateway-environment.md']);
+});
+
 it('docs impact reports removed error identifiers from a retained source file', function (): void {
     $root = docsImpactFixture();
     $path = 'apps/gateway/app/Domain/Tasks/TaskGroupGuard.php';

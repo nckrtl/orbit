@@ -195,6 +195,12 @@ The Tasks JSON rendering preserves the distinction between a watched branch pull
 
 Subtask detail output adds a `Topology` property when the subtask declares workload nodes, with the roles separated by commas. An empty declaration omits that human property. JSON always retains the `topology` array, including `[]`. The [subtask commands](/cli/tasks) own the input contract; recorded task responses and CLI expectations cover both empty and declared topology.
 
+## Command reference
+
+Every visible product command has its own section in `docs/cli`, headed `## orbit <command>`. Two closely related commands can share one heading, such as `orbit gateway:release:auto:enable and disable`, when the section shows a usage line for each. The section names every argument as `` `name` `` or `<name>`, and every option as `--option`. `--json` is documented once per page.
+
+`apps/cli/tests/Feature/CommandSurfaceTest.php` reads the registered commands and fails when a command has no section or its section misses an argument or option. CI runs that test on every pull request, including a pull request that changes only docs.
+
 ## Verification and adoption
 
 Each supported public command has an adoption record with its source identity, supported modes, applicable rules, contract-backed exceptions, checks, terminal artifacts, and verdict. Include extension-provided commands with the extension enabled. Extension command discovery reads the enabled set from the active Gateway; do not assume an extension command appears in the default command list when that Gateway has it disabled or its state is unknown. Account separately for internal commands that share input or output infrastructure.

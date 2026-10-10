@@ -76,6 +76,15 @@ A normal run asserts the exact output. A run with `ORBIT_EXPECTED=update` rewrit
 cd apps/cli && ORBIT_EXPECTED=update vendor/bin/pest --filter=Contract
 ```
 
+## Watch a fixture in a terminal
+
+A development checkout of the CLI can replay recorded responses under a real command, so you can watch the rendering that the contract tests hold. Set `ORBIT_DESIGN=1`, name the fixtures in `ORBIT_GATEWAY_FIXTURES`, and point `ORBIT_HOME` at an empty directory. The replay seeds a Gateway profile there. The CLI binary does not include the replay. `apps/cli/design/README.md` also covers the design sketches that `ORBIT_DESIGN=1` loads.
+
+```bash
+export ORBIT_DESIGN=1 ORBIT_HOME=/tmp/orbit-replay
+ORBIT_GATEWAY_FIXTURES=projects/project-list/default apps/cli/orbit project:list
+```
+
 ## Find the commands a change reaches
 
 `bin/cli-contract` runs only the CLI tests that replay the named fixtures. With `--changed`, it takes the fixtures that differ from `origin/main`. With `--preview`, it renders every contract case into a temporary directory and lists the commands whose output differs from `tests/Expected`, with a diff per file. That list is the map of the commands a rendering change reaches. With `--coverage`, it lists the product commands that have no expected output yet.

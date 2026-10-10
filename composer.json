@@ -16,6 +16,7 @@
         "api-fixtures": "bin/api-fixtures --check",
         "mcp-tools": "bin/mcp-tools --check",
         "cli-contract": "bin/cli-contract",
+        "env-docs": "bin/env-docs",
         "test": "bin/test",
         "test:affected": "@test",
         "audit:dependencies": "bin/dependency-audit",

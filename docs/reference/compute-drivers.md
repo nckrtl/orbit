@@ -659,7 +659,7 @@ The operator then uses its isolated Gateway profile to list the active Gateway a
 
 ### Admit an Orbit sandbox claim
 
-`ORBIT_SANDBOX_ORBIT_CLAIMS_ENABLED` defaults to false. Keep it off until the complete Orbit lane and host connectivity policy are proven. With the switch enabled, an Orbit claim needs local pair images, a pinned source template, the private Pi endpoint, the model relay, and Pi model configuration. Other Projects use [task VMs](#task-vms).
+`ORBIT_SANDBOX_ORBIT_CLAIMS_ENABLED` defaults to false. Keep it off until the complete Orbit lane and host connectivity policy are proven. With the switch enabled, an Orbit claim needs local pair images, a pinned source template, the private Pi endpoint, the model relay, and Pi model configuration. `ORBIT_SANDBOX_MODEL_PROXY_ENABLED` turns on sandbox model credentials and defaults to false. `ORBIT_SANDBOX_PI_MODELS` is a JSON array of the models that Pi offers in a sandbox, and defaults to `[]`. A claim fails with `compute.not_ready` unless local compute and the model proxy are enabled and the model list is not empty. Other Projects use [task VMs](#task-vms).
 
 Provisioning reserves and attaches an owned workspace before preparing source, the isolated pair, and Pi in that order. It holds the group's execution lock during preparation. A failed step retains the reservation and workspace for retry; it never adopts an unrelated workspace or falls back to shared compute. Only successful preparation returns the workspace to the scheduler, which runs the Project's baseline setup and check before starting an implementer.
 

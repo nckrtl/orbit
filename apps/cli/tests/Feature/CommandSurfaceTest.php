@@ -338,6 +338,47 @@ describe('command vocabulary', function (): void {
     });
 });
 
+describe('command reference', function (): void {
+    it('documents every product command in a docs/cli section', function (): void {
+        $sections = cli_reference_sections();
+        $undocumented = array_values(array_filter(
+            array_keys(cli_reference_commands()),
+            static fn (string $name): bool => cli_reference_section($sections, $name) === null,
+        ));
+
+        expect($undocumented)->toBe([], 'Add an `## orbit <command>` section to docs/cli for: '.implode(', ', $undocumented));
+    });
+
+    it('documents every argument and option in the command section', function (): void {
+        $sections = cli_reference_sections();
+        $gaps = [];
+
+        foreach (cli_reference_commands() as $name => $command) {
+            $section = cli_reference_section($sections, $name);
+            if ($section === null) {
+                continue;
+            }
+
+            $definition = $command->getNativeDefinition();
+            foreach ($definition->getArguments() as $argument) {
+                if (preg_match('/[`<\[]'.preg_quote($argument->getName(), '/').'[`>\].=]/', $section) !== 1) {
+                    $gaps[] = "{$name} argument {$argument->getName()}";
+                }
+            }
+            foreach ($definition->getOptions() as $option) {
+                if ($option->getName() === 'json') {
+                    continue;
+                }
+                if (preg_match('/--'.preg_quote($option->getName(), '/').'(?![a-z0-9-])/', $section) !== 1) {
+                    $gaps[] = "{$name} option --{$option->getName()}";
+                }
+            }
+        }
+
+        expect($gaps)->toBe([], 'Document these in the command section under docs/cli: '.implode(', ', $gaps));
+    });
+});
+
 it('rejects each replaced App Cluster and Route lifecycle name as an unknown command', function (string $command): void {
     $output = new BufferedOutput;
     $status = app(Kernel::class)->handle(new StringInput($command), $output);
@@ -1430,6 +1471,85 @@ function cli_command_vocabulary_rows(string $page, string $heading): array
     expect($rows)->not->toBeEmpty();
 
     return $rows;
+}
+
+/**
+ * Visible Orbit product commands by name.
+ *
+ * @return array<string, Command>
+ */
+function cli_reference_commands(): array
+{
+    return collect(app(Kernel::class)->all())
+        ->filter(static fn (Command $command): bool => str_starts_with($command::class, 'App\\Commands\\') && ! $command->isHidden())
+        ->sortKeys()
+        ->all();
+}
+
+/**
+ * Every `orbit <command>` heading in docs/cli with the text up to the next heading of the same or a higher level.
+ *
+ * @return list<array{heading: string, text: string}>
+ */
+function cli_reference_sections(): array
+{
+    $sections = [];
+
+    foreach (glob(base_path('../../docs/cli/*.mdx')) ?: [] as $path) {
+        $lines = explode("\n", (string) file_get_contents($path));
+        $fenced = false;
+        $open = null;
+
+        foreach ($lines as $line) {
+            if (str_starts_with($line, '```')) {
+                $fenced = ! $fenced;
+            }
+            $level = ! $fenced && preg_match('/^(#{2,4}) (.*)$/', $line, $heading) === 1 ? strlen($heading[1]) : null;
+
+            if ($level !== null && $open !== null && $level <= $open['level']) {
+                $sections[] = ['heading' => $open['heading'], 'text' => $open['text']];
+                $open = null;
+            }
+            if ($level !== null && str_starts_with($heading[2], 'orbit ')) {
+                $open = ['level' => $level, 'heading' => $heading[2], 'text' => ''];
+
+                continue;
+            }
+            if ($open !== null) {
+                $open['text'] .= $line."\n";
+            }
+        }
+
+        if ($open !== null) {
+            $sections[] = ['heading' => $open['heading'], 'text' => $open['text']];
+        }
+    }
+
+    return $sections;
+}
+
+/**
+ * The section whose heading names the command, or else the section whose usage block starts with it.
+ *
+ * @param  list<array{heading: string, text: string}>  $sections
+ */
+function cli_reference_section(array $sections, string $name): ?string
+{
+    $pattern = '/(?<![a-z0-9:-])'.preg_quote($name, '/').'(?![a-z0-9:-])/';
+
+    foreach ($sections as $section) {
+        if (preg_match($pattern, $section['heading']) === 1) {
+            return $section['text'];
+        }
+    }
+
+    foreach ($sections as $section) {
+        if (preg_match('/^orbit '.preg_quote($name, '/').'(?: |$)/m', $section['text']) === 1) {
+            return $section['text'];
+        }
+    }
+
+    return null;
 }
 
 function orbitProductCommandNames(): array
