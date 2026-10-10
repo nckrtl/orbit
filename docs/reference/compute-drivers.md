@@ -125,9 +125,10 @@ Create and delete are idempotent by name. A running VM counts as created, and an
 
 ### Prepare an Incus host
 
-Run `task-vms:prepare-host {node}` once for each host. It sends `resources/task-vms/incus-host.sh` to the host over SSH and runs it with `sudo -n bash -s --`. The script is idempotent and prints `{"ok":true}`. It sets up these parts:
+Run `task-vms:prepare-host {node}` once for each host. It sends `resources/task-vms/incus-host.sh` to the host over SSH and runs it with `sudo -n bash -s --`. The script is idempotent and prints `{"ok":true}`.
 
-- The ZFS storage pool named by the host's `pool`. When the pool does not exist, the script creates it from the host's `zfs_dataset`, such as `fast/orbit-tasks`. A missing pool without `zfs_dataset` fails. An existing pool must use the `zfs` driver, and when `zfs_dataset` is set, its source must be that dataset.
+First it checks the ZFS storage pool that the host's `pool` names. It creates a missing pool from the host's `zfs_dataset`, such as `fast/orbit-tasks`. Without `zfs_dataset`, a missing pool fails. An existing pool must use the `zfs` driver. With `zfs_dataset` set, the pool's source must be that dataset. Then it sets up these parts:
+
 - The Incus project, such as `orbit-tasks`, with `features.networks=false`, and the stock image alias `ubuntu-26.04-vm` from `images:ubuntu/26.04/cloud`. Only the [base image](#build-the-base-image) build launches it.
 - The bridge, such as `orbittask0`, with IPv4 NAT and no IPv6.
 - The ACL `<bridge>-egress`, which the bridge gets at creation.
@@ -146,13 +147,16 @@ The dropped egress ranges are `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `
 
 Run `task-vms:build-image {node}` after `task-vms:prepare-host`, once for each host. It builds the host's base image and prints each stage with its time. It runs these steps on the host over SSH, with `sudo -n incus --project <project> …`:
 
-1. It launches a builder VM `tvm-image-<time>` from the stock image `ubuntu-26.04-vm`, with the host's VM size and bridge. Its user-data is the task VM user-data plus a package upgrade, `openssh-server`, and Chromium's system libraries.
-2. It waits for cloud-init. Then it runs the programs that enrollment runs on an `app-dev` Node, through `incus exec` as root: the Node bootstrap, the Caddy package, and the `app-dev` role prerequisites. It also installs the pinned [Node agent](/reference/node-agent) binary. The Gateway renders these programs with the same code as enrollment, so the image holds what enrollment installs.
-3. It runs `resources/task-vms/base-image-clean.sh` in the VM. The script removes the VM's identity, and fails when part of it remains.
-4. It stops the VM and publishes it, without compression, as the image `orbit-task-base-<time>`.
-5. It boots a smoke VM from the new image with the task VM user-data. The smoke VM must finish cloud-init without errors and have an ed25519 SSH host key. Its boot also creates the image volume on the pool, so the first task VM is a clone too.
-6. It points the alias `orbit-task-base` at the new image in one step. New task VMs launch from it, and running VMs keep their image.
-7. It deletes every other `orbit-task-base-<time>` image that no VM in the project uses. An image that a task VM still uses stays until a later build finds it unused.
+1. It launches a builder VM `tvm-image-<time>` from the stock image `ubuntu-26.04-vm`, with the host's VM size and bridge.
+2. It waits for cloud-init. It then runs the Node bootstrap, the Caddy package, and the `app-dev` role prerequisites as `orbit` through `incus exec`.
+3. It installs the pinned [Node agent](/reference/node-agent) binary.
+4. It runs `resources/task-vms/base-image-clean.sh` in the VM, which removes the VM's identity.
+5. It stops the VM and publishes it, without compression, as the image `orbit-task-base-<time>`.
+6. It boots a smoke VM from the new image with the task VM user-data. The smoke VM must finish cloud-init without errors and have an ed25519 SSH host key.
+7. It points the alias `orbit-task-base` at the new image in one step.
+8. It deletes every other `orbit-task-base-<time>` image that no VM in the project uses.
+
+The builder's user-data adds three things to the task VM user-data: a package upgrade, `openssh-server`, and Chromium's system libraries. Enrollment runs the same programs over SSH, rendered by the same code, so the image holds what enrollment installs. The clean script fails while part of the identity remains. The smoke boot also creates the image volume on the pool, so the first task VM is a clone too. New task VMs launch from the new image, and running VMs keep theirs. An image that a task VM still uses stays until a later build finds it unused.
 
 The Chromium libraries are Playwright's `chromium` dependency list for Ubuntu 26.04, which covers `chromium` and `chromium-headless-shell`: `libasound2t64`, `libatk-bridge2.0-0t64`, `libatk1.0-0t64`, `libatspi2.0-0t64`, `libcairo2`, `libcups2t64`, `libdbus-1-3`, `libdrm2`, `libgbm1`, `libglib2.0-0t64`, `libnspr4`, `libnss3`, `libpango-1.0-0`, `libx11-6`, `libxcb1`, `libxcomposite1`, `libxdamage1`, `libxext6`, `libxfixes3`, `libxkbcommon0`, and `libxrandr2`. Playwright's xvfb and font list for headed runs is left out. The `app-dev` role prerequisites install PHP, Composer, Caddy, Docker, Vite+ with Node and pnpm, and Bun.
 
@@ -285,19 +289,23 @@ The VM edge is the security boundary. Inside it, one user runs the agents, Pi, a
 
 Public egress is open on every port. Limiting it to HTTP(S) adds no protection beyond the VM edge and the hub filter, and it broke clock sync, package sources, and key installs. CI on the pushed commit is the gate.
 
-The base image keeps enrollment as the only path to a Node. The build runs the programs that enrollment renders, so the image cannot drift from what enrollment installs, and enrollment still checks every step on each VM. Code builds the image from the stock image on a known date, and no image carries state from a task. ZFS makes each VM a clone of the image volume, so a launch copies nothing. The UpCloud template of [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm) Phase 3 is meant to follow the same contract: built from the stock image, the identity removed, cloud-init that installs nothing, a smoke boot before the image is used, and the previous image kept while a VM uses it.
+The base image keeps enrollment as the only path to a Node. The build runs the programs that enrollment renders, so the image cannot drift from what enrollment installs. Enrollment still checks every step on each VM. Code builds the image from the stock image on a known date, and no image carries state from a task. ZFS makes each VM a clone of the image volume, so a launch copies nothing.
+
+Phase 3 of [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm) aligns the UpCloud template with the same contract. The template is built from the stock image with its identity removed. Its cloud-init installs nothing. A smoke boot passes before use, and the previous image stays while a VM uses it.
 
 These alternatives were rejected:
 
-- WireGuard in cloud-init. It bypasses normal enrollment.
-- An Incus proxy device for SSH. Its port does not match the Node firewall catalog, and it needs forward and DNAT rules on the host.
-- The Incus REST API with a restricted certificate. It needs more host setup, and the Gateway already has root SSH to the host.
-- A hub table for each VM. One static filter on a reserved range does the same work.
-- Installing the `app-dev` software on every VM. It took about 3 minutes of each enrollment on beast. A base image moves that work to one build each night.
-- A base image for each Project. It would need an image per Project to build and keep current. Per-Project dependency caches may follow.
-- A copy of a finished task VM as the next image. An agent and the Project's install scripts ran on that disk, so no cleanup can prove it clean.
-- A fallback to the stock image when the base image is missing. A VM from it cannot enroll, so the failure would come later and less clearly.
-- A GitHub token inside the VM. The Gateway already fetches and pushes over SSH.
+| Alternative | Why not |
+| --- | --- |
+| WireGuard in cloud-init | It bypasses normal enrollment |
+| An Incus proxy device for SSH | Its port does not match the Node firewall catalog, and it needs forward and DNAT rules on the host |
+| The Incus REST API with a restricted certificate | It needs more host setup, and the Gateway already has root SSH to the host |
+| A hub table for each VM | One static filter on a reserved range does the same work |
+| Installing the `app-dev` software on every VM | It added about 40 seconds of boot and package installs to each VM on beast, and each claim depended on package mirrors |
+| A base image for each Project | Each Project would need its own image, built and kept current. Per-Project dependency caches may follow |
+| A copy of a finished task VM as the next image | An agent and the Project's install scripts ran on that disk, so no cleanup can prove it clean |
+| A fallback to the stock image | A VM from it cannot enroll, so the failure would come later and less clearly |
+| A GitHub token inside the VM | The Gateway already fetches and pushes over SSH |
 
 ## UpCloud driver
 
