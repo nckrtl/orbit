@@ -11,7 +11,6 @@ paths:
   - 'composer.lock'
   - 'config/boost.php'
   - 'tests/Feature/BoostGuidanceTest.php'
-  - 'vet.json'
 ---
 
 # Repository Bootstrap
