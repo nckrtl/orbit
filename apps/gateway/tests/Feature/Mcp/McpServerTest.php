@@ -285,8 +285,9 @@ describe('/mcp tool list changes', function (): void {
     it('answers a call to a removed tool with a JSON-RPC error, not an ended session', function (): void {
         $called = mcp_call($this, 'tools/call', ['name' => 'node-list-removed', 'arguments' => (object) []]);
 
-        expect($called->status())->not->toBe(404)
-            ->and($called->json('error.code'))->toBe(-32602)
+        // HTTP 400 carries the JSON-RPC error. A 404 would tell the client that its session ended.
+        $called->assertStatus(400);
+        expect($called->json('error.code'))->toBe(-32602)
             ->and($called->json('error.message'))->toContain('Tool [node-list-removed] not found.', 'list the tools again');
     });
 });
