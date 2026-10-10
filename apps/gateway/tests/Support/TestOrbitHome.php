@@ -19,8 +19,6 @@ final class TestOrbitHome
 {
     public const Prefix = 'orbit-gateway-testing-';
 
-    private const NoSuchProcess = 3;
-
     private static ?string $home = null;
 
     public static function bootstrap(): void
@@ -34,8 +32,6 @@ final class TestOrbitHome
         if ($temporaryDirectory === false) {
             throw new RuntimeException('The system temporary directory does not exist.');
         }
-
-        self::removeAbandonedHomes($temporaryDirectory);
 
         // Always replace an inherited value: parallel workers inherit the runner's environment, and a real
         // ORBIT_HOME in the shell must never receive test state.
@@ -80,30 +76,6 @@ final class TestOrbitHome
     private static function scratchDirectory(): string
     {
         return self::path().DIRECTORY_SEPARATOR.'scratch';
-    }
-
-    /** Removes homes whose process no longer runs, such as those of a run ended by SIGKILL. */
-    private static function removeAbandonedHomes(string $temporaryDirectory): void
-    {
-        if (! function_exists('posix_kill') || ! function_exists('posix_geteuid')) {
-            return;
-        }
-
-        $pattern = $temporaryDirectory.DIRECTORY_SEPARATOR.self::Prefix.'*';
-
-        foreach (glob($pattern, GLOB_ONLYDIR) ?: [] as $home) {
-            if (
-                preg_match('/\A'.preg_quote(self::Prefix, '/').'(\d+)-[0-9a-f]{8}\z/', basename($home), $matches) !== 1
-                || is_link($home)
-                || fileowner($home) !== posix_geteuid()
-                || posix_kill((int) $matches[1], 0)
-                || posix_get_last_error() !== self::NoSuchProcess
-            ) {
-                continue;
-            }
-
-            new Filesystem()->deleteDirectory($home);
-        }
     }
 
     private static function set(string $name, string $value): void

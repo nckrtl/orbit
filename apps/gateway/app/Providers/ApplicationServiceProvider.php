@@ -40,6 +40,7 @@ use App\Domain\Broadcasting\RealtimeConnection;
 use App\Domain\Certificates\GatewayCertificateIssuer;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Clusters\ClusterRouterOperationLock;
+use App\Domain\Conn\T3ServerClient;
 use App\Domain\DatabaseConnections\DatabaseInspectionExecutor;
 use App\Domain\DatabaseServers\DatabaseServerAdmin;
 use App\Domain\Doctor\CaddyBuildInspector;
@@ -104,6 +105,7 @@ use App\Domain\Instances\ProductionInstanceProvisioner;
 use App\Domain\Instances\ProductionInstanceSourceLifecycle;
 use App\Domain\Instances\ProductionPhpRuntimeManager;
 use App\Domain\Instances\ProductionReleaseLayout;
+use App\Domain\Instances\ProductionRepositoryBinding;
 use App\Domain\Instances\ProductionRouteProjector;
 use App\Domain\Instances\ProductionWebRootManager;
 use App\Domain\Instances\Queue\InstanceQueueReader;
@@ -174,7 +176,6 @@ use App\Domain\Routes\RouteRemovalProjector;
 use App\Domain\Schedules\ScheduleRuntimeAccountResolver;
 use App\Domain\Schedules\ScheduleRuntimeManager;
 use App\Domain\SourceControl\RepositoryDefaultBranchResolver;
-use App\Domain\T3\T3ServerClient;
 use App\Domain\Tools\ToolInspector;
 use App\Domain\Tools\ToolManagerMaterializer;
 use App\Domain\Tools\ToolManagerRegistry;
@@ -230,6 +231,7 @@ use App\Infrastructure\Certificates\OpenSslGatewayCertificateIssuer;
 use App\Infrastructure\Certificates\OpenSslGatewayCertificateValidator;
 use App\Infrastructure\Certificates\OpenSslLeafCertificateSigner;
 use App\Infrastructure\Clusters\NativeClusterRouterOperationLock;
+use App\Infrastructure\Conn\HttpT3ServerClient;
 use App\Infrastructure\DatabaseConnections\RegisteredDatabaseInspectionExecutor;
 use App\Infrastructure\DatabaseServers\RemoteDatabaseServerAdmin;
 use App\Infrastructure\Doctor\NativeCaddyBuildInspector;
@@ -299,6 +301,7 @@ use App\Infrastructure\Instances\RemoteInstanceTransferSource;
 use App\Infrastructure\Instances\RemoteProductionDeployment;
 use App\Infrastructure\Instances\RemoteProductionInstanceSourceLifecycle;
 use App\Infrastructure\Instances\RemoteProductionPhpRuntimeManager;
+use App\Infrastructure\Instances\RemoteProductionRepositoryBinding;
 use App\Infrastructure\Instances\RemoteProductionWebRootManager;
 use App\Infrastructure\Instances\RemoteRegistrationSourceManager;
 use App\Infrastructure\Logs\CacheLogStreamStore;
@@ -373,7 +376,6 @@ use App\Infrastructure\Ssh\NativeSshExecutor;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshHostKeyScanner;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Infrastructure\T3\HttpT3ServerClient;
 use App\Infrastructure\Tools\AptToolManager;
 use App\Infrastructure\Tools\ComposerToolManager;
 use App\Infrastructure\Tools\HomebrewCaskToolManager;
@@ -442,6 +444,7 @@ final class ApplicationServiceProvider extends ServiceProvider
         RouteApplicationUrlWriter::class => PlacementRouteApplicationUrlWriter::class,
         ProductionWebRootManager::class => RemoteProductionWebRootManager::class,
         ProjectUpdateSourceMutator::class => RemoteProjectUpdateSourceMutator::class,
+        ProductionRepositoryBinding::class => RemoteProductionRepositoryBinding::class,
         ProjectUpdateProjectionMutator::class => NativeProjectUpdateProjectionMutator::class,
         DevelopmentInstanceProvisioner::class => NativeDevelopmentInstanceProvisioner::class,
         DevelopmentRouteProjector::class => NativeDevelopmentRouteProjector::class,

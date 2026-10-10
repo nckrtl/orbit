@@ -24,6 +24,12 @@ final class DesiredFleetStateData extends Data
         public DesiredAgentData $agent,
     ) {}
 
+    /** Whether the CLI release is a fallback: it belongs to a commit this one reaches, not to this commit. */
+    public function cliFallback(): bool
+    {
+        return $this->cli->isAvailable() && $this->commit !== null && $this->cli->commit !== null && $this->cli->commit !== $this->commit;
+    }
+
     public static function fromArray(mixed $value): ?self
     {
         if (! is_array($value)) {

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Actions\Tasks\WatchIncomingPullRequestsAction;
+use App\Actions\TaskVms\DestroyEndedTaskVmsAction;
 use App\Domain\Tasks\TaskBroadcasts;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskScheduler;
@@ -21,7 +22,7 @@ final class TickTaskSessionsCommand extends Command
     #[\Override]
     protected $description = 'Observe running task threads, ask Jev for the next action, and execute it.';
 
-    public function handle(TaskScheduler $scheduler, TaskExtensionState $extension, TaskBroadcasts $broadcasts, TaskTickClock $clock, WatchIncomingPullRequestsAction $incoming): int
+    public function handle(TaskScheduler $scheduler, TaskExtensionState $extension, TaskBroadcasts $broadcasts, TaskTickClock $clock, WatchIncomingPullRequestsAction $incoming, DestroyEndedTaskVmsAction $taskVms): int
     {
         if (! $extension->enabled()) {
             $this->info('Tasks extension is disabled.');
@@ -46,6 +47,11 @@ final class TickTaskSessionsCommand extends Command
             $decisions = $scheduler->tick();
             $scheduler->releaseStaleReservations();
             $scheduler->removeAbandonedWorkspaces();
+            try {
+                $taskVms->execute();
+            } catch (Throwable $exception) {
+                report($exception);
+            }
             $started = $scheduler->claimAvailable();
         } finally {
             $lock->release();

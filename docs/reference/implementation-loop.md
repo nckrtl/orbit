@@ -79,6 +79,7 @@ GitHub CI runs on every pull request, on every push to `main`, every night on `m
 | Job | Checks |
 | --- | --- |
 | One job per Composer project: CLI, Docs, Gateway, E2E, PHP SDK | `composer validate --strict`, `composer check`, the classification-fakes check, and the tests |
+| Gateway subprocess, E2E subprocess | The project's `subprocess` group, beside the project's own job |
 | Docs (merge ref) | Pull requests only: `composer check` in `apps/docs` on the base repository's `refs/pull/N/merge`, with no head fallback if the merge ref is unavailable |
 | API reference | `bin/docs-openapi --check` and `bin/mcp-tools --check` |
 | Web | Generated API types, formatting, lint, types, tests, and build. A run on `main` also publishes the build |
@@ -92,6 +93,8 @@ On a pull request, each Composer project job runs the TIA-selected tests and the
 A pull request job also runs the project's `subprocess` group when the pull request changes a file that the project's tests read. A test that starts PHP in a subprocess, such as `artisan` or a fixture script, declares `pest()->group('subprocess')` at the top of its file. PCOV records only the test's own process, so TIA does not link the code that the subprocess runs to the test.
 
 `bin/ci-tia subprocess` makes the choice. It compares the pull request with its merge base, and a push to `main` with the commit of the restored graph. A change inside the project, or outside it on a path that `bin/ci-tia` does not list as unrelated, runs the group. When the changes cannot be read, the group runs. The PHP SDK has no subprocess tests, so only its step passes with an empty group.
+
+Gateway and E2E run their `subprocess` group in a separate job, so it runs at the same time as the rest of the project's checks instead of after them. That job installs the project, restores the graph, and makes the same choice. It runs no other check and saves no cache. When a run on `main` is full, the project's own job runs the group with the whole suite, and the subprocess job runs nothing.
 
 The E2E contract `SubprocessTestGroupTest` fails when a test names `PHP_BINARY` or `PhpExecutableFinder`, or starts a `php` or `composer` command, without the group. It also follows a test helper under `tests/` that does so to the tests that use it.
 
@@ -128,7 +131,7 @@ A new push to a pull request cancels that pull request's older run. Pushes to `m
 
 Nothing goes untested. A push run selects each project's tests affected since the commit its restored `main` graph describes. That is the newest commit whose run of that project passed, so a project that failed keeps the older graph and tests those changes again. So the newest run covers every change in between. [Automatic Gateway releases](/reference/gateway-recovery#automatic-releases) deploy the newest `main` commit with a successful `Required checks` result and skip commits without one, so the release includes the skipped commits. Scheduled and manual full runs have a group per commit, so a push never cancels one.
 
-The project jobs check out the branch by name. On `main` they then reset it to the run's own commit, so a run that starts after a later push still tests the commit its result is reported for.
+On `main`, the project jobs check out the branch by name, then reset it to the run's own commit, so a run that starts after a later push still tests the commit its result is reported for. On a pull request, they check out the base repository's `refs/pull/N/merge`.
 
 On `main`, the Web job uploads `apps/web/dist` as the workflow artifact `web-dist-<commit>`, named with the full 40-character commit SHA, and keeps it for 14 days. A manual dispatch and the nightly run on `main` upload it too, so every successful `Required checks` run on `main` comes with the web build of its commit. Automatic releases install only the build of a push or a manual run. The artifact holds the contents of `dist` at its root, so `index.html` and `version.json` are at the top level. The Web job fails when the build lacks either file; open pages read `version.json` to find a newer release ([Updates to open pages](/reference/web-app#updates-to-open-pages)).
 
@@ -140,15 +143,17 @@ On `main`, GitHub enforces three rules. The branch cannot be deleted, and it acc
 
 Repository admins bypass the status rule automatically, so the maintainer can push straight to `main`. The bypass also applies to `gh pr merge` from an admin account, with or without `--admin`. An admin who merges must first wait until `Required checks` passes on the pull request's head commit. The [contributor guide](/contributor-guide#3-implement-and-verify) describes how pull requests and pushes select tests.
 
-Each Composer project job checks out the branch by name with full history, so Pest can write its test-impact graph. On a detached HEAD, Pest does not save the graph. The Docs job's `composer check` also runs `composer docs-lint`. The E2E job runs `bin/bootstrap --skip-checks` to install every project, because its integration tests use the other projects. The Gateway job installs the Linux tools that the Gateway tests need and creates the `caddy` user. That step stops after 10 minutes, and apt retries a mirror that does not answer within 30 seconds.
+Each Composer project job checks out full history. On `main`, the job checks out the branch by name, so Pest can write its test-impact graph. A pull request job tests the merge commit, the tree that would land on `main`. Pest runs it on a detached HEAD, where it reads the `main` baseline of the graph and does not save the graph. The merge commit descends from the `main` commit that the restored graph records, so TIA selects only the tests that the pull request's changes affect. When the graph's commit is not an ancestor of the merge commit, Pest runs the full suite.
 
-The separate `Docs (merge ref)` job logs the merge commit and checks the tree that would land on `main`, including Docs lint and the ADR lifecycle rules. It uses a GitHub-hosted runner, read-only permissions, and no persisted checkout credentials. Its result gates `Required checks` without a ruleset change. The Composer matrix keeps its head checkout, TIA selection, and caches.
+The Docs job's `composer check` also runs `composer docs-lint`. The E2E job runs `bin/bootstrap --skip-checks` to install every project, because its integration tests use the other projects. The Gateway job installs the Linux tools that the Gateway tests need and creates the `caddy` user. That step stops after 10 minutes, and apt retries a mirror that does not answer within 30 seconds.
+
+The separate `Docs (merge ref)` job logs the merge commit and checks the tree that would land on `main`, including Docs lint and the ADR lifecycle rules. It uses a GitHub-hosted runner, read-only permissions, and no persisted checkout credentials. Its result gates `Required checks` without a ruleset change.
 
 Hosted jobs run on `ubuntu-26.04`, the Ubuntu release that Nodes run, so tests use the same uutils coreutils as a Node.
 
 ### Self-hosted Gateway runner
 
-When the repository variable `ORBIT_SABRE_RUNNER` is `true`, the Gateway job runs on the self-hosted runner on Sabre, with the labels `self-hosted` and `sabre`. Pushes, manual dispatches, and pull requests from branches in this repository use it. A pull request from a fork always uses a GitHub-hosted runner, so code from outside the repository never runs on Sabre. Set the variable to anything else to move the job back to GitHub-hosted runners.
+When the repository variable `ORBIT_SABRE_RUNNER` is `true`, the Gateway job runs on the self-hosted runner on Sabre, with the labels `self-hosted` and `sabre`. The Gateway subprocess and Gateway privileged jobs always run on GitHub-hosted runners, so each run takes one Sabre runner. Pushes, manual dispatches, and pull requests from branches in this repository use it. A pull request from a fork always uses a GitHub-hosted runner, so code from outside the repository never runs on Sabre. Set the variable to anything else to move the job back to GitHub-hosted runners.
 
 On Sabre the job skips the PHP setup, Homebrew, and system package steps, because Sabre already has PHP 8.5 with PCOV, Caddy, `acl`, `attr`, and `wireguard-tools`. Its PHP CLI sets `zend.exception_ignore_args=0` in `99-github-actions.ini`.
 
@@ -170,7 +175,9 @@ Each Composer project job caches three sets of files in GitHub Actions cache.
 | Pint and Rector caches, `vendor/pint.cache` and `vendor/rector/cache` | `composer.lock`, `pint.json`, `rector.php` |
 | Test-impact graph, `.orbit-tia` | `composer.lock`, `tests/Pest.php`, `phpunit.xml`, `phpunit.xml.dist` |
 
-A job restores the newest cache for its branch, then for `main`, then any cache for the project. It saves each cache only after its checks succeed. Each run saves its test-impact graph under its own key, so a full run on a commit that already has a graph still replaces the newest one. On `main`, a graph restored from another cache prefix runs the full suite. These caches are separate from the [main caches](#main-caches), and CI never calls `bin/tia-cache`. A passing project job on `main` also uploads the [artifact](#ci-artifacts) that the main caches import.
+A run on `main` restores the newest cache for its branch, then any cache for the project. A pull request restores only `main` caches. For the test-impact graph, it first takes the graph of its base commit, then the newest `main` graph. GitHub tries every restore key in a pull request's own cache scope before it looks at `main`, so a pull request saves no cache.
+
+An older cache of the pull request would otherwise shadow `main`'s, and its graph would count every `main` change since it as changed. Runs outside pull requests save each cache only after their checks succeed. Each such run saves its test-impact graph under its own key, so a full run on a commit that already has a graph still replaces the newest one. On `main`, a graph restored from another cache prefix runs the full suite. These caches are separate from the [main caches](#main-caches), and CI never calls `bin/tia-cache`. A passing project job on `main` also uploads the [artifact](#ci-artifacts) that the main caches import.
 
 The separate `Orbit CLI Binary` workflow builds the toolbox binaries on pull requests. It is not part of `Required checks`. After a `CI` run on `main` passes, the `Orbit CLI Release` workflow publishes that commit's binaries as a GitHub release. See [CLI binaries](/reference/cli-binaries).
 
@@ -310,7 +317,7 @@ The registration is a link at `$XDG_STATE_HOME/orbit/main-cache-stores/<key>`, a
 
 When `ORBIT_MAIN_CACHE_STORE` is unset and the store has publications that lag the checkout's fetched `main`, seeding queues a background refresh for the lagging projects. It does not queue a project whose last refresh failed at that commit or at a later one.
 
-Orbit task workspaces are linked worktrees of Orbit's `default` repository, starting at its current release commit. They share its main cache store but keep private tool caches. `bin/bootstrap` and `bin/review-check` seed those private caches from the publications. A Project setup step reflinks each dependency tree and private cache from `ORBIT_SEED_PATH` first.
+Orbit task workspaces are linked worktrees of Orbit's `default` repository, starting at the last commit that [deployed](/reference/deployments#development-defaults) there. They share its main cache store but keep private tool caches. `bin/bootstrap` and `bin/review-check` seed those private caches from the publications. A Project setup step reflinks each dependency tree and private cache from `ORBIT_SEED_PATH` first.
 
 ### Refresh from CI
 
@@ -324,7 +331,7 @@ The worker uses `git` and the GitHub CLI with the login of the user who runs it.
 4. finds the newest commit on which the project's jobs passed;
 5. downloads, checks, and publishes that commit's graph and quality caches.
 
-The worker skips the download when the store already holds that commit. It ignores pull request runs and runs from forks. The Gateway has two jobs, `Gateway` and `Gateway privileged`. The other projects have one job each.
+The worker skips the download when the store already holds that commit. It ignores pull request runs and runs from forks. The Gateway has three jobs: `Gateway`, `Gateway subprocess`, and `Gateway privileged`. E2E has two, `E2E` and `E2E subprocess`. The other projects have one job each. A failure in any of a project's jobs counts as a failure of the project.
 
 Before it publishes, the worker checks that:
 

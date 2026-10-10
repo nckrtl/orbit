@@ -33,7 +33,7 @@ function topology_admission_fixture(): array
     $workspace = Instance::query()->create(['project_id' => $project->id, 'node_id' => $host->id, 'name' => 'task-'.$group->id, 'checkout_path' => '/home/orbit/orbit', 'task_sandbox_id' => $sandbox->id]);
     $group->update(['taskable_type' => $workspace->getMorphClass(), 'taskable_id' => $workspace->id]);
     config(['compute.incus.hosts' => [['node_id' => $host->id, 'project' => 'orbit-task-sandboxes', 'pool' => 'proof', 'max_vms' => 4,
-        'orbit_images' => [], 'project_images' => [], 'blocked_networks' => ['192.168.0.0/16']]]]);
+        'orbit_images' => [], 'blocked_networks' => ['192.168.0.0/16']]]]);
     mock(SshKeyProvider::class)->shouldReceive('privateKeyPath')->andReturn('/keys/private');
     mock(KnownHostsStore::class)->shouldReceive('path')->andReturn('/keys/known_hosts');
     $state = (object) ['fault' => null, 'calls' => [], 'stale' => false];
@@ -127,7 +127,7 @@ it('keeps incomplete or foreign native readiness retryable', function (string $f
     expect($group->fresh()->task_compute)->toBe(TaskCompute::Vm);
 })->with(['foreign sandbox', 'old branch', 'live Gateway', 'missing Node', 'unhealthy']);
 
-it('refuses topology on the Project lane before contacting compute', function (): void {
+it('refuses topology for a web Project group before contacting compute', function (): void {
     [$group, $task, $state] = topology_admission_fixture();
     $group->project->update(['slug' => 'dlf']);
     $task->update(['topology' => ['app-dev']]);

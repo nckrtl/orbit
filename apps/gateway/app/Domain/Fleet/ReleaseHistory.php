@@ -12,4 +12,20 @@ interface ReleaseHistory
 
     /** `git rev-list --count` of the commit, or null when the history is shallow or cannot be read. */
     public function count(string $commit): ?int;
+
+    /**
+     * Up to `$limit` commits on the commit's first-parent line, without the commit itself, newest first. That is
+     * `main`'s own history, where releases are published, and not the commits of merged branches. Empty when the
+     * history cannot be read.
+     *
+     * @return list<string>
+     */
+    public function ancestors(string $commit, int $limit): array;
+
+    /**
+     * Whether no file under the paths differs between two commits. False when the history cannot tell.
+     *
+     * @param  list<string>  $paths
+     */
+    public function unchanged(string $from, string $to, array $paths): bool;
 }

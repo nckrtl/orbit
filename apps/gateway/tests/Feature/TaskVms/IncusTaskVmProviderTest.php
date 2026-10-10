@@ -17,6 +17,7 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\TaskVms\IncusHost;
 use App\Infrastructure\TaskVms\IncusTaskVmProvider;
 use App\Models\Node;
 use App\Models\Project;
@@ -39,6 +40,15 @@ function incusResult(string $stdout = '', int $exitCode = 0, string $stderr = ''
     return new CommandResult($exitCode, $stdout, $stderr, 5, $truncated);
 }
 
+/** @param  list<string>  ...$aliases  the aliases of each image */
+function incusImages(array ...$aliases): CommandResult
+{
+    return incusResult(json_encode(array_map(static fn (array $names, int $index): array => [
+        'fingerprint' => str_repeat(dechex($index + 10), 64),
+        'aliases' => array_map(static fn (string $name): array => ['name' => $name, 'description' => ''], $names),
+    ], $aliases, array_keys($aliases)), JSON_THROW_ON_ERROR));
+}
+
 function incusList(array ...$instances): CommandResult
 {
     return incusResult(json_encode($instances, JSON_THROW_ON_ERROR));
@@ -56,7 +66,7 @@ beforeEach(function (): void {
         'state' => TaskVmState::Provisioning, 'wireguard_ip' => '10.44.0.130', 'pi_token' => 'pi-secret',
     ]);
     $settings = new TaskVmSettings(true, 4, '10.44.0.128/25', [
-        new TaskVmHost($host->id, 'orbit-tasks', 'orbittask0', '10.251.77.0/24', 'ubuntu-26.04-vm', 4, 2, '4GiB', '20GiB', 'tank'),
+        new TaskVmHost($host->id, 'orbit-tasks', 'orbittask0', '10.251.77.0/24', 4, 2, '4GiB', '20GiB', 'tank'),
     ], 'http://10.44.0.3:8317', null, null, []);
     app()->instance(TaskVmSettings::class, $settings);
 
@@ -75,7 +85,7 @@ beforeEach(function (): void {
             return array_shift($this->results) ?? throw new RuntimeException('Unexpected SSH command: '.$command->shellCommand());
         }
     };
-    $this->provider = new IncusTaskVmProvider($this->ssh, new class implements SshKeyProvider
+    $this->provider = new IncusTaskVmProvider(new IncusHost($this->ssh, new class implements SshKeyProvider
     {
         public function privateKeyPath(): string
         {
@@ -94,7 +104,7 @@ beforeEach(function (): void {
         }
 
         public function put(string $host, int $port, HostKey $key): void {}
-    }, $settings);
+    }), $settings);
     $this->answer = function (CommandResult ...$results): void {
         $this->ssh->results = $results;
     };
@@ -114,7 +124,7 @@ it('launches an absent VM on the configured bridge with the user-data on stdin',
     expect(($this->argv)())->toBe([
         [...INCUS_PREFIX, 'list', '--format', 'json', '--', 'tvm-1'],
         [...INCUS_PREFIX, 'launch', '--vm', '--config', 'limits.cpu=2', '--config', 'limits.memory=4GiB', '--device', 'root,size=20GiB',
-            '--device', 'eth0,network=orbittask0', '--device', 'eth0,security.port_isolation=true', '--', 'ubuntu-26.04-vm', 'tvm-1'],
+            '--device', 'eth0,network=orbittask0', '--device', 'eth0,security.port_isolation=true', '--', 'orbit-task-base', 'tvm-1'],
     ])
         ->and($launch->input)->toBe('{"config":{"cloud-init.user-data":"#cloud-config\nshell: /bin/bash\n"}}')
         ->and([$connection->host, $connection->user, $connection->port, $connection->identityFile, $connection->knownHostsFile])
@@ -149,14 +159,26 @@ it('accepts a failed launch only when the VM runs afterwards', function (): void
     ($this->answer)(incusList(), incusResult(exitCode: 1, stderr: 'Error: connection lost'), incusList(incusInstance()));
     $this->provider->create($this->vm, '#cloud-config');
 
-    ($this->answer)(incusList(), incusResult(exitCode: 1, stderr: "Error: Image not found\n"), incusList());
+    ($this->answer)(incusList(), incusResult(exitCode: 1, stderr: "Error: Invalid devices\n"), incusList(), incusImages(['orbit-task-base', 'orbit-task-base-20261010030000']));
     expect(fn () => $this->provider->create($this->vm, '#cloud-config'))
-        ->toThrow(fn (TaskVmException $e) => expect([$e->errorCode, $e->getMessage()])->toBe(['task_vm.host_command_failed', "`incus launch` for task VM [tvm-1] failed with exit code [1].\nError: Image not found"]));
+        ->toThrow(fn (TaskVmException $e) => expect([$e->errorCode, $e->getMessage()])->toBe(['task_vm.host_command_failed', "`incus launch` for task VM [tvm-1] failed with exit code [1].\nError: Invalid devices"]));
 
     // The launch created the VM but could not start it: the launch error is the answer.
-    ($this->answer)(incusList(), incusResult(exitCode: 1, stderr: "Error: Failed to run: qemu exit status 1\n"), incusList(incusInstance(status: 'Stopped')));
+    ($this->answer)(incusList(), incusResult(exitCode: 1, stderr: "Error: Failed to run: qemu exit status 1\n"), incusList(incusInstance(status: 'Stopped')), incusImages(['orbit-task-base']));
     expect(fn () => $this->provider->create($this->vm, '#cloud-config'))
         ->toThrow(TaskVmException::class, "`incus launch` for task VM [tvm-1] failed with exit code [1].\nError: Failed to run: qemu exit status 1");
+});
+
+it('names a missing base image instead of the launch error, and never launches the stock image', function (): void {
+    ($this->answer)(incusList(), incusResult(exitCode: 1, stderr: "Error: Image not found\n"), incusList(), incusImages(['ubuntu-26.04-vm'], ['orbit-task-base-20261010030000']));
+
+    expect(fn () => $this->provider->create($this->vm, '#cloud-config'))
+        ->toThrow(fn (TaskVmException $e) => expect([$e->errorCode, $e->getMessage()])->toBe([
+            'task_vm.base_image_missing',
+            'The Incus project [orbit-tasks] on the host of task VM [tvm-1] has no base image [orbit-task-base]. Build it with task-vms:build-image.',
+        ]));
+    expect(($this->argv)()[1])->toContain('orbit-task-base')->not->toContain('ubuntu-26.04-vm')
+        ->and(($this->argv)()[3])->toBe([...INCUS_PREFIX, 'image', 'list', '--format', 'json']);
 });
 
 it('observes the VM by its exact name', function (): void {

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\TaskVms;
 
+use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Shared\ResourceOperationException;
 use Throwable;
 
@@ -17,5 +18,14 @@ final class TaskVmException extends ResourceOperationException
         ?Throwable $previous = null,
     ) {
         parent::__construct($errorCode, $message, $status, $previous);
+    }
+
+    /** The stable code of any failure: its own code, or `task_vm.job_failed` when it has none. */
+    public static function codeOf(Throwable $exception): string
+    {
+        return match (true) {
+            $exception instanceof ResourceOperationException, $exception instanceof NodeProvisioningException => $exception->errorCode,
+            default => 'task_vm.job_failed',
+        };
     }
 }

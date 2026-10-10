@@ -28,6 +28,10 @@ final class DocumentsServiceProvider extends ServiceProvider
             if ($event->command === 'schedule:run' && app(CleanupSchedulerSession::class)->isRecurringTick()) {
                 return;
             }
+            // The task VM worker runs only task VM jobs, never a document job, so its start keeps authorization.
+            if ($event->command === 'queue:work' && $event->input->getParameterOption('--queue', null, true) === 'task-vms') {
+                return;
+            }
             if (in_array($event->command, ['schedule:run', 'schedule:work', 'queue:work', 'queue:listen'], true)) {
                 app(CleanupGate::class)->invalidate();
             }

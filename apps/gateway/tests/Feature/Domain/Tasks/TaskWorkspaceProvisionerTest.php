@@ -26,11 +26,16 @@ use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
 use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskCeilings;
+use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskWorkspaceName;
 use App\Domain\Tasks\TaskWorkspaceTopology;
+use App\Domain\TaskVms\TaskVmException;
+use App\Domain\TaskVms\TaskVmSettings;
+use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\Tasks\TaskWorkspaceProvisioner;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
@@ -38,6 +43,7 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\ProjectNodeExclusion;
 use App\Models\Task;
+use App\Models\TaskVm;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
@@ -833,3 +839,58 @@ it('keeps a full-node reserved workspace when it cannot prove the reservation is
         ->and($fakes->source->calls)->toBe([]);
     $this->assertModelExists($left);
 })->with(['source evidence' => true, 'checkout exists' => false]);
+
+describe('task VMs', function (): void {
+    it('keeps shared claims working while a task VM value is invalid, and makes vm groups wait', function (): void {
+        config(['task_vms.incus.hosts' => [['node_id' => 9, 'cidr' => '10.251.77.0/24', 'max_vms' => 2, 'pool' => 'Bad_Pool']]]);
+        app()->forgetInstance(TaskVmSettings::class);
+        expect(fn () => app(TaskVmSettings::class))->toThrow(TaskVmException::class);
+        $shared = provisioner_app('shared');
+        $node = provisioner_node('beast', '10.44.0.7');
+        bind_task_workspace_fakes();
+
+        expect(app(TaskScheduler::class))->toBeInstanceOf(TaskScheduler::class)
+            ->and(app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent(provisioner_group($shared), false))?->node_id)->toBe($node->id);
+
+        $vmGroup = provisioner_group(provisioner_app('dlf'));
+        $vmGroup->update(['task_compute' => TaskCompute::Vm]);
+        expect(fn () => app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($vmGroup->fresh() ?? $vmGroup, true)))
+            ->toThrow(TaskCapacityException::class, 'Task VM: task_vm.invalid_config: ');
+    });
+
+    it('never places a shared group on a task VM Node', function (): void {
+        $project = provisioner_app('shared');
+        $vmNode = provisioner_node('tvm-1', '10.44.0.129');
+        $other = provisioner_node('beast', '10.44.0.7');
+        $vmGroup = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'VM', 'brief' => 'VM', 'status' => TaskGroupStatus::Running, 'task_compute' => TaskCompute::Vm]);
+        TaskVm::query()->create(['group_id' => $vmGroup->id, 'host_node_id' => $other->id, 'node_id' => $vmNode->id, 'provider' => 'incus',
+            'name' => 'tvm-1', 'state' => TaskVmState::Ready, 'wireguard_ip' => '10.44.0.129', 'pi_token' => str_repeat('p', 64)]);
+        bind_task_workspace_fakes();
+
+        $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent(provisioner_group($project), false));
+
+        expect($instance?->node_id)->toBe($other->id);
+    });
+
+    it('creates the workspace of a web vm group on its ready task VM Node, and waits before that', function (): void {
+        $project = provisioner_app('dlf');
+        $host = provisioner_node('beast', '10.44.0.7');
+        $group = provisioner_group($project);
+        $group->update(['task_compute' => TaskCompute::Vm]);
+        $vm = TaskVm::query()->create(['group_id' => $group->id, 'host_node_id' => $host->id, 'provider' => 'incus',
+            'name' => 'tvm-1', 'state' => TaskVmState::Provisioning, 'wireguard_ip' => '10.44.0.129', 'pi_token' => str_repeat('p', 64)]);
+        $fakes = bind_task_workspace_fakes();
+
+        expect(fn () => app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group->fresh() ?? $group, true)))
+            ->toThrow(TaskCapacityException::class, 'Task VM: provisioning.');
+
+        $vmNode = provisioner_node('tvm-1', '10.44.0.129');
+        $vm->update(['state' => TaskVmState::Ready, 'node_id' => $vmNode->id]);
+        $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group->fresh() ?? $group, true));
+
+        expect($instance?->node_id)->toBe($vmNode->id)
+            ->and($instance?->name)->toBe(TaskWorkspaceName::for($group))
+            ->and($instance?->checkout_path)->toBe('/srv/orbit/apps/dlf/'.TaskWorkspaceName::for($group))
+            ->and($fakes->development->completes)->toBe(1);
+    });
+});

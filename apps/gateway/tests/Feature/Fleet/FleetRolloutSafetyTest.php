@@ -2,11 +2,20 @@
 
 declare(strict_types=1);
 
+use App\Data\Fleet\DesiredAgentData;
+use App\Data\Fleet\DesiredCliReleaseData;
+use App\Data\Fleet\DesiredFleetStateData;
+use App\Data\Fleet\FleetReleaseAssetData;
+use App\Domain\Fleet\CliReleaseName;
+use App\Domain\Fleet\CliReleaseUnavailableReason;
+use App\Domain\Fleet\DesiredFleetState;
 use App\Domain\Fleet\FleetNodeOutcome;
+use App\Domain\Fleet\FleetRolloutAlerts;
 use App\Domain\Fleet\FleetRolloutMembership;
 use App\Domain\Fleet\FleetRolloutRunner;
 use App\Domain\Fleet\FleetRolloutStatus;
 use App\Domain\Fleet\NodeCliState;
+use App\Domain\Fleet\ReleaseHistory;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Releases\ReleaseAlertKind;
 use App\Models\FleetRollout;
@@ -16,6 +25,7 @@ use App\Models\Node;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Config;
 use Tests\Support\Fleet\FakeFootprintArtifact;
+use Tests\Support\Fleet\FakeReleaseHistory;
 use Tests\Support\Fleet\FleetFixtures;
 
 function safetyRun(): array
@@ -190,6 +200,62 @@ describe('fleet rollout waiting', function (): void {
             ->and($artifact->applied)->toBe([]);
     });
 
+    it('rolls out an ancestor\'s CLI release once the state falls back, alerts once, and never stalls', function (): void {
+        ['visitor' => $visitor, 'catalog' => $catalog, 'alerts' => $alerts] = FleetFixtures::bind();
+        $ancestor = str_repeat('e', 40);
+        $catalog->missing = [FleetFixtures::Commit];
+        app()->instance(ReleaseHistory::class, new FakeReleaseHistory(ancestors: [$ancestor], counts: [$ancestor => 4680]));
+        FleetFixtures::node('dev', [RoleName::AppDev]);
+
+        expect(safetyRun()['status'])->toBe('waiting')
+            ->and($visitor->visited)->toBe([]);
+
+        Carbon::setTestNow(now()->addSeconds(DesiredFleetState::FallbackAfterSeconds + 1));
+
+        expect(safetyRun()['status'])->toBe('completed')
+            ->and($visitor->visited)->toBe(['dev'])
+            ->and(FleetRolloutNode::query()->sole()->cli_version)->toBe('0.4680.0')
+            ->and(FleetRollout::query()->sole()->desired_state['cli']['commit'])->toBe($ancestor)
+            ->and($alerts->alerts)->toHaveCount(1)
+            ->and($alerts->alerts[0]->kind)->toBe(ReleaseAlertKind::RolloutCliFallback)
+            ->and($alerts->alerts[0]->summary)->toContain('because commit '.substr(FleetFixtures::Commit, 0, 12).' has no published CLI release.')
+            ->and(FleetRollout::query()->sole()->notices['cli_fallback']['kind'])->toBe('rollout_cli_fallback');
+
+        Carbon::setTestNow(now()->addHours(3));
+        safetyRun();
+
+        expect($alerts->alerts)->toHaveCount(1)
+            ->and(FleetRollout::query()->sole()->alert)->toBeNull();
+
+        // The commit's own release appears: the catch-up brings the Node to it.
+        $catalog->missing = [];
+        $visitor->visited = [];
+        Carbon::setTestNow(now()->addSeconds(DesiredFleetState::FallbackSeconds + 1));
+        safetyRun();
+
+        expect($visitor->visited)->toBe(['dev'])
+            ->and(FleetRolloutNode::query()->sole()->cli_version)->toBe('0.4681.0')
+            ->and($alerts->alerts)->toHaveCount(1);
+    });
+
+    it('visits no Node of a started rollout while its CLI release cannot be confirmed', function (): void {
+        ['visitor' => $visitor, 'catalog' => $catalog, 'alerts' => $alerts] = FleetFixtures::bind();
+        FleetFixtures::node('dev', [RoleName::AppDev]);
+        expect(safetyRun()['status'])->toBe('completed');
+
+        // The confirmed release expires from the cache, and GitHub then answers without it.
+        FleetFixtures::node('new', [RoleName::AppDev]);
+        $catalog->available = false;
+        $visitor->visited = [];
+        Carbon::setTestNow(now()->addSeconds(DesiredFleetState::AvailableSeconds + 1));
+
+        expect(safetyRun()['status'])->toBe('waiting')
+            ->and($visitor->visited)->toBe([])
+            ->and($alerts->alerts)->toBe([])
+            ->and(FleetRollout::query()->sole()->status)->toBe(FleetRolloutStatus::Completed)
+            ->and(FleetRollout::query()->sole()->desired_state['cli']['status'])->toBe('available');
+    });
+
     it('keeps the incomplete count across a deferred visit', function (): void {
         ['visitor' => $visitor] = FleetFixtures::bind();
         FleetFixtures::node('dev', [RoleName::AppDev]);
@@ -221,4 +287,34 @@ describe('fleet rollout Caddy skips', function (): void {
             ->and($alerts->alerts[0]->kind)->toBe(ReleaseAlertKind::RolloutCaddySkipped)
             ->and(FleetRollout::query()->sole()->notices['caddy_skipped']['kind'])->toBe('rollout_caddy_skipped');
     });
+});
+
+describe('fleet rollout CLI fallback alert', function (): void {
+    it('names why the commit\'s own CLI release was not used', function (?CliReleaseUnavailableReason $reason, string $because): void {
+        ['alerts' => $alerts] = FleetFixtures::bind();
+        $ancestor = str_repeat('e', 40);
+        $release = new CliReleaseName(4680);
+        $cli = DesiredCliReleaseData::available($release, $ancestor, 'https://github.com/nckrtl/orbit/releases/download/'.$release->tag().'/SHA256SUMS', [
+            new FleetReleaseAssetData('linux-x86_64', $release->assetName('linux-x86_64'), 'https://github.com/nckrtl/orbit/releases/download/'.$release->tag().'/'.$release->assetName('linux-x86_64'), str_repeat('c', 64)),
+        ]);
+        $rollout = new FleetRollout()->forceFill(['id' => 7, 'commit' => FleetFixtures::Commit]);
+
+        app(FleetRolloutAlerts::class)->cliFallback($rollout, new DesiredFleetStateData(
+            FleetFixtures::Commit,
+            $reason instanceof CliReleaseUnavailableReason ? $cli->fallbackFor($reason) : $cli,
+            DesiredAgentData::fromFootprint(),
+        ));
+
+        expect($alerts->alerts[0]->summary)->toBe(sprintf(
+            'Fleet rollout 7 rolls out CLI release 0.4680.0 of commit %s, because commit %s %s.',
+            substr($ancestor, 0, 12),
+            substr(FleetFixtures::Commit, 0, 12),
+            $because,
+        ));
+    })->with([
+        'missing' => [CliReleaseUnavailableReason::ReleaseMissing, 'has no published CLI release'],
+        'mismatch' => [CliReleaseUnavailableReason::ReleaseMismatch, 'has a CLI release tag that points at another commit'],
+        'incomplete' => [CliReleaseUnavailableReason::ReleaseIncomplete, 'has an incomplete CLI release'],
+        'stored without a reason' => [null, 'has no usable CLI release'],
+    ]);
 });

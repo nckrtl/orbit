@@ -3,10 +3,10 @@ title: "Compute drivers"
 description: "Task VMs for web Projects, the UpCloud driver, and the Incus sandboxes of the Orbit lane."
 covers:
   - apps/gateway/app/{Domain/TaskVms,Infrastructure/TaskVms,Jobs/TaskVms,Actions/TaskVms,Domain/Compute,Infrastructure/Compute,Actions/Compute}/**
-  - apps/gateway/app/{Models/TaskVm.php,Models/TaskSandbox.php,Console/Commands/PrepareTaskVmHostCommand.php,Console/Commands/PrepareTaskVmHubCommand.php,Domain/Tasks/SandboxHostOperation.php,Infrastructure/Tasks/IncusSandboxHost.php}
-  - apps/gateway/config/{task_vms,compute}.php
+  - apps/gateway/app/{Models/TaskVm.php,Models/TaskSandbox.php,Console/Commands/PrepareTaskVmHostCommand.php,Console/Commands/PrepareTaskVmHubCommand.php,Console/Commands/BuildTaskVmImageCommand.php,Domain/Tasks/SandboxHostOperation.php,Infrastructure/Tasks/IncusSandboxHost.php}
+  - apps/gateway/config/{task_vms,compute,queue}.php
   - apps/gateway/resources/{task-vms,compute}/**
-  - apps/gateway/database/migrations/*{create_task_vms_table,create_jobs_table,create_failed_jobs_table,create_task_sandboxes_table,add_fleet_enrollment_to_task_sandboxes,add_pi_ready_at_to_task_sandboxes}.php
+  - apps/gateway/database/migrations/*{create_task_vms_table,add_model_proxy_origin_to_task_vms,create_jobs_table,create_failed_jobs_table,create_task_sandboxes_table,add_fleet_enrollment_to_task_sandboxes,add_pi_ready_at_to_task_sandboxes}.php
 ---
 
 # Compute drivers
@@ -20,35 +20,66 @@ Both lanes are off by default. [ADR 0200](/decisions/0200-run-each-task-group-in
 
 ## Task VMs
 
-Partly built. The [settings](#configure-task-vms), the `task_vms` table and its [states](#states), the cloud-init user-data, the [placement invariant](#placement-invariant), the commands that [prepare an Incus host](#prepare-an-incus-host) and [limit fleet traffic on the hub](#limit-fleet-traffic-on-the-hub), the address allocator's reserved range, the [Caddy guard](#refuse-task-vms-in-caddy), and the [Incus provider](#incus-provider) exist. So do the [Pi runtime](/reference/pi-server#run-pi-on-a-task-vm) and the task code that runs agents, checks, fetch, and push on a task VM Node. The invariant checks every saved Instance and access grant, and the fleet rollout skips task VM Nodes. Orbit creates no task VM yet: the jobs are not built yet. The Phase 1 slices of [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm) build them.
-
-A task VM is a stock Ubuntu 26.04 cloud VM on an Incus host. The Gateway creates it for one group, enrolls it as an `app-dev` Node, and destroys it when the group ends. After enrollment, the group uses the same code as a shared group, pinned to that Node.
+A task VM is an Ubuntu 26.04 VM on an Incus host. It boots from the host's [base image](#build-the-base-image), which holds everything that enrollment installs on an `app-dev` Node. The Gateway creates it for one group, enrolls it as an `app-dev` Node, and destroys it when the group ends. After enrollment, the group uses the same code as a shared group, pinned to that Node. Only Incus hosts run task VMs. UpCloud follows in Phase 3 of [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm).
 
 ### From claim to workspace
 
-A claim moves a group through these steps. Steps 2 to 5 are queued jobs.
+A claim moves a group through these steps. Steps 2 to 5 are queued [jobs](#jobs).
 
-1. The scheduler claims a `vm` group. `AllocateTaskVmAction` picks a host with free budget and records a `provisioning` row. The row holds the VM name and a WireGuard address in the reserved range. Then the jobs are queued.
-2. `ProvisionTaskVm` launches the VM with cloud-init user-data. Cloud-init creates the user `orbit` with passwordless sudo and the Gateway's SSH key, and installs `openssh-server`. It does nothing else. On beast this takes 30 to 50 seconds.
-3. `EnrollTaskVm` waits until cloud-init reports `done` with no errors. It reads the guest's IPv4 address and its ed25519 host key fingerprint from the host through `incus`.
-4. `EnrollTaskVm` then runs the normal [Node provisioning](/reference/node-provisioning#add-a-node) for the Node `tvm-<id>`, through the host as [jump host](/reference/node-provisioning#enroll-through-a-jump-host).
+1. The scheduler claims a `vm` group of a Project other than `orbit`. `AllocateTaskVmAction` records a `provisioning` row and queues `ProvisionTaskVm`.
+2. `ProvisionTaskVm` launches the VM from the base image with cloud-init user-data. The VM disk is a ZFS clone of the image, so the launch takes under a second. Cloud-init is done about 20 seconds later on beast.
+3. `EnrollTaskVm` waits for cloud-init. Then it reads the guest's IPv4 address and its ed25519 host key fingerprint from the host through `incus`.
+4. `EnrollTaskVm` runs the normal [Node provisioning](/reference/node-provisioning#add-a-node) for the Node `tvm-<id>`, through the host as [jump host](/reference/node-provisioning#enroll-through-a-jump-host).
 5. `PrepareTaskVmRuntime` creates the group's CLIProxyAPI key and starts Pi as `orbit`. See [Run Pi on a task VM](/reference/pi-server#run-pi-on-a-task-vm). The row becomes `ready`.
-6. On the next tick, Orbit creates the [task workspace](/reference/tasks#task-vm-workspace) on the VM's Node. It is a normal Instance `task-<group id>` with the private Route `task-<id>.<project>.<dev-tld>`.
+6. On the next claim, Orbit creates the [task workspace](/reference/tasks#task-vm-workspace) on the VM's Node. It is a normal Instance `task-<group id>` with the private Route `task-<id>.<project>.<dev-tld>`.
 
-Until the row is `ready`, the claim returns the group to `todo` with the reason `Task VM: <state or error>`, and tries again on the next tick.
+`AllocateTaskVmAction` takes the first host in `task_vms.incus.hosts` that is an active Node and has fewer live task VMs than its `max_vms`. The row gets the name `tvm-<row id>`, the next free WireGuard address in the reserved range, and a random Pi token.
 
-The Node `tvm-<id>` has user `orbit`, role `app-dev`, the dev Cluster, and the reserved WireGuard address.
+Cloud-init creates the user `orbit` with passwordless sudo and the Gateway's SSH key. It does nothing else, because the base image already holds `openssh-server`, Chromium's system libraries, and the software of the `app-dev` role. Enrollment finds that software installed, so its package steps change nothing. The Project's setup steps install the rest, for example its Playwright browsers.
+
+`EnrollTaskVm` checks the VM every 2 seconds, for up to 2 minutes in one run, and then again 15 seconds later. It goes on when cloud-init reports `done` with no errors and the guest has its bridge address. It reads the guest values only then, before any code but cloud-init has run in the VM. A guest reboot shows the VM stopped for about a second, so a stopped VM gets a second reading 5 seconds later before enrollment fails.
+
+Provisioning links the new Node to the row when it creates the Node record, before any convergence. So the Node is a task VM Node from the start: the fleet rollout skips it, and it gets no Orbit CLI.
+
+Until the row is `ready`, the claim returns the group to `todo` with a reason, and tries again on the next tick:
+
+| Reason | Cause |
+| --- | --- |
+| `Task VM: task VMs are not enabled on this Gateway.` | `task_vms.enabled` is false and the group has no task VM |
+| `Task VM: no host has room for another task VM.` | Every host is inactive or full |
+| `Task VM: provisioning.` | The jobs are still running |
+| `Task VM: failed: <code>: <message>` | A job failed. The group also asks for assistance. Cancel the group to destroy the VM |
+| `Task VM: task_vm.invalid_config: <message>` | A `task_vms` value is invalid. Shared groups keep working, because only `vm` claims read these settings |
+| `Task VM: destroying.` | Cleanup has started |
+
+The Node `tvm-<id>` has user `orbit`, role `app-dev`, the dev Cluster, and the reserved WireGuard address. Shared groups never get a workspace on a task VM Node: their Node selection leaves out every Node of a task VM that is not `destroyed`.
 
 ### Destroy a task VM
 
-When the group ends, Orbit removes its workspace Instance, which also withdraws the Route. Pushes, fetches, checks, and agent turns need the VM `ready`, so they finish before this starts. Then `DestroyTaskVm` runs:
+When the group ends, Orbit removes its workspace Instance with force, as for a shared group. This withdraws the Route. A cancelled group first pushes its stored approval. A task VM workspace never holds a host [discovery topology](/reference/incus-topologies): Orbit refuses to acquire one there, so removal skips the topology release. Pushes, fetches, checks, and agent turns need the VM `ready`, so they finish before the VM is destroyed.
+
+Each `tasks:tick` queues `DestroyTaskVm` for every task VM that is not `destroyed` when its group is `completed` or `cancelled`, no [claim](/reference/tasks#claim-and-provision) of the group is in flight, and no Instance is left on its Node. A claim is over once it starts the group, so a group that ends soon after its claim loses its VM on the next tick. Its unique lock has no expiry, so the tick never queues a second copy while one waits or runs. `DestroyTaskVm` then runs these steps:
 
 1. It sets the row to `destroying` and revokes the group's model key.
 2. It deletes the VM. A VM that is already gone counts as deleted.
-3. It removes the Node offline, with force. This removes its WireGuard peer, roles, and Process rows.
+3. It removes the Node offline and with force. This sheds its `app-dev` role and removes its Process rows, WireGuard peer, and private DNS records.
 4. It sets the row to `destroyed`.
 
-Each `tasks:tick` queues `DestroyTaskVm` for every task VM that is not `destroyed` and whose group has ended. Phase 1 does not park task VMs. Phase 2 adds parking.
+The Node goes before the row becomes `destroyed`. A row that is not `destroyed` keeps its Node a task VM Node, so Orbit never sends the Gateway's own Pi token to it. When a step fails, the row stays `destroying` with the error, and the job runs again after 1, 5, and then every 15 minutes. Phase 1 does not park task VMs. Phase 2 adds parking.
+
+Keep a host in `task_vms.incus.hosts` until it has no task VM that is not `destroyed`, because destroy needs the host's settings. Node removal refuses such a host with `node.has_task_vms`. When it removes a host, it also deletes the host's `destroyed` rows.
+
+#### A VM that dies before its group ends
+
+Workspace removal needs SSH to the VM. When the VM is gone, removal fails and the group asks for assistance with the reason `Workspace removal failed:` or `Merged pull request cleanup failed:`. When the group is `cancelled`, `completed`, `settling`, or `waiting_for_review`, each tick then also queues `DestroyTaskVm` for that task VM. A group in another state, for example one whose cancel failed while the VM ran, keeps its workspace and its assistance request. Cancel it again: while the VM runs, cancel removes the workspace normally, and the next tick queues `DestroyTaskVm`.
+
+The job reads the VM on its host. While the VM runs, it leaves the workspace to the normal removal. When the VM is absent, or still stopped 5 seconds after a stopped reading, it deletes the VM and then removes the workspace offline:
+
+- It records the normal removal journal, with the source steps marked done, because the checkout is gone with the VM.
+- It clears the Route through the normal removal projector. The projector skips the VM's Node for a task VM that is `destroying`. The router withdraws the site.
+- It deletes the Instance's Process and Schedule records and the Instance row, and clears the group's removal reason.
+
+Then it removes the Node and marks the row `destroyed`, as above. A removal journal that a normal removal left open is finished the same way. A cancelled group's stored approval is lost with the VM.
 
 ### States
 
@@ -58,7 +89,7 @@ The `TaskVmState` enum has five cases.
 | --- | --- |
 | `provisioning` | Orbit is creating, enrolling, or preparing the VM |
 | `ready` | Pi runs, and Orbit can create the workspace |
-| `failed` | A job failed. The row keeps `error_code` and `error_message`, and the group shows the error as its reason |
+| `failed` | A job failed. The row keeps `error_code` and `error_message`. The group shows the error as its reason and asks for assistance |
 | `destroying` | Cleanup has started |
 | `destroyed` | The VM, the Node, and the model key are gone. The row stays for audit |
 
@@ -66,25 +97,39 @@ Orbit derives progress inside `provisioning` from facts: the VM exists, the row 
 
 ### Jobs
 
-The four jobs run on the `task-vms` database queue. Each job is idempotent and unique for its task VM. The Gateway scheduler starts a worker every minute:
+The task VM jobs run on the `task-vms` database queue, in the Gateway's own database. Each job loads its row again, does nothing when the row has moved on, and is unique for its task VM. While a job waits on that queue, the Gateway scheduler starts this worker every 10 seconds:
 
 ```text
 queue:work task-vms --queue=task-vms --stop-when-empty --max-time=50 --timeout=1500
 ```
 
-A job that stops halfway runs again after 1800 seconds. `EnrollTaskVm` checks cloud-init every 15 seconds and fails after 10 minutes.
+The worker stops when the queue is empty, or takes no new job after 50 seconds. A job runs at most 1500 seconds, and a job that stops halfway runs again after 1800 seconds. Without task VMs nothing is queued, so the worker never starts. A Gateway release drains the worker like any other scheduled command. Its start does not pause [document cleanup](/reference/project-documents), because it runs only task VM jobs.
+
+| Job | Retries |
+| --- | --- |
+| `ProvisionTaskVm` | Once after 30 seconds |
+| `EnrollTaskVm` | Fails at once on a cloud-init error, an absent or stopped VM, or a boot over 10 minutes. Retries other errors twice. Stops after 60 tries, waits included |
+| `PrepareTaskVmRuntime` | Twice, 30 seconds apart |
+| `DestroyTaskVm` | Until it succeeds |
+| `RefreshTaskVmBaseImages` | Never. The next night runs it again |
+
+When a job of the first three has no retries left, or runs past its timeout, the row becomes `failed` with the job's error code, or `task_vm.job_failed` when the error has none. The group asks for assistance with the reason `Task VM failed: <code>: <message>`, so `tasks:status` lists it. `EnrollTaskVm` never creates the VM again. The jobs run one at a time, so the 10-minute boot limit counts from the moment `ProvisionTaskVm` launched the VM, not from the row.
 
 ### Incus provider
 
-`IncusTaskVmProvider` runs `sudo -n incus --project <project> …` on the host Node over SSH, as the host's managed user. It launches the host's `image` as a VM with the row's `name`, the host's `cpus`, `memory`, and `disk`, and `eth0` on the host's `network` with `security.port_isolation=true`. The user-data goes on stdin. The provider never creates a network.
+`IncusTaskVmProvider` runs `sudo -n incus --project <project> …` on the host Node over SSH, as the host's managed user. It launches the image alias `orbit-task-base` as a VM with the row's `name`, the host's `cpus`, `memory`, and `disk`, and `eth0` on the host's `network` with `security.port_isolation=true`. The user-data goes on stdin. The provider never creates a network.
 
-Create and delete are idempotent by name. A running VM counts as created, and an absent VM counts as deleted. Create starts a VM that exists but is stopped, and fails with the `incus start` error when it cannot. A launch that reports an error counts only when the VM runs afterwards. Otherwise create fails with the launch error. A delete that reports an error counts when the VM is gone. Callers check `task_vms.enabled` first.
+When the launch fails and the project has no `orbit-task-base` alias, create fails with `task_vm.base_image_missing`. Build the image with [`task-vms:build-image`](#build-the-base-image). Orbit never falls back to the stock image: a VM from it has no `openssh-server`, so it cannot enroll.
+
+Create and delete are idempotent by name. A running VM counts as created, and an absent VM counts as deleted. Create starts a VM that exists but is stopped, and fails with the `incus start` error when it cannot. A launch that reports an error counts only when the VM runs afterwards. Otherwise create fails with the launch error. A delete that reports an error counts when the VM is gone. The claim checks `task_vms.enabled` before it allocates a VM. The jobs of an existing row use the provider whatever `enabled` says, so Orbit still destroys task VMs after you turn them off.
 
 ### Prepare an Incus host
 
-Run `task-vms:prepare-host {node}` once for each host. It sends `resources/task-vms/incus-host.sh` to the host over SSH and runs it with `sudo -n bash -s --`. The script is idempotent and prints `{"ok":true}`. It sets up these parts:
+Run `task-vms:prepare-host {node}` once for each host. It sends `resources/task-vms/incus-host.sh` to the host over SSH and runs it with `sudo -n bash -s --`. The script is idempotent and prints `{"ok":true}`.
 
-- The Incus project, such as `orbit-tasks`, with `features.networks=false`, and the image alias `ubuntu-26.04-vm` from `images:ubuntu/26.04/cloud`.
+First it checks the ZFS storage pool that the host's `pool` names. It creates a missing pool from the host's `zfs_dataset`, such as `fast/orbit-tasks`. That dataset must not exist yet, and Incus creates it. The script refuses an existing dataset and calls no Incus command for it, because Incus would unmount that dataset and destroy it with the pool. Without `zfs_dataset`, a missing pool fails. An existing pool must use the `zfs` driver. With `zfs_dataset` set, the pool's source must be that dataset. Then it sets up these parts:
+
+- The Incus project, such as `orbit-tasks`, with `features.networks=false`, and the stock image alias `ubuntu-26.04-vm` from `images:ubuntu/26.04/cloud`. Only the [base image](#build-the-base-image) build launches it.
 - The bridge, such as `orbittask0`, with IPv4 NAT and no IPv6.
 - The ACL `<bridge>-egress`, which the bridge gets at creation.
 - ACL egress drops private, link-local, CGNAT, and multicast ranges, and allows the rest.
@@ -97,6 +142,33 @@ The command takes these values from the host's entry in `task_vms.incus.hosts`, 
 Orbit reserves bridge names that start with `orbittask`. Every such bridge must carry its egress ACL, because the ufw rule accepts forwarded traffic from all of them. Only `incus-host.sh` creates these bridges, and it attaches the ACL at creation. Never create an `orbittask` bridge in another way.
 
 The dropped egress ranges are `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.0.0/16`, `100.64.0.0/10`, `224.0.0.0/4`, and `240.0.0.0/4`. Port isolation blocks traffic between VMs on the same bridge. Both are needed. The ufw rule lets bridge traffic pass the host's forward policy, and replies use the existing rule for established connections.
+
+### Build the base image
+
+Run `task-vms:build-image {node}` after `task-vms:prepare-host`, once for each host. It builds the host's base image and prints each stage with its time. It runs these steps on the host over SSH, with `sudo -n incus --project <project> …`:
+
+1. It launches a builder VM `tvm-image-<time>` from the stock image `ubuntu-26.04-vm`, with the host's VM size and bridge.
+2. It waits for cloud-init. It then runs the Node bootstrap, the Caddy package, and the `app-dev` role prerequisites as `orbit` through `incus exec`.
+3. It installs the pinned [Node agent](/reference/node-agent) binary.
+4. It runs `resources/task-vms/base-image-clean.sh` in the VM, which removes the VM's identity.
+5. It stops the VM and publishes it, without compression, as the image `orbit-task-base-<time>`.
+6. It boots a smoke VM from the new image with the task VM user-data. The smoke VM must finish cloud-init without errors and have an ed25519 SSH host key.
+7. It points the alias `orbit-task-base` at the new image in one step.
+8. It deletes every other `orbit-task-base-<time>` image that no VM in the project uses.
+
+The builder's user-data adds three things to the task VM user-data: a package upgrade, `openssh-server`, and Chromium's system libraries. Enrollment runs the same programs over SSH, rendered by the same code, so the image holds what enrollment installs. The clean script fails while part of the identity remains. The smoke boot also creates the image volume on the pool, so the first task VM is a clone too. New task VMs launch from the new image, and running VMs keep theirs. An image that a task VM still uses stays until a later build finds it unused.
+
+The Chromium libraries are Playwright's `chromium` dependency list for Ubuntu 26.04, which covers `chromium` and `chromium-headless-shell`: `libasound2t64`, `libatk-bridge2.0-0t64`, `libatk1.0-0t64`, `libatspi2.0-0t64`, `libcairo2`, `libcups2t64`, `libdbus-1-3`, `libdrm2`, `libgbm1`, `libglib2.0-0t64`, `libnspr4`, `libnss3`, `libpango-1.0-0`, `libx11-6`, `libxcb1`, `libxcomposite1`, `libxdamage1`, `libxext6`, `libxfixes3`, `libxkbcommon0`, and `libxrandr2`. Playwright's xvfb and font list for headed runs is left out. The `app-dev` role prerequisites install PHP, Composer, Caddy, Docker, Vite+ with Node and pnpm, and Bun.
+
+The clean script removes the SSH host keys, the machine ID, every authorized key, the cloud-init state and its generated configuration, the logs, the APT package cache, temporary files, and shell history.
+
+It also stops Docker, containerd, and Caddy, and removes the IDs they write on their first start: Docker's engine ID, containerd's UUID, and Caddy's instance UUID, storage clean record, and saved config. So every VM from the image gets its own host keys, machine ID, and DHCP address, and cloud-init runs again on its first boot. The package lists stay, so enrollment's `apt-get update` fetches only changes. The builder never enrolls, so the image has no WireGuard key, agent secret, Caddy site, firewall rule, or Gateway record. Each VM gets those from its own enrollment.
+
+The command deletes the builder and the smoke VM whether the build passes or fails. A failed build keeps the current base image. It deletes the new image when it already published one, and fails with `task_vm.image_build_failed`, which names the stage. Only one build of a host runs at a time. A second one fails with `task_vm.image_build_running`.
+
+A build that stops early cleans up too. A command stopped with SIGINT or SIGTERM deletes its builder and frees the host. When the nightly job runs past its timeout, the worker's failure handler does the same. A build killed with SIGKILL holds the host for at most 25 minutes. The next build deletes every builder and smoke VM that an earlier build left.
+
+Every night at 03:00, while task VMs are enabled, the Gateway scheduler queues the job `RefreshTaskVmBaseImages` on the `task-vms` queue. It rebuilds the base image of each configured host that already has one, one host after another. It leaves a host without a base image alone, so the first build is always `task-vms:build-image`. Until then, the job only reads the host's image list. The worker runs one job at a time, so a refresh delays other task VM jobs while it runs. A host that fails keeps its image, and the job fails after the other hosts, so `failed_jobs` records it.
 
 ### Limit fleet traffic on the hub
 
@@ -145,11 +217,13 @@ These keys live in the Gateway's `config/task_vms.php`. Set them in the Gateway'
 | `task_vms.enabled` | `ORBIT_TASK_VMS_ENABLED` | Allows new task VMs. Default `false` |
 | `task_vms.dev_cluster_id` | `ORBIT_TASK_VMS_DEV_CLUSTER_ID` | The ID of the Cluster that task VM Nodes join |
 | `task_vms.wireguard_range` | `ORBIT_TASK_VMS_WIREGUARD_RANGE` | The reserved WireGuard range. Default `10.44.0.128/25`, the upper half of the default VPN subnet `10.44.0.0/24` |
-| `task_vms.model_proxy_origin` | `ORBIT_TASK_VMS_MODEL_PROXY_ORIGIN` | The CLIProxyAPI origin that Pi on the VM uses, such as `http://10.44.0.3:8317`. An `http` or `https` origin with no path, query, or credentials |
+| `task_vms.model_proxy_origin` | `ORBIT_TASK_VMS_MODEL_PROXY_ORIGIN` | The CLIProxyAPI origin that Pi on the VM uses, such as `http://10.44.0.3:8317`. An `http` or `https` origin with no path, query, or credentials. It must be the CLIProxyAPI URL of the [proxycli extension](/reference/proxycli) |
 | `task_vms.pi.artifact_path` | `ORBIT_TASK_VMS_PI_ARTIFACT_PATH` | The absolute path of the pinned Pi executable on the Gateway |
 | `task_vms.pi.artifact_sha256` | `ORBIT_TASK_VMS_PI_ARTIFACT_SHA256` | Its lowercase SHA-256 digest. Set both Pi artifact values or neither |
 | `task_vms.pi.models` | `ORBIT_TASK_VMS_PI_MODELS` | A JSON list of the models Pi offers. Default `[]` |
 | `task_vms.incus.hosts` | `ORBIT_TASK_VMS_INCUS_HOSTS` | A JSON list of hosts, in placement order. Default `[]` |
+
+Each task VM stores `model_proxy_origin` with its model key, and revokes the key at that origin. So changing the origin never strands a key. A task VM that holds a key at another origin cannot prepare Pi again.
 
 Each host is a JSON object with these snake_case keys. Other keys are an error.
 
@@ -160,8 +234,8 @@ Each host is a JSON object with these snake_case keys. Other keys are an error.
 | `max_vms` | Yes | | The most task VMs on the host, from 1 to 64 |
 | `project` | No | `orbit-tasks` | The Incus project |
 | `network` | No | `orbittask0` | The bridge name: `orbittask` and 1 to 6 lowercase letters or digits |
-| `pool` | No | `default` | The Incus storage pool for the VM root disk |
-| `image` | No | `ubuntu-26.04-vm` | The Incus image alias |
+| `pool` | No | `orbit-tasks` | The Incus storage pool for the base image and the VM root disks. It must use the `zfs` driver |
+| `zfs_dataset` | No | | The ZFS dataset from which `task-vms:prepare-host` creates `pool` when it is missing, such as `fast/orbit-tasks`. A new dataset below a ZFS pool: not the pool itself, and not a dataset that exists |
 | `cpus` | No | `2` | The vCPUs of each VM, from 1 to 64 |
 | `memory` | No | `4GiB` | The memory of each VM, in `MiB` or `GiB` |
 | `disk` | No | `20GiB` | The root disk of each VM, in `MiB` or `GiB` |
@@ -178,7 +252,7 @@ The reserved range must always be a private network. As soon as task VMs are ena
 
 | Code | HTTP | Cause |
 | --- | --- | --- |
-| `task_vm.invalid_config` | 500 | A `task_vms` value is invalid. See [Configure task VMs](#configure-task-vms) |
+| `task_vm.invalid_config` | 500 | A `task_vms` value is invalid, or the proxycli CLIProxyAPI URL is not `model_proxy_origin`. See [Configure task VMs](#configure-task-vms) |
 | `task_vm.unknown_host` | 409 | The Node is not active or not in `task_vms.incus.hosts` |
 | `task_vm.invalid_gateway_key` | 500 | The Gateway's SSH public key is not one OpenSSH public key line |
 | `task_vm.workspace_mismatch` | 409 | A group's workspace is not on its ready task VM |
@@ -194,13 +268,21 @@ The reserved range must always be a private network. As soon as task VMs are ena
 | `task_vm.not_enrolled` | 409 | The task VM has no Node yet, so Pi cannot be prepared |
 | `task_vm.model_key_failed` | 409 or 502 | CLIProxyAPI did not confirm the group's model key, the proxycli extension holds no management key, or another key operation runs |
 | `task_vm.runtime_failed` | 502 | A Pi step failed on the VM: the executable, its digest, `models.json`, the token, or the `pi-server` Process |
+| `task_vm.vm_not_running` | 502 | During enrollment, the VM is absent, or it stayed stopped |
+| `task_vm.bootstrap_timeout` | 504 | Cloud-init was not `done` 10 minutes after the row was created |
+| `task_vm.job_failed` | 500 | A task VM job failed with an error that has no code of its own |
+| `task_vm.base_image_missing` | 409 | The host's project has no `orbit-task-base` image. Run `task-vms:build-image` |
+| `task_vm.image_build_failed` | 502 | A base image build failed. The message names the stage |
+| `task_vm.image_build_running` | 409 | A base image build of the host is already running |
 
 ### Limits
 
 Task VMs have these known limits.
 
 - Incus accepts DNS before the ACL, so a task VM can query port 53 on any host address. It can read instance names from the DNS of other bridges. This risk is accepted.
-- The first `app-dev` convergence on a new VM installs PHP, Caddy, Docker, and the agent. A job times out after 1500 seconds.
+- A base image is only as fresh as its last build. The nightly refresh keeps packages and the `app-dev` software at most a day old. A host without a base image cannot start task VMs.
+- A VM from the image boots twice on its first start, which adds about 9 seconds.
+- The worker runs one job at a time, so a long enrollment delays the jobs of other task VMs.
 - Doctor can report task VM Nodes while they exist.
 - The hub filter fails open to keep the fleet VPN up. The tunnel starts even after a failed table load at boot.
 - A later restart of `nftables.service` removes the hub table, but its unit still shows active. Run `task-vms:prepare-hub` again to load the table.
@@ -211,18 +293,27 @@ The VM edge is the security boundary. Inside it, one user runs the agents, Pi, a
 
 Public egress is open on every port. Limiting it to HTTP(S) adds no protection beyond the VM edge and the hub filter, and it broke clock sync, package sources, and key installs. CI on the pushed commit is the gate.
 
+The base image keeps enrollment as the only path to a Node. The build runs the programs that enrollment renders, so the image cannot drift from what enrollment installs. Enrollment still checks every step on each VM. Code builds the image from the stock image on a known date, and no image carries state from a task. ZFS makes each VM a clone of the image volume, so a launch copies nothing.
+
+Phase 3 of [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm) aligns the UpCloud template with the same contract. The template is built from the stock image with its identity removed. Its cloud-init installs nothing. A smoke boot passes before use, and the previous image stays while a VM uses it.
+
 These alternatives were rejected:
 
-- WireGuard in cloud-init. It bypasses normal enrollment.
-- An Incus proxy device for SSH. Its port does not match the Node firewall catalog, and it needs forward and DNAT rules on the host.
-- The Incus REST API with a restricted certificate. It needs more host setup, and the Gateway already has root SSH to the host.
-- A hub table for each VM. One static filter on a reserved range does the same work.
-- Prebuilt images. A stock image with cloud-init works on every provider and needs no image build.
-- A GitHub token inside the VM. The Gateway already fetches and pushes over SSH.
+| Alternative | Why not |
+| --- | --- |
+| WireGuard in cloud-init | It bypasses normal enrollment |
+| An Incus proxy device for SSH | Its port does not match the Node firewall catalog, and it needs forward and DNAT rules on the host |
+| The Incus REST API with a restricted certificate | It needs more host setup, and the Gateway already has root SSH to the host |
+| A hub table for each VM | One static filter on a reserved range does the same work |
+| Installing the `app-dev` software on every VM | It added about 40 seconds of boot and package installs to each VM on beast, and each claim depended on package mirrors |
+| A base image for each Project | Each Project would need its own image, built and kept current. Per-Project dependency caches may follow |
+| A copy of a finished task VM as the next image | An agent and the Project's install scripts ran on that disk, so no cleanup can prove it clean |
+| A fallback to the stock image | A VM from it cannot enroll, so the failure would come later and less clearly |
+| A GitHub token inside the VM | The Gateway already fetches and pushes over SSH |
 
 ## UpCloud driver
 
-The UpCloud driver creates, observes, parks, resumes, and destroys VMs at UpCloud through its HTTPS API. Task claims use it only through the [first-build project lane](#project-lane-being-removed), which is off and is being removed. UpCloud task VMs move to the [task VM](#task-vms) path in Phase 3 of [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm).
+The UpCloud driver creates, observes, parks, resumes, and destroys VMs at UpCloud through its HTTPS API. It stays in the code for Phase 3 of [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm), which moves UpCloud to the [task VM](#task-vms) path. No claim, command, or job calls it now, so Orbit creates no UpCloud VM and its settings have no effect. Leave `ORBIT_UPCLOUD_ENABLED` and `ORBIT_UPCLOUD_ENROLLMENT_ENABLED` at `false`.
 
 `ProvisionTaskSandboxAction` reserves one VM with the pinned Ubuntu image and the `starter-small` size. The reservation records its UUID, image, plan, network, and the Gateway's public SSH key before the request. Cloud-init creates the `orbit` user with only the Gateway's key. It carries no provider, GitHub, Pi, or model credential.
 
@@ -242,29 +333,15 @@ Set these values in the Gateway environment.
 | `ORBIT_UPCLOUD_WIREGUARD_ADDRESS` | Public IPv4 address of the WireGuard hub | Unset |
 | `ORBIT_UPCLOUD_WIREGUARD_PORT` | WireGuard UDP port | `51820` |
 
-The token goes only to `https://api.upcloud.com/1.3`. Changed settings apply to new reservations. Turning provisioning off does not stop observation or cleanup.
+The token goes only to `https://api.upcloud.com/1.3`. The sandbox sweep refuses an UpCloud reservation with `compute.unknown_provider`, so a leftover UpCloud VM needs manual cleanup.
 
-### Enroll an owned project VM
+### UpCloud enrollment
 
-`EnrollUpCloudSandboxAction` enrolls a running reservation as an `app-dev` Node. It needs `ORBIT_UPCLOUD_ENROLLMENT_ENABLED`, `ORBIT_UPCLOUD_DEV_CLUSTER_ID`, `ORBIT_UPCLOUD_MODEL_ADDRESS`, and `ORBIT_UPCLOUD_MODEL_PORT`. It is off by default and starts no agent. The Node stays out of the [fleet rollout](/reference/gateway-recovery#rollout-set-and-order) as `sandbox`. Cleanup removes the Node before the VM.
+`EnrollUpCloudSandboxAction` enrolls a running reservation as an `app-dev` Node. It needs `ORBIT_UPCLOUD_ENROLLMENT_ENABLED`, `ORBIT_UPCLOUD_DEV_CLUSTER_ID`, `ORBIT_UPCLOUD_MODEL_ADDRESS`, and `ORBIT_UPCLOUD_MODEL_PORT`. It is off by default, nothing calls it, and it starts no agent. A Node that a reservation owns stays out of the [fleet rollout](/reference/gateway-recovery#rollout-set-and-order) as `sandbox`. Orbit cannot destroy an UpCloud reservation yet: every destroy path refuses it with `compute.unknown_provider`. Phase 3 of [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm) brings UpCloud back on the task VM path.
 
 ### Why the UpCloud driver works this way
 
 A started cloud server does not prove that a task can run, so provider state and task state stay separate. Ownership recorded before each request lets cleanup find the VM after a Gateway restart. Refusing a second create when a response is lost prevents duplicate billed VMs.
-
-## Project lane (being removed)
-
-The first build of the web lane is still in the code. The Phase 1 slices of [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm) delete it. Keep it off. These Gateway settings still exist, with their required values:
-
-| Setting | Required value |
-| --- | --- |
-| `ORBIT_SANDBOX_PROJECT_CLAIMS_ENABLED` | `false` |
-| `ORBIT_INCUS_ENROLLMENT_ENABLED` | `false` |
-| `ORBIT_INCUS_PROJECT_WORKSPACES_ENABLED` | `false` |
-| `ORBIT_INCUS_DEV_CLUSTER_ID`, `ORBIT_INCUS_MODEL_ADDRESS`, `ORBIT_INCUS_MODEL_PORT` | Unset |
-| `ORBIT_SANDBOX_PI_ARTIFACT_PATH`, `ORBIT_SANDBOX_PI_ARTIFACT_SHA256` | Unset |
-
-`bin/sandbox-project-image` still builds Project images for this lane; do not use it. The optional `project_bootstrap` object in `/etc/orbit/sandbox-network.json`, and the helper's `project_enabled` operation, serve only this lane. Leave `project_bootstrap` out.
 
 ## Local Incus control
 
@@ -403,6 +480,8 @@ This prepares source only; the claim gate still requires the runtime, model prox
 
 Install the fixed `apps/agent/resources/incus-host-network.py` helper as root-owned `/usr/local/libexec/orbit-sandbox-network` with mode `0755`. Grant the trusted compute account passwordless sudo for that exact executable with no arguments. Never grant a caller-supplied Python script or interpreter. The helper accepts only a bounded JSON request with `operation` (`enabled`, `project_enabled`, `verify`, `ensure`, or `remove`), `project`, and `sandbox_id` on standard input.
 
+The `project_enabled` operation, and an optional `project_bootstrap` object in the configuration below, served the first web-lane build, which is deleted. No Gateway request uses them. Leave `project_bootstrap` out.
+
 The root-owned `/etc/orbit/sandbox-network.json` file opts in selected Incus projects. Its required fields are `version: 1`, `projects`, `pi_host`, `gateway_address`, `wireguard_interface`, and `blocked_networks`.
 
 Use canonical IPv4 values for the host and Gateway WireGuard addresses. Set `wireguard_interface` to the host’s WireGuard interface name. The host address must belong only to that interface, and its link kind must be `wireguard`. Include the host's LAN networks in `blocked_networks`. Keep the file at mode `0644` under directories that only root can write. An absent installation preserves the existing behavior. An incomplete or unsafe installation refuses new provisioning. The helper verifies the installed boot unit, its enablement, and the loaded Incus dependency before granting access.
@@ -468,7 +547,7 @@ The scheduler reconciles review retention after publication and on later ticks. 
 
 ## Task workspace cleanup
 
-Merge and cancellation remove task workspaces through their sandbox reservations. Under the group admission lock, Orbit checks the group, Project, Instance, reservation, and compute host. It refuses foreign group references and unexpected live Routes, Processes, Schedules, or database connections. Guest checkout paths never reach host source inspection or deletion.
+Merge and cancellation remove the workspaces of Orbit-lane groups through their sandbox reservations. A [task VM](#destroy-a-task-vm) workspace is a normal Instance, and Orbit removes it as it removes a shared workspace. Under the group admission lock, Orbit checks the group, Project, Instance, reservation, and compute host. It refuses foreign group references and unexpected live Routes, Processes, Schedules, or database connections. Guest checkout paths never reach host source inspection or deletion.
 
 For an Orbit Incus pair, Orbit revokes the model key, destroys owned compute, and confirms destruction before deleting the workspace row and clearing its task references. A failed operation retains ownership for retry. The reservation remains as audit history. A foreign workspace, Node, role, or live resource reference refuses cleanup.
 
@@ -576,7 +655,7 @@ Prerequisite preparation validates the exact recorded private Node inventory, th
 
 Pair preparation provides an owned `orbit` launcher in the operator’s `~/.local/bin`. It runs the CLI from the group’s branch checkout, so task commands use that branch’s behavior. A foreign launcher or linked launcher directory refuses preparation.
 
-The operator then uses its isolated Gateway profile to list the active Gateway and roleless operator. Preparation reports success only when both guests confirm the same branch commit and the Gateway API reports that version. Admission also requires fresh node, role, and firewall doctor health for every recorded Node. Cold-image convergence applies the same native Agent convergence and pair doctor checks before marking a candidate ready. It never routes these commands through a shared host or a project-lane Node.
+The operator then uses its isolated Gateway profile to list the active Gateway and roleless operator. Preparation reports success only when both guests confirm the same branch commit and the Gateway API reports that version. Admission also requires fresh node, role, and firewall doctor health for every recorded Node. Cold-image convergence applies the same native Agent convergence and pair doctor checks before marking a candidate ready. It never routes these commands through a shared host or a task VM Node.
 
 ### Admit an Orbit sandbox claim
 

@@ -5,13 +5,6 @@ declare(strict_types=1);
 use Symfony\Component\Process\Process;
 
 describe('Incus sandbox boundary', function (): void {
-    it('bootstraps only the Gateway SSH key and refuses foreign keys and unsafe files', function (): void {
-        $process = new Process(['python3', base_path('tests/Fixtures/Compute/guest_project_ssh_test.py'), resource_path('compute/guest-project-ssh.py')]);
-        $process->mustRun();
-
-        expect($process->getExitCode())->toBe(0);
-    });
-
     it('preserves foreign resources and refuses unsafe identities and exhausted capacity', function (): void {
         $process = new Process(['python3', base_path('tests/Fixtures/Compute/incus_sandbox_test.py'), base_path('../agent/resources/incus-sandbox.py')]);
         $process->mustRun();

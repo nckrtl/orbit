@@ -34,7 +34,7 @@ function runtime_pair(): array
         'checkout_path' => '/home/orbit/orbit', 'status' => 'source_resolved', 'task_sandbox_id' => $sandbox->id]);
     $group->update(['taskable_type' => $workspace->getMorphClass(), 'taskable_id' => $workspace->id]);
     config(['compute.incus.hosts' => [['node_id' => $host->id, 'project' => 'orbit-task-sandboxes', 'pool' => 'proof', 'max_vms' => 2,
-        'orbit_images' => $images, 'project_images' => [], 'blocked_networks' => ['192.168.0.0/16']]]]);
+        'orbit_images' => $images, 'blocked_networks' => ['192.168.0.0/16']]]]);
     mock(SshKeyProvider::class)->shouldReceive('privateKeyPath')->andReturn('/keys/private');
     mock(KnownHostsStore::class)->shouldReceive('path')->andReturn('/keys/known_hosts');
     $state = (object) ['calls' => [], 'fail' => null, 'endpoint' => '10.233.7.11:51820', 'changedHead' => false, 'workloadReady' => true];

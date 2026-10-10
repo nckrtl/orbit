@@ -49,6 +49,7 @@ final readonly class DevelopmentCaddyAccessCommand
                     relative_root=$2
                     application=$3
                     shift 3
+                    # A development default in the old release layout serves through `current` until it converts.
                     if [ -L "$checkout" ]; then
                         test "${checkout##*/}" = current
                         home=$(dirname -- "$checkout")
@@ -102,7 +103,10 @@ final readonly class DevelopmentCaddyAccessCommand
                     storage+=("$storage_target")
                 done
 
-                snapshot=$(mktemp)
+                # The snapshot holds only what the walk grants. A failed walk restores those grants, and the deny on
+                # the rest of each checkout stays, so the failure never widens access. The Git directory is on disk,
+                # unlike a tmpfs /tmp, and a snapshot that recovery could not apply stays next to the checkout.
+                snapshot=$(mktemp -p "${git_directories[0]}" orbit-caddy-acl.XXXXXX)
                 chmod 0600 "$snapshot"
                 changed=0
                 finish() {
@@ -118,13 +122,18 @@ final readonly class DevelopmentCaddyAccessCommand
                     exit "$result"
                 }
                 trap finish EXIT
-                for checkout in "${checkouts[@]}"; do
-                    getfacl -R -P -p -- "$checkout" >> "$snapshot"
-                    ancestor=$checkout
+                for index in "${!checkouts[@]}"; do
+                    document_root=${roots[$index]}
+                    getfacl -R -P -p -- "$document_root" >> "$snapshot"
+                    ancestor=$document_root
                     while [ "$ancestor" != / ]; do
                         ancestor=$(dirname -- "$ancestor")
                         sudo -n getfacl -p -- "$ancestor" >> "$snapshot"
                     done
+                    if [ -n "${storage[$index]}" ]; then
+                        getfacl -p -- "${applications[$index]}/storage" "${applications[$index]}/storage/app" >> "$snapshot"
+                        getfacl -R -P -p -- "${storage[$index]}" >> "$snapshot"
+                    fi
                 done
                 # Linked worktrees keep shared Git metadata outside their checkout trees.
                 # Snapshot its directory ACL before denying traversal; never mutate sibling worktrees.

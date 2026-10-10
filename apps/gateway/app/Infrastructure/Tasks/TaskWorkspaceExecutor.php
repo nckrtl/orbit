@@ -13,7 +13,6 @@ use App\Domain\Tasks\TaskTopology;
 use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmPlacement;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
-use App\Infrastructure\Compute\SandboxFleetIdentity;
 use App\Infrastructure\Compute\TaskSandboxDrivers;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -26,7 +25,7 @@ use Throwable;
 /** Routes task operations by persisted workspace ownership; never by available capacity. */
 final readonly class TaskWorkspaceExecutor
 {
-    public function __construct(private DevelopmentSshExecutor $shared, private IncusSandboxHost $host, private TaskSandboxDrivers $drivers, private SandboxFleetIdentity $identity) {}
+    public function __construct(private DevelopmentSshExecutor $shared, private IncusSandboxHost $host, private TaskSandboxDrivers $drivers) {}
 
     public function execute(Instance $workspace, RemoteCommand $command, string $step, string $errorCode, ?float $commandTimeout = null, string $failureLabel = 'Task workspace', string $role = 'operator'): CommandResult
     {
@@ -57,16 +56,7 @@ final readonly class TaskWorkspaceExecutor
                 || (in_array($role, TaskTopology::Roles, true) && ! $this->workloadSourceMatches($workspace, $sandbox)))) {
                 throw new RuntimeConvergenceException($step, $errorCode, 'The requested sandbox role is unavailable.');
             }
-            if ($sandbox->provider === 'upcloud' || ($sandbox->provider === 'incus' && $group->project->slug !== 'orbit')) {
-                if ($sandbox->node_id !== $workspace->node_id || $group->project->slug === 'orbit') {
-                    throw new RuntimeConvergenceException($step, $errorCode, 'The project sandbox has no matching enrolled Node.');
-                }
-
-                $this->identity->assertReady($sandbox, $workspace->node);
-
-                return $this->shared->execute($workspace->node, $command, $step, $errorCode, $commandTimeout, $failureLabel);
-            }
-            if ($sandbox->provider !== 'incus') {
+            if ($sandbox->provider !== 'incus' || $group->project->slug !== 'orbit') {
                 throw new RuntimeConvergenceException($step, $errorCode, 'The task sandbox provider is unavailable.');
             }
             $hostId = $sandbox->spec['host_id'] ?? null;

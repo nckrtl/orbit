@@ -164,8 +164,16 @@ describe('enabled', function (): void {
             ->and($settings->modelProxyOrigin)->toBe('http://10.44.0.3:8317')
             ->and($settings->piArtifactSha256)->toBe(str_repeat('a', 64))
             ->and($settings->piModels)->toBe(['proxy/coder-large'])
-            ->and($settings->hosts)->toEqual([new TaskVmHost(7, 'orbit-tasks', 'orbittask0', '10.251.77.0/24', 'ubuntu-26.04-vm', 4, 2, '4GiB', '20GiB', 'default')])
+            ->and($settings->hosts)->toEqual([new TaskVmHost(7, 'orbit-tasks', 'orbittask0', '10.251.77.0/24', 4, 2, '4GiB', '20GiB', 'orbit-tasks', null)])
             ->and($settings->host(7)->bridgeAddress())->toBe('10.251.77.1');
+    });
+
+    it('reads the ZFS dataset that creates the pool', function (): void {
+        enable_task_vms(task_vm_hosts(['pool' => 'orbit-p2', 'zfs_dataset' => 'fast/orbit-tasks']));
+
+        expect(TaskVmSettings::fromConfig()->host(7))
+            ->pool->toBe('orbit-p2')
+            ->zfsDataset->toBe('fast/orbit-tasks');
     });
 
     it('checks the range against the configured VPN subnet', function (): void {
@@ -213,6 +221,10 @@ describe('enabled', function (): void {
         'bridge in reserved range' => [task_vm_hosts(['cidr' => '10.44.0.128/26']), 'must not overlap the VPN subnet'],
         'bridge outside the reserved prefix' => [task_vm_hosts(['network' => 'incusbr0']), 'incus.hosts.0.network'],
         'bad memory' => [task_vm_hosts(['memory' => '4G']), 'incus.hosts.0.memory'],
+        'image key, since every VM launches the base image' => [task_vm_hosts(['image' => 'ubuntu-26.04-vm']), 'incus.hosts.0 has unknown keys'],
+        'whole ZFS pool as dataset' => [task_vm_hosts(['zfs_dataset' => 'fast']), 'incus.hosts.0.zfs_dataset'],
+        'ZFS dataset with a space' => [task_vm_hosts(['zfs_dataset' => 'fast/orbit tasks']), 'incus.hosts.0.zfs_dataset'],
+        'ZFS dataset as an option' => [task_vm_hosts(['zfs_dataset' => '-o/x']), 'incus.hosts.0.zfs_dataset'],
         'duplicate host' => [['incus' => ['hosts' => [
             ['node_id' => 7, 'cidr' => '10.251.77.0/24', 'max_vms' => 4],
             ['node_id' => 7, 'cidr' => '10.251.78.0/24', 'max_vms' => 4],
@@ -230,7 +242,7 @@ describe('enabled', function (): void {
 
 describe('hosts', function (): void {
     it('treats only non-bridge usable addresses as guest addresses', function (string $address, bool $guest): void {
-        $host = new TaskVmHost(7, 'orbit-tasks', 'orbittask0', '10.251.77.0/24', 'ubuntu-26.04-vm', 4, 2, '4GiB', '20GiB');
+        $host = new TaskVmHost(7, 'orbit-tasks', 'orbittask0', '10.251.77.0/24', 4, 2, '4GiB', '20GiB');
 
         expect($host->isGuestAddress($address))->toBe($guest);
     })->with([

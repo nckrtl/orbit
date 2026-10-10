@@ -39,7 +39,7 @@ function sandbox_workspace(): Instance
         'checkout_path' => '/home/orbit/orbit', 'task_sandbox_id' => $sandbox->id]);
     $group->update(['taskable_type' => $workspace->getMorphClass(), 'taskable_id' => $workspace->id]);
     config(['compute.incus.hosts' => [['node_id' => $host->id, 'project' => 'orbit-task-sandboxes', 'pool' => 'proof', 'max_vms' => 4,
-        'orbit_images' => [], 'project_images' => [], 'blocked_networks' => ['192.168.0.0/16']]], 'orbit.tasks.worker_user' => 'orbit-worker']);
+        'orbit_images' => [], 'blocked_networks' => ['192.168.0.0/16']]], 'orbit.tasks.worker_user' => 'orbit-worker']);
 
     return $workspace;
 }
@@ -66,17 +66,19 @@ describe('sandbox workspace commands', function (): void {
         expect(app(RemoteTaskWorkspaceMcp::class)->installWhenMissing($workspace))->toBeTrue();
     });
 
-    it('never invokes the host topology harness for a VM group', function (string $operation, bool $missingOwnership): void {
+    it('refuses to acquire a host topology for a VM group, and releases none without the harness', function (bool $missingOwnership): void {
         $workspace = sandbox_workspace();
         $groupId = $workspace->taskSandbox->group_id;
         if ($missingOwnership) {
             $workspace->update(['task_sandbox_id' => null]);
         }
         mock(SshExecutor::class)->shouldReceive('execute')->never();
+        $topology = app(RemoteTaskWorkspaceTopology::class);
 
-        expect(fn () => app(RemoteTaskWorkspaceTopology::class)->{$operation}($workspace, $groupId))
+        expect(fn () => $topology->acquire($workspace, $groupId))
             ->toThrow(RuntimeConvergenceException::class, 'Sandbox workload nodes must be managed by the compute driver.');
-    })->with(['acquire', 'release'])->with([false, true]);
+        $topology->release($workspace, $groupId);
+    })->with(['sandbox ownership' => false, 'vm group only' => true]);
 
     it('executes only in the recorded guest and bypasses the shared worker account', function (): void {
         $workspace = sandbox_workspace();
@@ -155,7 +157,7 @@ it('allocates a private sandbox check directory without invoking host ACL tools'
     expect($process->getExitCode())->toBe(0);
 });
 
-it('never routes a test Gateway role through shared or project-lane transport', function (string $case): void {
+it('never routes a test Gateway role through shared or web Project transport', function (string $case): void {
     $workspace = sandbox_workspace();
     if ($case === 'shared') {
         $workspace->update(['task_sandbox_id' => null]);
@@ -196,7 +198,7 @@ it('refuses unrecorded and foreign workload roles before any guest command', fun
         'unrecorded' => $spec['images'] = [],
         'malformed image' => $spec['images']['app-dev'] = 'invalid',
         'missing source' => $spec['source_template'] = null,
-        'project lane' => $workspace->project->update(['slug' => 'dlf']),
+        'web Project' => $workspace->project->update(['slug' => 'dlf']),
         'foreign provider' => $sandbox->update(['provider' => 'upcloud']),
     };
     $sandbox->update(['spec' => $spec]);
@@ -204,7 +206,7 @@ it('refuses unrecorded and foreign workload roles before any guest command', fun
 
     expect(fn () => app(TaskWorkspaceExecutor::class)->execute($workspace, new RemoteCommand(['id']), 'proof', 'tasks.proof', role: 'app-dev'))
         ->toThrow(RuntimeConvergenceException::class, 'requested sandbox role');
-})->with(['unrecorded', 'malformed image', 'missing source', 'project lane', 'foreign provider']);
+})->with(['unrecorded', 'malformed image', 'missing source', 'web Project', 'foreign provider']);
 
 it('refuses incomplete or foreign workload source provenance before contacting compute', function (string $fault): void {
     $workspace = sandbox_workspace();

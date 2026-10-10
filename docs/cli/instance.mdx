@@ -17,7 +17,7 @@ An Instance is one copy of a Project on one Node. On an `app-dev` Node it owns a
 
 ## Commands
 
-Instance JSON includes nullable `seed_path` and `seed_commit`. On `default`, these identify its successful development release. Read them before creating a linked worktree for `instance:register`; use that commit rather than a newer `origin/main`. Human tables keep their existing columns.
+Instance JSON includes nullable `seed_path` and `seed_commit`. On `default`, these name its checkout and the last commit that deployed there. Read them before creating a linked worktree for `instance:register`; use that commit rather than a newer `origin/main`. Human tables keep their existing columns.
 
 Every command accepts `--json`. Machine output never supplies consent. Human list commands use tables, with labeled records when the terminal is too narrow; detail commands show a tree and slow requests show progress. `instance:deploy` and `instance:rollback` return newline-delimited JSON (NDJSON) instead of one document.
 
@@ -554,7 +554,7 @@ orbit instance:deploy-step:destroy <instance> <name> [--yes] [--json]
 
 ## orbit instance:deploy
 
-Deploy a production Instance or an app-dev `default` Instance. For production, the Gateway creates a fresh release, fetches the configured branch, synchronizes stored environment values, runs the `before_activation` steps, atomically replaces `current`, refreshes the PHP runtime cache, and runs the `after_activation` steps. For a development default, it reflinks the current release, resets tracked code to the Project's default branch, runs the Project's development deploy steps, and switches when every required step passed. A best-effort failure restores that step's snapshot and reports a warning without blocking the switch. See [Instance releases](/reference/deployments#development-defaults).
+Deploy a production Instance or an app-dev `default` Instance. For production, the Gateway creates a fresh release, fetches the configured branch, synchronizes stored environment values, runs the `before_activation` steps, atomically replaces `current`, refreshes the PHP runtime cache, and runs the `after_activation` steps. For a development default, it fetches the Project's default branch, checks out its newest commit in the default's checkout, and runs the Project's development deploy steps there. It refuses a checkout with uncommitted changes to tracked files. A failed required step leaves the new commit checked out, and the next scheduled tick retries. A best-effort failure reports a warning and the deployment continues. See [Instance releases](/reference/deployments#development-defaults).
 
 ```bash
 orbit instance:deploy <instance> [--json]
@@ -593,7 +593,7 @@ orbit instance:deploy 15 --json > deploy.ndjson
 A failure during release fetch, environment synchronization, or a `before_activation` step leaves the prior `current` selected. A failure during the PHP cache refresh or an `after_activation` step leaves the fresh release selected. Deployment, rollback, deploy-step changes, environment changes, and removal share one operation owner per Instance, so a competing request waits or returns a busy refusal.
 
 <Note>
-Only `default` can be deployed on an app-dev Node. Other development Instances still return `deployment_config.unavailable`. Rollback and per-Instance deploy-step operations remain production-only.
+Only `default` can be deployed on an app-dev Node. Other development Instances still return `deployment_config.unavailable`. Releases, rollback, and per-Instance deploy-step operations remain production-only; `instance:release:list` shows none for a development default.
 </Note>
 
 ## orbit instance:release:list

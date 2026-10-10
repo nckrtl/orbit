@@ -49,7 +49,7 @@ final readonly class GitHubCliReleaseCatalog implements CliReleaseCatalog
             return $this->read($repository, $commit, $release, $this->token($repository));
         } catch (CliReleaseLookupFailed $failure) {
             return $failure->reason === CliReleaseUnavailableReason::ReleaseMissing
-                ? DesiredCliReleaseData::pending($release)
+                ? DesiredCliReleaseData::pending($release, $commit)
                 : DesiredCliReleaseData::unavailable($failure->reason);
         } catch (Throwable) {
             return DesiredCliReleaseData::unavailable(CliReleaseUnavailableReason::GitHubUnavailable);
@@ -80,7 +80,7 @@ final readonly class GitHubCliReleaseCatalog implements CliReleaseCatalog
             $assets[] = new FleetReleaseAssetData($platform, $name, $urls[$name], $checksums[$name] ?? throw new CliReleaseLookupFailed(CliReleaseUnavailableReason::ReleaseIncomplete));
         }
 
-        return DesiredCliReleaseData::available($release, $urls[CliReleaseName::ChecksumsAsset], $assets);
+        return DesiredCliReleaseData::available($release, $commit, $urls[CliReleaseName::ChecksumsAsset], $assets);
     }
 
     /** The commit a tag points at, through an annotated tag object when the tag has one. */

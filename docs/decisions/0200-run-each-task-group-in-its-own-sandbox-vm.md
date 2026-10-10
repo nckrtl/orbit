@@ -38,20 +38,20 @@ Orbit assigns each task group its own VM through the lane of its Project. This a
 
 ### Web lane
 
-1. **Image.** Every provider uses the stock Ubuntu 26.04 cloud image and cloud-init. Cloud-init creates the user `orbit` with passwordless sudo and the Gateway's SSH key, and installs `openssh-server`. The web lane has no Project images, templates, or warm pools.
+1. **Image.** Each host has one base image, built by the Gateway from the stock Ubuntu 26.04 cloud image and rebuilt every night. The build boots the stock image with the task VM cloud-init plus `openssh-server` and Chromium's system libraries, runs the programs that enrollment runs on an `app-dev` Node, installs the pinned agent binary, removes the VM's identity, and publishes the disk. Task VMs launch from it as ZFS clones. Their cloud-init only creates the user `orbit` with passwordless sudo and the Gateway's SSH key, and enrollment finds the software installed. A missing base image fails the VM; Orbit never falls back to the stock image. The web lane has no Project images, templates, or warm pools. On beast the base image cut cloud-init from 33 to 21 seconds and the enrollment package programs from 31 to 6 seconds.
 2. **Enrollment.** The VM joins through the normal `node:add` path as an `app-dev` Node of the dev Cluster. Before enrollment, the Gateway reaches it with an SSH jump hop through the compute host, and reads its host key from that trusted host. After enrollment, the Gateway uses WireGuard.
 3. **Host network.** Each host has one task bridge under the reserved `orbittask` prefix, with its ACL attached when the bridge is created. The ACL drops private, link-local, CGNAT, and multicast egress and allows all other egress. Ingress allows SSH from the host only. NIC port isolation is on. One persistent host rule, `ufw route allow in on orbittask+`, lets the bridge pass the host's forward policy. This replaces the root-owned helper, the per-bridge policies, the proxy, DNAT, and SNAT rules, and the HTTP(S)-only egress rule.
 4. **Fleet limits.** A static nft filter on the WireGuard hub covers the reserved range `10.44.0.128/25`. It lets task VMs reach the Gateway API, Reverb, CLIProxyAPI, and DNS on the hub. It lets the Gateway reach them over SSH and Pi, and the dev Cluster router reach their previews. The range lies inside the fleet VPN subnet `10.44.0.0/24`, above the addresses that existing Nodes use. The address allocator keeps other Nodes out of the range. A task VM Node has no access grants. This replaces the hub table for each sandbox.
 5. **GitHub.** No GitHub token enters the VM. The Gateway fetches and pushes over SSH, as for shared groups. This reverses "temporary GitHub App tokens enter the owned sandbox" for the web lane.
 6. **Pi.** The Gateway installs a pinned Pi artifact. Pi runs as a normal `pi-server` Process under `orbit`, with a token for each VM and a CLIProxyAPI key for each group.
 7. **State.** The `task_vms` table holds one row for each VM. `TaskVmState` has five cases: `provisioning`, `ready`, `destroying`, `destroyed`, and `failed`. There are no marker timestamps. `IncusTaskVmProvider` validates host and guest output once. The Gateway trusts its own rows.
-8. **Jobs.** `ProvisionTaskVm`, `EnrollTaskVm`, `PrepareTaskVmRuntime`, and `DestroyTaskVm` are queued jobs on the `task-vms` database queue. The Gateway scheduler starts the worker every minute.
+8. **Jobs.** `ProvisionTaskVm`, `EnrollTaskVm`, `PrepareTaskVmRuntime`, and `DestroyTaskVm` are queued jobs on the `task-vms` database queue. While a job waits, the Gateway scheduler starts the worker every 10 seconds. A long-running worker Process was rejected: a release would stop it within the unit's stop timeout, in the middle of an enrollment, while the scheduler drain lets a running job finish, up to its drain limit.
 9. **Lifecycle.** The VM is destroyed when the group ends, in this order: Instance removal, the `destroying` state, model key revocation, VM deletion, offline Node removal, and the `destroyed` state. Park and resume move to Phase 2, using the spike measurements: park in 2.5 seconds, resume in 14 seconds.
 10. **No guard.** Generic Instance operations need no sandbox guard. One placement invariant protects task VM Nodes. Task VM Nodes are left out of the fleet rollout and of shared-group placement.
 11. **Public egress.** Task VMs reach public addresses on every port. The VM edge and the hub filter are the boundary, and CI on the pushed commit is the gate.
 12. **Accepted risk.** A VM can query port 53 on any host address, because Incus accepts DNS before the ACL. It can read instance names from the DNS of other bridges on that host. Phase 1 accepts this. Phase 2 decides on a host rule that drops it.
 
-The first provider is Incus, on beast and shark. UpCloud uses the same cloud-init and enrollment path in Phase 3. Until then the UpCloud driver, its cloud-init, its bootstrap, and its enrollment action stay in the code without a claim path. ADR 0204 on a nightly UpCloud base image (pull requests #1072 and #1074) stays on hold for Phase 3.
+The first provider is Incus, on beast and shark. UpCloud uses the same cloud-init and enrollment path in Phase 3. Until then the UpCloud driver, its cloud-init, its bootstrap, and its enrollment action stay in the code without a claim path. ADR 0204 on a nightly UpCloud base image (pull requests #1072 and #1074) stays on hold for Phase 3. Phase 3 aligns its template with the Incus base image contract: built from the stock image with the enrollment programs, identity removed, cloud-init that installs nothing, a smoke boot before use, and the previous image kept while a VM uses it.
 
 ### Orbit lane
 
@@ -102,7 +102,9 @@ This decision changes [Shared Instance](/reference/tasks#shared-instance) and [O
 - **The Incus REST API with a restricted certificate.** It needs more host setup, and the Gateway already has root SSH to the host.
 - **A hub table for each VM.** One static filter on a reserved range enforces the same limits without per-VM rules on the live hub.
 - **Egress limited to HTTP(S) and DNS.** The first build spent most of its acceptance work on clock sync, package sources, and key installs that this limit broke. It adds no protection beyond the VM edge.
-- **Prebuilt Project images in Phase 1.** A stock image with cloud-init works on every provider and needs no offline build. Prebuilt images stay an option if enrollment proves too slow.
+- **The stock image on every VM.** Phase 1 used it. Each VM then spent about 40 seconds more in cloud-init and the `app-dev` package installs on beast, and each claim depended on package mirrors.
+- **A base image for each Project.** Each Project would need its own image, built and kept current. Per-Project dependency caches may follow in the host's image.
+- **A copy of a finished task VM as the next image.** An agent and Project install scripts ran on that disk, so no cleanup can prove it clean.
 
 ## Consequences
 
@@ -110,7 +112,7 @@ This decision changes [Shared Instance](/reference/tasks#shared-instance) and [O
 - The privileged tests run inside the sandbox. The ACL, `safe.directory`, and check-directory ownership work is removed for `vm` groups.
 - A web-lane VM uses the same enrollment, Instance, Route, check, and publication code as a shared group. The new code is one table, one enum, one provider, four jobs, a cloud-init renderer, two setup scripts, and SSH jump support.
 - Phase 1 deletes the code of the first web-lane build that the new lane leaves unused. The UpCloud driver stays until Phase 3. The Orbit lane and the old Incus controller stay until Phase 5.
-- The first `app-dev` convergence on a fresh VM installs PHP, Caddy, Docker, and the agent. Its time on Incus is not measured yet. Prebuilt images are the fallback.
+- Each host needs a base image before it can start task VMs. The nightly build keeps it at most a day old, and the build queues behind other task VM jobs.
 - A single worker started by the scheduler runs the jobs one at a time. A release that stops the scheduler interrupts a running job, which runs again.
 - Task VM Nodes can appear in doctor while they exist.
 - A root agent can tamper with the in-sandbox check result. CI on the pushed commit stays the authoritative gate.
@@ -123,6 +125,7 @@ This decision changes [Shared Instance](/reference/tasks#shared-instance) and [O
 - Detail: [Compute drivers: Task VMs](/reference/compute-drivers#task-vms). [Node provisioning: Enroll through a jump host](/reference/node-provisioning#enroll-through-a-jump-host). [Tasks: Task VM workspace](/reference/tasks#task-vm-workspace). [Pi server: Run Pi on a task VM](/reference/pi-server#run-pi-on-a-task-vm). [Incus topology registry](/reference/incus-topologies): operator VM and declared nodes. [Projects](/reference/projects): `task_compute`.
 - Verify: The disposable-environment proofs check these outcomes.
   - One DLF group on beast runs claim, VM, enrollment, Route, implementer, check, reviewer, pull request, green CI, and merge. After merge, its Instance, Node, VM, and model key are gone, and `node:list` and `incus list` are clean.
+  - A task VM from the host's base image enrolls without installing packages, and its stage timings are recorded.
   - A task VM reaches public addresses, and cannot reach private, link-local, CGNAT, or multicast addresses, another task VM, or the fleet outside the hub filter.
   - A local check run by an agent and Orbit's handoff check give the same verdict on the same tree.
   - A one-subtask Orbit group runs end to end in an operator VM.

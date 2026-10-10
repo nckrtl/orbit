@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Instances;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
-use App\Domain\Instances\InstanceSandboxGuard;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\ProductionPhpRuntimeIdentity;
 use App\Domain\Instances\ProductionPhpRuntimeManager;
 use App\Domain\Instances\Removal\InstanceRemovalProjector;
@@ -14,16 +14,17 @@ use App\Domain\Routes\PublicRouteEdgeProjector;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
 use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
 use App\Infrastructure\AppDev\RemoteAppDevPhpFpmManager;
 use App\Infrastructure\AppDev\RemoteAppDevRouteFirewallManager;
-use App\Infrastructure\Compute\ProjectSandboxInstanceRemoval;
 use App\Models\Instance;
 use App\Models\InstanceRemovalMember;
 use App\Models\Node;
 use App\Models\Route;
+use App\Models\TaskVm;
 use Illuminate\Support\Facades\DB;
 
 final readonly class NativeInstanceRemovalProjector implements InstanceRemovalProjector
@@ -272,18 +273,19 @@ final readonly class NativeInstanceRemovalProjector implements InstanceRemovalPr
         $this->refreshIngress($route);
     }
 
+    /**
+     * Whether the Instance's own Node must be left alone: a workspace on a task VM that is being
+     * destroyed, whose VM is already gone. An Orbit-lane sandbox workspace is removed only with its
+     * sandbox, never through this projector.
+     */
     private function sandboxRemoval(Instance $instance): bool
     {
-        if (! InstanceSandboxGuard::isSandbox($instance)) {
-            return false;
+        if ($instance->task_sandbox_id !== null) {
+            throw new ResourceOperationException('instance.sandbox_managed', 'Remove a sandbox workspace through its task group.', 409);
         }
-        $member = $instance->removalMember()->first();
-        if ($member === null) {
-            throw new ResourceOperationException('instance.sandbox_managed', 'The sandbox has no accepted removal journal.', 409);
-        }
-        ProjectSandboxInstanceRemoval::assertJournal($instance, $member);
 
-        return true;
+        return $instance->status === InstanceState::Removing
+            && TaskVm::query()->where('node_id', $instance->node_id)->where('state', TaskVmState::Destroying)->exists();
     }
 
     private function removePublicEdge(Route $route): void

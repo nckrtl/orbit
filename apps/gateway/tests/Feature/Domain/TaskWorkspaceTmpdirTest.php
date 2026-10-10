@@ -6,7 +6,6 @@ use App\Domain\Projects\TiaBaselineSetup;
 use App\Domain\Tasks\TaskCheckProcess;
 use App\Domain\Tasks\TaskCheckReading;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
-use App\Infrastructure\Compute\SandboxFleetIdentity;
 use App\Infrastructure\Compute\TaskSandboxDrivers;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
@@ -73,7 +72,7 @@ function tmpdir_runner(?SshExecutor $transport = null): RemoteTaskCheckRunner
 
             public function put(string $host, int $port, HostKey $key): void {}
         },
-    ), app(IncusSandboxHost::class), app(TaskSandboxDrivers::class), app(SandboxFleetIdentity::class)), ResolvedVp::manager(), app(TiaBaselineSetup::class));
+    ), app(IncusSandboxHost::class), app(TaskSandboxDrivers::class)), ResolvedVp::manager(), app(TiaBaselineSetup::class));
 }
 
 function tmpdir_records_scripts(array &$scripts): SshExecutor
@@ -393,9 +392,11 @@ describe('workspace TMPDIR', function (): void {
         $foreign = $root.'/orbit-gateway-tests-'.bin2hex(random_bytes(4));
         mkdir($foreign, 0700);
         $this->allocated[] = $foreign;
-        $escape = $allocated.'/../orbit-sibling-'.bin2hex(random_bytes(4));
+        $escapeName = 'orbit-sibling-'.bin2hex(random_bytes(4));
+        $escape = $allocated.'/../'.$escapeName;
         mkdir($escape, 0700);
-        $this->allocated[] = $escape;
+        // The test removes $allocated, so clean up through a path that does not pass through it.
+        $this->allocated[] = dirname($allocated).'/'.$escapeName;
 
         expect(tmpdir_remove(''))->toBeFalse()
             ->and(tmpdir_remove('/tmp'))->toBeFalse()

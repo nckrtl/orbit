@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\Route;
 it('declares node access scope on every active-peer API route', function (): void {
     // The agent routes need the agent secret instead. Any active peer reads the desired fleet state (ADR 0202),
     // because every managed Node updates itself from it, with or without access to the Gateway. Every
-    // active Node may use the T3 Code layer (`t3:` routes), which has no grants yet.
+    // active Node may use the Conn layer (`conn:` routes), which has no grants yet.
     $agentRoutes = ['agent:realtime', 'agent:realtime:auth', 'agent:workspaces', 'agent:log-streams', 'gateway:desired-fleet-state'];
     $protectedRoutes = collect(Route::getRoutes()->getRoutes())
         ->filter(static fn (IlluminateRoute $route): bool => str_starts_with($route->uri(), 'api/v1/'))
@@ -23,7 +23,7 @@ it('declares node access scope on every active-peer API route', function (): voi
                 $route->gatherMiddleware(),
                 strict: true,
             ) && ! in_array($route->getName(), $agentRoutes, strict: true)
-                && ! str_starts_with((string) $route->getName(), 't3:'),
+                && ! str_starts_with((string) $route->getName(), 'conn:'),
         )
         ->values();
 
@@ -83,7 +83,6 @@ it('declares node access scope on every active-peer API route', function (): voi
         'cluster:router:unset' => ServingNode::ClusterOwning,
         'cluster:show' => ServingNode::ClusterOwning,
         'cluster:update' => ServingNode::ClusterOwning,
-        'compute:github-token' => ServingNode::Caller,
         'database:create' => ServingNode::Gateway,
         'database:describe' => ServingNode::Gateway,
         'database:destroy' => ServingNode::Gateway,
@@ -394,9 +393,9 @@ it('keeps only bootstrap routes outside peer and node access middleware', functi
             continue;
         }
 
-        // Every active Node may use the T3 Code layer; it has no grants yet.
-        if (str_starts_with((string) $route->getName(), 't3:')) {
-            expect($route->uri())->toStartWith('api/v1/t3/');
+        // Every active Node may use the Conn layer; it has no grants yet.
+        if (str_starts_with((string) $route->getName(), 'conn:')) {
+            expect($route->uri())->toStartWith('api/v1/conn/');
             expect($middleware)
                 ->toContain(RequireActiveWireGuardPeer::class)
                 ->not->toContain(RequireNodeAccess::class);
@@ -404,7 +403,7 @@ it('keeps only bootstrap routes outside peer and node access middleware', functi
             continue;
         }
 
-        expect(str_starts_with($route->uri(), 'api/v1/t3/'))->toBeFalse();
+        expect(str_starts_with($route->uri(), 'api/v1/conn/'))->toBeFalse();
 
         if ($route->getName() === 'gateway:desired-fleet-state') {
             expect($middleware)

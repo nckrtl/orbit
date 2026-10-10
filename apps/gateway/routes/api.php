@@ -9,6 +9,10 @@ use App\Http\Controllers\Api\AgentThreadsController;
 use App\Http\Controllers\Api\AnalyticsController;
 use App\Http\Controllers\Api\AnnotationsController;
 use App\Http\Controllers\Api\ClustersController;
+use App\Http\Controllers\Api\ConnEnvironmentsController;
+use App\Http\Controllers\Api\ConnNodesController;
+use App\Http\Controllers\Api\ConnPairingsController;
+use App\Http\Controllers\Api\ConnProfilesController;
 use App\Http\Controllers\Api\DatabaseConnectionAttachmentsController;
 use App\Http\Controllers\Api\DatabaseConnectionsController;
 use App\Http\Controllers\Api\DatabaseServersController;
@@ -62,13 +66,8 @@ use App\Http\Controllers\Api\ResolveDirectoryInstanceController;
 use App\Http\Controllers\Api\RootCaCertificatesController;
 use App\Http\Controllers\Api\RoutesController;
 use App\Http\Controllers\Api\RuntimeActivationsController;
-use App\Http\Controllers\Api\SandboxGitHubTokensController;
 use App\Http\Controllers\Api\ScheduleCompletionsController;
 use App\Http\Controllers\Api\SchedulesController;
-use App\Http\Controllers\Api\T3EnvironmentsController;
-use App\Http\Controllers\Api\T3NodesController;
-use App\Http\Controllers\Api\T3PairingsController;
-use App\Http\Controllers\Api\T3ProfilesController;
 use App\Http\Controllers\Api\TaskDefinitionsController;
 use App\Http\Controllers\Api\TaskGroupsController;
 use App\Http\Controllers\Api\TaskQuestionsController;
@@ -83,11 +82,6 @@ use App\Http\Middleware\RequireNodeAgentSecret;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->group(function (): void {
-    Route::post('compute/github-token', [SandboxGitHubTokensController::class, 'store'])
-        ->middleware([RequireActiveWireGuardPeer::class, RequireNodeAccess::class])
-        ->withoutMiddleware(RecordCommandActivity::class)
-        ->name('compute:github-token');
-
     Route::middleware([RequireActiveWireGuardPeer::class, RequireNodeAccess::class])
         ->prefix('instances/{instance}/annotations')->group(function (): void {
             Route::get('', [AnnotationsController::class, 'index'])->name('annotation:list');
@@ -97,23 +91,23 @@ Route::prefix('v1')->group(function (): void {
             Route::post('{annotation}/retry', [AnnotationsController::class, 'retry'])->name('annotation:retry');
         });
 
-    // T3 Code: every active Node, phones and operator machines included, may use every endpoint; there are no grants yet.
-    Route::middleware([RequireActiveWireGuardPeer::class])->prefix('t3')->group(function (): void {
-        Route::get('me', [T3NodesController::class, 'show'])->name('t3:me');
-        Route::put('me/profile', [T3NodesController::class, 'bindProfile'])->name('t3:me:profile');
-        Route::get('profiles', [T3ProfilesController::class, 'index'])->name('t3:profile:list');
-        Route::post('profiles', [T3ProfilesController::class, 'store'])->name('t3:profile:create');
-        Route::get('profiles/{profile}/settings', [T3ProfilesController::class, 'settings'])
+    // Conn: every active Node, phones and operator machines included, may use every endpoint; there are no grants yet.
+    Route::middleware([RequireActiveWireGuardPeer::class])->prefix('conn')->group(function (): void {
+        Route::get('me', [ConnNodesController::class, 'show'])->name('conn:me');
+        Route::put('me/profile', [ConnNodesController::class, 'bindProfile'])->name('conn:me:profile');
+        Route::get('profiles', [ConnProfilesController::class, 'index'])->name('conn:profile:list');
+        Route::post('profiles', [ConnProfilesController::class, 'store'])->name('conn:profile:create');
+        Route::get('profiles/{profile}/settings', [ConnProfilesController::class, 'settings'])
             ->whereNumber('profile')
-            ->name('t3:profile:settings:show');
-        Route::put('profiles/{profile}/settings', [T3ProfilesController::class, 'replaceSettings'])
+            ->name('conn:profile:settings:show');
+        Route::put('profiles/{profile}/settings', [ConnProfilesController::class, 'replaceSettings'])
             ->whereNumber('profile')
-            ->name('t3:profile:settings:update');
-        Route::get('environments', [T3EnvironmentsController::class, 'index'])->name('t3:environment:list');
-        Route::post('environments', [T3EnvironmentsController::class, 'store'])->name('t3:environment:register');
-        Route::get('environments/{environment}/pairings', [T3PairingsController::class, 'index'])->name('t3:pairing:list');
-        Route::post('environments/{environment}/pairings', [T3PairingsController::class, 'store'])->name('t3:pairing:create');
-        Route::post('environments/{environment}/pairings/revoke', [T3PairingsController::class, 'revoke'])->name('t3:pairing:revoke');
+            ->name('conn:profile:settings:update');
+        Route::get('environments', [ConnEnvironmentsController::class, 'index'])->name('conn:environment:list');
+        Route::post('environments', [ConnEnvironmentsController::class, 'store'])->name('conn:environment:register');
+        Route::get('environments/{environment}/pairings', [ConnPairingsController::class, 'index'])->name('conn:pairing:list');
+        Route::post('environments/{environment}/pairings', [ConnPairingsController::class, 'store'])->name('conn:pairing:create');
+        Route::post('environments/{environment}/pairings/revoke', [ConnPairingsController::class, 'revoke'])->name('conn:pairing:revoke');
     });
 
     Route::middleware([RequireActiveWireGuardPeer::class, RequireNodeAccess::class])->group(function (): void {

@@ -33,7 +33,7 @@ describe('task-vms:prepare-host', function (): void {
         ]]);
 
         $this->artisan('task-vms:prepare-host', ['node' => 'beast'])
-            ->expectsOutputToContain('Node [beast] is ready for task VMs on bridge [orbittask0].')
+            ->expectsOutputToContain('Node [beast] is ready for task VMs on bridge [orbittask0]. Build its base image with task-vms:build-image.')
             ->assertSuccessful();
 
         $command = $this->ssh->commands[0];
@@ -43,6 +43,17 @@ describe('task-vms:prepare-host', function (): void {
                 'sudo', '-n', 'bash', '-s', '--', 'orbit-tasks', 'orbittask0', '10.252.0.0/24', 'orbit-e2e', 'ubuntu-26.04-vm',
             ])
             ->and($command->input)->toBe(file_get_contents(resource_path('task-vms/incus-host.sh')));
+    });
+
+    it('passes the ZFS dataset that creates a missing pool', function (): void {
+        $beast = task_vm_fleet_node('beast', '10.44.0.7', [RoleName::AppDev]);
+        config()->set('task_vms.incus.hosts', [['node_id' => $beast->id, 'cidr' => '10.252.0.0/24', 'max_vms' => 4, 'zfs_dataset' => 'fast/orbit-tasks']]);
+
+        $this->artisan('task-vms:prepare-host', ['node' => 'beast'])->assertSuccessful();
+
+        expect($this->ssh->commands[0]->arguments)->toBe([
+            'sudo', '-n', 'bash', '-s', '--', 'orbit-tasks', 'orbittask0', '10.252.0.0/24', 'orbit-tasks', 'ubuntu-26.04-vm', 'fast/orbit-tasks',
+        ]);
     });
 
     it('refuses invalid host settings before it connects', function (array $host, string $message): void {
@@ -181,7 +192,7 @@ describe('task VM setup scripts', function (): void {
         $syntax->run();
 
         expect($syntax->getExitCode())->toBe(0, $syntax->getErrorOutput());
-    })->with(['incus-host.sh', 'hub.sh']);
+    })->with(['incus-host.sh', 'hub.sh', 'base-image-clean.sh']);
 
     it('pass shellcheck when it is installed', function (): void {
         $finder = new ExecutableFinder;
@@ -195,11 +206,39 @@ describe('task VM setup scripts', function (): void {
             $shellcheck,
             resource_path('task-vms/incus-host.sh'),
             resource_path('task-vms/hub.sh'),
+            resource_path('task-vms/base-image-clean.sh'),
         ]);
         $check->run();
 
         expect($check->getExitCode())->toBe(0, $check->getOutput());
     });
+
+    it('never creates a pool on a ZFS dataset that already exists', function (bool $exists): void {
+        // Stubs: Incus has no pool, `zfs list` finds the dataset or not, and every call is logged.
+        $bin = sys_get_temp_dir().'/orbit-task-vm-zfs-'.bin2hex(random_bytes(4));
+        mkdir($bin);
+        $log = $bin.'/calls.log';
+        file_put_contents($bin.'/incus', "#!/bin/sh\necho \"incus \$*\" >> {$log}\n[ \"\$1 \$2\" = 'storage show' ] && exit 1\nexit 0\n");
+        file_put_contents($bin.'/zfs', "#!/bin/sh\necho \"zfs \$*\" >> {$log}\nexit ".($exists ? 0 : 1)."\n");
+        file_put_contents($bin.'/ufw', "#!/bin/sh\nexit 0\n");
+        array_map(static fn (string $stub): bool => chmod($bin.'/'.$stub, 0755), ['incus', 'zfs', 'ufw']);
+        $bash = new ExecutableFinder()->find('bash') ?? '/bin/bash';
+        $process = new Process([$bash, '-s', '--', 'orbit-tasks', 'orbittask0', '10.252.0.0/24', 'orbit-tasks', 'img', 'data/backups']);
+        $process->setInput(file_get_contents(resource_path('task-vms/incus-host.sh')));
+        $process->setEnv(['PATH' => $bin.':'.getenv('PATH')]);
+        $process->run();
+        $calls = (string) file_get_contents($log);
+        array_map(unlink(...), glob($bin.'/*') ?: []);
+        rmdir($bin);
+
+        if ($exists) {
+            expect($process->getExitCode())->toBe(1)
+                ->and($process->getErrorOutput())->toContain('ZFS dataset [data/backups] already exists; name a new dataset for storage pool [orbit-tasks]')
+                ->and($calls)->toBe("incus storage show orbit-tasks\nzfs list -H -o name -- data/backups\n");
+        } else {
+            expect($calls)->toContain("zfs list -H -o name -- data/backups\nincus storage create orbit-tasks zfs source=data/backups\n");
+        }
+    })->with(['existing dataset' => true, 'new dataset' => false]);
 
     it('reject invalid arguments before they change anything', function (string $script, array $arguments, string $message): void {
         $bash = new ExecutableFinder()->find('bash') ?? '/bin/bash';
@@ -216,6 +255,8 @@ describe('task VM setup scripts', function (): void {
         'host cidr not a network' => ['incus-host.sh', ['orbit-tasks', 'orbittask0', '10.252.0.1/24', 'default', 'img'], 'not a network address'],
         'host cidr too wide' => ['incus-host.sh', ['orbit-tasks', 'orbittask0', '10.0.0.0/8', 'default', 'img'], 'prefix must be /16 to /28'],
         'host argument count' => ['incus-host.sh', ['orbit-tasks'], 'usage: incus-host.sh'],
+        'host ZFS pool as dataset' => ['incus-host.sh', ['orbit-tasks', 'orbittask0', '10.252.0.0/24', 'orbit-tasks', 'img', 'fast'], 'invalid ZFS dataset [fast]'],
+        'host ZFS dataset as an option' => ['incus-host.sh', ['orbit-tasks', 'orbittask0', '10.252.0.0/24', 'orbit-tasks', 'img', '-o/x'], 'invalid ZFS dataset [-o/x]'],
         'hub range not a network' => ['hub.sh', ['10.44.0.129/25', '10.44.0.1', '10.44.0.2', '3774', '10.44.0.3:443', '10.44.0.3:8317', '10.44.0.7'], 'range is not a network address'],
         'hub port out of range' => ['hub.sh', ['10.44.0.128/25', '10.44.0.1', '10.44.0.2', '3774', '10.44.0.3:99999', '10.44.0.3:8317', '10.44.0.7'], 'invalid Reverb endpoint'],
         'hub router with rule text' => ['hub.sh', ['10.44.0.128/25', '10.44.0.1', '10.44.0.2', '3774', '10.44.0.3:443', '10.44.0.3:8317', '10.44.0.7 accept'], 'invalid router address'],

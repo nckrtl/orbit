@@ -77,7 +77,6 @@ use App\Domain\Tasks\TaskWorkspaceSigner;
 use App\Domain\Tasks\TaskWorkspaceStateReader;
 use App\Domain\Tasks\TaskWorkspaceTopology;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
-use App\Infrastructure\Compute\SandboxFleetIdentity;
 use App\Infrastructure\Compute\TaskSandboxDrivers;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -100,7 +99,6 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Str;
 use Tests\Support\AcceptingTaskWorkspaceMcp;
 use Tests\Support\AgentCommandDispatcher;
 use Tests\Support\AgentSnapshotReader;
@@ -111,7 +109,6 @@ use Tests\Support\FakeTaskTurnReceipts;
 use Tests\Support\FakeTaskWorkspaceTopology;
 use Tests\Support\NullAgentSnapshotReader;
 use Tests\Support\ResolvedVp;
-use Tests\Support\UpCloudRuntimeWorkspace;
 
 use function Pest\Laravel\mock;
 
@@ -2046,37 +2043,6 @@ it('runs the Project setup steps and check on the fresh workspace before the fir
         ->and($spawner->events)->toBe(['implementer:1']);
 });
 
-it('reruns setup and baseline on a replacement VM despite old agents and old baseline evidence', function (TaskCheckStatus $oldStatus): void {
-    $instance = UpCloudRuntimeWorkspace::create();
-    // The implementer admission gate validates deliverables against a resolved review base.
-    $instance->update(['starting_commit' => str_repeat('a', 40)]);
-    $group = $instance->taskSandbox->group;
-    $group->update(['status' => TaskGroupStatus::Running]);
-    $group->project->update(['task_check' => 'composer check']);
-    $done = Task::query()->create(['parent_id' => $group->id, 'title' => 'Previous work', 'brief' => 'Published', 'position' => 1, 'status' => TaskStatus::Completed]);
-    $done->update(['implementer_agent_thread_id' => test_agent_thread($group, 'old-vm-implementer', $done)->id]);
-    $task = Task::query()->create(['parent_id' => $group->id, 'title' => 'Review fix', 'brief' => 'Feedback', 'position' => 2, 'status' => TaskStatus::Todo]);
-    $old = TaskCheck::query()->create(['task_id' => $task->id, 'task_sandbox_id' => (string) Str::uuid(),
-        'kind' => TaskCheckKind::Baseline, 'status' => $oldStatus, 'pid' => 777, 'process_started' => 'old VM process',
-        'head_before' => str_repeat('a', 40), 'tree_before' => str_repeat('b', 40), 'started_at' => now()]);
-    ProjectLifecycleStep::query()->create(['project_id' => $group->project_id, 'phase' => 'setup', 'name' => 'Restore dependencies',
-        'command' => 'composer install', 'timeout_seconds' => 600, 'position' => 1]);
-    $spawner = scheduler_recording_spawner();
-    scheduler_bind_claim($instance, $spawner);
-    $checks = new FakeTaskCheckRunner([FakeTaskCheckRunner::passed()]);
-    app()->instance(TaskCheckRunner::class, $checks);
-    app(TaskScheduler::class)->startTask($task);
-
-    $current = TaskCheck::query()->where('task_sandbox_id', $instance->task_sandbox_id)->sole();
-    expect($checks->starts)->toBe(1)->and($current->status)->toBe(TaskCheckStatus::Running)
-        ->and($checks->setups)->toBe([[['name' => 'Restore dependencies', 'command' => 'composer install', 'timeout_seconds' => 600]]])
-        ->and($spawner->events)->toBe([]);
-    test_pass_baseline();
-    expect($current->fresh()->status)->toBe(TaskCheckStatus::Passed)
-        ->and($old->fresh()->status)->toBe($oldStatus)
-        ->and($spawner->events)->toBe(['implementer:2']);
-})->with([TaskCheckStatus::Passed, TaskCheckStatus::Running]);
-
 it('releases the baseline claim and retries after a VP_HOME probe failure', function (): void {
     $project = scheduler_app('vp-probe-retry');
     $instance = scheduler_instance($project, scheduler_node('vp-probe-node', '10.44.0.100'), 'vp-probe');
@@ -2097,7 +2063,7 @@ it('releases the baseline claim and retries after a VP_HOME probe failure', func
             $transport,
             app(SshKeyProvider::class),
             app(KnownHostsStore::class),
-        ), app(IncusSandboxHost::class), app(TaskSandboxDrivers::class), app(SandboxFleetIdentity::class)),
+        ), app(IncusSandboxHost::class), app(TaskSandboxDrivers::class)),
         ResolvedVp::manager(probe: $probe),
         app(TiaBaselineSetup::class),
     ));

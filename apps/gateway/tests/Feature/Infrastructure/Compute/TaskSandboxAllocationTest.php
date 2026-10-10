@@ -26,11 +26,8 @@ beforeEach(function (): void {
     (new FakeSandboxModelProxy)->install();
     $this->host = Node::query()->create(['name' => 'compute', 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.20', 'public_ssh_host' => '192.0.2.20', 'user' => 'orbit']);
     $this->settings = ['node_id' => $this->host->id, 'project' => 'orbit-task-sandboxes', 'pool' => 'proof', 'max_vms' => 2,
-        'orbit_images' => ['operator' => str_repeat('a', 64), 'gateway' => str_repeat('b', 64)],
-        'project_images' => ['dlf' => str_repeat('c', 64)], 'blocked_networks' => ['192.168.0.0/16']];
-    config(['compute.incus.enabled' => true, 'compute.incus.hosts' => [$this->settings], 'compute.upcloud.enabled' => true,
-        'compute.upcloud.zone' => 'nl-ams1', 'compute.upcloud.gateway_address' => '93.184.216.34',
-        'compute.upcloud.wireguard_address' => '93.184.216.35', 'compute.upcloud.wireguard_port' => 51820]);
+        'orbit_images' => ['operator' => str_repeat('a', 64), 'gateway' => str_repeat('b', 64)], 'blocked_networks' => ['192.168.0.0/16']];
+    config(['compute.incus.enabled' => true, 'compute.incus.hosts' => [$this->settings]]);
     $keys = mock(SshKeyProvider::class);
     $keys->shouldReceive('privateKeyPath')->andReturn('/keys/private');
     $keys->shouldReceive('publicKey')->andReturn('ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFakePublicMaterial');
@@ -56,9 +53,7 @@ function allocation_host(int $available): void
         expect($row->state)->toBe($request['operation'] === 'resume' ? SandboxState::Starting : SandboxState::Creating);
         $images = $row->spec['images'];
         if ($request['operation'] === 'provision') {
-            expect($request['spec']['source_template'] ?? null)->toBe($row->spec['source_template'] ?? null)
-                ->and($request['spec']['project_slug'] ?? null)->toBe($row->spec['project_slug'] ?? null)
-                ->and($request['spec']['project_bootstrap'] ?? null)->toBe($row->spec['project_bootstrap'] ?? null);
+            expect($request['spec']['source_template'] ?? null)->toBe($row->spec['source_template'] ?? null);
         }
 
         return new CommandResult(0, json_encode(['name' => $name, 'power' => 'running', 'instances' => array_map(
@@ -107,126 +102,19 @@ describe('sandbox placement', function (): void {
         expect(TaskSandbox::query()->count())->toBe(0);
     });
 
-    it('pins a single local Project image and Project identity through retries', function (): void {
-        allocation_host(2);
-        mock(ComputeDriver::class)->shouldNotReceive('capacity', 'provision');
-        $group = allocation_group('dlf');
-        $allocator = app(AllocateTaskSandboxAction::class);
-        $sandbox = $allocator->execute($group);
-
-        expect($sandbox->provider)->toBe('incus')
-            ->and($sandbox->spec['project_slug'])->toBe('dlf')
-            ->and($sandbox->spec['images'])->toBe(['operator' => str_repeat('c', 64)])
-            ->and($sandbox->spec)->not->toHaveKey('source_template')
-            ->and($sandbox->spec)->not->toHaveKey('pi_port');
-        $this->settings['project_images']['dlf'] = str_repeat('d', 64);
-        config(['compute.incus.hosts' => [$this->settings]]);
-        $retry = $allocator->execute($group);
-        expect($retry->id)->toBe($sandbox->id)
-            ->and($retry->spec['project_slug'])->toBe('dlf')
-            ->and($retry->spec['images'])->toBe(['operator' => str_repeat('c', 64)]);
-    });
-
-    it('retains refused local Project placement without trying cloud overspill', function (): void {
-        mock(ComputeDriver::class)->shouldNotReceive('capacity', 'provision');
-        mock(SshExecutor::class)->shouldReceive('execute')->andReturnUsing(function (SshConnection $connection, RemoteCommand $command): CommandResult {
-            $request = json_decode(stream_get_contents($command->protectedInput->stream()), true, flags: JSON_THROW_ON_ERROR);
-            if ($request['operation'] === 'capacity') {
-                return new CommandResult(0, '{"available":2,"used":0,"budget":2}', '', 1, false);
-            }
-            expect($request['spec']['project_slug'])->toBe('dlf');
-
-            return new CommandResult(1, '{"error":"sandbox_operation_refused"}', '', 1, false);
-        });
-        $group = allocation_group('dlf');
+    it('refuses a full or unobservable host without reserving a sandbox', function (): void {
+        allocation_host(0);
+        $group = allocation_group('orbit');
         expect(fn () => app(AllocateTaskSandboxAction::class)->execute($group))
-            ->toThrow(ComputeException::class, 'ownership is retained for retry');
-        $sandbox = TaskSandbox::query()->sole();
-        expect($sandbox->provider)->toBe('incus')
-            ->and($sandbox->group_id)->toBe($group->id)
-            ->and($sandbox->state)->toBe(SandboxState::Uncertain)
-            ->and($sandbox->spec['project_slug'])->toBe('dlf')
-            ->and($sandbox->spec['images'])->toBe(['operator' => str_repeat('c', 64)]);
-    });
-
-    it('reserves private Project bootstrap endpoints before host mutation and keeps them through retry and park', function (): void {
-        $this->settings['gateway_address'] = '10.44.0.2';
-        $this->settings['project_bootstrap'] = ['wireguard_address' => '93.184.216.35', 'wireguard_port' => 51820];
-        config(['compute.incus.hosts' => [$this->settings]]);
-        allocation_host(2);
-        mock(ComputeDriver::class)->shouldNotReceive('capacity', 'provision');
-        $group = allocation_group('dlf');
-        $allocator = app(AllocateTaskSandboxAction::class);
-        $first = $allocator->execute($group);
-        $expected = ['ssh_host' => '10.44.0.20', 'ssh_port' => 24001, 'gateway_address' => '10.44.0.2',
-            'wireguard_address' => '93.184.216.35', 'wireguard_port' => 51820];
-        expect($first->spec['project_bootstrap'])->toBe($expected);
-        $this->settings['project_bootstrap']['wireguard_port'] = 51821;
-        config(['compute.incus.hosts' => [$this->settings]]);
-        expect($allocator->execute($group)->spec['project_bootstrap'])->toBe($expected);
-        $first->update(['state' => SandboxState::Stopped, 'desired_power' => 'stopped']);
-        $next = Task::topLevel()->create(['project_id' => $group->project_id, 'title' => 'Next', 'brief' => 'Work', 'status' => 'todo', 'task_compute' => TaskCompute::Vm]);
-        $second = $allocator->execute($next);
-        expect($second->spec['project_bootstrap']['ssh_port'])->toBe(24002);
-        expect($first->fresh()->spec['project_bootstrap'])->toBe($expected);
-    });
-
-    it('refuses invalid Project bootstrap settings before contacting a host', function (array $bootstrap, ?string $gateway): void {
-        $this->settings['project_bootstrap'] = $bootstrap;
-        $this->settings['gateway_address'] = $gateway;
-        config(['compute.incus.hosts' => [$this->settings]]);
-        mock(SshExecutor::class)->shouldReceive('execute')->never();
-        expect(fn () => app(AllocateTaskSandboxAction::class)->execute(allocation_group('dlf')))
-            ->toThrow(ComputeException::class, 'configuration is invalid');
-        expect(TaskSandbox::query()->count())->toBe(0);
-    })->with([
-        'missing Gateway' => [['wireguard_address' => '93.184.216.35', 'wireguard_port' => 51820], null],
-        'private hub' => [['wireguard_address' => '10.44.0.1', 'wireguard_port' => 51820], '10.44.0.2'],
-        'metadata hub' => [['wireguard_address' => '169.254.169.254', 'wireguard_port' => 51820], '10.44.0.2'],
-        'shared address space hub' => [['wireguard_address' => '100.64.0.1', 'wireguard_port' => 51820], '10.44.0.2'],
-        'documentation hub' => [['wireguard_address' => '192.0.2.1', 'wireguard_port' => 51820], '10.44.0.2'],
-        'benchmark hub' => [['wireguard_address' => '198.18.0.1', 'wireguard_port' => 51820], '10.44.0.2'],
-        'multicast hub' => [['wireguard_address' => '224.0.0.1', 'wireguard_port' => 51820], '10.44.0.2'],
-        'IPv6 hub' => [['wireguard_address' => '2001:4860:4860::8888', 'wireguard_port' => 51820], '10.44.0.2'],
-        'string port' => [['wireguard_address' => '93.184.216.35', 'wireguard_port' => '51820'], '10.44.0.2'],
-        'zero port' => [['wireguard_address' => '93.184.216.35', 'wireguard_port' => 0], '10.44.0.2'],
-        'overflow port' => [['wireguard_address' => '93.184.216.35', 'wireguard_port' => 65536], '10.44.0.2'],
-        'extra field' => [['wireguard_address' => '93.184.216.35', 'wireguard_port' => 51820, 'ssh_port' => 22], '10.44.0.2'],
-    ]);
-
-    it('keeps Project bootstrap settings out of an Orbit pair reservation', function (): void {
-        $this->settings['gateway_address'] = '10.44.0.2';
-        $this->settings['project_bootstrap'] = ['wireguard_address' => '93.184.216.35', 'wireguard_port' => 51820];
-        config(['compute.incus.hosts' => [$this->settings]]);
-        allocation_host(2);
-        $sandbox = app(AllocateTaskSandboxAction::class)->execute(allocation_group('orbit'));
-        expect($sandbox->spec)->not->toHaveKey('project_bootstrap');
-        expect($sandbox->spec['pi_port'])->toBe(23001);
-    });
-
-    it('sends project work to cloud only when local capacity is full', function (): void {
-        allocation_host(0);
-        $cloud = mock(ComputeDriver::class);
-        $cloud->shouldReceive('capacity')->once()->andReturn(1);
-        $cloud->shouldReceive('provision')->once()->andReturnUsing(fn (TaskSandbox $sandbox): TaskSandbox => $sandbox);
-        $sandbox = app(AllocateTaskSandboxAction::class)->execute(allocation_group('dlf'));
-        expect($sandbox->provider)->toBe('upcloud')->and(TaskSandbox::query()->count())->toBe(1);
-    });
-
-    it('never sends the Orbit lane or an unobservable host to cloud', function (): void {
-        allocation_host(0);
-        mock(ComputeDriver::class)->shouldNotReceive('capacity', 'provision');
-        expect(fn () => app(AllocateTaskSandboxAction::class)->execute(allocation_group('orbit')))
             ->toThrow(ComputeException::class, 'local Incus');
         mock(SshExecutor::class)->shouldReceive('execute')->andReturn(new CommandResult(255, '', 'unreachable', 1, false));
-        expect(fn () => app(AllocateTaskSandboxAction::class)->execute(allocation_group('dlf')))
+        expect(fn () => app(AllocateTaskSandboxAction::class)->execute($group))
             ->toThrow(ResourceOperationException::class);
         expect(TaskSandbox::query()->count())->toBe(0);
     });
 
     it('reserves capacity before guests exist and refuses shared-mode groups', function (): void {
         allocation_host(2);
-        mock(ComputeDriver::class)->shouldNotReceive('capacity', 'provision');
         $first = allocation_group('orbit');
         $sandbox = app(AllocateTaskSandboxAction::class)->execute($first);
         $sandbox->update(['state' => SandboxState::Reserved]);

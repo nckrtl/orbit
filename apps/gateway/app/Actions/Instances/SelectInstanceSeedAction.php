@@ -5,15 +5,17 @@ declare(strict_types=1);
 namespace App\Actions\Instances;
 
 use App\Domain\AppDev\AppDevSourceOperationLock;
-use App\Domain\Instances\Deployment\DevelopmentDeployment;
 use App\Domain\Instances\InstanceState;
 use App\Models\Instance;
 
-/** Source selection and pruning share the Node lock. Instance rows retain their seed until removal. */
+/**
+ * Records where a new development Instance starts: the default checkout on the same Node and the
+ * last commit that deployed there. Selection shares the Node's source lock with the conversion of an
+ * old release layout. Instance rows keep their seed until removal.
+ */
 final readonly class SelectInstanceSeedAction
 {
     public function __construct(
-        private DevelopmentDeployment $deployment,
         private AppDevSourceOperationLock $sourceLock,
     ) {}
 
@@ -24,13 +26,8 @@ final readonly class SelectInstanceSeedAction
 
     private function select(Instance $instance): Instance
     {
+        // A default's own deployment records its seed.
         if ($instance->name === 'default') {
-            if ($instance->development_release_layout) {
-                // Filesystem selection is authoritative, including a switch whose Gateway response was lost.
-                $release = $this->deployment->selected($instance);
-                $instance->update(['seed_path' => $release->path, 'seed_commit' => $release->commit, 'seed_repository' => $instance->checkout_path]);
-            }
-
             return $instance;
         }
         // A legacy snapshot is already a choice, even if an older writer omitted the flag.
@@ -48,20 +45,17 @@ final readonly class SelectInstanceSeedAction
                 ->where('project_id', $instance->project_id)
                 ->where('node_id', $instance->node_id)
                 ->where('name', 'default')
-                ->where('development_release_layout', true)
+                ->whereNotNull('seed_commit')
                 ->first();
 
-            if ($seed instanceof Instance) {
-                $this->select($seed);
-                // Registered source is already at a caller-selected commit. Do not pair it with another release.
-                if ($instance->starting_commit === null || $instance->starting_commit === $seed->seed_commit) {
-                    $selection = [
-                        'seed_selected' => true,
-                        'seed_path' => $seed->seed_path,
-                        'seed_commit' => $seed->seed_commit,
-                        'seed_repository' => $seed->checkout_path,
-                    ];
-                }
+            // Registered source is already at a caller-selected commit. Do not pair it with another one.
+            if ($seed instanceof Instance && ($instance->starting_commit === null || $instance->starting_commit === $seed->seed_commit)) {
+                $selection = [
+                    'seed_selected' => true,
+                    'seed_path' => $seed->seed_path,
+                    'seed_commit' => $seed->seed_commit,
+                    'seed_repository' => $seed->checkout_path,
+                ];
             }
         }
         $instance->update($selection);

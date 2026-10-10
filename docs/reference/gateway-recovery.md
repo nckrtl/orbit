@@ -645,8 +645,9 @@ A release command raises an alert when a release fails, when it pauses automatic
 | `release_cleanup_paused` | A release went live, but [document cleanup](/reference/project-documents#restore-time-cleanup-gate) stayed paused after the handoff |
 | `release_scheduler_silent` | A release went live, but its own scheduler ran no `tasks:tick` by the [confirmation deadline](#post-release-tick-confirmation). At most once per release; nothing switches back or pauses |
 | `release_gateway_agent_failed` | A release went live, but the handoff could not bring the [Gateway Node's agent](#gateway-node-agent) to the pin. At most once per release; nothing switches back or pauses |
-| `rollout_stalled` | `orbit self-update` on one Node stayed `incomplete` for 6 visits in a row, or a rollout waited more than 2 hours for its CLI release. The rollout does not halt |
+| `rollout_stalled` | `orbit self-update` on one Node stayed `incomplete` for 6 visits in a row, or a rollout waited more than 2 hours for a CLI release with no [fallback](/reference/self-update#fallback-to-an-ancestor-release). The rollout does not halt |
 | `rollout_caddy_skipped` | A fleet rollout kept a Node's live Caddyfile because the new one was refused. Once per rollout; the rollout does not halt |
+| `rollout_cli_fallback` | A fleet rollout used an ancestor's CLI release. The summary names why the commit's own release was not used. Once per rollout; the rollout does not halt |
 
 Every alert names its subject, a summary, and an optional evidence link. The summary passes through the Gateway log redactor and is cut at 1,000 characters. A field outside these limits is a bug in the calling command, which refuses it before it records anything.
 
@@ -758,9 +759,9 @@ The rollout visits a Node when all of these hold:
 
 Roleless Nodes, such as operator machines, and macOS Nodes stay out. Their operators run `orbit self-update`. The Gateway's own Node stays out too. Each release's [runtime handoff](#gateway-node-agent) updates its agent, and its CLI is the release's own `apps/cli`. `fleet:rollout:status` lists every Node it leaves out, with the reason `sandbox`, `inactive`, `platform`, `unmanaged`, `gateway`, `roleless`, or `foreign_cli`.
 
-A task sandbox is an `app-dev` Node that a [task VM](/reference/compute-drivers#task-vms) or an [UpCloud sandbox reservation](/reference/compute-drivers#enroll-an-owned-project-vm) owns. The rollout leaves out the Node of every task VM that is not `destroyed`, with the reason `sandbox`. Orbit does not create or remove task VMs yet: that part is not built yet ([ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm)). The Gateway creates an UpCloud sandbox for one task group and removes it when the group ends or its review window expires. Provisioning gives it the agent and footprint of the Gateway's release at that time.
+A task sandbox is an `app-dev` Node that a [task VM](/reference/compute-drivers#task-vms) or an [UpCloud sandbox reservation](/reference/compute-drivers#upcloud-enrollment) owns. The rollout leaves out the Node of every task VM that is not `destroyed`, with the reason `sandbox`. The Gateway creates a task VM for one task group and destroys it when the group ends. Provisioning links its Node to the task VM before any convergence, so the Node never gets the Orbit CLI. Orbit creates no UpCloud reservation now.
 
-The rollout and the catch-up never visit a task sandbox, provisioning installs no Orbit CLI on it, and Doctor reports no `node.release_lag` for it. A group that resumes after its sandbox was destroyed gets a new sandbox Node, provisioned from the current release. The `sandbox` reason comes first, so a sandbox shows it in every state.
+The rollout and the catch-up never visit a task sandbox, provisioning installs no Orbit CLI on it, and Doctor reports no `node.release_lag` for it. The `sandbox` reason comes first, so a sandbox shows it in every state.
 
 A Node leaves the rollout set as `foreign_cli` when the [CLI install](/reference/node-provisioning#orbit-cli) finds a link, a script, or another program at `/usr/local/bin/orbit`. That visit is `skipped`, never `failed`, and Doctor reports `node.cli_foreign`. Every later run probes the Node and, when it answers, inspects the path again, so the Node rejoins once an operator moved the file aside.
 
@@ -781,7 +782,13 @@ One run resolves the desired state of the commit the Gateway serves: the CLI rel
 
 A Gateway in the release layout rolls out only a commit whose release record is `verified`. A run during a release, before the record exists, does nothing (`release_unverified`). When the configured layout cannot be read, or its link names no complete release, the run rolls out nothing (`release_layout_unreadable`). An in-place Gateway, whose current path is a checkout, has no release records, and its running commit is the desired state. A Gateway version that is not a commit, such as `dev`, rolls out nothing.
 
-CI publishes the CLI release a few minutes after the commit's checks pass, and the Gateway usually deploys the commit first. Until the release exists, the rollout is `waiting` and changes nothing on any Node. Once the release appears, the catch-up starts the sequential visit, which brings the footprint and the CLI to each Node together, with its verify and halt. A rollout that waits longer than 2 hours raises `rollout_stalled` once: CI most likely never published the release. A Node whose `orbit self-update` reports the release as pending is `waiting` too.
+CI publishes the CLI release a few minutes after the commit's checks pass, and the Gateway usually deploys the commit first. Until the release exists, the rollout is `waiting` and changes nothing on any Node. Once the release appears, the catch-up starts the sequential visit, which brings the footprint and the CLI to each Node together, with its verify and halt. A Node whose `orbit self-update` reports the release as pending is `waiting` too.
+
+When the commit's release is still missing after 30 minutes, the desired state [falls back](/reference/self-update#fallback-to-an-ancestor-release) to the newest published release of an ancestor commit with the same CLI code. The rollout then starts with that release and raises `rollout_cli_fallback` once, so a missing release is never silent. When the commit's own release appears later, the catch-up visits each Node again and brings it to that release.
+
+A started rollout visits no Node while its CLI release cannot be confirmed, for example while GitHub fails after the confirmed release left the cache. Each Node would otherwise get a release it cannot install. The catch-up continues once the release is confirmed again.
+
+A rollout that waits longer than 2 hours raises `rollout_stalled` once. It means the fleet is stuck: CI never published the release, and no ancestor's release could stand in. Publish the release, or merge a newer commit.
 
 ### One Node
 
@@ -890,7 +897,7 @@ The rollout updates only the Nodes of the [rollout set](#rollout-set-and-order).
 
 The rollout visits one Node at a time, so it takes longer as the fleet grows. A halted rollout blocks every later rollout until an operator resumes it.
 
-The Gateway pushes the rendered footprint over SSH. `orbit self-update` replaces only the CLI and the agent. Caddy, cAdvisor, the FPM exporter, Prometheus, Grafana, Plausible, and Reverb keep their own update paths.
+The Gateway pushes the rendered footprint over SSH, such as the Caddyfile or the [`tmpfiles` rule](/reference/node-provisioning#converge-the-orbit-footprint) of an `app-dev` Node. A new artifact changes the footprint digest of each Node it applies to, so the next rollout writes it there. `orbit self-update` replaces only the CLI and the agent. Caddy, cAdvisor, the FPM exporter, Prometheus, Grafana, Plausible, and Reverb keep their own update paths.
 
 ### Not built
 

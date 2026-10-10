@@ -125,6 +125,9 @@ final class Orb220ProductionDeployment implements ProductionDeployment
 
     public ?string $requestedRelease = null;
 
+    /** How many 16 KiB stdout chunks the `prepare` step emits. */
+    public int $prepareOutputChunks = 1;
+
     public function prepare(Instance $instance, string $branch): DeploymentRelease
     {
         $this->invocations++;
@@ -150,11 +153,13 @@ final class Orb220ProductionDeployment implements ProductionDeployment
             return new CommandResult(0, '', '', 1, false);
         }
 
-        $request->emit(new DeploymentEvent(
-            $step->name,
-            $step->name === 'prepare' ? DeploymentOutputStream::Stdout : DeploymentOutputStream::Stderr,
-            $step->name === 'prepare' ? str_repeat("\xff", 16 * 1024) : "output-secret\0bytes",
-        ));
+        for ($chunk = 0; $chunk < ($step->name === 'prepare' ? $this->prepareOutputChunks : 1); $chunk++) {
+            $request->emit(new DeploymentEvent(
+                $step->name,
+                $step->name === 'prepare' ? DeploymentOutputStream::Stdout : DeploymentOutputStream::Stderr,
+                $step->name === 'prepare' ? str_repeat("\xff", 16 * 1024) : "output-secret\0bytes",
+            ));
+        }
 
         if ($request->cancellation->requested()) {
             throw new ProcessCancelledException;

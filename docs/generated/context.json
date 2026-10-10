@@ -1211,6 +1211,7 @@
                 "Project",
                 "Role",
                 "Route",
+                "Schedule",
                 "Subtask",
                 "Task",
                 "Task workspace",
@@ -1219,6 +1220,22 @@
             "governing_adrs": [
                 "0200"
             ]
+        },
+        {
+            "path": "docs/reference/conn.md",
+            "title": "Conn layer",
+            "kind": "reference",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Activity",
+                "Gateway",
+                "Node",
+                "Process",
+                "Project"
+            ],
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/database-connections.md",
@@ -1431,9 +1448,7 @@
                 "Task definition",
                 "Tool"
             ],
-            "governing_adrs": [
-                "0200"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/gateway-response-fixtures.md",
@@ -1775,6 +1790,7 @@
                 "Activity",
                 "Cluster",
                 "Deliverable",
+                "Deployment",
                 "Extension",
                 "Gateway",
                 "Instance",
@@ -1941,9 +1957,7 @@
                 "Tool",
                 "Turn receipt"
             ],
-            "governing_adrs": [
-                "0200"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/private-dns.md",
@@ -2100,7 +2114,8 @@
                 "Process",
                 "Project",
                 "Project Documents",
-                "Schedule"
+                "Schedule",
+                "Task"
             ],
             "governing_adrs": []
         },
@@ -2138,22 +2153,6 @@
                 "Process",
                 "Role",
                 "Route"
-            ],
-            "governing_adrs": []
-        },
-        {
-            "path": "docs/reference/t3-code.md",
-            "title": "T3 Code layer",
-            "kind": "reference",
-            "components": [
-                "apps/gateway"
-            ],
-            "concepts": [
-                "Activity",
-                "Gateway",
-                "Node",
-                "Process",
-                "Project"
             ],
             "governing_adrs": []
         },

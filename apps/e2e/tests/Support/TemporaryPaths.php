@@ -5,10 +5,14 @@ declare(strict_types=1);
 namespace Tests\Support;
 
 use RuntimeException;
+use Throwable;
 
 /**
  * Tracks temporary paths created by tests so they are removed after each test.
  * Without this, parallel suite runs exhaust the tmpfs inode budget on /tmp.
+ * Every path lives in one directory per test process, which the process removes
+ * when it ends, so paths that tests derive from a tracked one, such as
+ * `<path>-worktrees` or `<path>.json`, go too.
  */
 final class TemporaryPaths
 {
@@ -18,7 +22,7 @@ final class TemporaryPaths
     private static ?string $directory = null;
 
     /**
-     * Returns the canonical temporary directory for test paths.
+     * Returns the canonical temporary directory of this test process.
      *
      * The harness refuses symbolic-link path components and compares canonical
      * paths, so the base resolves links such as macOS `/var` -> `/private/var`.
@@ -32,19 +36,38 @@ final class TemporaryPaths
             return self::$directory;
         }
 
-        $directory = realpath(sys_get_temp_dir());
+        $base = realpath(sys_get_temp_dir());
 
-        if ($directory === false) {
+        if ($base === false) {
             throw new RuntimeException('Unable to resolve the temporary directory.');
         }
 
-        if (preg_match('~\A(/[A-Za-z_][A-Za-z0-9_.-]*)+\z~', $directory) !== 1) {
-            $directory = realpath('/tmp');
+        if (preg_match('~\A(/[A-Za-z_][A-Za-z0-9_.-]*)+\z~', $base) !== 1) {
+            $base = realpath('/tmp');
 
-            if ($directory === false) {
+            if ($base === false) {
                 throw new RuntimeException('Unable to resolve /tmp.');
             }
         }
+
+        $directory = $base.'/orbit-e2e-tests-'.bin2hex(random_bytes(6));
+
+        if (! mkdir($directory, 0o755) || ! chmod($directory, 0o755)) {
+            throw new RuntimeException('Unable to create the test process temporary directory.');
+        }
+
+        $owner = getmypid();
+        register_shutdown_function(static function () use ($directory, $owner): void {
+            if (getmypid() !== $owner) {
+                return;
+            }
+
+            try {
+                @self::remove($directory);
+            } catch (Throwable) {
+                // Another user's files stay; the Node's tmpfiles rule empties the directory after a day.
+            }
+        });
 
         return self::$directory = $directory;
     }

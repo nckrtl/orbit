@@ -247,8 +247,9 @@ The step reads the path again under the Node's update lock before it installs, b
 | `proxycli` | The [ProxyCli](/reference/proxycli) collector's Node | The collector script. A changed script restarts the collector, a Node-owned Process |
 | `annotator` | A Node with an annotator Process | The server files in `/opt/orbit/annotator`. Running annotators keep their code until their Process restarts |
 | `route-residue` | A Node that an [offline Route removal](/reference/routes#remove-a-route-from-an-unreachable-node) skipped | Caddy and PHP-FPM without the removed Route, then its certificates and firewall rules. A failure is `skipped` and retried later |
+| `tmpfiles` | Every Linux Node with an active `app-dev` role | `/etc/tmpfiles.d/orbit.conf`. The daily `systemd-tmpfiles-clean` run empties each `/tmp/orbit-*` and `/dev/shm/orbit-*` directory a day after its contents last changed. It removes no other path and restarts nothing |
 
-Each artifact has a digest that the Gateway computes from its own code and pins, without SSH. The Caddy package digest covers the package program and the `CaddyRelease` floor. The Caddy digest covers every Gateway source file the Caddy build renders from: the build, its site sources, and the classes they use, such as `DevelopmentSite` and the `CaddyRelease` pin. The other digests cover the private-DNS listener release and publication code, the agent pin and the inputs its unit renders from, the collector script, and the annotator files.
+Each artifact has a digest that the Gateway computes from its own code and pins, without SSH. The Caddy package digest covers the package program and the `CaddyRelease` floor. The Caddy digest covers every Gateway source file the Caddy build renders from: the build, its site sources, and the classes they use, such as `DevelopmentSite` and the `CaddyRelease` pin. The other digests cover the private-DNS listener release and publication code, the agent pin and the inputs its unit renders from, the collector script, the annotator files, and the tmpfiles rule.
 
 A user's sites, Routes, and DNS records never change a digest. Their own operations publish them, and Doctor reports their drift. The `route-residue` digest is the exception: it covers the residues of offline Route removals, which are Orbit's own unfinished work, so the Node drifts until a converge removes them. The Gateway keeps the digests each Node last received, and a converge re-applies only the artifacts whose digest changed. It takes the Node's update lock over SSH first. So even a converge that changes nothing runs a few lock commands on the Node.
 
@@ -262,6 +263,7 @@ Metrics exporters, cAdvisor, and the FPM exporter are not part of the footprint:
 | `node_role.node_busy` | 409 | Another role operation held the Node's lock for 2 minutes |
 | `node.footprint_caddy_failed` | 502 | The Caddyfile could not be published |
 | `node.footprint_caddy_package_failed` | 502 | The Caddy package step failed, for example because the download does not match the pin. The message names the cause |
+| `node.footprint_tmpfiles_failed` | 502 | The tmpfiles rule could not be written. The message names the cause |
 
 ## Role compatibility
 
@@ -401,6 +403,7 @@ The Gateway refuses the removal until the Node is empty. Remove its Instances, R
 | Code | Condition |
 | --- | --- |
 | `node.has_instances`, `node.has_routes`, `schedule.target_in_use`, `node.has_roles`, `node.has_processes`, `node.has_firewall_rules`, `node.has_database_servers` | The Node still owns that state. |
+| `node.has_task_vms` | The Node hosts a [task VM](/reference/compute-drivers#destroy-a-task-vm) that is not `destroyed`. |
 | `route.reconciliation_required` | An active Route depends on the Node. |
 | `node.self_removal_forbidden`, `node.gateway_removal_forbidden`, `node.vpn_removal_forbidden` | The Node is protected. |
 | `node.provisioning_busy` | Another lifecycle operation holds the Node name. |

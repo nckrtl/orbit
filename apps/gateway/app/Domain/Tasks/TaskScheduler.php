@@ -2651,7 +2651,7 @@ final readonly class TaskScheduler
                 $instance = $this->provisioning->provision(InstanceProvisionIntent::for($reserved));
             } catch (TaskCapacityException $exception) {
                 $this->releaseReservation($reserved, $exception->getMessage());
-                $this->removeEndedWorkspace($reserved, null);
+                $this->endClaim($reserved, null);
 
                 if ($exception->fleetFull) {
                     return null;
@@ -2667,7 +2667,7 @@ final readonly class TaskScheduler
 
             if (! $instance instanceof Instance) {
                 $this->releaseProvisioningFailure($reserved, $instance);
-                $this->removeEndedWorkspace($reserved, null);
+                $this->endClaim($reserved, null);
                 $skipped[] = $reserved->id;
 
                 continue;
@@ -2679,7 +2679,7 @@ final readonly class TaskScheduler
                 // A failed start must not strand the group in reserved or drop its Instance. The log keeps the detail.
                 report($exception);
                 $this->releaseFailedStart($reserved, $instance);
-                $this->removeEndedWorkspace($reserved, $instance);
+                $this->endClaim($reserved, $instance);
                 $skipped[] = $reserved->id;
 
                 continue;
@@ -2689,7 +2689,7 @@ final readonly class TaskScheduler
         }
 
         if (! $started instanceof Task) {
-            $this->removeEndedWorkspace($reserved, $instance);
+            $this->endClaim($reserved, $instance);
 
             return null;
         }
@@ -2729,6 +2729,8 @@ final readonly class TaskScheduler
      *
      * A group that is no longer the reservation this claim made, because the tick returned it to todo or cancellation
      * ended it, keeps its status. It gains the Instance only when it holds none.
+     *
+     * A started group's claim is over, so its `reserved_at` is cleared in the same write.
      */
     private function startReserved(Task $reserved, Instance $instance): ?Task
     {
@@ -2758,6 +2760,7 @@ final readonly class TaskScheduler
 
         $group->status = TaskGroupStatus::Running;
         $group->started_at ??= now();
+        $group->reserved_at = null;
         if ($group->assistance_kind !== AssistanceKind::Direction && self::isClaimFailureReason($group->assistance_reason)) {
             $group->fill(TaskAssistance::cleared());
         }
@@ -2861,6 +2864,20 @@ final readonly class TaskScheduler
             }
             $group->save();
         });
+    }
+
+    /**
+     * Ends a claim that did not start its group. It removes the workspace of a group that ended meanwhile, then
+     * clears the group's `reserved_at`, so sweeps stop waiting for this claim. A newer claim's reservation stays.
+     */
+    private function endClaim(Task $reserved, ?Instance $instance): void
+    {
+        $this->removeEndedWorkspace($reserved, $instance);
+
+        Task::topLevel()->whereKey($reserved->id)
+            ->where('status', '!=', TaskGroupStatus::Reserved)
+            ->where('reserved_at', $reserved->reserved_at)
+            ->update(['reserved_at' => null]);
     }
 
     /**

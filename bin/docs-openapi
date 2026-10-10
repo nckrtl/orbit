@@ -582,12 +582,12 @@ TAGS = [
     ('activity', 'Activities', 'The Gateway log of authorized commands.'),
     ('proxycli', 'proxycli', 'CLIProxyAPI quota snapshots, provider pools, and account controls.'),
     ('workspace', 'Workspaces', 'Git worktrees owned by legacy Instances.'),
-    ('t3', 'T3 Code', 'Profiles, shared workspace settings, registered T3 Code servers, and the pairing links the Gateway mints on them for each Node.'),
+    ('conn', 'Conn', 'Profiles, shared workspace settings, registered T3 servers, and the pairing links the Gateway mints on them for each Node.'),
     ('realtime', 'Realtime', 'The record-change event feed broadcast to Reverb, its channel authorization, and Reverb connection discovery.'),
     ('internal', 'Node callbacks', 'Endpoints that managed Nodes and Caddy call; operators do not call them.'),
 ]
 TAG_BY_PREFIX = {p: t for p, t, _ in TAGS}
-INTERNAL = {'compute:github-token', 'tasks:agents', 'tasks:agent-stream', 'agent:realtime', 'agent:realtime:auth', 'agent:workspaces', 'agent:log-streams', 'metrics:grafana:authorize', 'schedule:complete', 'runtime-activation:app-instance', 'github:app:register', 'github:app:callback'}
+INTERNAL = {'tasks:agents', 'tasks:agent-stream', 'agent:realtime', 'agent:realtime:auth', 'agent:workspaces', 'agent:log-streams', 'metrics:grafana:authorize', 'schedule:complete', 'runtime-activation:app-instance', 'github:app:register', 'github:app:callback'}
 DEFINITION_ROUTES = {
     'ProjectRuntimeDefinitionsController@processIndex': 'List process definitions',
     'ProjectRuntimeDefinitionsController@processStore': 'Create a process definition',
@@ -601,7 +601,6 @@ DEFINITION_ROUTES = {
     'ProjectRuntimeDefinitionsController@scheduleDestroy': 'Remove a Schedule definition',
 }
 SUMMARIES = {
-    'compute:github-token': 'Renew sandbox repository access',
     'instance:transfer': 'Transfer an Instance',
     'gateway:status': 'Show Gateway status', 'gateway:trust': 'Fetch the root CA certificate', 'gateway:desired-fleet-state': 'Show the desired fleet state',
     'node:list': 'List Nodes', 'node:show': 'Show a Node', 'node:add': 'Add a Node', 'node:remove': 'Remove a Node', 'node:settings': 'Update Node settings',
@@ -639,11 +638,11 @@ SUMMARIES = {
     'schedule:list': 'List Schedules', 'schedule:show': 'Show a Schedule', 'schedule:create': 'Create a Schedule', 'schedule:run': 'Run a Schedule', 'schedule:logs': 'Read Schedule logs', 'schedule:enable': 'Enable a Schedule', 'schedule:destroy': 'Remove a Schedule', 'schedule:complete': 'Complete a Schedule run',
     'doctor': 'Run Doctor', 'activity:list': 'List Activities', 'activity:show': 'Show an Activity', 'analytics:update': 'Pin the Plausible version', 'analytics:credentials': 'Show analytics Stats API credentials', 'analytics:credentials:set': 'Store the analytics Stats API key', 'analytics:credentials:unset': 'Clear the analytics Stats API key',
     'extension:list': 'List extensions', 'extension:enable': 'Enable an extension', 'extension:disable': 'Disable an extension',
-    't3:me': 'Show the calling Node', 't3:me:profile': 'Bind the calling Node to a profile',
-    't3:profile:list': 'List T3 profiles', 't3:profile:create': 'Create a T3 profile',
-    't3:profile:settings:show': 'Show profile settings', 't3:profile:settings:update': 'Replace profile settings',
-    't3:environment:list': 'List T3 servers', 't3:environment:register': 'Register a T3 server',
-    't3:pairing:list': 'List pairings on a T3 server', 't3:pairing:create': 'Mint a pairing link', 't3:pairing:revoke': "Revoke a Node's sessions on a T3 server",
+    'conn:me': 'Show the calling Node', 'conn:me:profile': 'Bind the calling Node to a profile',
+    'conn:profile:list': 'List Conn profiles', 'conn:profile:create': 'Create a Conn profile',
+    'conn:profile:settings:show': 'Show profile settings', 'conn:profile:settings:update': 'Replace profile settings',
+    'conn:environment:list': 'List T3 servers', 'conn:environment:register': 'Register a T3 server',
+    'conn:pairing:list': 'List pairings on a T3 server', 'conn:pairing:create': 'Mint a pairing link', 'conn:pairing:revoke': "Revoke a Node's sessions on a T3 server",
     'proxycli:setup': 'Set up proxycli', 'proxycli:teardown': 'Tear down proxycli', 'proxycli:status': 'Show proxycli status', 'proxycli:list': 'List proxycli providers', 'proxycli:show': 'Show a proxycli provider', 'proxycli:update': 'Update a proxycli account', 'proxycli:models': 'List proxycli models',
     'workspace:list': 'List Workspaces', 'workspace:show': 'Show a Workspace', 'workspace:new': 'Create a Workspace', 'workspace:php': 'Change the Workspace PHP version', 'workspace:remove': 'Remove a Workspace',
     'runtime-activation:app-instance': 'Wake an Instance',
@@ -660,7 +659,6 @@ SUMMARIES = {
     'tasks:complete': 'Complete a Task group', 'tasks:cancel': 'Cancel a Task group',
 }
 DESCRIPTIONS = {
-    'compute:github-token': 'Internal UpCloud VM credential renewal. Requires the enrolled active WireGuard peer, binary access to its own Node, and its private Pi bearer token. The Gateway derives the repository from the active task workspace; request fields cannot select another repository. Issues a fresh one-hour GitHub App token with contents, pull requests, and workflows write plus Actions read. The response is not cached or recorded in command activity. Stopped, destroying, detached, and inactive task ownership is refused.',
     'gateway:trust': 'Returns the PEM-encoded Orbit root certificate and its SHA-256 fingerprint so a client can pin it before it trusts the Gateway. This endpoint needs no WireGuard identity.',
     'gateway:status': 'Returns the Gateway name, version, and status, and the release the Gateway runs from. This endpoint needs no WireGuard identity. For an active WireGuard peer it also returns `auto_release`, whether automatic releases are enabled or paused, and `desired_fleet_state`, the object `gateway:desired-fleet-state` returns, as last cached; it is null until the state is resolved and for any other caller. This endpoint never waits for Git or GitHub.',
     'gateway:desired-fleet-state': 'Returns what every machine in the fleet should run for the Gateway\'s commit (ADR 0202): the full commit SHA, the CLI release CI published for that commit with the SHA-256 of each platform binary from its `SHA256SUMS`, and the pinned `orbit-agent` with the SHA-256 of each Linux binary. Any active WireGuard peer may read it, with or without Node access. `cli.status` is `available`; `pending` with `reason` `release_missing` and the version and tag while CI has not published the release yet; or `unavailable` with a `reason`. None of these is an error. `orbit self-update` reads this endpoint.',
@@ -729,17 +727,17 @@ DESCRIPTIONS = {
     'tasks:definition:create': 'Stores a task definition for a Project. The body is the whole definition. Gateway access is required. The call does not start a task. An invalid definition returns `tasks.definition_invalid` (422), and `details.rules` names each failing rule and the subtask key. A name the Project already uses returns `tasks.definition_exists` (409). Returns `extension.disabled` while the tasks extension is off.',
     'tasks:definition:update': 'Replaces a task definition. The body is the whole definition. It may omit `name`; the path then supplies it. A body `name` that differs from the path is refused. Gateway access is required. The call does not start a task. An invalid definition returns `tasks.definition_invalid` (422). Returns `extension.disabled` while the tasks extension is off.',
     'tasks:definition:destroy': 'Deletes a task definition and returns it. The call does not delete a task and does not start one. Gateway access is required. Returns `extension.disabled` while the tasks extension is off.',
-    't3:me': 'Returns the calling Node and the profile it is bound to, or `null`. Every active Node, a phone included, may use the T3 endpoints without a node access grant.',
-    't3:me:profile': 'Binds the calling Node to one profile, replacing an earlier binding. Returns the Node and its profile.',
-    't3:profile:list': 'Lists every T3 profile. Every Node sees every profile.',
-    't3:profile:create': 'Creates a profile with an empty settings document at version 1. A taken name returns `validation.failed` (422).',
-    't3:profile:settings:show': 'Returns the profile settings document, its version, and when it last changed.',
-    't3:profile:settings:update': 'Replaces the whole settings document. Send the version you last read; a stale version returns `t3.settings_version_conflict` (409) with `details.current_version`. The document holds `workspaces` only; its keys keep T3 Code camelCase.',
-    't3:environment:list': 'Lists registered T3 servers with their URL, server version, registration time, and admin session expiry. `status` is `session_expired` when the server must register again.',
-    't3:environment:register': 'Called by a T3 server on startup. The Gateway checks that `url` serves `environment_id`, exchanges `pairing_url` for an admin session as a T3 client pairs, stores the session encrypted, and revokes its earlier sessions on that server. Returns `t3.environment_mismatch` or `t3.admin_scope_missing` (422), and `t3.server_unreachable`, `t3.session_rejected`, `t3.request_refused`, or `t3.response_invalid` (502).',
-    't3:pairing:list': 'Lists the pairing links the Gateway minted on one T3 server, newest first, with the Node and revocation time of each.',
-    't3:pairing:create': 'Mints a one-time pairing link on the T3 server for the calling Node and records it. Open `pairing_url` in T3 Code to pair. An expired admin session returns `t3.session_expired` (409).',
-    't3:pairing:revoke': 'Revokes the sessions a Node paired from its links on one T3 server, and its unused links. Without `node_id` it revokes the calling Node. WireGuard access does not change.',
+    'conn:me': 'Returns the calling Node and the profile it is bound to, or `null`. Every active Node, a phone included, may use the Conn endpoints without a node access grant.',
+    'conn:me:profile': 'Binds the calling Node to one profile, replacing an earlier binding. Returns the Node and its profile.',
+    'conn:profile:list': 'Lists every Conn profile. Every Node sees every profile.',
+    'conn:profile:create': 'Creates a profile with an empty settings document at version 1. A taken name returns `validation.failed` (422).',
+    'conn:profile:settings:show': 'Returns the profile settings document, its version, and when it last changed.',
+    'conn:profile:settings:update': 'Replaces the whole settings document. Send the version you last read; a stale version returns `conn.settings_version_conflict` (409) with `details.current_version`. The document holds `workspaces` only; its keys keep T3 Code camelCase.',
+    'conn:environment:list': 'Lists registered T3 servers with their URL, server version, registration time, and admin session expiry. `status` is `session_expired` when the server must register again.',
+    'conn:environment:register': 'Called from a T3 server\'s host on startup with an admin session from `t3 auth session issue --label "Orbit Gateway"`. The Gateway checks that `url` serves `environment_id` and that T3 accepts `admin_session` with admin scopes, stores the session encrypted, and revokes its earlier sessions on that server. Returns `conn.environment_mismatch` or `conn.admin_scope_missing` (422), and `conn.server_unreachable`, `conn.session_rejected`, `conn.request_refused`, or `conn.response_invalid` (502).',
+    'conn:pairing:list': 'Lists the pairing links the Gateway minted on one T3 server, newest first, with the Node and revocation time of each.',
+    'conn:pairing:create': 'Mints a one-time pairing link on the T3 server for the calling Node and records it. Open `pairing_url` in Conn to pair. An expired admin session returns `conn.session_expired` (409).',
+    'conn:pairing:revoke': 'Revokes the sessions a Node paired from its links on one T3 server, and its unused links. Without `node_id` it revokes the calling Node. WireGuard access does not change.',
     'extension:list': 'Returns the Gateway-wide extension switch state as an object keyed by extension slug. The initial slugs are `tasks` and `proxycli`.',
     'extension:enable': 'Enable a Gateway extension for every client. Use `tasks` or `proxycli`; an unknown slug returns `validation.failed` (422). Returns the extension name and `enabled: true`.',
     'extension:disable': 'Disables one Gateway-wide extension without removing its setup data. Use `tasks` or `proxycli`; an unknown slug returns `validation.failed` (422). Returns the extension name and `enabled: false`.',
@@ -1779,10 +1777,6 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
             'id': {'type': 'string', 'description': 'The stream ID.'},
             'closed': {'type': 'boolean', 'const': True, 'description': 'Always true.'},
         }, 'required': ['id', 'closed']}, 'The request succeeded.')
-    elif route['name'] == 'compute:github-token':
-        responses['200'] = {'description': 'Fresh access scoped to the Project repository.', 'headers': {'Cache-Control': {'schema': {'type': 'string', 'const': 'no-store, private'}}}, 'content': {'application/json': {'schema': {'type': 'object', 'properties': {'token': {'type': 'string', 'description': 'Temporary installation token. Never persist or log it.'}}, 'required': ['token']}}}}
-        responses['403'] = error_response('The active WireGuard peer or running sandbox ownership and Pi credential are unavailable.')
-        responses['503'] = error_response('Temporary repository access could not be issued (`compute.github_unavailable`).')
     elif route['name'] == 'agent:realtime:auth':
         responses['200'] = {'description': 'The Pusher channel signature.', 'content': {'application/json': {'schema': {'type': 'object', 'properties': {
             'auth': {'type': 'string', 'description': 'Pusher channel signature.'},

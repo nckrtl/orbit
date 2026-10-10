@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Actions\Tasks;
 
 use App\Domain\Compute\ComputeException;
-use App\Domain\Compute\SandboxFleetRemover;
 use App\Domain\Compute\SandboxState;
 use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskExecutionLock;
@@ -22,7 +21,7 @@ use Illuminate\Support\Facades\DB;
 /** Destroy only recorded sandbox ownership; never run guest checkout paths on the host. */
 final readonly class RemoveTaskSandboxAction
 {
-    public function __construct(private TaskExecutionLock $execution, private TaskSandboxDrivers $drivers, private TaskSandboxLifecycle $lifecycle, private SandboxFleetRemover $fleet) {}
+    public function __construct(private TaskExecutionLock $execution, private TaskSandboxDrivers $drivers, private TaskSandboxLifecycle $lifecycle) {}
 
     public function workspace(Instance $instance, ?Task $expectedGroup = null): void
     {
@@ -64,10 +63,6 @@ final readonly class RemoveTaskSandboxAction
             } elseif (Instance::query()->where('task_sandbox_id', $sandbox->id)->exists() || ($group instanceof Task && $group->taskable_id !== null)) {
                 throw $this->ownership();
             }
-            if ($sandbox->node_id !== null && (! in_array($sandbox->provider, ['incus', 'upcloud'], true) || $sandbox->enrollment === null)) {
-                throw new ComputeException('compute.node_attached', 'Remove the sandbox Node from the fleet before destroying its VM.');
-            }
-
             $result = $this->lifecycle->destroy($sandbox, $this->drivers->forSandbox($sandbox));
             if ($result->state !== SandboxState::Destroyed) {
                 throw new ComputeException('compute.cleanup_pending', 'Sandbox destruction has not been confirmed. Orbit retains its reservation for retry.');
@@ -90,18 +85,13 @@ final readonly class RemoveTaskSandboxAction
         if (! $group instanceof Task || $instance->task_sandbox_id !== $sandbox->id || $instance->project_id !== $group->project_id
             || ($group->taskable_id !== null && ($group->taskable_id !== $instance->id || $group->taskable_type !== $instance->getMorphClass()))
             || ($group->taskable_id === null && ($instance->name !== TaskWorkspaceName::for($group) || $instance->branch_override !== $instance->name))
-            || ! (($group->project->slug === 'orbit' && $sandbox->provider === 'incus' && $instance->node_id === ($sandbox->spec['host_id'] ?? null))
-                || ($group->project->slug !== 'orbit' && in_array($sandbox->provider, ['upcloud', 'incus'], true) && $instance->node_id === $sandbox->node_id))
+            || $group->project->slug !== 'orbit' || $sandbox->provider !== 'incus' || $instance->node_id !== ($sandbox->spec['host_id'] ?? null)
             || Task::withoutGlobalScope('subtask')->where('taskable_type', $instance->getMorphClass())->where('taskable_id', $instance->id)
                 ->whereKeyNot($group->id)->exists()) {
             throw $this->ownership();
         }
-        if ($sandbox->enrollment !== null && $group->project->slug !== 'orbit') {
-            $this->fleet->assertRemovable($sandbox);
-        }
-        if (($instance->routeTargets()->exists() && ($sandbox->enrollment === null || $group->project->slug === 'orbit')) || $instance->processes()->exists() || $instance->schedules()->exists()
-            || $instance->databaseConnectionTargets()->exists()
-            || ($instance->removalMember()->exists() && ($sandbox->enrollment === null || $group->project->slug === 'orbit'))
+        if ($instance->routeTargets()->exists() || $instance->processes()->exists() || $instance->schedules()->exists()
+            || $instance->databaseConnectionTargets()->exists() || $instance->removalMember()->exists()
             || $instance->transfers()->exists()) {
             throw new ComputeException('compute.workspace_in_use', 'The sandbox workspace has live resource references. Remove them before destroying its compute.');
         }
