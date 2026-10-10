@@ -100,8 +100,6 @@ function preparedTopologyRepository(): string
 
     foreach ([
         ['git', 'init', '-q', '-b', 'feature/TST-123', $root],
-        ['git', '-C', $root, 'config', 'user.email', 'developer@example.com'],
-        ['git', '-C', $root, 'config', 'user.name', 'Orbit Developer'],
         ['git', '-C', $root, 'add', '.'],
         ['git', '-C', $root, 'commit', '-q', '-m', 'Prepared state'],
         ['git', '-C', $root, 'branch', 'main'],
@@ -245,8 +243,6 @@ function pinnedFeatureWorktree(string $repositoryRoot, string $suffix): string
     $sourcePath = $worktree.'/feature-source-'.$suffix.'.txt';
     foreach ([
         ['git', '-C', $repositoryRoot, 'worktree', 'add', '-q', '-b', 'feature/TST-123-'.$suffix, $worktree, 'HEAD'],
-        ['git', '-C', $worktree, 'config', 'user.email', 'developer@example.com'],
-        ['git', '-C', $worktree, 'config', 'user.name', 'Orbit Developer'],
     ] as $index => $command) {
         if (! Process::run($command)->successful()) {
             throw new RuntimeException('Unable to prepare a feature worktree.');

@@ -17,6 +17,32 @@ use Tests\TestCase;
 
 GuestScripts::useGnuUserland();
 
+// Fixture commits take their identity from the environment. `git config user.*` in a linked worktree writes the
+// shared configuration of its repository, and an inherited GIT_DIR would point `git -C <fixture>` at the checkout
+// that runs the suite, so fixtures never configure an identity and inherit no repository.
+foreach ([
+    'GIT_AUTHOR_NAME' => 'Orbit Developer',
+    'GIT_AUTHOR_EMAIL' => 'developer@example.com',
+    'GIT_COMMITTER_NAME' => 'Orbit Developer',
+    'GIT_COMMITTER_EMAIL' => 'developer@example.com',
+    'GIT_DIR' => null,
+    'GIT_WORK_TREE' => null,
+    'GIT_COMMON_DIR' => null,
+    'GIT_INDEX_FILE' => null,
+    'GIT_OBJECT_DIRECTORY' => null,
+    'GIT_ALTERNATE_OBJECT_DIRECTORIES' => null,
+] as $variable => $value) {
+    if ($value === null) {
+        putenv($variable);
+        unset($_ENV[$variable], $_SERVER[$variable]);
+
+        continue;
+    }
+
+    putenv("{$variable}={$value}");
+    $_ENV[$variable] = $_SERVER[$variable] = $value;
+}
+
 uses(TestCase::class)->in('Feature');
 uses(TestCase::class)->beforeEach(function (): void {
     $primary = getenv('ORBIT_SCENARIO_PRIMARY_ROOT');

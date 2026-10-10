@@ -44,6 +44,15 @@ beforeEach(function () {
     Facade::setFacadeApplication($container);
 });
 
+it('builds the topology fixtures without an identity in the shared repository configuration', function (): void {
+    $root = preparedTopologyRepository();
+    $worktree = pinnedFeatureWorktree($root, 'identity-configuration');
+
+    expect(Process::run(['git', '-C', $worktree, 'config', '--local', '--get-regexp', '^user\\.'])->exitCode())->toBe(1)
+        ->and(trim(Process::run(['git', '-C', $worktree, 'log', '-1', '--format=%an <%ae>'])->output()))
+        ->toBe('Orbit Developer <developer@example.com>');
+});
+
 /** @return array{sourceRoot: string, worktree: string, branch: string, processes: ProcessFactory} */
 function legacyAcquisitionWorktree(): array
 {

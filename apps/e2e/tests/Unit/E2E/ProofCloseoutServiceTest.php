@@ -46,8 +46,6 @@ function closeoutGitFixture(): array
     mkdir($primary, 0700);
     foreach ([
         ['git', 'init', '-q', '-b', 'main', $primary],
-        ['git', '-C', $primary, 'config', 'user.email', 'developer@example.com'],
-        ['git', '-C', $primary, 'config', 'user.name', 'Orbit Developer'],
     ] as $command) {
         expect(Process::run($command)->successful())->toBeTrue();
     }
@@ -223,6 +221,14 @@ function closeoutService(
         $replace,
     );
 }
+
+it('commits the fixture without an identity in the shared repository configuration', function (): void {
+    $git = closeoutGitFixture();
+
+    expect(Process::run(['git', '-C', $git['worktree'], 'config', '--local', '--get-regexp', '^user\\.'])->exitCode())->toBe(1)
+        ->and(trim(Process::run(['git', '-C', $git['worktree'], 'log', '-1', '--format=%an <%ae>'])->output()))
+        ->toBe('Orbit Developer <developer@example.com>');
+});
 
 it('installs a declared replacement before exact retained-proof cleanup', function (): void {
     $git = closeoutGitFixture();
