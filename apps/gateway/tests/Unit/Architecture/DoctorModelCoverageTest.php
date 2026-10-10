@@ -8,6 +8,10 @@ use App\Models\AgentThread;
 use App\Models\AgentThreadSendLease;
 use App\Models\Annotation;
 use App\Models\Cluster;
+use App\Models\ConnEnvironment;
+use App\Models\ConnPairing;
+use App\Models\ConnProfile;
+use App\Models\ConnProfileBinding;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\DatabaseServer;
@@ -55,10 +59,6 @@ use App\Models\RouteTarget;
 use App\Models\Schedule;
 use App\Models\ScheduleDefinition;
 use App\Models\Setting;
-use App\Models\T3Environment;
-use App\Models\T3Pairing;
-use App\Models\T3Profile;
-use App\Models\T3ProfileBinding;
 use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskComment;
@@ -139,10 +139,10 @@ it('partitions every persisted model across doctor dispositions', function (): v
         TaskCheck::class,
         TaskQuestion::class,
         TaskReviewedCommit::class,
-        T3Profile::class,
-        T3ProfileBinding::class,
-        T3Environment::class,
-        T3Pairing::class,
+        ConnProfile::class,
+        ConnProfileBinding::class,
+        ConnEnvironment::class,
+        ConnPairing::class,
     ];
     $modelsDirectory = new ReflectionClass(Node::class)->getFileName();
     if (! is_string($modelsDirectory)) {
