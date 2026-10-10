@@ -1,0 +1,3 @@
+[install]
+# Routine releases wait three days. See the Dependencies section of docs/contributor-guide.md.
+minimumReleaseAge = 259200
