@@ -382,6 +382,54 @@ describe('a start that fails after provisioning', function (): void {
     });
 });
 
+describe('the end of a claim', function (): void {
+    beforeEach(function (): void {
+        $this->freezeTime();
+    });
+
+    it('keeps the reservation of a newer claim that a cancel ended while the older claim still ran', function (): void {
+        claim_hol_enable();
+        $project = claim_hol_app();
+        $group = claim_hol_group($project, 'Overtaken');
+        claim_hol_recording_remover();
+        app()->instance(InstanceProvisioning::class, new class($project) implements InstanceProvisioning
+        {
+            public function __construct(private Project $project) {}
+
+            public function provision(InstanceProvisionIntent $intent): ?Instance
+            {
+                // The tick released this claim, a newer claim reserved the group, and a cancel ended it.
+                test()->travel(5)->seconds();
+                Task::topLevel()->whereKey($intent->group->id)->update(['status' => TaskGroupStatus::Cancelled, 'reserved_at' => now()]);
+
+                return claim_hol_instance($this->project, 'task-'.$intent->group->id);
+            }
+        });
+
+        expect(app(TaskScheduler::class)->claimNext())->toBeNull()
+            ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Cancelled)
+            ->and($group->fresh()?->reserved_at?->equalTo(now()))->toBeTrue();
+    });
+
+    it('keeps the reservation of a group that the claim could not release from reserved', function (): void {
+        Exceptions::fake();
+        claim_hol_enable();
+        $project = claim_hol_app();
+        $group = claim_hol_group($project, 'Stuck');
+        app()->instance(InstanceProvisioning::class, claim_hol_recording_provisioning($project));
+        claim_hol_spawner();
+        Task::saving(static function (Task $saved) use ($group): void {
+            if ($saved->id === $group->id && $saved->status !== TaskGroupStatus::Reserved) {
+                throw new QueryException('sqlite', 'update "tasks" set "status" = ?', [$saved->status->value], new PDOException('database is locked'));
+            }
+        });
+
+        expect(app(TaskScheduler::class)->claimNext())->toBeNull()
+            ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Reserved)
+            ->and($group->fresh()?->reserved_at?->equalTo(now()))->toBeTrue();
+    });
+});
+
 describe('the stale reservation sweep', function (): void {
     beforeEach(function (): void {
         $this->freezeTime();
