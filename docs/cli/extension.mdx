@@ -37,7 +37,7 @@ Each command accepts `--json`. Enable and disable need Gateway access.
 | Client | Behavior |
 | --- | --- |
 | API | The operations stay registered. Each one refuses with HTTP 409 `extension.disabled` and changes nothing. |
-| MCP | `tools/list` and `/mcp/search` omit the tools. A direct `tools/call` or `execute_tools` call returns a tool error with `extension.disabled`. See [MCP errors](/reference/mcp#tools). A switch that adds or removes tools ends open `/mcp` sessions, so the client lists the tools again. See [tool list changes](/reference/mcp#tool-list-changes). |
+| MCP | `tools/list` and `/mcp/search` omit the tools. A direct `tools/call` or `execute_tools` call returns a tool error with `extension.disabled`. See [MCP errors](/reference/mcp#tools). A connected client sees the change when it lists the tools again. See [tool list changes](/reference/mcp#tool-list-changes). |
 | CLI | `list`, `help`, and completion hide the family. A direct call reaches the Gateway, which refuses it with `extension.disabled`. |
 | Web app | Navigation hides the extension's pages. The app reads the switches every 30 seconds. |
 

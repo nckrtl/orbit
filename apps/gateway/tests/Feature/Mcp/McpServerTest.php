@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use App\Domain\Routes\RouteRemovalProjector;
 use App\Domain\Shared\LifecycleStatus;
-use App\Http\Mcp\ToolManifest;
 use App\Http\Streaming\DeploymentStreamConnection;
 use App\Http\Streaming\NativeDeploymentStreamConnection;
 use App\Infrastructure\Processes\CommandDeadline;
@@ -39,33 +38,6 @@ function mcp_message(TestResponse $response): array
     preg_match_all('/^data: (.+)$/m', $response->streamedContent(), $matches);
 
     return json_decode((string) end($matches[1]), true);
-}
-
-/**
- * Serves a copy of the shipped tool manifest, changed by $change and written in a different format.
- *
- * @param  Closure(stdClass): mixed  $change
- */
-function mcp_serve_manifest(mixed $test, Closure $change): void
-{
-    $manifest = json_decode((string) file_get_contents(resource_path('mcp/tools.json')), false, flags: JSON_THROW_ON_ERROR);
-    $change($manifest);
-    $path = (string) tempnam(sys_get_temp_dir(), 'mcp-tools-');
-    $test->manifests[] = $path;
-    file_put_contents($path, json_encode($manifest, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
-    app()->instance(ToolManifest::class, new ToolManifest($path));
-}
-
-/** The first tool that no extension switch can remove. */
-function mcp_core_tool(stdClass $manifest): stdClass
-{
-    foreach ($manifest->tools as $tool) {
-        if ($tool->extension === null) {
-            return $tool;
-        }
-    }
-
-    throw new RuntimeException('The manifest has no core tool.');
 }
 
 /**
@@ -285,113 +257,37 @@ describe('POST /mcp', function (): void {
     });
 });
 
-describe('/mcp sessions', function (): void {
+describe('/mcp tool list changes', function (): void {
     beforeEach(function (): void {
-        $this->initialize = fn (): TestResponse => mcp_call($this, 'initialize', [
+        $initialized = mcp_call($this, 'initialize', [
             'protocolVersion' => '2025-06-18',
             'capabilities' => (object) [],
             'clientInfo' => ['name' => 'pest', 'version' => '1.0.0'],
         ]);
-    });
 
-    afterEach(function (): void {
-        foreach ($this->manifests ?? [] as $path) {
-            @unlink($path);
-        }
-    });
+        $initialized->assertOk();
+        expect($initialized->json('result.capabilities.tools.listChanged'))->toBeFalse();
 
-    it('names the tool list in the session id and does not promise list_changed notifications', function (): void {
-        $response = ($this->initialize)();
-
-        expect($response->json('result.capabilities.tools.listChanged'))->toBeFalse()
-            ->and($response->headers->get('Mcp-Session-Id'))->toMatch('/\A[0-9a-f]{16}\.[0-9a-f]{32}\z/');
-
-        $session = $response->headers->get('Mcp-Session-Id');
-
-        $this->withHeader('Mcp-Session-Id', $session);
-        $listed = mcp_call($this, 'tools/list');
-
-        $listed->assertOk();
-        expect($listed->json('result.tools'))->not->toBeEmpty()
-            ->and($listed->headers->has('Mcp-Session-Id'))->toBeFalse();
-    });
-
-    it('ends a session opened under an older tool list so the client lists the tools again', function (): void {
-        $session = ($this->initialize)()->headers->get('Mcp-Session-Id');
+        // The tool list changes after the client connected. The client still sends the session id it holds.
         $this->postJson('/api/v1/extensions/tasks/enable')->assertOk();
-        $this->withHeader('Mcp-Session-Id', $session);
-
-        $response = mcp_call($this, 'tools/call', ['name' => 'node-list', 'arguments' => (object) []]);
-
-        $response->assertNotFound()
-            ->assertExactJson(['jsonrpc' => '2.0', 'id' => null, 'error' => ['code' => -32001, 'message' => 'Session not found']]);
-        expect(Activity::query()->where('command', 'node:list')->exists())->toBeFalse();
-
-        $this->flushHeaders();
-        $renewed = ($this->initialize)()->headers->get('Mcp-Session-Id');
-        $this->withHeader('Mcp-Session-Id', $renewed);
-        $names = array_column(mcp_call($this, 'tools/list')->json('result.tools'), 'name');
-
-        expect($renewed)->not->toBe($session)
-            ->and($names)->toContain('tasks-create');
+        $this->withHeader('Mcp-Session-Id', '0123456789abcdef.0123456789abcdef0123456789abcdef');
     });
 
-    it('keeps a session when a release only rewords tools or reformats the manifest', function (): void {
-        $session = ($this->initialize)()->headers->get('Mcp-Session-Id');
-        mcp_serve_manifest($this, static function (stdClass $manifest): void {
-            foreach ($manifest->tools as $tool) {
-                $tool->title .= ' (renamed)';
-                $tool->description .= ' Reworded.';
-            }
+    it('keeps serving a session opened under an older tool list', function (): void {
+        $called = mcp_call($this, 'tools/call', ['name' => 'node-list', 'arguments' => (object) []]);
 
-            // Reordered schema keys describe the same schema.
-            $tool = mcp_core_tool($manifest);
-            $tool->input_schema = (object) array_reverse((array) $tool->input_schema, true);
-        });
-        $this->withHeader('Mcp-Session-Id', $session);
-
-        $listed = mcp_call($this, 'tools/list');
-
-        $listed->assertOk();
-        expect($listed->json('result.tools.0.description'))->toEndWith('Reworded.');
+        $called->assertOk();
+        expect($called->json('result.isError'))->toBeFalse()
+            ->and(Activity::query()->where('command', 'node:list')->exists())->toBeTrue()
+            ->and(array_column(mcp_call($this, 'tools/list')->assertOk()->json('result.tools'), 'name'))->toContain('tasks-create');
     });
 
-    it('ends a session when a release changes what a client may call', function (Closure $change): void {
-        $session = ($this->initialize)()->headers->get('Mcp-Session-Id');
-        mcp_serve_manifest($this, $change);
-        $this->withHeader('Mcp-Session-Id', $session);
+    it('answers a call to a removed tool with a JSON-RPC error, not an ended session', function (): void {
+        $called = mcp_call($this, 'tools/call', ['name' => 'node-list-removed', 'arguments' => (object) []]);
 
-        mcp_call($this, 'tools/list')->assertNotFound();
-    })->with([
-        'a renamed tool' => [static function (stdClass $manifest): void {
-            mcp_core_tool($manifest)->name .= '-renamed';
-        }],
-        'a changed input schema' => [static function (stdClass $manifest): void {
-            mcp_core_tool($manifest)->input_schema->properties->added = (object) ['type' => 'string'];
-        }],
-        'a removed tool' => [static function (stdClass $manifest): void {
-            array_shift($manifest->tools);
-        }],
-    ]);
-
-    it('keeps serving a client that has no session id', function (): void {
-        mcp_call($this, 'tools/list')->assertOk();
-    });
-
-    it('offers only the initialize handshake to a client that probes with server/discover', function (): void {
-        $response = $this->withHeaders(['MCP-Protocol-Version' => '2026-07-28', 'Mcp-Method' => 'server/discover'])->postJson('/mcp', [
-            'jsonrpc' => '2.0',
-            'id' => 1,
-            'method' => 'server/discover',
-            'params' => ['_meta' => [
-                'io.modelcontextprotocol/protocolVersion' => '2026-07-28',
-                'io.modelcontextprotocol/clientCapabilities' => (object) [],
-            ]],
-        ]);
-
-        $response->assertOk();
-        expect($response->json('result.supportedVersions'))->not->toBeEmpty()->not->toContain('2026-07-28')
-            ->and($response->json('result.capabilities.tools.listChanged'))->toBeFalse();
+        expect($called->status())->not->toBe(404)
+            ->and($called->json('error.code'))->toBe(-32602)
+            ->and($called->json('error.message'))->toContain('Tool [node-list-removed] not found.', 'list the tools again');
     });
 });
 

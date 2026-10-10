@@ -42,7 +42,6 @@ class OrbitServer extends Server
     protected function boot(): void
     {
         $this->methods['tools/call'] = ExtensionAwareCallTool::class;
-        $this->methods['server/discover'] = InitializeHandshakeDiscover::class;
         $this->tools = $this->catalogue();
     }
 

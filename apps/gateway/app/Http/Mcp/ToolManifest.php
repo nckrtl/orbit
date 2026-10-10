@@ -19,12 +19,9 @@ final readonly class ToolManifest
 {
     public function __construct(private string $path) {}
 
-    /** The manifest this release ships, unless the container holds another one. */
     public static function default(): self
     {
-        $bound = app()->bound(self::class) ? app(self::class) : null;
-
-        return $bound instanceof self ? $bound : new self(resource_path('mcp/tools.json'));
+        return new self(resource_path('mcp/tools.json'));
     }
 
     /** @return list<ToolDefinition> */
@@ -56,62 +53,15 @@ final readonly class ToolManifest
         ));
     }
 
-    /**
-     * Names the tool list a client caches: the name and input schema of each tool the enabled extensions
-     * offer. A change to a description, a title, or the file's formatting keeps the version, so only a
-     * release or an extension switch that changes what a client may call gives a new one.
-     */
-    public function version(): string
-    {
-        $tools = [];
-
-        foreach ($this->offered() as $definition) {
-            $tools[$definition->name] = self::canonical($definition->inputSchema);
-        }
-
-        ksort($tools, SORT_STRING);
-
-        return substr(hash('sha256', json_encode($tools, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)), 0, 16);
-    }
-
     /** @return list<ApiOperationTool> */
     public function tools(ApiDispatcher $dispatcher): array
     {
-        return array_map(
+        $extensions = app(ExtensionStore::class);
+
+        return array_values(array_map(
             static fn (ToolDefinition $definition): ApiOperationTool => new ApiOperationTool($definition, $dispatcher),
-            $this->offered(),
-        );
-    }
-
-    /**
-     * The definitions whose extension, if any, is enabled.
-     *
-     * @return list<ToolDefinition>
-     */
-    private function offered(): array
-    {
-        $enabled = app(ExtensionStore::class)->all();
-
-        return array_values(array_filter(
-            $this->definitions(),
-            static fn (ToolDefinition $definition): bool => $definition->extension === null || ($enabled[$definition->extension] ?? false),
+            array_filter($this->definitions(), static fn (ToolDefinition $definition): bool => $definition->extension === null || $extensions->enabled($definition->extension)),
         ));
-    }
-
-    /** Sorts object keys, so a reordered schema keeps its version. A list keeps its order. */
-    private static function canonical(mixed $value): mixed
-    {
-        if (! is_array($value)) {
-            return $value;
-        }
-
-        $value = array_map(self::canonical(...), $value);
-
-        if (! array_is_list($value)) {
-            ksort($value, SORT_STRING);
-        }
-
-        return $value;
     }
 
     /**

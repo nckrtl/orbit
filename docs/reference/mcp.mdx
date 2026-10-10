@@ -29,17 +29,15 @@ One MCP request has one 570-second command deadline, the same deadline as one AP
 
 ## Tool list changes
 
-The tool list a client caches is the name and input schema of each tool that the enabled [extensions](/cli/extension) offer. A release that changes a name or an input schema in `tools.json`, or an extension switch that adds or removes tools, changes that list. A release that changes only descriptions, titles, or formatting does not. The Gateway does not push a change. It ends the sessions that were opened under the old list instead:
+A client fetches the tool list when it connects and keeps it. A release that adds, removes, or changes a tool in `tools.json`, or an extension switch, changes the list on the Gateway at once. The server declares `tools.listChanged` as `false`, because it never sends `notifications/tools/list_changed`. A connected client keeps its list until it lists the tools again, which most clients do only when they connect.
 
-- `initialize` returns an `Mcp-Session-Id` header. The id starts with the tool list version.
-- A request whose session id names an older version receives HTTP 404 with the JSON-RPC error `-32001` `Session not found`. The Gateway does not run that request.
-- The streamable HTTP transport says that the client must then send `initialize` again without a session id. The client then lists the tools again.
+The Gateway never ends a session because the list changed. Every request is served against the current list:
 
-Not every client does this. The reference TypeScript SDK (1.30) raises the 404 as an error and keeps the old session id, so a host built on it must open a new session itself. Until it does, every request receives the same 404. Restart or reconnect the server in such a host; in Claude Code, use `/mcp` and reconnect `orbit`.
+- A call to a tool that still exists runs as usual.
+- A call to a tool that was removed or renamed receives HTTP 400 with the JSON-RPC error `-32602` `Tool [name] not found`. The message tells the client to list the tools again. The Gateway runs nothing.
+- A call with arguments that a changed input schema no longer accepts receives the operation's usual tool error, such as `validation.failed`.
 
-The server declares `tools.listChanged` as `false`, because it never sends `notifications/tools/list_changed`. A request without a session id is served as before. The Gateway stores no session state.
-
-A `server/discover` probe receives only the protocol versions that use `initialize`, so a client that probes falls back to `initialize` and gets a session. Requests in the 2026-07-28 revision still work, but a client on that revision is not told of a new tool list until it connects again. `/mcp/search` lists the same two tools after every change, and `search_tools` always searches the current catalogue, so it does not end sessions.
+To see a new tool, reconnect the MCP server or start a new session. In Claude Code, use `/mcp` and reconnect `orbit`. `/mcp/search` lists the same two tools after every change, and `search_tools` always searches the current catalogue.
 
 ## Identity and access
 
@@ -127,9 +125,9 @@ The API identifies a caller by WireGuard address. A second credential would crea
 
 An MCP server that wraps CLI commands keeps the process start and the CLI install on the agent's machine, and parses output that the API already returns as JSON.
 
-### Sessions end instead of a pushed notification
+### No pushed or forced tool list refresh
 
-A pushed `notifications/tools/list_changed` needs a stream that stays open: `GET /mcp` in the `initialize` revisions, or `subscriptions/listen` in the 2026-07-28 revision. Each open stream would hold one of the Gateway's eight PHP-FPM workers, and PHP-FPM ends every request after 600 seconds. A session id that names the tool list version needs no stream and no stored state. A client that does not handle the 404 must reconnect, so the version covers only names and input schemas, and a reworded description does not end a session.
+A pushed `notifications/tools/list_changed` needs a stream that stays open: `GET /mcp` in the `initialize` revisions, or `subscriptions/listen` in the 2026-07-28 revision. Each open stream would hold one of the Gateway's eight PHP-FPM workers, and PHP-FPM ends every request after 600 seconds. Sending the notification inside the reply to an ordinary request needs no held stream, but the stateless server would then send it on every later request of that session. Ending a session with HTTP 404 makes a spec-compliant client initialize again and list the tools, but a client that does not handle the 404 fails every call until it restarts. A stale list costs a client at most a reconnect; a failing session stops its work. The Gateway therefore serves every session and explains a missing tool in the error.
 
 ### Typed tools, not one command tool
 
