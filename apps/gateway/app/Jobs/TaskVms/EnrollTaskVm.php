@@ -25,7 +25,7 @@ final class EnrollTaskVm implements ShouldBeUnique, ShouldQueue
 {
     use ProvisionsTaskVm;
 
-    /** Each poll releases the job and counts as a try. 60 tries cover the boot window many times over; they also bound a job that a worker stop keeps cutting off. */
+    /** Each release counts as a try. 60 tries cover the boot window many times over; they also bound a job that a worker stop keeps cutting off. */
     public int $tries = 60;
 
     public int $maxExceptions = 3;
@@ -33,6 +33,15 @@ final class EnrollTaskVm implements ShouldBeUnique, ShouldQueue
     public int $backoff = 30;
 
     public int $timeout = 1500;
+
+    /**
+     * A VM from the base image is done with cloud-init about 20 seconds after launch. The job checks it every
+     * 2 seconds for up to 2 minutes in one run, because a released job waits for the worker's next start,
+     * up to a minute later: the worker stops as soon as no job is due.
+     */
+    private const int InlinePollSeconds = 2;
+
+    private const int InlinePolls = 60;
 
     private const int PollSeconds = 15;
 
@@ -61,6 +70,10 @@ final class EnrollTaskVm implements ShouldBeUnique, ShouldQueue
 
         try {
             $address = $this->bootstrappedAddress($vm, $provider);
+            for ($poll = 0; $address === null && $poll < self::InlinePolls; $poll++) {
+                Sleep::for(self::InlinePollSeconds)->seconds();
+                $address = $this->bootstrappedAddress($vm, $provider);
+            }
         } catch (TaskVmException $exception) {
             if (! in_array($exception->errorCode, self::Permanent, true)) {
                 throw $exception;

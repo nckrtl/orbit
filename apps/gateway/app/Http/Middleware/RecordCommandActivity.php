@@ -607,12 +607,12 @@ final readonly class RecordCommandActivity
             return [];
         }
 
-        if ($command === 't3:environment:register') {
+        if ($command === 'conn:environment:register') {
             // The admin session never enters Activity.
             return $this->inputSanitizer->sanitizeProperties($request->only(['environment_id', 'label', 'url']));
         }
 
-        if ($command === 't3:profile:settings:update') {
+        if ($command === 'conn:profile:settings:update') {
             // A settings document can hold workspace pictures; Activity keeps the version it replaced.
             return $this->inputSanitizer->sanitizeProperties($request->only(['version']));
         }
