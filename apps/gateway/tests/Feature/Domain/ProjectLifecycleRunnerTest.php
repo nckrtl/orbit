@@ -149,6 +149,24 @@ it('reports a busy lifecycle lock as a busy result', function (): void {
         });
 });
 
+it('locks the checkout directory itself and leaves no lock file in the temporary directory', function (): void {
+    $this->steps->create($this->instance->project, LifecyclePhase::Setup, new LifecycleStep('install', 'touch installed'), null, null);
+    $legacyLock = '/tmp/orbit-lifecycle-'.posix_geteuid().'-'.hash('sha256', $this->sandbox).'.lock';
+    $held = fopen($this->sandbox, 'r');
+    expect($held !== false && flock($held, LOCK_EX | LOCK_NB))->toBeTrue();
+
+    try {
+        expect(fn () => $this->runner->run($this->instance, LifecyclePhase::Setup))
+            ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('instance.lifecycle_busy'));
+    } finally {
+        fclose($held);
+    }
+
+    expect($this->runner->run($this->instance, LifecyclePhase::Setup))->toBeTrue()
+        ->and(file_exists($this->sandbox.'/installed'))->toBeTrue()
+        ->and(file_exists($legacyLock))->toBeFalse();
+});
+
 it('runs an ordered snapshot from the checkout and keeps commands out of argv', function (): void {
     $this->steps->create($this->instance->project, LifecyclePhase::Setup, new LifecycleStep('first', 'printf first > result'), null, null);
     $this->steps->create($this->instance->project, LifecyclePhase::Setup, new LifecycleStep('second', 'printf second >> result'), null, null);

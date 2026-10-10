@@ -140,7 +140,8 @@ describe('development defaults in place', function (): void {
         fclose($lock);
 
         expect($result?->failure?->errorCode)->toBe('instance.lifecycle_busy')
-            ->and(plain_git($this->fixture->home, 'rev-parse', 'HEAD'))->toBe($this->fixture->initialCommit);
+            ->and(plain_git($this->fixture->home, 'rev-parse', 'HEAD'))->toBe($this->fixture->initialCommit)
+            ->and(file_exists('/tmp/orbit-lifecycle-'.posix_geteuid().'-'.hash('sha256', $this->fixture->home).'.lock'))->toBeFalse();
     });
 
     it('stops a step at its timeout', function (): void {

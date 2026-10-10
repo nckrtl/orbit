@@ -1,5 +1,4 @@
 import fcntl
-import hashlib
 import json
 import os
 import signal
@@ -47,8 +46,8 @@ try:
     checkout = payload['checkout']
     if not os.path.isabs(checkout) or os.path.realpath(checkout) != checkout:
         raise SystemExit(125)
-    lock_path = '/tmp/orbit-lifecycle-' + str(os.getuid()) + '-' + hashlib.sha256(checkout.encode()).hexdigest() + '.lock'
-    lock = os.open(lock_path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    # The lifecycle lock is a flock on the checkout directory itself, so it leaves no file behind.
+    lock = os.open(checkout, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError:

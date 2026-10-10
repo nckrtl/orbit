@@ -162,7 +162,7 @@ final class DevelopmentDeploymentFixture
     /** Holds the lock that a setup or teardown step holds on a checkout, until the handle closes. */
     public static function holdLifecycleLock(string $checkout): mixed
     {
-        $handle = fopen('/tmp/orbit-lifecycle-'.trim(self::command(['id', '-u'])).'-'.hash('sha256', $checkout).'.lock', 'c');
+        $handle = fopen($checkout, 'r');
         if ($handle === false || ! flock($handle, LOCK_EX | LOCK_NB)) {
             throw new \RuntimeException('The lifecycle lock is not available.');
         }

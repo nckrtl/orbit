@@ -56,15 +56,14 @@ final class DevelopmentCheckoutProgram
                 guard_file "$state/identity"
                 test "$(cat -- "$state/identity")" = "$identity"
             }
-            # Setup and teardown steps hold this lock on their checkout while they run. `lock_fd` names the
-            # last lock taken, so a process that outlives the program can be started without it.
+            # Setup and teardown steps hold this lock, a flock on their checkout directory, while they run.
+            # `lock_fd` names the last lock taken, so a process that outlives the program can be started without it.
             lifecycle_lock() {
-                local checkout=$1 lock
-                lock="/tmp/orbit-lifecycle-$(id -u)-$(printf '%s' "$checkout" | sha256sum | cut -d ' ' -f 1).lock"
-                test ! -L "$lock" || exit 1
-                exec {lock_fd}<>"$lock"
-                test ! -L "$lock" || exit 1
-                test "$(stat -c '%d:%i:%u' -- "$lock")" = "$(stat -L -c '%d:%i' -- "/proc/self/fd/$lock_fd"):$(id -u)"
+                local checkout=$1
+                test -d "$checkout" && test ! -L "$checkout" || exit 1
+                exec {lock_fd}<"$checkout"
+                test ! -L "$checkout" || exit 1
+                test "$(stat -c '%d:%i' -- "$checkout")" = "$(stat -L -c '%d:%i' -- "/proc/self/fd/$lock_fd")"
                 flock -n -x "$lock_fd" || exit 75
             }
             refuse_dirty() {
@@ -292,8 +291,11 @@ final class DevelopmentCheckoutProgram
             guard_legacy
             guard_file "$state/converted"
             test "$(git -C "$home" rev-parse --verify HEAD)" = "$(cat -- "$state/converted")"
+            # A seeded checkout that no longer exists cannot run a step.
             for consumer in "$@"; do
-                lifecycle_lock "$consumer"
+                if [ -e "$consumer" ] || [ -L "$consumer" ]; then
+                    lifecycle_lock "$consumer"
+                fi
             done
             if [ -e "$current" ] || [ -L "$current" ]; then
                 test -L "$current"

@@ -1383,6 +1383,24 @@ it('checks local HEAD before rename without contacting origin or changing Git so
     }
 });
 
+it('reports a held checkout lifecycle lock before rename without leaving a lock file', function (): void {
+    $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'dev');
+    $checkout = (string) $instance->checkout_path;
+    $legacyLock = '/tmp/orbit-lifecycle-'.posix_geteuid().'-'.hash('sha256', $checkout).'.lock';
+    $held = fopen($checkout, 'r');
+    expect($held !== false && flock($held, LOCK_EX | LOCK_NB))->toBeTrue();
+
+    try {
+        expect(fn () => $this->source->assertBranchCheckedOut($instance, 'main'))
+            ->toThrow(fn (ResourceOperationException $e) => expect($e->errorCode)->toBe('instance.lifecycle_busy'));
+    } finally {
+        fclose($held);
+    }
+
+    $this->source->assertBranchCheckedOut($instance, (string) $instance->branch);
+    expect(file_exists($legacyLock))->toBeFalse();
+});
+
 it('inspects unresolved prepared repositories and absent reserved paths without force', function (string $sourceState): void {
     $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'stuck');
     $this->files->ensureDirectoryExists($this->appsRoot);

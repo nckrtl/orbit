@@ -197,10 +197,8 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
                         export GIT_OPTIONAL_LOCKS=0
                         guard_parent_chain "$checkout_parent" "$allowed_root"
                         inspect_prepared_repository identity
-                        lock_key=$(printf '%s' "$checkout" | sha256sum | cut -d ' ' -f 1)
-                        python3 -c 'import fcntl, os, sys; p=sys.argv[1]; fd=os.open(p, os.O_CREAT|os.O_RDWR|os.O_NOFOLLOW, 0o600)
-                        try: fcntl.flock(fd, fcntl.LOCK_EX|fcntl.LOCK_NB)
-                        except BlockingIOError: sys.exit(75)' "/tmp/orbit-lifecycle-$(id -u)-$lock_key.lock"
+                        test -d "$checkout" && test ! -L "$checkout" || exit 1
+                        flock -n -x -E 75 "$checkout" true
                         current=$(git -C "$checkout" symbolic-ref --quiet --short HEAD || true)
                         origin=$(git -C "$checkout" config --get remote.origin.url)
                         printf '%s' "$origin" | base64 --wrap=0
