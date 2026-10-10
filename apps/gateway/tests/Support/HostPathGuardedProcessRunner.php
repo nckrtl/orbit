@@ -18,7 +18,7 @@ use LogicException;
  */
 final readonly class HostPathGuardedProcessRunner implements ProcessRunner
 {
-    private const string HostPath = '#(?<![\w.~/-])/(?:etc/systemd|etc/dnsmasq|var/lib/orbit)(?![\w.-])#';
+    private const string HostPath = '#(?<![\w.~/-])/(?:etc/systemd|etc/dnsmasq(?:\.d|\.conf)?|var/lib/orbit)(?![\w.-])#';
 
     public function __construct(private ProcessRunner $runner) {}
 

@@ -16,9 +16,10 @@ it('refuses a privileged command that names a managed host path before it runs',
 
     expect(file_exists($marker))->toBeFalse();
 })->with([
-    'systemd unit' => ['unit_directory=/etc/systemd/system'],
-    'Orbit state' => ['catalog="/var/lib/orbit/private-dns/catalog.json"'],
-    'dnsmasq fragment' => ['install -m 0644 x /etc/dnsmasq.d/orbit-records.conf'],
+    'systemd unit' => [': unit_directory=/etc/systemd/system'],
+    'Orbit state' => [': "/var/lib/orbit/private-dns/catalog.json"'],
+    'dnsmasq fragment' => [': /etc/dnsmasq.d/orbit-records.conf'],
+    'dnsmasq configuration' => [': /etc/dnsmasq.conf'],
 ]);
 
 it('allows the same paths under a temporary root and unprivileged reads', function (): void {
