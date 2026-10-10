@@ -6,9 +6,11 @@ namespace App\Http\Mcp;
 
 use App\Domain\Extensions\ExtensionStore;
 use Generator;
+use Laravel\Mcp\Exceptions\JsonRpcException;
 use Laravel\Mcp\Server\Contracts\Method;
 use Laravel\Mcp\Server\Methods\CallTool;
 use Laravel\Mcp\Server\ServerContext;
+use Laravel\Mcp\Server\Tool;
 use Laravel\Mcp\Transport\JsonRpcRequest;
 use Laravel\Mcp\Transport\JsonRpcResponse;
 
@@ -35,6 +37,16 @@ final class ExtensionAwareCallTool implements Method
                         'isError' => true,
                     ]);
                 }
+            }
+
+            // A client keeps the tool list it fetched when it connected. After a release removes or renames a
+            // tool, the client can still call the old name, so the error tells it how to refresh the list.
+            if (! $context->tools()->contains(static fn (Tool $tool): bool => $tool->name() === $name)) {
+                throw new JsonRpcException(
+                    "Tool [{$name}] not found. The Gateway's tool list may have changed since this client listed it: list the tools again, or reconnect the MCP server.",
+                    -32602,
+                    $request->id,
+                );
             }
         }
 

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use App\Domain\Routes\RouteRemovalProjector;
 use App\Domain\Shared\LifecycleStatus;
+use App\Http\Streaming\DeploymentStreamConnection;
+use App\Http\Streaming\NativeDeploymentStreamConnection;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Models\Activity;
 use App\Models\Node;
@@ -14,6 +16,7 @@ use Illuminate\Support\Facades\Event;
 use Illuminate\Testing\TestResponse;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Tests\Support\FakeRouteRemovalProjector;
+use Tests\Support\Orb220DeploymentApiFixture;
 
 /** @param array<string, mixed> $params */
 function mcp_call(mixed $test, string $method, array $params = [], string $endpoint = '/mcp'): TestResponse
@@ -35,6 +38,37 @@ function mcp_message(TestResponse $response): array
     preg_match_all('/^data: (.+)$/m', $response->streamedContent(), $matches);
 
     return json_decode((string) end($matches[1]), true);
+}
+
+/**
+ * The tool result text of an `instance-deploy` call, sent directly to /mcp or through `execute_tools`.
+ *
+ * @param  array<string, mixed>  $arguments
+ * @return array{string, list<array<string, mixed>>}
+ */
+function mcp_deploy(mixed $test, string $endpoint, array $arguments): array
+{
+    $call = $endpoint === '/mcp'
+        ? ['name' => 'instance-deploy', 'arguments' => $arguments]
+        : ['name' => 'execute_tools', 'arguments' => ['calls' => [['name' => 'instance-deploy', 'arguments' => $arguments]]]];
+
+    ob_start();
+
+    try {
+        $message = mcp_message(mcp_call($test, 'tools/call', $call, $endpoint));
+    } finally {
+        ob_end_clean();
+    }
+
+    $text = $message['result']['content'][0]['text'];
+    $payload = json_decode($text, true);
+
+    if ($endpoint !== '/mcp') {
+        expect($payload['ok'] ?? null)->toBeTrue((string) json_encode($payload['error'] ?? null));
+        $payload = json_decode($payload['results'][0]['content'][0]['text'], true);
+    }
+
+    return [$text, $payload['events'] ?? []];
 }
 
 beforeEach(function (): void {
@@ -153,6 +187,50 @@ describe('POST /mcp', function (): void {
             ->and($error['error']['code'])->toBeString();
     });
 
+    it('returns a streamed deploy as JSON-RPC instead of flushing it onto the MCP reply', function (): void {
+        $fixture = Orb220DeploymentApiFixture::create();
+        // The production connection echoes and flushes each event line, as it does for the CLI.
+        $this->app->instance(DeploymentStreamConnection::class, new NativeDeploymentStreamConnection);
+        $this->withServerVariables(['REMOTE_ADDR' => $fixture->caller->wireguard_ip]);
+
+        ob_start();
+
+        try {
+            $response = mcp_call($this, 'tools/call', ['name' => 'instance-deploy', 'arguments' => ['instance' => $fixture->instance->id]]);
+        } finally {
+            $leaked = (string) ob_get_clean();
+        }
+
+        $events = json_decode($response->json('result.content.0.text'), true)['events'] ?? [];
+
+        expect($leaked)->toBe('', 'Output sent before the MCP reply makes PHP send text/html headers.')
+            ->and($response->headers->get('Content-Type'))->toBe('application/json')
+            ->and($response->json('result.isError'))->toBeFalse()
+            ->and(array_column($events, 'type'))->toContain('phase', 'output')
+            ->and(end($events))->toMatchArray(['type' => 'result', 'status' => 'succeeded']);
+    });
+
+    it('keeps the result of a deploy with long output inside the reply limit', function (string $endpoint): void {
+        $fixture = Orb220DeploymentApiFixture::create();
+        // Six 16 KiB chunks: about 96 KiB of step output, 128 KiB as base64 events.
+        $fixture->deployment->prepareOutputChunks = 6;
+        $this->withServerVariables(['REMOTE_ADDR' => $fixture->caller->wireguard_ip]);
+
+        [$text, $events] = mcp_deploy($this, $endpoint, ['instance' => $fixture->instance->id]);
+        $truncated = array_values(array_filter($events, static fn (array $event): bool => $event['type'] === 'output_truncated'));
+        $kept = array_sum(array_map(
+            static fn (array $event): int => strlen((string) base64_decode((string) $event['data_base64'], true)),
+            array_filter($events, static fn (array $event): bool => $event['type'] === 'output'),
+        ));
+
+        expect(strlen($text))->toBeLessThan(65_536)
+            ->and($fixture->deployment->activations)->toBe(1)
+            ->and(end($events))->toMatchArray(['type' => 'result', 'status' => 'succeeded'])
+            ->and($truncated)->toHaveCount(1)
+            ->and($kept + $truncated[0]['dropped_bytes'])->toBe(6 * 16 * 1024 + strlen("output-secret\0bytes"))
+            ->and(array_column($events, 'phase'))->toContain('after_activation');
+    })->with(['/mcp', '/mcp/search']);
+
     it('refuses a caller that is not an active WireGuard peer', function (): void {
         $this->withServerVariables(['REMOTE_ADDR' => '203.0.113.9']);
 
@@ -176,6 +254,41 @@ describe('POST /mcp', function (): void {
 
         expect($response->json('result.isError'))->toBeTrue()
             ->and($error['status'])->toBe(403);
+    });
+});
+
+describe('/mcp tool list changes', function (): void {
+    beforeEach(function (): void {
+        $initialized = mcp_call($this, 'initialize', [
+            'protocolVersion' => '2025-06-18',
+            'capabilities' => (object) [],
+            'clientInfo' => ['name' => 'pest', 'version' => '1.0.0'],
+        ]);
+
+        $initialized->assertOk();
+        expect($initialized->json('result.capabilities.tools.listChanged'))->toBeFalse();
+
+        // The tool list changes after the client connected. The client still sends the session id it holds.
+        $this->postJson('/api/v1/extensions/tasks/enable')->assertOk();
+        $this->withHeader('Mcp-Session-Id', '0123456789abcdef.0123456789abcdef0123456789abcdef');
+    });
+
+    it('keeps serving a session opened under an older tool list', function (): void {
+        $called = mcp_call($this, 'tools/call', ['name' => 'node-list', 'arguments' => (object) []]);
+
+        $called->assertOk();
+        expect($called->json('result.isError'))->toBeFalse()
+            ->and(Activity::query()->where('command', 'node:list')->exists())->toBeTrue()
+            ->and(array_column(mcp_call($this, 'tools/list')->assertOk()->json('result.tools'), 'name'))->toContain('tasks-create');
+    });
+
+    it('answers a call to a removed tool with a JSON-RPC error, not an ended session', function (): void {
+        $called = mcp_call($this, 'tools/call', ['name' => 'node-list-removed', 'arguments' => (object) []]);
+
+        // HTTP 400 carries the JSON-RPC error. A 404 would tell the client that its session ended.
+        $called->assertStatus(400);
+        expect($called->json('error.code'))->toBe(-32602)
+            ->and($called->json('error.message'))->toContain('Tool [node-list-removed] not found.', 'list the tools again');
     });
 });
 
