@@ -17,6 +17,7 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
 use Closure;
+use Illuminate\Cache\Lock;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Sleep;
 use Throwable;
@@ -43,6 +44,8 @@ final readonly class IncusTaskVmImageBuilder
 
     private const int PollSeconds = 3;
 
+    private const int LockSeconds = 1500;
+
     private const string InstallAgent = <<<'BASH'
         candidate=/usr/local/bin/orbit-agent.orbit-candidate
         curl --fail --location --silent --show-error --connect-timeout 10 --max-time 300 --output "$candidate" -- "$1"
@@ -68,14 +71,16 @@ final readonly class IncusTaskVmImageBuilder
 
     /**
      * Builds the host's base image and returns its fingerprint. `$progress` hears each stage with its seconds.
+     * `$owner` names the build's lock, so a caller that is killed can {@see abandon()} its own build.
      *
      * @param  (Closure(string, float): void)|null  $progress
      *
      * @throws TaskVmException `task_vm.image_build_running` while another build of the host runs, else `task_vm.image_build_failed`
      */
-    public function build(TaskVmHost $host, Node $node, ?Closure $progress = null): string
+    public function build(TaskVmHost $host, Node $node, ?Closure $progress = null, ?string $owner = null): string
     {
-        $lock = Cache::lock('task-vms:image-build:'.$node->id, 3600);
+        // A build killed with SIGKILL cannot release its lock, so the lock lasts as long as the refresh job may run.
+        $lock = Cache::lock(self::lockName($node), self::LockSeconds, $owner);
         if (! $lock->get()) {
             throw new TaskVmException('task_vm.image_build_running', "A base image build of Node [{$node->name}] is already running.");
         }
@@ -84,10 +89,10 @@ final readonly class IncusTaskVmImageBuilder
         $builder = self::BuilderPrefix.$stamp;
         $smoke = $builder.'-smoke';
         $alias = TaskVmHost::BaseImage.'-'.$stamp;
-        $programs = $this->enrollmentPrograms();
         $unused = null;
 
         try {
+            $programs = $this->stage($node, 'render', $progress, fn (): array => $this->enrollmentPrograms());
             $this->stage($node, 'sweep', $progress, fn () => $this->sweep($host, $node));
             $this->stage($node, 'launch', $progress, fn () => $this->launch($host, $node, $builder, TaskVmHost::SourceImage, $this->cloudInit->renderImageBuilder($this->keys->publicKey())));
             $this->stage($node, 'cloud-init', $progress, fn () => $this->awaitCloudInit($host, $node, $builder));
@@ -105,13 +110,36 @@ final readonly class IncusTaskVmImageBuilder
             $this->stage($node, 'prune', $progress, fn (): array => $this->prune($host, $node, $published));
 
             return $published;
-        } catch (TaskVmException $exception) {
+        } catch (Throwable $exception) {
             $this->discard($host, $node, [$builder, $smoke], $unused);
 
             throw $exception;
         } finally {
             $lock->release();
         }
+    }
+
+    /**
+     * Cleans up after a build whose process stopped before its own cleanup ran, for example a job that hit
+     * its timeout or a command that got SIGTERM: deletes the builder and smoke VMs and releases the lock. It
+     * does nothing unless `$owner` still holds the host's build lock, so it never touches another build.
+     */
+    public function abandon(TaskVmHost $host, Node $node, string $owner): void
+    {
+        $lock = Cache::restoreLock(self::lockName($node), $owner);
+        if (! $lock instanceof Lock || ! $lock->isOwnedByCurrentProcess()) {
+            return;
+        }
+        try {
+            $this->sweep($host, $node);
+        } finally {
+            $lock->release();
+        }
+    }
+
+    private static function lockName(Node $node): string
+    {
+        return 'task-vms:image-build:'.$node->id;
     }
 
     /**

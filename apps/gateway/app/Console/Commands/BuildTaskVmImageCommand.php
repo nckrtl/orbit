@@ -28,9 +28,17 @@ final class BuildTaskVmImageCommand extends Command
         try {
             $node = $this->node((string) $this->argument('node'));
             $host = resolve(TaskVmSettings::class)->host($node->id);
+            $owner = 'command-'.bin2hex(random_bytes(8));
+            // A stopped command deletes its builder and frees the host for the next build.
+            $this->trap([SIGINT, SIGTERM], function (int $signal) use ($builder, $host, $node, $owner): never {
+                $builder->abandon($host, $node, $owner);
+                $this->error("Stopped by signal [{$signal}]. The builder VM is deleted and the current base image is kept.");
+
+                exit(self::FAILURE);
+            });
             $fingerprint = $builder->build($host, $node, function (string $stage, float $seconds): void {
                 $this->line(sprintf('%-22s %7.1fs', $stage, $seconds));
-            });
+            }, $owner);
         } catch (ResourceOperationException $exception) {
             $this->error("[{$exception->errorCode}] {$exception->getMessage()}");
 

@@ -213,6 +213,33 @@ describe('task VM setup scripts', function (): void {
         expect($check->getExitCode())->toBe(0, $check->getOutput());
     });
 
+    it('never creates a pool on a ZFS dataset that already exists', function (bool $exists): void {
+        // Stubs: Incus has no pool, `zfs list` finds the dataset or not, and every call is logged.
+        $bin = sys_get_temp_dir().'/orbit-task-vm-zfs-'.bin2hex(random_bytes(4));
+        mkdir($bin);
+        $log = $bin.'/calls.log';
+        file_put_contents($bin.'/incus', "#!/bin/sh\necho \"incus \$*\" >> {$log}\n[ \"\$1 \$2\" = 'storage show' ] && exit 1\nexit 0\n");
+        file_put_contents($bin.'/zfs', "#!/bin/sh\necho \"zfs \$*\" >> {$log}\nexit ".($exists ? 0 : 1)."\n");
+        file_put_contents($bin.'/ufw', "#!/bin/sh\nexit 0\n");
+        array_map(static fn (string $stub): bool => chmod($bin.'/'.$stub, 0755), ['incus', 'zfs', 'ufw']);
+        $bash = new ExecutableFinder()->find('bash') ?? '/bin/bash';
+        $process = new Process([$bash, '-s', '--', 'orbit-tasks', 'orbittask0', '10.252.0.0/24', 'orbit-tasks', 'img', 'data/backups']);
+        $process->setInput(file_get_contents(resource_path('task-vms/incus-host.sh')));
+        $process->setEnv(['PATH' => $bin.':'.getenv('PATH')]);
+        $process->run();
+        $calls = (string) file_get_contents($log);
+        array_map(unlink(...), glob($bin.'/*') ?: []);
+        rmdir($bin);
+
+        if ($exists) {
+            expect($process->getExitCode())->toBe(1)
+                ->and($process->getErrorOutput())->toContain('ZFS dataset [data/backups] already exists; name a new dataset for storage pool [orbit-tasks]')
+                ->and($calls)->toBe("incus storage show orbit-tasks\nzfs list -H -o name -- data/backups\n");
+        } else {
+            expect($calls)->toContain("zfs list -H -o name -- data/backups\nincus storage create orbit-tasks zfs source=data/backups\n");
+        }
+    })->with(['existing dataset' => true, 'new dataset' => false]);
+
     it('reject invalid arguments before they change anything', function (string $script, array $arguments, string $message): void {
         $bash = new ExecutableFinder()->find('bash') ?? '/bin/bash';
         $process = new Process([$bash, '-s', '--', ...$arguments]);

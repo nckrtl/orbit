@@ -55,6 +55,12 @@ main() {
     # ZFS pool: every VM and the base image volume are clones on it. An existing pool is only checked.
     if ! exists incus storage show "$pool"; then
         [ -n "$dataset" ] || fail "storage pool [$pool] does not exist and no ZFS dataset is set to create it"
+        # Incus takes over the dataset it creates a pool on, unmounts it, and destroys it with the pool. Only a
+        # dataset that does not exist yet is safe, and Incus creates it.
+        command -v zfs >/dev/null || fail 'zfs is not installed'
+        if zfs list -H -o name -- "$dataset" >/dev/null 2>&1; then
+            fail "ZFS dataset [$dataset] already exists; name a new dataset for storage pool [$pool]"
+        fi
         incus storage create "$pool" zfs "source=$dataset"
     fi
     [ "$(incus storage show "$pool" | sed -n 's/^driver: //p')" = zfs ] || fail "storage pool [$pool] is not a zfs pool"

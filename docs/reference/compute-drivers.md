@@ -127,7 +127,7 @@ Create and delete are idempotent by name. A running VM counts as created, and an
 
 Run `task-vms:prepare-host {node}` once for each host. It sends `resources/task-vms/incus-host.sh` to the host over SSH and runs it with `sudo -n bash -s --`. The script is idempotent and prints `{"ok":true}`.
 
-First it checks the ZFS storage pool that the host's `pool` names. It creates a missing pool from the host's `zfs_dataset`, such as `fast/orbit-tasks`. Without `zfs_dataset`, a missing pool fails. An existing pool must use the `zfs` driver. With `zfs_dataset` set, the pool's source must be that dataset. Then it sets up these parts:
+First it checks the ZFS storage pool that the host's `pool` names. It creates a missing pool from the host's `zfs_dataset`, such as `fast/orbit-tasks`. That dataset must not exist yet, and Incus creates it. The script refuses an existing dataset and calls no Incus command for it, because Incus would unmount that dataset and destroy it with the pool. Without `zfs_dataset`, a missing pool fails. An existing pool must use the `zfs` driver. With `zfs_dataset` set, the pool's source must be that dataset. Then it sets up these parts:
 
 - The Incus project, such as `orbit-tasks`, with `features.networks=false`, and the stock image alias `ubuntu-26.04-vm` from `images:ubuntu/26.04/cloud`. Only the [base image](#build-the-base-image) build launches it.
 - The bridge, such as `orbittask0`, with IPv4 NAT and no IPv6.
@@ -160,9 +160,11 @@ The builder's user-data adds three things to the task VM user-data: a package up
 
 The Chromium libraries are Playwright's `chromium` dependency list for Ubuntu 26.04, which covers `chromium` and `chromium-headless-shell`: `libasound2t64`, `libatk-bridge2.0-0t64`, `libatk1.0-0t64`, `libatspi2.0-0t64`, `libcairo2`, `libcups2t64`, `libdbus-1-3`, `libdrm2`, `libgbm1`, `libglib2.0-0t64`, `libnspr4`, `libnss3`, `libpango-1.0-0`, `libx11-6`, `libxcb1`, `libxcomposite1`, `libxdamage1`, `libxext6`, `libxfixes3`, `libxkbcommon0`, and `libxrandr2`. Playwright's xvfb and font list for headed runs is left out. The `app-dev` role prerequisites install PHP, Composer, Caddy, Docker, Vite+ with Node and pnpm, and Bun.
 
-The clean script removes the SSH host keys, the machine ID, every authorized key, the cloud-init state and its generated configuration, the logs, the APT package cache, temporary files, and shell history. So every VM from the image gets its own host keys, machine ID, and DHCP address, and cloud-init runs again on its first boot. The package lists stay, so enrollment's `apt-get update` fetches only changes. The builder never enrolls, so the image has no WireGuard key, agent secret, Caddy site, firewall rule, or Gateway record. Each VM gets those from its own enrollment.
+The clean script removes the SSH host keys, the machine ID, every authorized key, the cloud-init state and its generated configuration, the logs, the APT package cache, temporary files, and shell history. It also stops Docker, containerd, and Caddy, and removes the IDs they write on their first start: Docker's engine ID, containerd's UUID, and Caddy's instance UUID, storage clean record, and saved config. So every VM from the image gets its own host keys, machine ID, and DHCP address, and cloud-init runs again on its first boot. The package lists stay, so enrollment's `apt-get update` fetches only changes. The builder never enrolls, so the image has no WireGuard key, agent secret, Caddy site, firewall rule, or Gateway record. Each VM gets those from its own enrollment.
 
 The command deletes the builder and the smoke VM whether the build passes or fails. A failed build keeps the current base image. It deletes the new image when it already published one, and fails with `task_vm.image_build_failed`, which names the stage. Only one build of a host runs at a time. A second one fails with `task_vm.image_build_running`.
+
+A build that stops early cleans up too. A command stopped with SIGINT or SIGTERM deletes its builder and frees the host. When the nightly job runs past its timeout, the worker's failure handler does the same. A build killed with SIGKILL holds the host for at most 25 minutes. The next build deletes every builder and smoke VM that an earlier build left.
 
 Every night at 03:00, while task VMs are enabled, the Gateway scheduler queues the job `RefreshTaskVmBaseImages` on the `task-vms` queue. It rebuilds the base image of each configured host that already has one, one host after another. It leaves a host without a base image alone, so the first build is always `task-vms:build-image`. Until then, the job only reads the host's image list. The worker runs one job at a time, so a refresh delays other task VM jobs while it runs. A host that fails keeps its image, and the job fails after the other hosts, so `failed_jobs` records it.
 
@@ -231,7 +233,7 @@ Each host is a JSON object with these snake_case keys. Other keys are an error.
 | `project` | No | `orbit-tasks` | The Incus project |
 | `network` | No | `orbittask0` | The bridge name: `orbittask` and 1 to 6 lowercase letters or digits |
 | `pool` | No | `orbit-tasks` | The Incus storage pool for the base image and the VM root disks. It must use the `zfs` driver |
-| `zfs_dataset` | No | | The ZFS dataset from which `task-vms:prepare-host` creates `pool` when it is missing, such as `fast/orbit-tasks`. A dataset below a ZFS pool, not the pool itself |
+| `zfs_dataset` | No | | The ZFS dataset from which `task-vms:prepare-host` creates `pool` when it is missing, such as `fast/orbit-tasks`. A new dataset below a ZFS pool: not the pool itself, and not a dataset that exists |
 | `cpus` | No | `2` | The vCPUs of each VM, from 1 to 64 |
 | `memory` | No | `4GiB` | The memory of each VM, in `MiB` or `GiB` |
 | `disk` | No | `20GiB` | The root disk of each VM, in `MiB` or `GiB` |

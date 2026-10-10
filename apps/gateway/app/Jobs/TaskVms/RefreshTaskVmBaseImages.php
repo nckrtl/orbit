@@ -31,6 +31,9 @@ final class RefreshTaskVmBaseImages implements ShouldBeUnique, ShouldQueue
 
     public bool $failOnTimeout = true;
 
+    /** The owner of the build locks this job takes, so `failed()` cleans up only its own build. */
+    private const string LockOwner = 'nightly-refresh';
+
     public int $uniqueFor = 3600;
 
     public function __construct()
@@ -48,7 +51,7 @@ final class RefreshTaskVmBaseImages implements ShouldBeUnique, ShouldQueue
             }
             try {
                 if ($builder->exists($host, $node)) {
-                    $builder->build($host, $node);
+                    $builder->build($host, $node, owner: self::LockOwner);
                 }
             } catch (Throwable $exception) {
                 Log::error('The task VM base image refresh failed.', ['node_id' => $node->id, 'error' => $exception->getMessage()]);
@@ -58,6 +61,23 @@ final class RefreshTaskVmBaseImages implements ShouldBeUnique, ShouldQueue
 
         if ($failures !== []) {
             throw new TaskVmException('task_vm.image_build_failed', 'The base image refresh failed on '.implode(', ', $failures).'.', 502);
+        }
+    }
+
+    /**
+     * After a timeout the worker stops this job in the middle of a build, so the build's own cleanup never
+     * runs. The worker calls this first: it deletes the builder VM and frees the host's build lock. After an
+     * ordinary failure the build has cleaned up already, and this does nothing.
+     */
+    public function failed(?Throwable $exception): void
+    {
+        $settings = app(TaskVmSettings::class);
+        $builder = app(IncusTaskVmImageBuilder::class);
+        foreach ($settings->hosts as $host) {
+            $node = Node::query()->find($host->nodeId);
+            if ($node instanceof Node) {
+                $builder->abandon($host, $node, self::LockOwner);
+            }
         }
     }
 }

@@ -202,7 +202,7 @@ describe('a build', function (): void {
         $launches = array_values(array_filter($this->incus->commands, static fn (RemoteCommand $command): bool => $command->arguments[5] === 'launch'));
 
         expect($fingerprint)->toBe(IMAGE_NEW)
-            ->and($stages)->toBe(['sweep', 'launch', 'cloud-init', 'bootstrap', 'caddy-package', 'app-dev-prerequisites', 'agent-binary', 'clean', 'publish', 'delete-builder', 'smoke', 'promote', 'prune'])
+            ->and($stages)->toBe(['render', 'sweep', 'launch', 'cloud-init', 'bootstrap', 'caddy-package', 'app-dev-prerequisites', 'agent-binary', 'clean', 'publish', 'delete-builder', 'smoke', 'promote', 'prune'])
             ->and(array_map(static fn (RemoteCommand $command): array => [array_slice($command->arguments, 18), $command->input], $execs))
             ->toBe(array_map(static fn (?RemoteCommand $program): array => [$program?->arguments, $program?->input], $programs))
             ->and(array_slice($launches[0]->arguments, -3))->toBe(['--', 'ubuntu-26.04-vm', 'tvm-image-20261010030000'])
@@ -276,6 +276,39 @@ describe('a failed build', function (): void {
         'alias move' => ['query', 'promote', [IMAGE_STOCK => ['ubuntu-26.04-vm'], IMAGE_OLD => ['orbit-task-base-20261009030000', 'orbit-task-base']]],
         'prune, after the new image is the base image' => ['image delete', 'prune', [IMAGE_STOCK => ['ubuntu-26.04-vm'], IMAGE_OLD => ['orbit-task-base-20261009030000'], IMAGE_NEW => ['orbit-task-base-20261010030000', 'orbit-task-base']]],
     ]);
+
+    it('lets the owner of a stopped build delete its builder and free the host, and nobody else', function (): void {
+        $host = $this->settings->host($this->host->id);
+        $lock = Cache::lock('task-vms:image-build:'.$this->host->id, 3600, 'nightly-refresh');
+        $lock->get();
+        $this->incus->instances = ['tvm-image-20261010030000' => IMAGE_STOCK, 'tvm-5' => IMAGE_OLD];
+
+        app(IncusTaskVmImageBuilder::class)->abandon($host, $this->host, 'command-other');
+        expect(array_keys($this->incus->instances))->toBe(['tvm-image-20261010030000', 'tvm-5'])
+            ->and(Cache::lock('task-vms:image-build:'.$this->host->id, 10)->get())->toBeFalse();
+
+        (new RefreshTaskVmBaseImages)->failed(new RuntimeException('timed out'));
+        expect(array_keys($this->incus->instances))->toBe(['tvm-5'])
+            ->and(Cache::lock('task-vms:image-build:'.$this->host->id, 10)->get())->toBeTrue();
+    });
+
+    it('frees the host when the build fails before its first VM', function (): void {
+        app()->instance(SshKeyProvider::class, new class implements SshKeyProvider
+        {
+            public function privateKeyPath(): string
+            {
+                return '/keys/id_ed25519';
+            }
+
+            public function publicKey(): string
+            {
+                throw new RuntimeException('no key');
+            }
+        });
+
+        expect(fn () => ($this->build)())->toThrow(TaskVmException::class, 'failed at stage [render]: no key');
+        expect(Cache::lock('task-vms:image-build:'.$this->host->id, 10)->get())->toBeTrue();
+    });
 
     it('refuses a second build of the same host while one runs', function (): void {
         $lock = Cache::lock('task-vms:image-build:'.$this->host->id, 60);

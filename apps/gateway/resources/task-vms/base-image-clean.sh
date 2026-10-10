@@ -17,7 +17,16 @@ fail() {
 main() {
     exec 3>&1 1>&2 </dev/null
 
+    # Stop the services that write per-install IDs, so none writes one again before the VM stops.
+    systemctl stop caddy.service docker.service docker.socket containerd.service
     apt-get clean
+    # Per-install IDs that a service writes on its first start: Docker's engine ID, containerd's UUID, Caddy's
+    # instance UUID, its storage clean record and saved config, and systemd's credential secret. Each VM
+    # writes its own on first start.
+    local ids=(/var/lib/docker/engine-id /var/lib/containerd/io.containerd.grpc.v1.introspection/uuid
+        /var/lib/caddy/.local/share/caddy/instance.uuid /var/lib/caddy/.local/share/caddy/last_clean.json
+        /var/lib/caddy/.config/caddy/autosave.json /var/lib/systemd/credential.secret)
+    rm -f "${ids[@]}"
     rm -f /etc/ssh/ssh_host_* /var/lib/systemd/random-seed /root/.bash_history /home/*/.bash_history
     local keys
     for keys in /root/.ssh/authorized_keys /home/*/.ssh/authorized_keys; do
@@ -36,6 +45,10 @@ main() {
     if compgen -G '/etc/ssh/ssh_host_*' >/dev/null; then fail 'an SSH host key remains'; fi
     [ "$(cat /etc/machine-id)" = uninitialized ] || fail 'the machine ID remains'
     [ ! -e /var/lib/cloud/instance ] || fail 'the cloud-init instance state remains'
+    local id
+    for id in "${ids[@]}"; do
+        [ ! -e "$id" ] || fail "the per-install ID [$id] remains"
+    done
     for keys in /root/.ssh/authorized_keys /home/*/.ssh/authorized_keys; do
         if [ -s "$keys" ]; then fail "an authorized key remains in [$keys]"; fi
     done
