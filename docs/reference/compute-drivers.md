@@ -60,7 +60,7 @@ The Node `tvm-<id>` has user `orbit`, role `app-dev`, the dev Cluster, and the r
 
 When the group ends, Orbit removes its workspace Instance with force, as for a shared group. This withdraws the Route. A cancelled group first pushes its stored approval. A task VM workspace never holds a host [discovery topology](/reference/incus-topologies): Orbit refuses to acquire one there, so removal skips the topology release. Pushes, fetches, checks, and agent turns need the VM `ready`, so they finish before the VM is destroyed.
 
-Each `tasks:tick` queues `DestroyTaskVm` for every task VM that is not `destroyed` when its group is `completed` or `cancelled`, no claim of the group is in flight, and no Instance is left on its Node. Its unique lock has no expiry, so the tick never queues a second copy while one waits or runs. `DestroyTaskVm` then runs these steps:
+Each `tasks:tick` queues `DestroyTaskVm` for every task VM that is not `destroyed` when its group is `completed` or `cancelled`, no [claim](/reference/tasks#claim-and-provision) of the group is in flight, and no Instance is left on its Node. A claim is over once it starts the group, so a group that ends soon after its claim loses its VM on the next tick. Its unique lock has no expiry, so the tick never queues a second copy while one waits or runs. `DestroyTaskVm` then runs these steps:
 
 1. It sets the row to `destroying` and revokes the group's model key.
 2. It deletes the VM. A VM that is already gone counts as deleted.
