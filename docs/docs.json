@@ -121,7 +121,7 @@
               "reference/tasks",
               "reference/compute-drivers",
               "reference/pi-server",
-              "reference/t3-code",
+              "reference/conn",
               "reference/cli-binaries",
               "reference/self-update",
               "reference/events",
@@ -584,20 +584,20 @@
             ]
           },
           {
-            "group": "T3 Code",
+            "group": "Conn",
             "openapi": "/openapi.json",
             "pages": [
-              "GET /api/v1/t3/environments",
-              "POST /api/v1/t3/environments",
-              "GET /api/v1/t3/environments/{environment}/pairings",
-              "POST /api/v1/t3/environments/{environment}/pairings",
-              "POST /api/v1/t3/environments/{environment}/pairings/revoke",
-              "GET /api/v1/t3/me",
-              "PUT /api/v1/t3/me/profile",
-              "GET /api/v1/t3/profiles",
-              "POST /api/v1/t3/profiles",
-              "GET /api/v1/t3/profiles/{profile}/settings",
-              "PUT /api/v1/t3/profiles/{profile}/settings"
+              "GET /api/v1/conn/environments",
+              "POST /api/v1/conn/environments",
+              "GET /api/v1/conn/environments/{environment}/pairings",
+              "POST /api/v1/conn/environments/{environment}/pairings",
+              "POST /api/v1/conn/environments/{environment}/pairings/revoke",
+              "GET /api/v1/conn/me",
+              "PUT /api/v1/conn/me/profile",
+              "GET /api/v1/conn/profiles",
+              "POST /api/v1/conn/profiles",
+              "GET /api/v1/conn/profiles/{profile}/settings",
+              "PUT /api/v1/conn/profiles/{profile}/settings"
             ]
           },
           {
