@@ -408,7 +408,7 @@ describe('the end of a claim', function (): void {
 
         expect(app(TaskScheduler::class)->claimNext())->toBeNull()
             ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Cancelled)
-            ->and($group->fresh()?->reserved_at?->equalTo(now()))->toBeTrue();
+            ->and($group->fresh()?->reserved_at?->toDateTimeString())->toBe(now()->toDateTimeString());
     });
 
     it('keeps the reservation of a group that the claim could not release from reserved', function (): void {
@@ -426,7 +426,7 @@ describe('the end of a claim', function (): void {
 
         expect(app(TaskScheduler::class)->claimNext())->toBeNull()
             ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Reserved)
-            ->and($group->fresh()?->reserved_at?->equalTo(now()))->toBeTrue();
+            ->and($group->fresh()?->reserved_at?->toDateTimeString())->toBe(now()->toDateTimeString());
     });
 });
 
