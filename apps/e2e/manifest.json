@@ -1,0 +1,22 @@
+{
+  "schema": 2,
+  "project": "apps/e2e",
+  "commit": "b9503a94f2bb1b5edc888df5dea27e54602d7e8d",
+  "run_id": "38675437051",
+  "run_attempt": "1",
+  "configurations": {
+    "pint": "5654574c5b76ff8a5f099f84395e8ae829e6644b47e04bb9465bca3704d0806f",
+    "phpstan": "4ce25d442af6caa63d053aac1472d8ffff70645bc79a31d253a549d53f6ecd9d"
+  },
+  "graph_sha256": "714a4a65cb675a8ad7255cd64ebb14fcf3bcb1c613c736dae89be8fbcf7a1b0f",
+  "inputs": {
+    "composer.lock": "36a929c1741e050e6cda45d7cb5ba36334f28171fb041362e89bc2d85f24de11",
+    "tests/Pest.php": "87f03ae8aa9590cc3b2895460a69cd69d1474c2de7f87cf9d19bf17b13627fe1",
+    "phpunit.xml": "2d20358c4fb90b6cd85c9e80b91e6b470a14a32f2e6007af33610e29148ec2a2"
+  },
+  "php": "8.5",
+  "quality": {
+    "pint": "0fc6efbf0780a905e0994f80781a9cf88269d4725d11c9cc8373b00975245ad2",
+    "phpstan": "9bb2c13063388c694aace768415d1d1f966a4f7afb9191a45a4612ff0404e0bb"
+  }
+}
