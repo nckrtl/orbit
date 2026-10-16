@@ -667,7 +667,6 @@
               "decisions/0213-run-ci-runners-through-a-ci-runner-role",
               "decisions/0214-pin-the-ai-router-version-and-flag-upgrades",
               "decisions/0215-start-development-processes-from-project-definitions",
-              "decisions/0216-run-one-exact-php-build-everywhere",
               "decisions/0217-deploy-production-instances-automatically-by-polling",
               "decisions/0218-take-long-commands-off-the-request-path",
               "decisions/0222-give-task-vms-a-cloned-topology-seed"
@@ -1556,6 +1555,10 @@
     {
       "source": "/decisions/0208-deploy-the-gateway-with-laravel-migrations",
       "destination": "/reference/gateway-recovery#laravel-owns-migrations"
+    },
+    {
+      "source": "/decisions/0216-run-one-exact-php-build-everywhere",
+      "destination": "/reference/compute-drivers#php-build"
     }
   ]
 }

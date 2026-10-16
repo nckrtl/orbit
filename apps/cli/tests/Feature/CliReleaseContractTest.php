@@ -480,14 +480,15 @@ describe('CLI binary workflow', function (): void {
             ->and($run['run'])->not->toContain('composer');
     });
 
-    it('sets up PHP only on Linux runners', function (): void {
+    it('sets up the recipe PHP build only on Linux runners', function (): void {
         $jobs = cli_binary_workflow()['jobs'];
 
-        expect(cli_binary_step_uses($jobs['build']))->toContain('shivammathur/setup-php@v2');
+        // A local action exists only after checkout, which under workflow_call checks out the release commit.
+        expect(array_slice(cli_binary_step_uses($jobs['build']), 0, 2))->toBe(['actions/checkout@v7', './.github/actions/php']);
 
         foreach ($jobs as $name => $job) {
             $runners = isset($job['strategy']) ? array_column($job['strategy']['matrix']['include'], 'runner') : [$job['runs-on']];
-            $usesPhp = in_array('shivammathur/setup-php@v2', cli_binary_step_uses($job), true);
+            $usesPhp = in_array('./.github/actions/php', cli_binary_step_uses($job), true);
 
             foreach ($runners as $runner) {
                 expect($usesPhp && ! str_starts_with((string) $runner, 'ubuntu-'))->toBeFalse("{$name} sets up PHP on {$runner}");

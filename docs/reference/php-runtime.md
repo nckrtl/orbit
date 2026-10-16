@@ -195,7 +195,7 @@ Each caller once had its own install code, and their safety checks differed. One
 
 ### The recipe's files, not the Sury apt source
 
-Sury's apt index carries only its newest build. Installing from it gave each Node the build of the day it was set up, and an exact `package=version` disappears from the index when Sury moves on. The recipe's `.deb` files are checked by digest, and the same files build task VM images and converge Nodes. So every machine runs one build, and the caches that depend on it fit everywhere. [Compute drivers: Why one PHP build](/reference/compute-drivers#why-one-php-build) gives the reasons.
+Sury's apt index carries only its newest build. Installing from it gave each Node the build of the day it was set up, and an exact `package=version` disappears from the index when Sury moves on. The recipe's `.deb` files are checked by digest, and the same files build task VM images and converge Nodes. So every machine runs one build, and the caches that depend on it fit everywhere. [Compute drivers: One PHP build](/reference/compute-drivers#one-php-build) gives the reasons for one build.
 
 ### OPcache sizing per role
 

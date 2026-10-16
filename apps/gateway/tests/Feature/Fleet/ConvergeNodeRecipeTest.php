@@ -247,6 +247,21 @@ it('converges a roleless CI runner with the ci-runner profile and records the pr
         ->and(array_keys(app(NodeRecipeProgram::class)->tools(FleetFixtures::node('recipe-operator'), $recipe)))->not->toContain('php8.5-cli');
 });
 
+it('keeps the ci-runner profile but no success marker when a run fails', function (array $settings, ?string $requested): void {
+    $node = FleetFixtures::node('recipe-sabre-fail');
+    $node->update(['settings' => $settings]);
+    recipeSsh(ScriptedSshExecutor::fail(stdout: 'recipe-stage:packages'));
+    app()->instance(FleetNodeVerification::class, new RecipeVerification);
+
+    expect(fn () => app(ConvergeNodeRecipeAction::class)->execute($node, new RecipeLoader()->load(), profile: $requested))
+        ->toThrow(ResourceOperationException::class, 'stopped at recipe-stage:packages');
+    expect($node->refresh()->settings)->toBe(['machine_recipe' => ['profile' => 'ci-runner']])
+        ->and(NodeRecipeProgram::recordedProfile($node))->toBe('ci-runner');
+})->with([
+    'a recorded profile' => [['machine_recipe' => ['version' => 'previous', 'profile' => 'ci-runner']], null],
+    'a first run that names the profile' => [[], 'ci-runner'],
+]);
+
 it('refuses the ci-runner profile on a Node with roles and any other profile name before SSH', function (array $roles, string $profile): void {
     $node = FleetFixtures::node('recipe-profile-'.count($roles).$profile, $roles);
     $ssh = recipeSsh();

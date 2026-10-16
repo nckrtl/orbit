@@ -4,10 +4,11 @@ umask 077
 checkout=/home/orbit/orbit
 gateway=$checkout/apps/gateway
 orbit_env=(sudo -u orbit -- env HOME=/home/orbit ORBIT_HOME=/home/orbit/.orbit ORBIT_GATEWAY_CHECKOUT=/home/orbit/orbit/apps/gateway DB_DATABASE=/home/orbit/.orbit/gateway.sqlite)
+# PHP is never installed here: the recipe base image carries the recipe's exact PHP build (ADR 0216).
 gateway_prerequisites() {
   local package
   local -a missing=()
-  for package in caddy dnsmasq php8.5-fpm php8.5-mysql php8.5-pgsql; do
+  for package in caddy dnsmasq; do
     if [[ "$(dpkg-query -W -f='${Status}' "$package" 2>/dev/null || true)" != 'install ok installed' ]]; then
       missing+=("$package")
     fi

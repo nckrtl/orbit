@@ -205,4 +205,5 @@ return [
         '0208-scan-monorepo-dependencies-per-sub-project',
         '0208-deploy-the-gateway-with-laravel-migrations',
     ],
+    '0216' => ['0216-run-one-exact-php-build-everywhere'],
 ];

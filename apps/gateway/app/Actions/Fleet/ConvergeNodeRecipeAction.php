@@ -54,8 +54,13 @@ final readonly class ConvergeNodeRecipeAction
             $plan = $this->plan($node, $recipe, $profile);
 
             return $this->updateLock->run($node, function () use ($node, $recipe, $plan, $profile): array {
+                // A Node that may end partly changed must not appear converged, so the success marker goes first. The
+                // profile is the Node's selection, not part of that marker, so a failed run keeps it.
                 $settings = $node->settings ?? [];
                 unset($settings['machine_recipe']);
+                if ($profile !== null) {
+                    $settings['machine_recipe'] = ['profile' => $profile];
+                }
                 $node->update(['settings' => $settings]);
                 $changes = $this->program->apply($node, $recipe, $this->program->tools($node, $recipe, $profile), $profile);
                 $this->verifyTools($node);

@@ -127,7 +127,7 @@ A pull request that changes the PHP build runs its CI on the self-hosted runners
 
 Then the pull request's CI runs, and `main` stays green after the merge. After the merge, converge Sabre with the `ci-runner` profile so that Orbit manages it.
 
-[Nightly recipe maintenance](/reference/compute-drivers#bump-the-php-build) opens a pull request when Sury publishes a newer build, and converges Sabre in its overnight service tier after merge. `setup-php` is not used. It cannot pin a patch release, and it loads about 26 extensions that Orbit does not use, such as `amqp`, `apcu`, `mongodb`, and `soap`.
+[Nightly recipe maintenance](/reference/compute-drivers#bump-the-php-build) opens a pull request when Sury publishes a newer build, and converges Sabre in its overnight service tier after merge. `setup-php` is not used. It cannot pin a patch release, and a hosted runner gets a new patch on its own schedule. It also loads about 26 extensions that Orbit does not use, such as `amqp`, `apcu`, `mongodb`, and `soap`.
 
 `Required checks` expects Docs (merge ref) and Gateway plan to succeed on pull requests and to be skipped on pushes and manual runs. It expects the Gateway shards to succeed when the plan chose shards, and to be skipped otherwise.
 
@@ -259,7 +259,7 @@ Ubuntu 26.04's systemd hangs at boot in an unprivileged container without nestin
 
 The ACL rejects every egress to private, CGNAT, loopback, link-local, multicast, and reserved IPv4 ranges, and all IPv6. Its default for egress and ingress is reject. So a job reaches the public internet, but not the host's LAN, WireGuard, the Gateway, docker and task bridges, the other container, or the bridge gateway. A container's `127.0.0.1` is its own loopback, so the host's loopback services, such as the Caddy admin API, are out of reach.
 
-Inside each container, the `runner` user runs the runner service, with no `sudo` and no group beyond its own. So a shard leaves out the `privileged` group. The container has the recipe's [PHP build](#one-php-build-in-ci), installed by `bin/php-build install`, Composer 2, Caddy from its own apt source with its service disabled, `acl`, `attr`, `wireguard-tools`, `dig`, Git, and Python 3. `container NAME` copies `bin/php-build` and the recipe into the container and runs that install, so a later run updates the build in place. Composer is at `/usr/local/bin/composer`, with a link at `/usr/bin/composer`, because the Composer update program and its tests run that path, as on a Node.
+Inside each container, the `runner` user runs the runner service, with no `sudo` and no group beyond its own. So a shard leaves out the `privileged` group. The container has the recipe's [PHP build](#one-php-build-in-ci), installed by `bin/php-build install`, Composer 2, Caddy from its own apt source with its service disabled, `acl`, `attr`, `wireguard-tools`, `dig`, Git, and Python 3. `container NAME` copies `bin/php-build`, the recipe, and the remote program tree that `bin/php-build` reads into the container, and runs that install. A later run replaces the copy and updates the build in place. Composer is at `/usr/local/bin/composer`, with a link at `/usr/bin/composer`, because the Composer update program and its tests run that path, as on a Node.
 
 The job installs Node 24 with the Node setup step, and each shard runs at most 4 Pest processes. The container's PHP CLI keeps `zend.exception_ignore_args` on, so the job turns it off only for its own processes: it writes an ini file into the runner's temporary directory and adds it to `PHP_INI_SCAN_DIR`.
 

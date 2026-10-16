@@ -156,9 +156,9 @@ describe('Gateway convergence', function () {
                 'noninteractive install --yes --no-install-recommends -- '.$packages,
             ]);
     })->with([
-        'FPM' => ['php8.5-fpm', 'php8.5-fpm'],
-        'database drivers' => ['php8.5-mysql,php8.5-pgsql', 'php8.5-mysql php8.5-pgsql'],
-        'all' => ['php8.5-pgsql,caddy,php8.5-fpm,dnsmasq,php8.5-mysql', 'caddy dnsmasq php8.5-fpm php8.5-mysql php8.5-pgsql'],
+        'Caddy' => ['caddy', 'caddy'],
+        'dnsmasq' => ['dnsmasq', 'dnsmasq'],
+        'all' => ['dnsmasq,caddy', 'caddy dnsmasq'],
     ]);
 
     it('points a Gateway environment that names another checkout at the mounted checkout', function () {
@@ -251,6 +251,8 @@ describe('Node convergence', function () {
                 ->not->toContain('/etc/caddy', 'local_certs', 'caddy validate', 'systemctl reload caddy');
         }
         expect(guestScriptSource('converge-node.sh'))->not->toContain('apt-get', 'php8.5-fpm', 'PDO');
+        // The recipe base image carries the recipe's exact PHP build, so Gateway convergence installs no PHP package.
+        expect(guestScriptSource('converge-gateway.sh'))->not->toMatch('/\bphp\d/');
     });
 });
 

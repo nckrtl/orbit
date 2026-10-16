@@ -143,7 +143,9 @@ The `Orbit CLI Binary` workflow, `.github/workflows/orbit-cli-binary.yml`, build
 
 Composer installs in the build workflow receive the read-only job token through `COMPOSER_AUTH`, including the production install inside the binary builder. The release verifier downloads `SHA256SUMS` through the authenticated GitHub CLI.
 
-The `Build` jobs build every target on Linux. Each Linux job then runs its own binary. The `Run macos-arm64` job downloads the macOS artifact on a hosted Mac and runs it. It needs no PHP, Composer, or checkout. Every run uses an empty environment and requires `orbit --version` to print the build version. A binary that does not start fails the workflow, and the release workflow publishes only when every job passes.
+The `Build` jobs build every target on Linux. Each one installs the recipe's exact PHP build and a pinned Composer through `.github/actions/php`, as every PHP job does ([One PHP build in CI](/reference/implementation-loop#one-php-build-in-ci)). That PHP only builds the PHAR; the binary carries PHPacker's static PHP.
+
+Each Linux job then runs its own binary. The `Run macos-arm64` job downloads the macOS artifact on a hosted Mac and runs it. It needs no PHP, Composer, or checkout. Every run uses an empty environment and requires `orbit --version` to print the build version. A binary that does not start fails the workflow, and the release workflow publishes only when every job passes.
 
 ## Build locally
 
