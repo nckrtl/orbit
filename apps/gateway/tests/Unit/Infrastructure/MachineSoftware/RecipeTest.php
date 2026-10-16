@@ -181,7 +181,7 @@ describe('machine recipe structure and identity', function (): void {
         $php = [...array_values(array_unique($php)), 'dpkg-repack'];
         $php85 = [...$recipe->php('8.5')->packagesFor(false), 'dpkg-repack'];
         $javascript = ['vp', 'vp-cli', 'node', 'pnpm', 'bun'];
-        $production = array_values(array_unique([...$common, ...$packages->forRole($node, RoleName::AppProd), ...$javascript]));
+        $production = array_values(array_unique([...$common, ...$packages->forRole($node, RoleName::AppProd), 'containerd', ...$javascript]));
         $development = [...$production, ...$php];
         $imagePackages = ['openssh-server', ...TaskVmCloudInit::WorkspaceTools, ...TaskVmCloudInit::ChromiumLibraries];
         $base = [...array_diff($development, ['php8.4-opentelemetry', 'php8.5-opentelemetry']), ...$imagePackages, 'rust', 'rust-std', 'cargo', 'clippy', 'rustfmt', 'orbit-agent', 'pi'];

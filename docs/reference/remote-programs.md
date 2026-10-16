@@ -53,7 +53,7 @@ A program with branching or a structured result is Python. Programs need Python 
 
 `lib/program.py` holds this runtime. A program defines `main(payload)`, which returns an outcome and its data or raises `Outcome`, and ends with `run_program(main)`. `SIGTERM`, `SIGHUP`, and `SIGINT` end the program at once, so a cancelled call stops on the Node too.
 
-The Gateway starts a Python program as `python3 -I -c <bootstrap> <name>`. The bootstrap, `resources/remote/bootstrap.py`, reads the assembled source, one NUL byte, and the JSON input from standard input. It compiles the source under the program's name, so a traceback names the program. `-I` keeps environment variables, user site packages, and the current directory out of the interpreter. On an older Python, the bootstrap exits 1 before it runs the program and prints `<name>: Orbit remote programs need Python 3.10 or newer`, so the call fails with `no_result` and that log.
+The Gateway starts a Python program as `python3 -I -c <bootstrap> <name>`. The bootstrap, `resources/remote/bootstrap.py`, reads the assembled source, one NUL byte, and the JSON input from standard input. It exposes the source as `__orbit_source__` for programs that must launch a detached worker from the same assembled code. It compiles the source under the program's name, so a traceback names the program. `-I` keeps environment variables, user site packages, and the current directory out of the interpreter. On an older Python, the bootstrap exits 1 before it runs the program and prints `<name>: Orbit remote programs need Python 3.10 or newer`, so the call fails with `no_result` and that log.
 
 ## Bash programs
 
@@ -93,8 +93,12 @@ A program that reads a private repository receives the [Git read environment](/r
 `bin/remote-programs-check` runs from the repository root. It checks every program under `apps/gateway/resources`, the older files outside `remote/` included:
 
 - shellcheck checks each Bash file.
-- ruff 0.17.0 checks each Python file and the direct tests with the rules in `apps/gateway/ruff.toml`. A program with libraries is checked as assembled, and a finding names the file and line where it occurs.
+- ruff 0.17.0 checks Python files, direct tests and assembled programs with `apps/gateway/ruff.toml`. Findings name the original file and line.
 - `python3 -m unittest` runs the direct tests in `apps/gateway/tests/Programs`. They run programs with the same assembly and bootstrap against temporary directories.
+
+Assembly includes the recipe image builder and the shared recipe library used by `docker.migrate`.
+
+The Docker migration has an opt-in test against a real engine: `sudo env ORBIT_DOCKER_NETWORK_TEST=1 python3 apps/gateway/tests/Programs/test_docker_migration_network.py -v`. Run it only in a disposable task environment with Docker API 1.52, iproute2, ping and util-linux. It creates private network, mount and PID namespaces, sockets and data roots. It checks packet reachability through a surviving custom bridge after fallback and resume. It never uses the host's Docker socket or networks. The normal unprivileged suite skips this test.
 
 A finding is fixed, or suppressed on its line with a comment that gives the reason. The `Remote programs` CI job installs shellcheck and ruff and runs the check. The [candidate gate](/reference/implementation-loop#the-candidate-gate) runs it when a candidate changes `apps/gateway/resources`, `apps/gateway/tests/Programs`, `apps/gateway/ruff.toml`, or the check itself. A missing tool fails the check.
 
@@ -120,6 +124,7 @@ These programs run on Nodes now. Each one replaced an inline script. The PHP ste
 | `instances.clean-removal-receipt` | Finishes a receipt-backed removal. |
 | `instances.finalize-source-removal` | Moves a recorded source into quarantine and deletes it. |
 | `gateway.install-start-hooks` | Installs the Gateway's PHP-FPM [start hooks](/reference/extensions#plug-in-points) and removes each listed hook that no extension contributes. |
+| `docker.migrate` | Plans, prepares and reports the guarded [Docker provider migration](/reference/docker-provider-migration). Preparation uses a transient unit and a root-only recovery journal. |
 | `php.install-build` | Installs and checks the recipe's [PHP build](/reference/compute-drivers#install-the-php-build), with a rollback. |
 
 ## Why it works this way

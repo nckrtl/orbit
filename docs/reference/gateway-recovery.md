@@ -264,6 +264,8 @@ The new scheduler pauses document cleanup when it starts. The handoff waits for 
 
 The handoff also installs the [fleet rollout units](#units). A failure there only logs a warning. It queues [host-local recipe image builds](/reference/compute-drivers#build-the-base-image) when the deployed recipe changes. This only records and dispatches work; it never builds on the release process. A dispatch failure logs an error and the minute recipe check retries it without rolling back a healthy Gateway.
 
+Recipe fleet maintenance skips Docker CE Nodes with reason `docker-provider:docker-ce` and continues with other Nodes. A release never changes their Docker provider. Use the guarded [Docker provider migration](/reference/docker-provider-migration) in a separate maintenance window; fallback requires explicit approval with `--fallback`.
+
 When any step fails, the handoff still starts the scheduler unit, so the scheduler never stays down. The handoff prints one JSON object with `caddy`, `fpm`, `opcache`, `scheduler`, `scheduler_unit`, `scheduler_drain`, `processes_restarted`, `horizon`, `cleanup`, `cleanup_error_code`, `agent_view`, `cleanup_paused`, and `gateway_agent`. Run it again by hand after fixing a handoff failure. It takes no release lock, so run it only when no release step is running.
 
 ##### Gateway Node agent
@@ -984,5 +986,9 @@ An unreachable Node changed nothing, so it does not halt the fleet; the catch-up
 [Node recipe convergence](/reference/node-provisioning#converge-a-node-to-a-recipe) applies and verifies machine software on one Node. It shares the Node role and self-update locks with release rollout.
 
 Release rollout updates Orbit itself, with a timer to catch up missed Nodes. [Nightly recipe maintenance](/reference/compute-drivers#nightly-recipe-maintenance) waits for every configured host to promote the deployed recipe, then calls Node recipe convergence in fleet order. That page owns the schedule, night window, alerts, and recovery policy, including the guarded rebuild of a failed App-owned nightly PR on newer main. Closed PRs and PRs modified by a person are never refreshed. A mention from another issue or PR does not count as a modification.
+
+A Docker CE provider refuses recipe convergence with `docker-provider:docker-ce`. Release rollout and nightly maintenance do not migrate it. Schedule a window for the explicit [Docker provider migration](/reference/docker-provider-migration). It shares the role, apt and self-update locks but stops every container on that Node.
+
+If migration returns `node.docker_migration_failed`, preserve the root-only journal and original data directories. Resolve the named stage and resume the same command with the same recipe. Do not delete the journal to force a new inventory.
 
 Converging the Gateway Node also brings its PHP to the recipe's [PHP build](/reference/compute-drivers#php-build). When that changes a PHP package, [`php.install-build`](/reference/compute-drivers#install-the-php-build) validates PHP-FPM and restarts `php8.5-fpm`, which serves the API, then checks each pool socket, `orbit-gateway` included. A failed check reinstalls the previous PHP build and restarts the service again. Converge the Gateway last and while no long request runs.

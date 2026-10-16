@@ -61,7 +61,7 @@ The base already provides pinned software, `orbit` with uid/gid 1000 and passwor
 
 Convergence clears known hosts, verifies the account, and keeps apt timers masked. It converts the exact root-owned Bun launcher from the recipe into the symlink required by app-role enrollment. Other executables remain subject to the normal conflict checks.
 
-Before enrollment, the harness checks pnpm as `orbit` and repairs a broken launcher from the recipe's integrity-pinned native archive, at the same version. This supports existing bases whose wrapper still names `pnpm.cjs`; it uses the recipe installer without building an image.
+Before enrollment, the harness checks pnpm as `orbit` and repairs a broken launcher from the recipe's integrity-pinned native archive, at the same version. This supports existing bases whose wrapper still names `pnpm.cjs`. The preparation program combines the shared artifact and recipe libraries under `apps/gateway/resources/remote/lib` with the harness's pnpm entry point; it uses the recipe installer without running Node convergence or building an image.
 
 Cloud-init creates fresh SSH keys; the harness waits through its seed reboot before configuration. The shared base stays usable as a task VM image, so convergence does not disable cloud-init in the published image.
 

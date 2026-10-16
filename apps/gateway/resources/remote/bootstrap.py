@@ -9,4 +9,4 @@ if sys.version_info < (3, 10):
 
 source, _, payload = sys.stdin.buffer.read().partition(b'\0')
 sys.stdin = io.TextIOWrapper(io.BytesIO(payload), encoding='utf-8')
-exec(compile(source, sys.argv[1], 'exec'), {'__name__': '__main__'})
+exec(compile(source, sys.argv[1], 'exec'), {'__name__': '__main__', '__orbit_source__': source})

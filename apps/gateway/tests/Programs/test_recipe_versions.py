@@ -14,11 +14,11 @@ import unittest
 from unittest.mock import patch
 
 RESOURCE = Path(__file__).resolve().parents[2] / 'resources/machine-software'
-spec = importlib.util.spec_from_file_location('recipe_versions', RESOURCE / 'converge-node.py')
+spec = importlib.util.spec_from_file_location('recipe_versions', RESOURCE.parent / 'remote/lib/recipe.py')
 recipe = importlib.util.module_from_spec(spec)
-exec(compile((Path(spec.origin).parent.parent / 'remote/lib/artifacts.py').read_text(), 'lib/artifacts.py', 'exec'), recipe.__dict__)
+exec(compile((RESOURCE.parent / 'remote/lib/artifacts.py').read_text(), 'lib/artifacts.py', 'exec'), recipe.__dict__)
 spec.loader.exec_module(recipe)
-image_spec = importlib.util.spec_from_file_location('recipe_image_versions', RESOURCE / 'converge-node.py')
+image_spec = importlib.util.spec_from_file_location('recipe_image_versions', RESOURCE.parent / 'remote/lib/recipe.py')
 image = importlib.util.module_from_spec(image_spec)
 exec(compile((RESOURCE.parent / 'remote/lib/artifacts.py').read_text(), 'lib/artifacts.py', 'exec'), image.__dict__)
 image_spec.loader.exec_module(image)
@@ -829,10 +829,12 @@ class RecipeVersionsTest(unittest.TestCase):
         self.assertEqual(failed.exception.result.returncode, 100)
         self.assertIn('curl dependency conflict', failed.exception.result.stdout)
         with patch.object(recipe, 'platform_check'), \
-             patch.object(recipe, 'apply', side_effect=recipe.RecipeFailure('packages', result=failed.exception.result, packages=failed.exception.packages)), \
+             patch.object(recipe, 'packages', return_value={}), \
+             patch.object(recipe, 'apply', side_effect=recipe.RecipeFailure('packages', result=failed.exception.result, packages=failed.exception.packages)) as apply, \
              patch.object(sys, 'argv', ['program', 'apply', '{"architecture":"amd64"}']), \
              contextlib.redirect_stdout(io.StringIO()) as output:
             self.assertEqual(recipe.main(), 1)
+        apply.assert_called_once_with({'architecture': 'amd64'})
         failure = json.loads(output.getvalue())['failure']
         self.assertEqual(failure['packages'], ['curl=' + PIN])
         self.assertIn('curl dependency conflict', failure['stdout'])

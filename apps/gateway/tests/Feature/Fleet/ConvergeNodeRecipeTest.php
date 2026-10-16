@@ -136,7 +136,10 @@ it('selects each service role prerequisite without development-only software', f
     $pins = app(NodeRecipeProgram::class)->tools($node, $recipe);
 
     $php = $role === RoleName::WebSocket ? [...$recipe->php('8.5')->packagesFor(false), 'dpkg-repack'] : [];
-    $expected = array_unique([...$recipe->profile('operator'), ...new NodeBootstrapPackageCatalog()->forRole($node, $role), ...$php]);
+    $baseline = new NodeBootstrapPackageCatalog()->forRole($node, $role);
+    // Recipe convergence pins the container runtime too; enrollment only asks apt for Docker.
+    $runtime = in_array('docker.io', $baseline, true) ? ['containerd'] : [];
+    $expected = array_unique([...$recipe->profile('operator'), ...$baseline, ...$runtime, ...$php]);
     sort($expected);
     expect(array_keys($pins))->toBe($expected)->not->toContain('rust', 'node', 'pi');
 })->with([RoleName::Vpn, RoleName::Router, RoleName::Ingress, RoleName::Metrics, RoleName::Database, RoleName::WebSocket, RoleName::Analytics]);
@@ -379,7 +382,7 @@ it('lists mixed recipe identities from the registry without SSH', function (): v
 });
 
 it('runs the remote program regression tests without host mutations or network access', function (): void {
-    $process = new Process(['python3', base_path('tests/Fixtures/machine-software/converge_node_test.py'), resource_path('machine-software/converge-node.py')]);
+    $process = new Process(['python3', base_path('tests/Fixtures/machine-software/converge_node_test.py'), resource_path('remote/lib/recipe.py')]);
     $process->run();
 
     expect($process->getExitCode())->toBe(0, $process->getErrorOutput());

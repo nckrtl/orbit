@@ -1812,6 +1812,24 @@
             "governing_adrs": []
         },
         {
+            "path": "docs/reference/docker-provider-migration.md",
+            "title": "Docker CE migration",
+            "kind": "reference",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Activity",
+                "Doctor",
+                "Gateway",
+                "Node",
+                "Process",
+                "Schedule",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
             "path": "docs/reference/environment-variables.md",
             "title": "Instance environment variables",
             "kind": "reference",

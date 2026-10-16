@@ -26,10 +26,10 @@ REMOTE = RESOURCES / 'remote'
 RUFF_VERSION = '0.17.0'
 
 # Fragments that the Gateway appends to another program before it sends them, so they are checked after it.
-# RecipeImagePrograms appends build-image.py to converge-node.py.
+# RecipeImagePrograms appends build-image.py to the shared recipe library.
 FRAGMENTS = {
-    'machine-software/build-image.py': ['remote/lib/artifacts.py', 'machine-software/converge-node.py'],
-    'machine-software/converge-node.py': ['remote/lib/artifacts.py'],
+    'machine-software/build-image.py': ['remote/lib/artifacts.py', 'remote/lib/recipe.py'],
+    'remote/lib/recipe.py': ['remote/lib/artifacts.py'],
 }
 
 

@@ -84,7 +84,7 @@ final readonly class RecipeImagePrograms
 
     private function script(): string
     {
-        $shared = file_get_contents(resource_path('machine-software/converge-node.py'));
+        $shared = file_get_contents(resource_path('remote/lib/recipe.py'));
         $image = file_get_contents(resource_path('machine-software/build-image.py'));
         if ($shared === false || $image === false) {
             throw new RuntimeException('The recipe image program is missing.');

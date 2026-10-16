@@ -9,6 +9,7 @@ use App\Domain\Fleet\RecipeMaintenanceAlerts;
 use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
@@ -84,6 +85,11 @@ final readonly class ConvergeFleetRecipeAction
                 ->filter(fn (Node $node): bool => $this->eligibility->allows($node) && ($node->roles->isNotEmpty() || self::ciRunner($node)) && TaskVm::forNode($node) === null)
                 ->sortBy(fn (Node $node): array => [$this->tier($node), $node->id]);
             foreach ($nodes as $node) {
+                $visited = is_array($progress['nodes'] ?? null) ? $progress['nodes'] : [];
+                $previous = is_array($visited[$node->id] ?? null) ? $visited[$node->id] : [];
+                if (($previous['reason'] ?? null) === 'docker-provider:docker-ce') {
+                    continue;
+                }
                 $verified = $node->settings['machine_recipe'] ?? null;
                 if (is_array($verified) && ($verified['version'] ?? null) === $recipe->identity) {
                     continue;
@@ -108,6 +114,13 @@ final readonly class ConvergeFleetRecipeAction
                     $progress['status'] = 'ready';
                     $record->forceFill(['fleet_convergence' => $progress])->save();
                 } catch (Throwable $error) {
+                    if ($error instanceof ResourceOperationException && $error->errorCode === 'node.recipe_docker_provider') {
+                        $completed = is_array($progress['nodes'] ?? null) ? $progress['nodes'] : [];
+                        $completed[$node->id] = ['name' => $node->name, 'status' => 'skipped', 'reason' => 'docker-provider:docker-ce', 'finished_at' => now()->toIso8601String()];
+                        $record->forceFill(['fleet_convergence' => [...$progress, 'nodes' => $completed, 'status' => 'ready']])->save();
+
+                        return;
+                    }
                     $message = mb_substr(new CommandActivityInputSanitizer()->redactText($error->getMessage()), 0, 1500);
                     $this->halt($record, $progress, "Node [{$node->id}: {$node->name}] failed: {$message}");
                 }

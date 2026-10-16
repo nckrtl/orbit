@@ -261,7 +261,7 @@ describe('recipe image triggers', function (): void {
 
 it('runs image installer regressions without host changes or downloads', function (): void {
     $process = new Process(['python3', base_path('tests/Fixtures/machine-software/build_image_test.py'),
-        resource_path('machine-software/converge-node.py'), resource_path('machine-software/build-image.py')]);
+        resource_path('remote/lib/recipe.py'), resource_path('machine-software/build-image.py')]);
     $process->run();
     expect($process->getExitCode())->toBe(0, $process->getErrorOutput());
 });

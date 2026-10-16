@@ -235,11 +235,11 @@ final readonly class NodeRecipeProgram
      */
     private function run(Node $node, MachineRecipe $recipe, array $tools, string $mode): array
     {
-        $program = file_get_contents(resource_path('machine-software/converge-node.py'));
+        $program = file_get_contents(resource_path('remote/lib/recipe.py'));
         if ($program === false) {
             throw new RuntimeException('The recipe converge program is missing.');
         }
-        $program = file_get_contents(resource_path('remote/lib/artifacts.py'))."\n".$program;
+        $program = file_get_contents(resource_path('remote/lib/artifacts.py'))."\n".$program."\nif __name__ == '__main__':\n    sys.exit(main())\n";
         $data = json_decode($recipe->json, true, flags: JSON_THROW_ON_ERROR);
         if (! is_array($data) || ! is_array($data['tools'] ?? null)) {
             throw new RuntimeException('The recipe document is invalid.');
@@ -265,6 +265,9 @@ final readonly class NodeRecipeProgram
                 throw new ResourceOperationException('node.recipe_failed', 'Recipe convergence stopped at recipe-stage:packages. '.mb_substr($detail, 0, 30000).' The Node may be partly changed. No automatic rollback was attempted; inspect the Node before retrying.', 502);
             }
             $stage = trim($result->stdout);
+            if ($stage === 'recipe-stage:docker-provider:docker-ce') {
+                throw new ResourceOperationException('node.recipe_docker_provider', 'docker-provider:docker-ce: Docker CE requires an explicit planned-window migration. Run php artisan node:migrate-docker '.$node->id.' --dry-run on the Gateway. Nothing was changed by recipe convergence.', 409);
+            }
             if (preg_match('/^recipe-stage:[a-z-]+(?::[A-Za-z0-9@_.:-]+)?$/D', $stage) !== 1) {
                 $stage = 'recipe-stage:remote';
             }

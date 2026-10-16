@@ -125,6 +125,7 @@
               "reference/operations",
               "reference/tasks",
               "reference/compute-drivers",
+              "reference/docker-provider-migration",
               "reference/pi-server",
               "reference/conn",
               "reference/cli-binaries",

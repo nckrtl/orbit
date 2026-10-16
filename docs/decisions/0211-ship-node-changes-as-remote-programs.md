@@ -23,7 +23,9 @@ The Gateway changes Nodes over SSH. About 210 scripts live in PHP nowdocs in 97 
 - Contracts are implicit: `$1` to `$11`, `shift 8`, and exit codes such as 10 to 15, 20, and 21 in the development source removal. About 47 PHP checks compare exit codes.
 - A script cannot be tested on its own. Tests reach it only through the PHP class that builds it.
 
-A better pattern already exists. `resources/tasks/check`, `resources/instances/lifecycle.py`, and `resources/machine-software/converge-node.py` are files with a documented interface that read JSON and print a structured result.
+A better pattern already exists. `resources/tasks/check` and `resources/instances/lifecycle.py` are files with a documented interface that read JSON and print a structured result.
+
+The Docker provider migration follows this decision as `docker.migrate` under `resources/remote/docker/`. It declares a timeout and the `planned`, `prepared`, `reported` and `failed` outcomes. `SshProgramRunner` sends its input on stdin. Preparation runs in a transient unit so an SSH disconnect cannot interrupt dpkg. Recipe convergence and migration share the apt and source-retirement code in `resources/remote/lib/recipe.py`; the migration does not assemble its own scripts in PHP.
 
 The [Node agent](/reference/node-agent#the-agent-only-observes) only observes. SSH stays the only way to change a Node. A planned agent runner must fit the same contract.
 

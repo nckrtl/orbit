@@ -14,7 +14,7 @@ from unittest.mock import patch
 
 spec = importlib.util.spec_from_file_location('recipe', sys.argv.pop())
 recipe = importlib.util.module_from_spec(spec)
-exec(compile((Path(spec.origin).parent.parent / 'remote/lib/artifacts.py').read_text(), 'lib/artifacts.py', 'exec'), recipe.__dict__)
+exec(compile((Path(spec.origin).parent / 'artifacts.py').read_text(), 'lib/artifacts.py', 'exec'), recipe.__dict__)
 spec.loader.exec_module(recipe)
 
 

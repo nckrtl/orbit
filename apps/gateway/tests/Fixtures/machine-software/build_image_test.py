@@ -15,7 +15,7 @@ shared, image = sys.argv[1:]
 sys.argv = sys.argv[:1]
 spec = importlib.util.spec_from_file_location('image_recipe', shared)
 recipe = importlib.util.module_from_spec(spec)
-exec(compile((Path(spec.origin).parent.parent / 'remote/lib/artifacts.py').read_text(), 'lib/artifacts.py', 'exec'), recipe.__dict__)
+exec(compile((Path(spec.origin).parent / 'artifacts.py').read_text(), 'lib/artifacts.py', 'exec'), recipe.__dict__)
 spec.loader.exec_module(recipe)
 exec(compile(Path(image).read_text(), image, 'exec'), recipe.__dict__)
 

@@ -90,6 +90,11 @@
             "package": "composer",
             "version": "2.9.5-1"
         },
+        "containerd": {
+            "source": "ubuntu",
+            "package": "containerd",
+            "version": "2.2.2-0ubuntu1.1"
+        },
         "curl": {
             "source": "ubuntu",
             "package": "curl",
@@ -1228,10 +1233,12 @@
             "caddy"
         ],
         "metrics": [
+            "containerd",
             "docker.io",
             "openssl"
         ],
         "database": [
+            "containerd",
             "docker.io"
         ],
         "websocket": [
@@ -1244,6 +1251,7 @@
         ],
         "analytics": [
             "caddy",
+            "containerd",
             "docker.io",
             "openssl"
         ],
@@ -1256,6 +1264,7 @@
             "attr",
             "caddy",
             "composer",
+            "containerd",
             "docker.io",
             "openssl",
             "php-curl",
@@ -1274,6 +1283,7 @@
             "attr",
             "caddy",
             "composer",
+            "containerd",
             "docker.io",
             "openssl",
             "php-curl",
@@ -1299,6 +1309,7 @@
         "attr",
         "caddy",
         "composer",
+        "containerd",
         "docker.io",
         "openssl",
         "php-curl",

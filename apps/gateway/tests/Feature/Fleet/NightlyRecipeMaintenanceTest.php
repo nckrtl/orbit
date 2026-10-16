@@ -134,6 +134,25 @@ it('waits for both promoted current-generation hosts then visits one Node per ti
     expect(Artisan::output())->toContain('Fleet convergence:', 'changed_packages', 'succeeded');
 });
 
+it('skips Docker CE Nodes with the typed reason instead of halting fleet convergence', function (): void {
+    [$record, $other, $doctor, $alerts] = nightlyRecipeFleet();
+    $ssh = new ScriptedSshExecutor;
+    $ssh->on('/^python3 - inspect /', ScriptedSshExecutor::fail(stdout: 'recipe-stage:docker-provider:docker-ce'));
+    app()->instance(NodeShell::class, FleetTestSsh::shell($ssh));
+    app()->instance(NodeUpdateLock::class, new NodeUpdateLock(FleetTestSsh::shell($ssh)));
+    $action = app(ConvergeFleetRecipeAction::class);
+    $action->execute();
+    $action->execute();
+    $action->execute();
+
+    expect($record->refresh()->fleet_convergence['status'])->toBe('succeeded')
+        ->and($record->fleet_convergence['nodes'][$record->host_node_id]['reason'])->toBe('docker-provider:docker-ce')
+        ->and($record->fleet_convergence['nodes'][$other->host_node_id]['status'])->toBe('skipped')
+        ->and($doctor->visited)->toBe([])
+        ->and($alerts->alerts)->toBe([])
+        ->and($ssh->commands)->toHaveCount(2);
+});
+
 it('halts at a Doctor failure without retrying or touching later Nodes and alerts once', function (): void {
     [$record, $other, $doctor, $alerts] = nightlyRecipeFleet();
     $prod = FleetFixtures::node('nightly-untouched', [RoleName::AppProd]);

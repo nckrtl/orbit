@@ -92,12 +92,15 @@ final readonly class RoleImages
         if (! is_array($pin)) {
             throw new RuntimeException('The recipe pnpm pin is missing.');
         }
-        $shared = file_get_contents($root.'/apps/gateway/resources/machine-software/converge-node.py');
-        $prepare = file_get_contents($root.'/apps/e2e/resources/guest/prepare-pnpm.py');
-        if ($shared === false || $prepare === false) {
-            throw new RuntimeException('The recipe pnpm program is missing.');
+        $script = '';
+        foreach (['apps/gateway/resources/remote/lib/artifacts.py', 'apps/gateway/resources/remote/lib/recipe.py',
+            'apps/e2e/resources/guest/prepare-pnpm.py'] as $path) {
+            $source = file_get_contents($root.'/'.$path);
+            if ($source === false) {
+                throw new RuntimeException('The recipe pnpm program is missing.');
+            }
+            $script .= $source."\n";
         }
-        $script = str_replace("if __name__ == '__main__':\n    sys.exit(main())", '', $shared)."\n".$prepare;
         $commands = [];
         foreach ($guests as $guest) {
             $commands[$guest] = ['instance' => $guest, 'command' => new GuestCommand(['python3', '-', json_encode($pin, JSON_THROW_ON_ERROR)], 120, $script)];
