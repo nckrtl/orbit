@@ -120,3 +120,30 @@ it('rejects operation navigation when its specification is missing or malformed'
     '{"paths":"nope"}',
     '{"paths":{"/api/v1/nodes":"get"}}',
 ]);
+
+it('accepts redirects to existing pages and headings', function (): void {
+    file_put_contents($this->root.'/reference/apps.md', "# Apps\n\n## Why it works this way\n\n### Poll, do not wait for a `webhook`\n\n### See [Apps](/reference/apps)\n\n```md\n## Inside a fence\n```\n");
+    file_put_contents($this->root.'/docs.json', json_encode(['navigation' => ['pages' => ['reference/apps']], 'redirects' => [
+        ['source' => '/old-page', 'destination' => '/reference/apps'],
+        ['source' => '/old-reason', 'destination' => '/reference/apps#poll-do-not-wait-for-a-webhook'],
+        ['source' => '/old-link', 'destination' => '/reference/apps#see-apps'],
+        ['source' => '/old-site', 'destination' => 'https://example.com/page#anywhere'],
+    ]], JSON_THROW_ON_ERROR));
+
+    expect($this->rule->check())->toBe([]);
+});
+
+it('rejects a redirect to a missing page or heading', function (): void {
+    file_put_contents($this->root.'/reference/apps.md', "# Apps\n\n```md\n## Inside a fence\n```\n");
+    file_put_contents($this->root.'/docs.json', json_encode(['navigation' => ['pages' => ['reference/apps']], 'redirects' => [
+        ['source' => '/old-page', 'destination' => '/reference/gone'],
+        ['source' => '/old-reason', 'destination' => '/reference/apps#no-such-heading'],
+        ['source' => '/old-fence', 'destination' => '/reference/apps#inside-a-fence'],
+    ]], JSON_THROW_ON_ERROR));
+
+    expect(array_column($this->rule->check(), 'message'))->toBe([
+        'Local documentation target [/reference/gone] does not exist.',
+        'Redirect destination [/reference/apps#no-such-heading] names no heading on its page.',
+        'Redirect destination [/reference/apps#inside-a-fence] names no heading on its page.',
+    ]);
+});

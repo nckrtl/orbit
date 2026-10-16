@@ -654,11 +654,8 @@
             "pages": [
               "decisions/0182-start-tasks-from-project-task-definitions",
               "decisions/0190-run-mysql-servers-with-a-gateway-held-admin-password",
-              "decisions/0191-clone-the-default-instance-database-for-each-new-instance",
               "decisions/0196-derive-application-directory-from-web-root",
-              "decisions/0198-keep-delivery-line-proofs-as-repo-commands",
               "decisions/0200-run-each-task-group-in-its-own-sandbox-vm",
-              "decisions/0205-publish-database-credentials-to-vaultwarden",
               "decisions/0206-build-task-vm-images-as-chains-of-small-jobs",
               "decisions/0209-run-long-operations-as-durable-queued-operations",
               "decisions/0210-give-each-extension-its-own-code-boundary",
@@ -668,7 +665,6 @@
               "decisions/0214-pin-the-ai-router-version-and-flag-upgrades",
               "decisions/0215-start-development-processes-from-project-definitions",
               "decisions/0216-run-one-exact-php-build-everywhere",
-              "decisions/0217-deploy-production-instances-automatically-by-polling",
               "decisions/0218-take-long-commands-off-the-request-path",
               "decisions/0222-give-task-vms-a-cloned-topology-seed"
             ]
@@ -705,6 +701,30 @@
     }
   },
   "redirects": [
+    {
+      "source": "/decisions/0217-deploy-production-instances-automatically-by-polling",
+      "destination": "/reference/deployments#automatic-deployments"
+    },
+    {
+      "source": "/decisions/0205-publish-database-credentials-to-vaultwarden",
+      "destination": "/reference/vaultwarden"
+    },
+    {
+      "source": "/decisions/0198-keep-delivery-line-proofs-as-repo-commands",
+      "destination": "/reference/delivery-line"
+    },
+    {
+      "source": "/decisions/0197-keep-delivery-line-proofs-as-repo-commands",
+      "destination": "/reference/delivery-line"
+    },
+    {
+      "source": "/decisions/0195-derive-application-directory-from-web-root",
+      "destination": "/decisions/0196-derive-application-directory-from-web-root"
+    },
+    {
+      "source": "/decisions/0191-clone-the-default-instance-database-for-each-new-instance",
+      "destination": "/domains/applications#database-clone"
+    },
     {
       "source": "/decisions/0207-one-image-recipe-shared-package-cache-no-workspace-templates",
       "destination": "/reference/compute-drivers#machine-software-recipe"
@@ -815,7 +835,7 @@
     },
     {
       "source": "/decisions/0068-accept-only-apps-path-node-storage-setting",
-      "destination": "/reference/node-settings#one-typed-setting"
+      "destination": "/reference/node-settings#closed-typed-settings"
     },
     {
       "source": "/decisions/0070-keep-the-database-role-as-a-docker-baseline",
@@ -947,7 +967,7 @@
     },
     {
       "source": "/decisions/0028-require-one-route-per-active-appinstance",
-      "destination": "/reference/routes#one-route-per-active-instance"
+      "destination": "/reference/routes#one-own-route-per-active-instance"
     },
     {
       "source": "/decisions/0033-trust-wireguard-members-for-private-node-traffic",

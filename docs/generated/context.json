@@ -760,29 +760,6 @@
             ]
         },
         {
-            "path": "docs/decisions/0191-clone-the-default-instance-database-for-each-new-instance.md",
-            "title": "ADR 0191: Clone the default Instance's database for each new Instance",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Activity",
-                "Database server",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Project",
-                "Route"
-            ],
-            "governing_adrs": [
-                "0190",
-                "0191"
-            ]
-        },
-        {
             "path": "docs/decisions/0196-derive-application-directory-from-web-root.md",
             "title": "Derive the application directory from the web root",
             "kind": "decision",
@@ -809,27 +786,6 @@
             ],
             "governing_adrs": [
                 "0196"
-            ]
-        },
-        {
-            "path": "docs/decisions/0198-keep-delivery-line-proofs-as-repo-commands.md",
-            "title": "ADR 0198: Keep delivery-line proofs as repository commands",
-            "kind": "decision",
-            "components": [
-                "apps/e2e"
-            ],
-            "concepts": [
-                "Deliverable",
-                "Doctor",
-                "Gateway",
-                "Instance",
-                "Project",
-                "Subtask",
-                "Task",
-                "Task check"
-            ],
-            "governing_adrs": [
-                "0198"
             ]
         },
         {
@@ -865,28 +821,6 @@
             "governing_adrs": [
                 "0200",
                 "0222"
-            ]
-        },
-        {
-            "path": "docs/decisions/0205-publish-database-credentials-to-vaultwarden.md",
-            "title": "ADR 0205: Publish database credentials to Vaultwarden",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/docs",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Database server",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Process",
-                "Tool"
-            ],
-            "governing_adrs": [
-                "0205"
             ]
         },
         {
@@ -935,7 +869,6 @@
             "governing_adrs": [
                 "0206",
                 "0209",
-                "0217",
                 "0218"
             ]
         },
@@ -1129,31 +1062,6 @@
             ]
         },
         {
-            "path": "docs/decisions/0217-deploy-production-instances-automatically-by-polling.md",
-            "title": "ADR 0217: Deploy production Instances automatically by polling",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/gateway",
-                "apps/web",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Activity",
-                "Deployment",
-                "Gateway",
-                "Instance",
-                "Project",
-                "Route",
-                "Task"
-            ],
-            "governing_adrs": [
-                "0209",
-                "0217",
-                "0218"
-            ]
-        },
-        {
             "path": "docs/decisions/0218-take-long-commands-off-the-request-path.md",
             "title": "ADR 0218: Take long commands off the request path",
             "kind": "decision",
@@ -1189,7 +1097,6 @@
                 "0209",
                 "0211",
                 "0212",
-                "0217",
                 "0218"
             ]
         },
@@ -1266,9 +1173,7 @@
             "governing_adrs": [
                 "0182",
                 "0190",
-                "0191",
                 "0196",
-                "0198",
                 "0200",
                 "0206",
                 "0209",
@@ -1279,7 +1184,6 @@
                 "0214",
                 "0215",
                 "0216",
-                "0217",
                 "0218",
                 "0222"
             ]
@@ -1799,9 +1703,7 @@
                 "Route",
                 "Tool"
             ],
-            "governing_adrs": [
-                "0217"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/desktop-app.md",

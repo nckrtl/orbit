@@ -82,6 +82,7 @@ function withDocsMergeFixture(Closure $test): void
 it('retired 0197 reuse passes head-only and fails the merge check', function (bool $cached): void {
     withDocsMergeFixture(function (string $root) use ($cached): void {
         file_put_contents($root.'/docs/decisions/0197-live-decision.md', "# ADR 0197: Check a documentation change\n\nOrbit checks the merge result.\n\n## Status\n\nIn progress.\n\nPrinciple: lean.\n\n## Context\n\nBranches can diverge.\n\n## Decision\n\nOrbit checks the resulting tree.\n\n## Rejected alternatives\n\n- Check only the head: misses base changes.\n\n## Consequences\n\n- Finds invalid combinations.\n\n## Affects\n\n- Components: apps/docs\n- ADRs: none\n- Detail: [Guide](/README)\n- Verify: Docs lint tests.\n");
+        file_put_contents($root.'/docs/decisions/overview.mdx', str_replace("Orbit records decisions.\n", "Orbit records decisions.\n\n| Record | Decision | Status |\n| --- | --- | --- |\n| [0197](/decisions/0197-live-decision) | Check a documentation change | In progress |\n", file_get_contents($root.'/docs/decisions/overview.mdx')));
         docsMergeIndex($root);
         docsMergeCommit($root, 'reuse 0197 on old branch');
         $environment = [];

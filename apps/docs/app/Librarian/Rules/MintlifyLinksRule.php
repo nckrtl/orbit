@@ -12,7 +12,7 @@ use HardImpact\Librarian\Linting\GroupedRule;
 use JsonException;
 
 /**
- * Checks Markdown links, MDX component links, and Mintlify navigation paths.
+ * Checks Markdown links, MDX component links, Mintlify navigation paths, and redirect destinations.
  * Mintlify's build validator owns MDX syntax and the complete docs.json schema.
  */
 final readonly class MintlifyLinksRule implements GroupedRule
@@ -74,7 +74,47 @@ final readonly class MintlifyLinksRule implements GroupedRule
             return [new Finding('docs/docs.json', null, FindingSeverity::Error, self::RULE, 'Mintlify configuration must define navigation.')];
         }
 
-        return $this->navigationPages($config['navigation']);
+        return [...$this->navigationPages($config['navigation']), ...$this->redirectFindings($config['redirects'] ?? [])];
+    }
+
+    /**
+     * A local redirect destination must name a page, and its anchor a heading on that page.
+     *
+     * @return list<Finding>
+     */
+    private function redirectFindings(mixed $redirects): array
+    {
+        $findings = [];
+        foreach (is_array($redirects) ? $redirects : [] as $redirect) {
+            $destination = is_array($redirect) ? ($redirect['destination'] ?? null) : null;
+            if (! is_string($destination) || ! str_starts_with($destination, '/') || str_starts_with($destination, '//')) {
+                continue;
+            }
+
+            [$target, $anchor] = explode('#', $destination, 2) + [1 => ''];
+            $file = $this->resolve('docs/docs.json', $target);
+            if ($file === null) {
+                $findings[] = $this->missing('docs/docs.json', $destination);
+            } elseif ($anchor !== '' && ! in_array($anchor, $this->headingAnchors($file), true)) {
+                $findings[] = new Finding('docs/docs.json', null, FindingSeverity::Error, self::RULE, "Redirect destination [{$destination}] names no heading on its page.");
+            }
+        }
+
+        return $findings;
+    }
+
+    /** @return list<string> Mintlify heading anchors: lower case, punctuation removed, spaces joined by hyphens. */
+    private function headingAnchors(string $file): array
+    {
+        $contents = preg_replace('/^(`{3,}|~{3,}).*?^\1/ms', '', file_get_contents($file) ?: '') ?? '';
+        preg_match_all('/^#{1,6}[ \t]+(.+?)[ \t#]*$/m', $contents, $matches);
+
+        return array_map(static function (string $heading): string {
+            $text = preg_replace('/\[([^\]]*)\]\([^)]*\)/', '$1', $heading) ?? $heading;
+            $text = preg_replace('/[^\w\s-]/u', '', mb_strtolower(trim($text))) ?? '';
+
+            return preg_replace('/\s+/', '-', $text) ?? '';
+        }, $matches[1]);
     }
 
     /**
@@ -148,19 +188,25 @@ final readonly class MintlifyLinksRule implements GroupedRule
         }
 
         $target = preg_replace('/[?#].*$/', '', $target) ?? '';
-        if ($target === '') {
-            return true;
-        }
 
+        return $target === '' || $this->resolve($source, $target) !== null;
+    }
+
+    /** The file a local page target names, or null. */
+    private function resolve(string $source, string $target): ?string
+    {
         $base = str_starts_with($target, '/')
             ? $this->repository->docsPath
             : dirname($this->repository->docsPath.'/'.substr($source, 5));
         $path = $base.'/'.rawurldecode(ltrim($target, '/'));
 
-        return array_any(
-            ['', '.md', '.mdx', '/index.md', '/index.mdx'],
-            static fn (string $suffix): bool => is_file($path.$suffix),
-        );
+        foreach (['', '.md', '.mdx', '/index.md', '/index.mdx'] as $suffix) {
+            if (is_file($path.$suffix)) {
+                return $path.$suffix;
+            }
+        }
+
+        return null;
     }
 
     private function usesRepositoryUrl(string $target): bool

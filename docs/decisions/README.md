@@ -17,7 +17,7 @@ Read the [mission](/mission) and the affected documentation pages first. Every A
 
 The docs-first subtask of a task writes the ADR, when one is needed, together with the documentation change. The ADR and the changed pages are the contract for the later subtasks. The [contributor guide](/contributor-guide) describes the docs-first subtask and the docs-impact check.
 
-A new ADR has the status `In progress.` The maintainer reviews it together with the feature. A change to a decision that is still in progress edits that ADR. A change to built behavior edits the documentation directly, and needs a new ADR only when it is itself a significant decision.
+A new ADR has the status `In progress.` Add a row for it to the Records table in the [overview](/decisions/overview), and add its page to the Records group of the navigation in `docs/docs.json`. The maintainer reviews it together with the feature. A change to a decision that is still in progress edits that ADR. A change to built behavior edits the documentation directly, and needs a new ADR only when it is itself a significant decision.
 
 ## Withdraw a decision
 
@@ -29,7 +29,7 @@ The pull request that completes a decision absorbs it into the documentation and
 
 1. Write the behavior into the page that owns it.
 2. Write the reasons and the rejected alternatives that still matter into that page's "Why it works this way" section.
-3. Delete the ADR file and remove it from the Records navigation.
+3. Delete the ADR file. Remove its row from the Records table in the overview, and its page from the Records group of the navigation in `docs/docs.json`.
 4. Add a redirect from the ADR path to the section that absorbed it.
 5. Add a row to "Retired decisions" in the [overview](/decisions/overview). Record the deleted filename slug in the number's list in `apps/docs/config/adr-retired-slugs.php`.
 6. Point every inbound link to the absorbing section.

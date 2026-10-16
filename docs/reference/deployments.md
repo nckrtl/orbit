@@ -268,7 +268,7 @@ After PHP refresh, a rollback restarts the same active, opted-in Instance Proces
 
 The Gateway runs `orbit:auto-deploy` every minute, a job on the [Gateway queue](/reference/gateway-queue#scheduled-work). The command `orbit:deploy-development-defaults` is its old name and still works. One tick serves every [development default](#development-defaults) and every production Instance with `auto_deploy` on.
 
-For each Instance, the tick reads the branch head on the Gateway with `git ls-remote` and the Project's [read credential](/reference/instance-setup#credentialed-git). It keeps the GitHub App installation and its read tokens for up to 50 minutes, so a quiet minute costs one `ls-remote` and no GitHub API call. A failed read drops them.
+For each Instance, the tick reads the branch head on the Gateway with `git ls-remote` and the Project's [read credential](/reference/instance-setup#credentialed-git). It keeps the GitHub App installation that covers the repository for up to 60 minutes. It keeps the read tokens for up to 50 minutes, encrypted with the application key. So a quiet minute costs one `ls-remote` and no GitHub API call. A failed read drops the cached installation and tokens.
 
 - When the Instance already runs the commit the tick would deploy, the tick starts nothing and writes no history row.
 - Otherwise it starts an [`instance.deploy` operation](#the-deploy-operation) pinned to that commit, with `triggered_by` `orbit:auto-deploy`. No Node name contains a colon, so the marker cannot be a caller.
@@ -317,7 +317,14 @@ Without a `merge_check`, the tick deploys every new head. `instance:update` acce
 
 A failure before any of the Project's own steps ran, at `operation`, `preparation`, or `environment`, is transient. The tick deploys the commit again after 10 minutes, then after 20 minutes. After three failed attempts, the commit is blocked.
 
-A cancelled deployment, a commit not on the branch, a home that records another repository, and a failure in a deploy step or later are lasting. The commit is blocked at once.
+These failures are lasting, and the commit is blocked at once:
+
+- A cancelled deployment.
+- A commit that is not on the branch.
+- A home that records another repository.
+- A home that records another URL for the same repository.
+- An Instance that cannot be deployed.
+- A failure in a deploy step or later.
 
 A blocked commit does not deploy automatically again. A new commit deploys at once. Failures before the newest manual deployment do not count.
 
@@ -329,7 +336,9 @@ Resuming continues from the commit that is live then. The commit a rollback move
 
 A blocked commit stays blocked. It never deploys automatically again, until a newer commit lands on the branch: that commit deploys, and the blocked one is behind it.
 
-A rollback that came after the tick queued the deployment wins while no worker has started the deployment: the rollback cancels it, as [One operation at a time](#one-operation-at-a-time) describes. Once a worker has started it, the rollback is busy. A rollback or manual deployment can also end between the tick's read of the history and the start of its deployment. So the deployment checks for a pause again under the Instance lock. A pause found there ends the operation with `deployment.paused`; it deploys nothing and writes no history row.
+A rollback that came after the tick queued the deployment wins while no worker has started the deployment: the rollback cancels it, as [One operation at a time](#one-operation-at-a-time) describes. Once a worker has started it, the rollback is busy.
+
+A rollback or manual deployment can also end between the tick's read of the history and the start of its deployment. So the deployment checks for a pause again under the Instance lock. A pause found there ends the operation with `deployment.paused` and deploys nothing. A first attempt writes no history row. An attempt that a worker resumes after a lost worker ends its row with `deployment.paused`, which does not count as a failure of the commit.
 
 **Visibility.** Each automatic deployment has its operation and its [history row](#history) with `triggered_by` `orbit:auto-deploy`. `instance:show` shows the last result, its commit, the head, and a pause. When a result other than `up_to_date`, `deploying`, or `gate_pending` starts, the tick writes one Activity entry, `auto_deploy.<result>`, with the command `orbit:auto-deploy`. A [release alert](/reference/gateway-recovery#release-alerts) with the target `instance:<id>` reports a failed automatic deployment once per commit, a commit or a pending head that waited 30 minutes once per commit, and a pause.
 
@@ -402,9 +411,19 @@ A manual deployment means "deploy what the branch holds now". So it takes no com
 
 The Gateway reads the branch head every minute instead of receiving a GitHub push webhook. A webhook would need a public endpoint and a webhook secret on a Gateway that otherwise answers only WireGuard peers. The tick reuses the paths that development defaults and automatic Gateway releases already use. A quiet minute costs one `git ls-remote`, and a pending check costs a few GitHub API reads, well within the App's rate limit. The price is up to one minute of delay.
 
+Conditional requests with an ETag were rejected: a quiet minute already makes no GitHub API call, and the cache keeps token requests rare.
+
+### Pending checks need no deadline
+
+The green-commit walk skips a pending commit and walks back to the newest green commit that descends from the deployed one. So no deployment waits for a check to finish, and a deadline for pending checks was rejected. The stall alert after 30 minutes reports a commit that does not deploy.
+
+### Only you resume after a pause
+
+A manual deployment or a rollback is a person's decision about what runs. A merge is not a decision to undo it. So a new commit does not resume automatic deployment; only setting `auto_deploy` again does.
+
 ### One operations worker for every deployment
 
-Automatic deployments and rollbacks run as operations on the one `operations` worker, like manual deployments. One worker keeps one deployment at a time in the fleet and lets each Instance's lock and a lost worker work the same way for every deployment. A deployment or a rollback of one Instance can wait for another Instance's deployment, and Instances behind one Route deploy in turn.
+Automatic deployments and rollbacks run as operations on the one `operations` worker, like manual deployments. One worker keeps one deployment at a time in the fleet and lets each Instance's lock and a lost worker work the same way for every deployment. A second worker for automatic deployments was rejected: it would let two deployments run at once and would need its own lock and recovery. A deployment or a rollback of one Instance can wait for another Instance's deployment, and Instances behind one Route deploy in turn.
 
 ### Three releases per home
 
@@ -418,7 +437,7 @@ Older code can need a data recovery that only the application knows. So a rollba
 
 ### A rollback wins over a queued deploy
 
-A rollback undoes a bad release, often while users see errors. A deploy that no worker started has changed nothing yet, so the rollback cancels it instead of waiting behind it. A deploy that runs has already changed the Instance. A rollback that stopped it would leave it at a step boundary, half done. So the rollback refuses, and a person decides whether to cancel the deploy or let it end. [ADR 0217](/decisions/0217-deploy-production-instances-automatically-by-polling) records this rule for automatic deployments.
+A rollback undoes a bad release, often while users see errors. A deploy that no worker started has changed nothing yet, so the rollback cancels it instead of waiting behind it. A deploy that runs has already changed the Instance. A rollback that stopped it would leave it at a step boundary, half done. So the rollback refuses, and a person decides whether to cancel the deploy or let it end. The rule is the same for manual and automatic deploys.
 
 ### Steps as named records
 

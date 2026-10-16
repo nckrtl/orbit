@@ -290,6 +290,12 @@ An Instance is active once Orbit prepared its source, runtime, Route, and Larave
 
 Laravel uses `APP_URL` to build links outside a request. When Orbit changes a domain and leaves `APP_URL` alone, links break. So Orbit derives `APP_URL` from the Route in development and production. Reading an existing `APP_URL` as the source of the domain was rejected: the Route decides the endpoint.
 
+### Each new Instance copies the default database
+
+Instances that share one database can wipe each other's data, for example when a test run empties it. [Tests get their own database](/reference/database-connections#tests-get-their-own-database) explains that risk and the separate test database. The `default` Instance is the Project's main development source, so its database holds the Project's working data. So every other new development Instance gets its own copy, and the rule depends only on what `default` has attached.
+
+An opt-in flag on `instance:create` was rejected: an Instance created without it shares or lacks data, which is the problem the copy solves. A Project setting that names the source Instance was rejected: `default` already is the main source, and a second setting would allow two answers. Converting a SQLite source to MySQL on each copy was rejected: type differences between the engines make such a copy unreliable. So the copy keeps the kind of its source.
+
 ### Create the database before setup
 
 A database attached with `database:create --instance` can only come after the Instance exists. By then `instance:create` has run the setup steps, so a migration step failed and rolled the whole create back. Orbit now creates the database inside the create, between activation and setup, by reusing `database:create`. Ignoring a failed setup step was rejected, because an Instance whose setup failed is not a useful result. A default server stored on the Project was rejected, because the choice belongs to each Instance and a second hidden default would compete with the [database clone](#database-clone).

@@ -14,7 +14,7 @@ The docs-first subtask writes an ADR when a feature needs an architectural decis
 
 The pull request that completes a decision writes its behavior into the owning page and its lasting reasons and rejected alternatives into that page's "Why it works this way" section. It deletes the ADR, removes it from Records, redirects the exact ADR path to the absorbing section, adds a Retired decisions row, and updates inbound links. A decision completed in one pull request never leaves an ADR on main; a record stays only while a decision spans multiple pull requests. Numbers are never reused. The retired table and redirects resolve old numbers and links, including those in code comments.
 
-`composer docs-lint` enforces this lifecycle: retired slugs have no matching file and each has a redirect from its exact path. Live ADRs numbered 0180 or later must say `In progress.` in their Status section and include a `Principle:` line. A lower number follows those same two rules only when Retired decisions does not list it. The open gaps are 0007 and 0020. The committed allowlist for older live records can only shrink as those records retire. The [docs-impact check](/contributor-guide#docs-impact-stays-in-the-repository) and `covers:` frontmatter keep pages in step with code between decisions.
+`composer docs-lint` enforces this lifecycle: retired slugs have no matching file and each has a redirect from its exact path. Live ADRs numbered 0180 or later must say `In progress.` or `Withdrawn on YYYY-MM-DD.` in their Status section, include a `Principle:` line, and have a row in Records. A lower number follows those same rules only when Retired decisions does not list it. The open gaps are 0007 and 0020. The committed allowlist for older live records can only shrink as those records retire. The [docs-impact check](/contributor-guide#docs-impact-stays-in-the-repository) and `covers:` frontmatter keep pages in step with code between decisions.
 
 ## Why it works this way
 
@@ -26,9 +26,7 @@ Permanent ADRs made the current rule hard to find: amendments spread it across h
 | --- | --- | --- |
 | [0182](/decisions/0182-start-tasks-from-project-task-definitions) | Start tasks from Project task definitions | Withdrawn on 2026-10-15; never executed |
 | [0190](/decisions/0190-run-mysql-servers-with-a-gateway-held-admin-password) | Run MySQL servers with a Gateway-held admin password | In progress |
-| [0191](/decisions/0191-clone-the-default-instance-database-for-each-new-instance) | Clone the default Instance's database for each new Instance | In progress |
 | [0196](/decisions/0196-derive-application-directory-from-web-root) | Derive the application directory from the web root; serve more web roots through Routes | In progress |
-| [0198](/decisions/0198-keep-delivery-line-proofs-as-repo-commands) | Keep delivery-line proofs as repository commands | In progress |
 | [0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm) | Run each task group in its own sandbox VM | In progress |
 | [0206](/decisions/0206-build-task-vm-images-as-chains-of-small-jobs) | Build task VM images as chains of small jobs | In progress; amends [0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm) |
 | [0209](/decisions/0209-run-long-operations-as-durable-queued-operations) | Run long operations as durable queued operations | In progress |
@@ -39,8 +37,7 @@ Permanent ADRs made the current rule hard to find: amendments spread it across h
 | [0214](/decisions/0214-pin-the-ai-router-version-and-flag-upgrades) | Pin the AI router version and flag upgrades | In progress; builds on [0212](/decisions/0212-turn-proxycli-into-the-ai-router-extension) and follows its build steps |
 | [0215](/decisions/0215-start-development-processes-from-project-definitions) | Start development Processes from Project definitions | In progress |
 | [0216](/decisions/0216-run-one-exact-php-build-everywhere) | Run one exact PHP build everywhere | In progress |
-| [0217](/decisions/0217-deploy-production-instances-automatically-by-polling) | Deploy production Instances automatically by polling | In progress; changes step 4 of [0209](/decisions/0209-run-long-operations-as-durable-queued-operations) |
-| [0218](/decisions/0218-take-long-commands-off-the-request-path) | Take long commands off the request path | In progress; extends [0209](/decisions/0209-run-long-operations-as-durable-queued-operations), changes its step 3, and fulfils its step 5; changes the history reads of [0217](/decisions/0217-deploy-production-instances-automatically-by-polling) and amendment A3 of [0212](/decisions/0212-turn-proxycli-into-the-ai-router-extension) |
+| [0218](/decisions/0218-take-long-commands-off-the-request-path) | Take long commands off the request path | In progress; extends [0209](/decisions/0209-run-long-operations-as-durable-queued-operations), changes its step 3, and fulfils its step 5; changes the history reads of [automatic deployments](/reference/deployments#automatic-deployments) and amendment A3 of [0212](/decisions/0212-turn-proxycli-into-the-ai-router-extension) |
 | [0222](/decisions/0222-give-task-vms-a-cloned-topology-seed) | Give task VMs a cloned topology seed | In progress; changes items 4 and 5 of the Orbit Project section of [0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm); adds a `topology-seed` phase to [0206](/decisions/0206-build-task-vm-images-as-chains-of-small-jobs) |
 
 ## Retired decisions
@@ -74,7 +71,7 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0025 | Stabilize the default Instance identity | [Applications: The default Instance keeps its name](/domains/applications#the-default-instance-keeps-its-name) |
 | 0026 | Identify each App by one repository | [Projects: Repository identity](/reference/projects#repository-identity) |
 | 0027 | Adopt local Git sources into Instance ownership | [Applications: Register an existing checkout](/domains/applications#register-an-existing-checkout) |
-| 0028 | Require one Route per active Instance | [Routes: Why it works this way](/reference/routes#one-route-per-active-instance) |
+| 0028 | Require one Route per active Instance | [Routes: One own Route per active Instance](/reference/routes#one-own-route-per-active-instance) |
 | 0029 | Manage Laravel application URLs through Orbit | [Applications: Laravel application URL](/domains/applications#laravel-application-url) |
 | 0030 | Complete Instance provisioning without application health gates | [Applications: Active does not mean healthy](/domains/applications#active-does-not-mean-healthy) |
 | 0031 | Clone initial production source during provisioning | [Instance cloning (superseded by 0047)](/reference/instance-cloning) |
@@ -114,7 +111,7 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0065 | Replace Routes when domains change | [Routes: Change an explicit domain](/reference/routes#change-an-explicit-domain) |
 | 0066 | Transfer development Instances between Nodes | [Instance transfer](/reference/instance-transfer) |
 | 0067 | Serve development servers on the Route origin | [Routes: Development-server endpoint](/reference/routes#development-server-endpoint) |
-| 0068 | Accept only apps.path as the node storage setting path | [Node settings: One typed setting](/reference/node-settings#one-typed-setting) |
+| 0068 | Accept only apps.path as the node storage setting path | [Node settings: Closed, typed settings](/reference/node-settings#closed-typed-settings) |
 | 0069 | Allow Process targets of Instance or managed Node | [Processes and schedules: Owners](/reference/processes-and-schedules#owners) |
 | 0070 | Keep the database role as a Docker baseline | [Database role](/reference/database-role) |
 | 0071 | Use one verb vocabulary across the CLI, route names, and SDK | [CLI command vocabulary: Why it works this way](/reference/cli-command-vocabulary#why-it-works-this-way) |
@@ -235,6 +232,7 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0187 | Ask the reviewer before the operator and record every question | [Tasks: Questions go through the reviewer](/reference/tasks#questions-go-through-the-reviewer) |
 | 0188 | Read private GitHub repositories through the Gateway's GitHub CLI | [GitHub App: Read through the GitHub CLI](/reference/github-app#read-through-the-github-cli) |
 | 0189 | Register Instances only for existing Projects | [Projects: Registration needs a Project](/reference/projects#registration-needs-a-project) |
+| 0191 | Clone the default Instance's database for each new Instance | [Applications: Database clone](/domains/applications#database-clone); [Applications: Each new Instance copies the default database](/domains/applications#each-new-instance-copies-the-default-database) |
 | 0192 | Run task agents on Pi only | [Tasks: Task agents run on Pi](/reference/tasks#task-agents-run-on-pi) |
 | 0192 | Stop a group whose pull request ended | [Tasks: A watched pull request is not the reviewed pull request](/reference/tasks#a-watched-pull-request-is-not-the-reviewed-pull-request) |
 | 0193 | Run task agents as a dedicated user | [Pi server: One user for every task agent](/reference/pi-server#one-user-for-every-task-agent); [GitHub App: The checkout cannot inherit the token](/reference/github-app#the-checkout-cannot-inherit-the-token) |
@@ -242,10 +240,13 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0194 | Respond to GitHub review feedback | [Tasks: Trusted reviews are input, not merge authority](/reference/tasks#trusted-reviews-are-input-not-merge-authority) |
 | 0195 | Request topologies for review with an operator container | [Incus topologies: Nested in the task VM](/reference/incus-topologies#nested-in-the-task-vm); [Incus topologies: An isolated operator for web work](/reference/incus-topologies#an-isolated-operator-for-web-work) |
 | 0197 | Native Project Documents with private UpCloud S3 storage | [Project Documents: Why it works this way](/reference/project-documents#why-it-works-this-way) |
+| 0198 | Keep delivery-line proofs as repository commands | [Delivery-line proofs](/reference/delivery-line); [Delivery-line proofs: Why it works this way](/reference/delivery-line#why-it-works-this-way) |
 | 0199 | Post direction requests to OpsBot immediately | [Tasks: Direction wakes OpsBot immediately](/reference/tasks#direction-wakes-opsbot-immediately) |
 | 0201 | Release the Gateway automatically from green main | [Update and recover a Gateway: Automatic releases](/reference/gateway-recovery#automatic-releases); [Update and recover a Gateway: Why it works this way](/reference/gateway-recovery#why-it-works-this-way) |
 | 0202 | The fleet follows the Gateway through orbit self-update | [Update and recover a Gateway: Fleet rollout](/reference/gateway-recovery#fleet-rollout); [Orbit self-update](/reference/self-update); [Node agent: The agent only observes](/reference/node-agent#the-agent-only-observes) |
 | 0203 | Review and merge pull requests inside Orbit | [Tasks: Review and merge](/reference/tasks#review-and-merge); [Tasks: Orbit reviews before it pushes](/reference/tasks#orbit-reviews-before-it-pushes); [GitHub App: How Orbit reviews and merges a pull request](/reference/github-app#how-orbit-reviews-and-merges-a-pull-request) |
+| 0205 | Publish database credentials to Vaultwarden | [Vaultwarden](/reference/vaultwarden); [Vaultwarden: Why it works this way](/reference/vaultwarden#why-it-works-this-way) |
 | 0207 | One image recipe, shared package cache, no workspace templates | [Compute drivers: Machine software recipe](/reference/compute-drivers#machine-software-recipe); [Incus topologies: One recipe base image](/reference/incus-topologies#one-recipe-base-image); [Node provisioning: Converge a Node to a recipe](/reference/node-provisioning#converge-a-node-to-a-recipe) |
 | 0208 | Scan monorepo dependencies per sub-project | [Dependency contracts: Separate monorepo dependency sources](/reference/instance-dependency-contracts#separate-monorepo-dependency-sources) |
 | 0208 | Deploy the Gateway with Laravel migrations and explicit database recovery | [Update and recover a Gateway: Laravel owns migrations](/reference/gateway-recovery#laravel-owns-migrations) |
+| 0217 | Deploy production Instances automatically by polling | [Instance releases: Automatic deployments](/reference/deployments#automatic-deployments); [Instance releases: Poll, do not wait for a webhook](/reference/deployments#poll-do-not-wait-for-a-webhook) |
