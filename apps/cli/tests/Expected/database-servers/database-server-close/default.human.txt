@@ -1,0 +1,31 @@
+Closing Database server...
+
+┌  Close Database server
+│
+├  ● Closed Database server
+│
+└  Closed Database server.
+
+
+┌  Database server [beast-valkey] is closed.
+│
+├  ID           2
+│
+├  Slug         beast-valkey
+│
+├  Driver       redis
+│
+├  Node ID      2
+│
+├  Process ID   2
+│
+├  Tag          8.1
+│
+├  Port         6379
+│
+├  Status       active
+│
+├  Databases    1
+│
+└  Request ID   0198e15c-bf97-7c23-8f1f-61b8fe67a844
+

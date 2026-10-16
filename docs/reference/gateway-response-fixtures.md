@@ -40,6 +40,8 @@ Project Document fixtures record a complete file lifecycle, reads of earlier ver
 
 Gateway rollback fixtures record a queued code switch with `force: false` and no force member in the rollback phase. The request is bodyless. The crossing-refusal fixture is removed because Laravel owns migration discovery; [Gateway recovery](/reference/gateway-recovery#laravel-owns-migrations) explains the decision.
 
+Database server fixtures include the `driver` in create, list, and show responses. Valkey fixtures cover server creation, ACL-user creation, and closing an adopted server, including refusal while a client still uses `default`. The CLI replays those responses in human and JSON modes. Keep the MySQL cases when adding Valkey cases, so both drivers retain their contracts.
+
 ## Record a fixture
 
 A Gateway fixture test sends a request with deterministic data and calls `record_fixture()` from `apps/gateway/tests/Support/ResponseFixtures.php` with the fixture name, the SDK request class that sends the route, and the route.

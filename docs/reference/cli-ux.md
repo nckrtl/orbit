@@ -14,6 +14,8 @@ This page tells authors and reviewers of commands in `apps/cli` how Orbit collec
 
 `gateway:release:rollback` uses `--yes` to confirm a code switch that leaves the database in place. Its interactive confirmation defaults to No; see [the command contract](/cli/gateway#orbit-gatewayreleaserollback).
 
+`database:server:close` reports whether an adopted Valkey server now requires its admin password. A refusal keeps the clients' addresses and the reason visible in human output, and preserves `database.server_in_use` in JSON. See [Database servers](/reference/database-servers#close-an-adopted-server).
+
 ## Scope and authority
 
 The current command contract supplies the command name, permitted selectors, required inputs, defaults, response schema, error codes, exit statuses, and supported modes. This standard supplies the interaction and presentation rules, including explicit destructive consent. A documented exception names its governing contract and verification. An implementation gap is not an exception.

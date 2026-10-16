@@ -64,6 +64,7 @@ describe('database:server:create', function (): void {
         $response
             ->assertCreated()
             ->assertJsonPath('data.slug', 'beast-mysql')
+            ->assertJsonPath('data.driver', 'mysql')
             ->assertJsonPath('data.node_id', $this->dbNode->id)
             ->assertJsonPath('data.tag', '8.4')
             ->assertJsonPath('data.port', 3306)
@@ -71,7 +72,7 @@ describe('database:server:create', function (): void {
             ->assertJsonPath('data.databases_count', 0);
 
         expect(array_keys($response->json('data')))->toBe([
-            'id', 'slug', 'node_id', 'process_id', 'tag', 'port', 'status', 'databases_count',
+            'id', 'slug', 'driver', 'node_id', 'process_id', 'tag', 'port', 'status', 'databases_count',
         ]);
 
         $server = DatabaseServer::query()->sole();
@@ -294,6 +295,21 @@ describe('database:server list, show, and destroy', function (): void {
             ->assertJsonPath('error.code', 'process.required_by_database_server');
 
         expect($this->runtime->removed)->toBe([]);
+    });
+
+    it('keeps process:update open for the MySQL server Process', function (): void {
+        $this->patchJson("/api/v1/processes/{$this->server->process_id}", [
+            'runtime' => 'docker',
+            'image' => 'mysql:8.4.6',
+            'command' => ['mysqld'],
+            'ports' => ['10.44.0.80:3306:3306'],
+            'volumes' => [['source' => 'orbit-beast-mysql-data', 'target' => '/var/lib/mysql']],
+            'restart_policy' => 'unless-stopped',
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.id', $this->server->process_id);
+
+        expect(Process::query()->sole()->runtime_config['image'])->toBe('mysql:8.4.6');
     });
 
     it('keeps node removal from orphaning the server', function (): void {

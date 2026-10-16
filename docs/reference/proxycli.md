@@ -24,7 +24,7 @@ The extension has one switch and one fleet setup. They are separate.
 
 ## Valkey placement
 
-No Node role holds a cache. Shared Valkey runs on the [`database` role](/reference/database-role) as a Node-targeted Docker Process, and a [Redis Database connection](/reference/database-connections) registers it.
+No Node role holds a cache. Shared Valkey runs as a [Valkey Database server](/reference/database-servers#a-valkey-server) on a Node with the [`database` role](/reference/database-role). The collector and the Gateway log in through a [Redis Database connection](/reference/database-connections) with its own ACL user.
 
 Setup refuses a cache connection that does not fit:
 
@@ -36,18 +36,18 @@ Setup refuses a cache connection that does not fit:
 
 A connection that names no Node, such as an external Redis host, is accepted.
 
-Bind Valkey on the `database` Node's WireGuard address. The collector Node and the Gateway both connect to it with the host, port, username, and password of the connection.
+A Valkey server publishes its port on the Node's WireGuard address. The collector Node and the Gateway both connect to it with the host, port, username, and password of the connection.
 
 ## Set up
 
-Place Valkey, register it, enable the extension, then set up the collector. This example uses a loopback URL with task VMs off; with task VMs enabled, replace it with `ORBIT_TASK_VMS_MODEL_PROXY_ORIGIN`:
+Create the Valkey server and the collector's user, enable the extension, then set up the collector. This example uses a loopback URL with task VMs off; with task VMs enabled, replace it with `ORBIT_TASK_VMS_MODEL_PROXY_ORIGIN`:
 
 ```bash
 orbit node:role:add db-1 database
-orbit process:create valkey --node=db-1 --runtime=docker --image=valkey/valkey:8 --command=valkey-server --volume=valkey-data:/data --port=10.44.0.20:6379:6379 --restart=unless-stopped --start
-orbit database:create valkey --driver=redis --node=db-1 --host=10.44.0.20 --port=6379
+orbit database:server:create valkey --node=db-1 --driver=redis
+orbit database:create proxycli-cache --server=valkey --pattern='orbit:proxycli:*' --allow=@connection --allow=@string --allow=@keyspace --allow=eval
 orbit extension:enable proxycli
-orbit proxycli:setup --node=beast --cache-connection=valkey --cliproxy-url=http://127.0.0.1:8317 --cliproxy-management-key-file=./management.key
+orbit proxycli:setup --node=beast --cache-connection=proxycli-cache --cliproxy-url=http://127.0.0.1:8317 --cliproxy-management-key-file=./management.key
 ```
 
 The collector Node must be an active Linux Node with a WireGuard address. Otherwise setup fails with `proxycli.node_invalid`.

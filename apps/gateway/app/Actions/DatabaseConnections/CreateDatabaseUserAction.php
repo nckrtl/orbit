@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\DatabaseConnections;
 
 use App\Data\DatabaseConnections\CreateDatabaseUserData;
+use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\DatabaseServers\DatabaseServerAdmin;
 use App\Domain\DatabaseServers\MysqlStatements;
 use App\Domain\Shared\ResourceOperationException;
@@ -13,8 +14,9 @@ use App\Models\DatabaseServer;
 use App\Models\DatabaseUser;
 
 /**
- * Adds a user to a database on a Database server. A read-only user gets SELECT, any other user
- * all privileges. Running it again sets the password and replaces the privileges.
+ * Adds a user to a database on a MySQL Database server. A read-only user gets SELECT, any other user
+ * all privileges. Running it again sets the password and replaces the privileges. On a Valkey
+ * server each user is a connection of its own, so `database:create --server` adds it instead.
  */
 final readonly class CreateDatabaseUserAction
 {
@@ -29,6 +31,14 @@ final readonly class CreateDatabaseUserAction
         string $createdBy,
     ): DatabaseUser {
         $server = $connection->server;
+
+        if ($server instanceof DatabaseServer && $server->driver === DatabaseDriver::Redis) {
+            throw new ResourceOperationException(
+                errorCode: 'database.driver_unsupported',
+                message: "Database connection [{$connection->slug}] is on Valkey server [{$server->slug}], where each user is a connection. Run database:create --server instead.",
+                status: 422,
+            );
+        }
 
         if (! $server instanceof DatabaseServer || ! is_string($connection->database)) {
             throw new ResourceOperationException(

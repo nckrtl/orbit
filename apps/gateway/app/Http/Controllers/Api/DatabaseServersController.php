@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
+use App\Actions\DatabaseServers\CloseDatabaseServerAction;
 use App\Actions\DatabaseServers\CreateDatabaseServerAction;
 use App\Actions\DatabaseServers\DestroyDatabaseServerAction;
 use App\Actions\DatabaseServers\ListDatabaseServersAction;
@@ -56,6 +57,14 @@ final class DatabaseServersController extends Controller
                     ->values()
                     ->all(),
             ],
+            'meta' => $this->meta($request),
+        ]);
+    }
+
+    public function close(Request $request, DatabaseServer $databaseServer, CloseDatabaseServerAction $action): JsonResponse
+    {
+        return response()->json([
+            'data' => DatabaseServerData::fromModel($action->execute($databaseServer))->toArray(),
             'meta' => $this->meta($request),
         ]);
     }

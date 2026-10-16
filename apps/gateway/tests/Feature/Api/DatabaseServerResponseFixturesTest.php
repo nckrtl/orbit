@@ -3,13 +3,16 @@
 declare(strict_types=1);
 
 use App\Domain\DatabaseServers\DatabaseServerAdmin;
+use App\Domain\DatabaseServers\ValkeyServerAdmin;
 use App\Domain\Instances\Environment\InstanceEnvironmentContext;
 use App\Domain\Instances\Environment\InstanceEnvironmentReader;
 use App\Domain\Instances\Environment\InstanceEnvironmentWriter;
 use App\Domain\Instances\Environment\InstanceEnvironmentWriteResult;
 use App\Domain\Instances\Environment\InstanceOperationPreflight;
 use App\Domain\Processes\ProcessRuntimeManager;
+use App\Domain\RemotePrograms\RemoteProgramRunner;
 use App\Domain\Shared\LifecycleStatus;
+use App\Models\DatabaseServer;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
@@ -17,10 +20,13 @@ use Illuminate\Support\Carbon;
 use Orbit\Sdk\Requests\DatabaseConnections\CreateDatabaseConnectionRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\CreateDatabaseUserRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\ListDatabaseUsersRequest;
+use Orbit\Sdk\Requests\DatabaseServers\CloseDatabaseServerRequest;
 use Orbit\Sdk\Requests\DatabaseServers\CreateDatabaseServerRequest;
 use Orbit\Sdk\Requests\DatabaseServers\ListDatabaseServersRequest;
 use Orbit\Sdk\Requests\DatabaseServers\ShowDatabaseServerRequest;
 use Tests\Support\FakeDatabaseServerAdmin;
+use Tests\Support\FakeValkeyAclProgramRunner;
+use Tests\Support\FakeValkeyServerAdmin;
 use Tests\Support\ProcessesApiFakeRuntimeManager;
 
 /**
@@ -123,6 +129,38 @@ it('records the database server and database user responses', function (): void 
         ListDatabaseUsersRequest::class,
         'GET /api/v1/database-connections/{database_connection}/users',
     );
+    $valkeyAdmin = new FakeValkeyServerAdmin;
+    app()->instance(ValkeyServerAdmin::class, $valkeyAdmin);
+    app()->instance(RemoteProgramRunner::class, new FakeValkeyAclProgramRunner);
+    record_fixture(
+        $this->postJson('/api/v1/database-servers', ['slug' => 'beast-valkey', 'node_id' => $dbNode->id, 'driver' => 'redis'])->assertCreated(),
+        'database-servers/database-server-create/valkey',
+        CreateDatabaseServerRequest::class,
+        'POST /api/v1/database-servers',
+    );
+    record_fixture(
+        $this->postJson('/api/v1/database-connections', ['slug' => 'queue', 'server' => 'beast-valkey', 'database' => 1, 'patterns' => ['queue:*'], 'allow' => ['@list', 'eval']])->assertCreated(),
+        'database-connections/database-create/valkey',
+        CreateDatabaseConnectionRequest::class,
+        'POST /api/v1/database-connections',
+    );
+    $valkey = DatabaseServer::query()->where('slug', 'beast-valkey')->sole();
+    $valkey->update(['default_open' => true]);
+    $valkeyAdmin->defaultClients = ['10.44.0.80:12345'];
+    record_fixture(
+        $this->postJson('/api/v1/database-servers/beast-valkey/close')->assertConflict(),
+        'database-servers/database-server-close/in-use',
+        CloseDatabaseServerRequest::class,
+        'POST /api/v1/database-servers/{database_server}/close',
+    );
+    $valkeyAdmin->defaultClients = [];
+    record_fixture(
+        $this->postJson('/api/v1/database-servers/beast-valkey/close')->assertOk(),
+        'database-servers/database-server-close/default',
+        CloseDatabaseServerRequest::class,
+        'POST /api/v1/database-servers/{database_server}/close',
+    );
+
 });
 
 final class DatabaseServerFixtureEnvironment implements InstanceEnvironmentReader, InstanceEnvironmentWriter, InstanceOperationPreflight

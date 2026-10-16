@@ -22,6 +22,8 @@ final class DoctorIssueCodeCatalog
                 ?? FirewallDoctorIssueCode::InspectionFailed,
             DoctorFamily::DatabaseConnection => DatabaseConnectionDoctorIssueCode::tryFrom($code)
                 ?? DatabaseConnectionDoctorIssueCode::InspectionFailed,
+            DoctorFamily::DatabaseServer => DatabaseServerDoctorIssueCode::tryFrom($code)
+                ?? DatabaseServerDoctorIssueCode::InspectionFailed,
             DoctorFamily::Route => RouteDoctorIssueCode::tryFrom($code) ?? RouteDoctorIssueCode::InspectionFailed,
         };
     }

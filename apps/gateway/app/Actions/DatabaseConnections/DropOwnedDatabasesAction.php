@@ -41,8 +41,15 @@ final readonly class DropOwnedDatabasesAction
 
     public function drop(DatabaseConnection $connection): void
     {
+        $deleteRecords = static function () use ($connection): void {
+            DB::transaction(static function () use ($connection): void {
+                DatabaseConnectionTarget::query()->where('database_connection_id', $connection->id)->delete();
+                $connection->delete();
+            });
+        };
+
         if ($connection->database_server_id !== null) {
-            $this->serverDatabases->execute($connection);
+            $this->serverDatabases->execute($connection, $deleteRecords);
         } elseif ($connection->driver === DatabaseDriver::Sqlite && is_string($connection->path)) {
             $owner = $connection->ownerInstance;
 
@@ -51,10 +58,9 @@ final readonly class DropOwnedDatabasesAction
             }
         }
 
-        DB::transaction(static function () use ($connection): void {
-            DatabaseConnectionTarget::query()->where('database_connection_id', $connection->id)->delete();
-            $connection->delete();
-        });
+        if ($connection->database_server_id === null) {
+            $deleteRecords();
+        }
 
         $this->broadcaster->broadcast(
             RecordEventType::DatabaseDeleted,

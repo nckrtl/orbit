@@ -1,0 +1,13 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\DatabaseServers\\CloseDatabaseServerRequest",
+    "route": "POST /api/v1/database-servers/{database_server}/close",
+    "status": 409,
+    "body": {
+        "error": {
+            "code": "database.server_in_use",
+            "message": "1 clients still use default: 10.44.0.80:12345.",
+            "details": {}
+        }
+    }
+}

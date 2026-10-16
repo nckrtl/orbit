@@ -370,6 +370,27 @@ describe('instance:create database clone', function (): void {
         'pgsql' => [['driver' => 'pgsql', 'host' => 'db.example.test', 'database' => 'acme', 'username' => 'acme', 'password' => 'x']],
     ]);
 
+    it('refuses a default database on a Valkey server before anything changes', function (): void {
+        $server = database_clone_server($this->node);
+        $server->update(['slug' => 'beast-valkey', 'driver' => 'redis']);
+        database_clone_source($this->default, [
+            'driver' => 'mysql',
+            'database_server_id' => $server->id,
+            'host' => '10.44.0.3',
+            'database' => 'acme_default',
+            'username' => 'acme_default',
+            'password' => 'default-secret',
+        ]);
+
+        $this->postJson('/api/v1/instances', database_clone_request($this->project, $this->node))
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'database.driver_unsupported');
+
+        expect(Instance::query()->where('name', 'feature-x')->exists())->toBeFalse()
+            ->and(DatabaseConnection::query()->count())->toBe(1)
+            ->and($this->admin->statements)->toBe([]);
+    });
+
     it('removes the Instance and drops the partial copy when the copy fails', function (): void {
         $server = database_clone_server($this->node);
         database_clone_source($this->default, [
@@ -631,6 +652,19 @@ describe('instance:create with database_server', function (): void {
         'missing' => ['other-mysql', 404, 'database.server_missing'],
         'inactive' => ['beast-mysql', 409, 'database.server_inactive'],
     ]);
+
+    it('refuses a Valkey server before anything changes', function (): void {
+        $this->server->update(['slug' => 'beast-valkey', 'driver' => 'redis']);
+
+        $this->postJson('/api/v1/instances', [...database_clone_request($this->project, $this->node), 'database_server' => 'beast-valkey'])
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'database.driver_unsupported');
+
+        expect(Instance::query()->where('name', 'feature-x')->exists())->toBeFalse()
+            ->and(DatabaseConnection::query()->exists())->toBeFalse()
+            ->and($this->admin->statements)->toBe([])
+            ->and($this->transport->inputs)->toBe([]);
+    });
 
     it('rejects an invalid server slug', function (): void {
         $this->postJson('/api/v1/instances', [...database_clone_request($this->project, $this->node), 'database_server' => 'Beast MySQL'])

@@ -26,7 +26,7 @@ These are the terms every part of Orbit shares. Each domain page defines the ter
 - **Route**: A domain that reaches an Instance or a Node-local service. See [Routes](/reference/routes).
 - **Process**: A long-running service that Orbit manages for an Instance or a Node, such as a queue worker. See [Processes and schedules](/reference/processes-and-schedules).
 - **Schedule**: A command that runs on a timer for an Instance or a Node. See [Schedules](/reference/schedules).
-- **Database server**: A MySQL server that Orbit runs as a Docker Process on a Node and that holds Database connections. See [Database servers](/reference/database-servers).
+- **Database server**: A MySQL or Valkey server that Orbit runs as a Docker Process on a Node and that holds Database connections. See [Database servers](/reference/database-servers).
 - **Deployment**: One release that Orbit prepares and activates on a production Instance. See [Production release layout](/reference/deployments).
 
 ## Operations

@@ -412,3 +412,12 @@ function database_connection_sdk_data(): array
         'test_database' => null,
     ];
 }
+
+it('transports Valkey ACL inputs with omitted and explicit empty lists kept distinct', function (): void {
+    expect(new CreateDatabaseConnectionRequest('queue', server: 'cache', database: 0, patterns: ['queue:*'], allow: ['@list', 'eval'])->body()->all())
+        ->toBe(['slug' => 'queue', 'server' => 'cache', 'patterns' => ['queue:*'], 'allow' => ['@list', 'eval'], 'database' => 0])
+        ->and(new CreateDatabaseConnectionRequest('queue', server: 'cache')->body()->all())
+        ->toBe(['slug' => 'queue', 'server' => 'cache'])
+        ->and(new CreateDatabaseConnectionRequest('queue', server: 'cache', patterns: [], allow: [])->body()->all())
+        ->toBe(['slug' => 'queue', 'server' => 'cache', 'patterns' => [], 'allow' => []]);
+});

@@ -137,6 +137,8 @@ Continuous integration and the local candidate gate run `bin/docs-openapi --chec
 
 These reasons explain the design. Check them before you propose a change.
 
+For a request with alternative object shapes, the manifest keeps the full `oneOf` branches. A field shared by branches accepts each distinct field schema through `anyOf`; the last branch must not replace earlier types or bounds. For example, `database-create` accepts a string database name when registering MySQL or PostgreSQL, and an integer database index when creating a Valkey ACL user. The full branches still reject a string index in Valkey user creation and an integer database name in registration.
+
 ### Tools generated from the API description
 
 More than a hundred hand-written tool classes would repeat the form requests' rules and drift from them with every API change. Generating the catalogue from the OpenAPI document keeps one source. A weak tool description is fixed in the form request, the data class, or the CLI command text that [API reference generation](/reference/api-reference) copies into the operation.

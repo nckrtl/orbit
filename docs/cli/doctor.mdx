@@ -32,7 +32,7 @@ orbit doctor [--node=ID] [--family=FAMILY ...] [--json]
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `--node=ID` | every registered Node the caller may address | Numeric Node ID. The CLI rejects a value that is not a positive integer with `doctor.node_id_invalid`. |
-| `--family=FAMILY` | every family | Limit checks to one family. Repeat the option for more than one. Accepted values are `node`, `role`, `project`, `instance`, `schedule`, `tool`, `process`, `firewall`, `database_connection`, and `route`. The Gateway refuses another value with `validation.failed`. |
+| `--family=FAMILY` | every family | Limit checks to one family. Repeat the option for more than one. Accepted values are `node`, `role`, `project`, `instance`, `schedule`, `tool`, `process`, `firewall`, `database_connection`, `route`, and `database_server`. The Gateway refuses another value with `validation.failed`. |
 
 ```bash
 orbit doctor
@@ -71,7 +71,7 @@ Repository probes pass `-c core.hooksPath=/dev/null` and `-c core.fsmonitor=fals
 
 Checks that read root-owned files run through passwordless `sudo` on the Node. Every check that reads the live Caddyfile is one of them, because Orbit publishes each Caddyfile version under `/etc/caddy/orbit-versions` as `root:caddy` with mode `0750`.
 
-Families run in this order, whatever filter you pass: `node`, `role`, `project`, `instance`, `schedule`, `tool`, `process`, `firewall`, `database_connection`, `route`. Nodes sort by name and then ID. Resources sort by ID. So two runs against the same state produce the same report.
+Families run in this order, whatever filter you pass: `node`, `role`, `project`, `instance`, `schedule`, `tool`, `process`, `firewall`, `database_connection`, `route`, `database_server`. Nodes sort by name and then ID. Resources sort by ID. So two runs against the same state produce the same report.
 
 Each issue carries a stable code, a kind of `informational`, `drift`, or `unverifiable`, the resource type, ID, and name, a summary, and bounded `expected` and `observed` values. `expected` and `observed` stay a boolean, a string of at most 255 characters, or null.
 
@@ -119,6 +119,7 @@ Adopt one selected package through [tool:adopt](/cli/tool#orbit-tooladopt) or th
 | `firewall` | UFW backend state and each named rule the Gateway owns on the Node. | `firewall.backend_inactive`, `firewall.lifecycle_not_active`, `firewall.rule_missing`, `firewall.rule_mismatch`, `firewall.node_unreachable`, `firewall.inspection_failed` |
 | `database_connection` | Registry records and Instance attachments against the stored environment keys they project, with each record's stored host and port. | `database_connection.missing`, `database_connection.unhealthy`, `database_connection.env_mismatch`, `database_connection.inspection_failed` |
 | `route` | The stored status of each Route the Node serves. Custom proxy DNS, Orbit CA leaf, Caddy site, and local upstream reachability on the serving Node. | `route.lifecycle_not_active`, `route.domain_reserved`, `route.dns_mismatch`, `route.certificate_mismatch`, `route.caddy_mismatch`, `route.upstream_unreachable`, `route.node_unreachable`, `route.inspection_failed` |
+| `database_server` | Each Valkey [Database server](/reference/database-servers#check-a-valkey-server-with-doctor) on the Node whose Process should run: a client without a password gets no access, Valkey runs with Orbit's ACL file, and the live users equal the recorded users. MySQL servers have no checks yet. | `database_server.open`, `database_server.acl_file_missing`, `database_server.acl_mismatch`, `database_server.inspection_failed` |
 
 `node.disk_low` is a drift issue when the checked filesystem has less than 10% free space, less than 2 GiB free space, or less than 10% free inodes. On Linux that filesystem is the one holding the Orbit home or root. On macOS it is the one that contains the enrolled account's home directory, which is the volume for that account's Homebrew prefix and Vite+ global store. Doctor reads the macOS volume with a native disk query, not a Linux path and not the Node agent. The finding reports the observed free space. If a filesystem does not provide inode totals, including APFS, Doctor still checks its free space and reports inode availability as unavailable rather than treating zero reported inodes as zero percent free. A macOS home volume that cannot be read is `node.inspection_failed`. Doctor only reports the issue; it never deletes files or frees space.
 

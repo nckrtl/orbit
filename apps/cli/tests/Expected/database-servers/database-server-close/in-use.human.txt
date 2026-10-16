@@ -1,0 +1,9 @@
+Closing Database server...
+
+┌  Close Database server
+│
+├  ● Closing Database server
+│
+└  Operation failed.
+
+1 clients still use default: 10.44.0.80:12345.

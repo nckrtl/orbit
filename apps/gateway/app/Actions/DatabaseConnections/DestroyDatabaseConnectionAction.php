@@ -26,8 +26,9 @@ final readonly class DestroyDatabaseConnectionAction
             );
         }
 
-        $this->drops->execute($connection);
-        $connection->delete();
+        $this->drops->execute($connection, static function () use ($connection): void {
+            $connection->delete();
+        });
 
         ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
             RecordEventType::DatabaseDeleted,

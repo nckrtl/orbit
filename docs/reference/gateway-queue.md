@@ -1,6 +1,6 @@
 ---
 title: "Gateway queue"
-description: "The Gateway's Redis connection, four queues, Laravel Horizon, and how a release moves them."
+description: "The Gateway's Redis connection and ACL user, four queues, Laravel Horizon, and how a release moves them."
 covers:
   - apps/gateway/app/Domain/Gateway/GatewayQueue.php
   - apps/gateway/app/{Infrastructure/Gateway/GatewayQueue*,Infrastructure/Gateway/GatewayHorizon.php,Console/Scheduling/**,Jobs/RunScheduledCommand.php,Providers/GatewayQueueServiceProvider.php}
@@ -13,16 +13,16 @@ The Gateway scheduler dispatches most of its work. Each scheduled command that d
 
 ## Connection
 
-The queue connection `gateway` uses the Redis driver. Its Redis server is a [Redis Database connection](/reference/database-connections) that Orbit already has, such as the Valkey on the `services` Node (`services-valkey`). Set these keys in `/home/orbit/shared/gateway.env`, then run a release. The release caches them and creates the [`horizon` Process](#horizon). Do not only [apply the env change](/reference/gateway-recovery#apply-an-env-change): the scheduler would then dispatch to the queue before Horizon runs.
+The queue connection `gateway` uses the Redis driver. Its Redis server is reached through a [Redis Database connection](/reference/database-connections), such as `gateway-queue` for the Valkey on the `services` Node. Set these keys in `/home/orbit/shared/gateway.env`, then run a release. The release caches them and creates the [`horizon` Process](#horizon). Do not only [apply the env change](/reference/gateway-recovery#apply-an-env-change): the scheduler would then dispatch to the queue before Horizon runs.
 
 | Key | Default | Effect |
 | --- | --- | --- |
 | `ORBIT_GATEWAY_QUEUE_CONNECTION` | empty | The slug of the Redis Database connection. Empty keeps the [inline schedule](#without-a-queue) |
-| `ORBIT_GATEWAY_QUEUE_REDIS_DATABASE` | `1` | The Redis database index of the queue and Horizon. Use an index that no other user of that server uses |
+| `ORBIT_GATEWAY_QUEUE_REDIS_DATABASE` | `1` | The Redis database index of the queue and Horizon. Use an index that no other client of that server uses |
 
-The Gateway reads the host, port, and password of that connection from its records when a process first uses Redis. When the key names no Redis connection, the Gateway logs an error and every dispatch to the queue fails. Every key starts with `orbit-gateway:`, and Horizon's own keys with `orbit-gateway-horizon:`. The Redis client is Predis, so the Gateway needs no PHP Redis extension.
+The Gateway reads the host, port, username, and password of that connection from its records when a process first uses Redis. When the key names no Redis connection, the Gateway logs an error and every dispatch to the queue fails. Every key starts with `orbit-gateway:`, and Horizon's own keys with `orbit-gateway-horizon:`. The Redis client is Predis, so the Gateway needs no PHP Redis extension.
 
-`services-valkey` is the `valkey` Docker Process on `services`. It listens on the WireGuard address of `services`, so only WireGuard peers reach it. It requires a password (`requirepass`), which its Database connection stores, and it writes an append-only file (`--appendonly yes`) to the `services-valkey-data` volume, so queued jobs survive a restart. A separate Valkey ACL user for the Gateway is a follow-up.
+After [setup](#set-up-the-queue-user), the `valkey` Docker Process on `services` is the Valkey [Database server](/reference/database-servers) `services-valkey`. It listens on the WireGuard address of `services`, so only WireGuard peers reach it. It writes an append-only file (`--appendonly yes`) to the `services-valkey-data` volume, so queued jobs survive a restart. Every client logs in with a password. The queue and Horizon log in as their own [ACL user](#acl-users), `gateway-queue`, through the Database connection of the same name. That user reaches only the queue's keys.
 
 ## Queues
 
@@ -145,6 +145,70 @@ systemd starts a failed Horizon again after 2 seconds. After several failed star
 
 A job that Redis lost runs again only when its owner queues it again. For example, the tick queues a publish again after its backoff.
 
+## ACL users
+
+After setup, the queue and Horizon log in to the [Valkey Database server](/reference/database-servers#a-valkey-server) `services-valkey` as the ACL user `gateway-queue`. That user can read and change only the queue's keys. The Gateway holds every password, and [Doctor](/reference/database-servers#check-a-valkey-server-with-doctor) checks the users.
+
+| User | Keys | Commands | Used by |
+| --- | --- | --- | --- |
+| `default` | All | All | The admin user. The [ProxyCli collector](/reference/proxycli#collection) and the Gateway's [snapshot reads](/reference/proxycli#clients) also use it, through the Database connection `services-valkey`, until the collector [gets its own user](#not-built) |
+| `gateway-queue` | `orbit-gateway:*` and `orbit-gateway-horizon:*` | The rules in the table below | The queue and Horizon, through the Database connection `gateway-queue` |
+
+[`database:create`](/reference/database-servers#create-an-acl-user-on-a-valkey-server) creates the user from key patterns and allowed commands. Orbit adds `resetchannels`, `-@all`, and the final `-@admin -@dangerous`, so the user has no pub/sub channel and no admin or dangerous command:
+
+| Input | Why |
+| --- | --- |
+| `--pattern='orbit-gateway:*'`, `--pattern='orbit-gateway-horizon:*'` | The keys of the queue and of Horizon. `orbit-gateway:*` does not match the Horizon prefix `orbit-gateway-horizon:`, so the user names both |
+| `--allow=@connection` | On each new connection, Predis logs in with `HELLO`, sends `CLIENT SETINFO`, and selects the queue's database with `SELECT` |
+| `--allow=@transaction` | `horizon:snapshot` and the dashboard use `MULTI` and `EXEC` |
+| `--allow=@keyspace` | Horizon sets expiry times on jobs and deletes them. `horizon:clear-metrics` finds metrics with `SCAN` |
+| `--allow=@string`, `@list`, `@hash`, `@set`, `@sortedset` | The queue keeps jobs in lists and sorted sets, and an idle worker waits with `BLPOP`. Horizon keeps jobs, metrics, and tags in strings, hashes, sets, and sorted sets |
+| `--allow=eval` | The queue's Lua scripts push, pop, and move jobs. Valkey checks each `redis.call` in a script against the same rules. `@scripting` would also allow `SCRIPT FLUSH` and `FUNCTION FLUSH` |
+| `--allow=time` | The dashboard's Lua scripts for pending jobs call `TIME`. `TIME` is only in `@fast`, which would allow many more commands |
+
+The final `-@admin -@dangerous` removes commands that the categories above hold, such as `KEYS`, `SORT`, `FLUSHDB`, `CLIENT LIST`, and `CLIENT KILL`. The Gateway sends none of them. Key patterns do not limit the database index, and Valkey has no memory limit, so a leaked `gateway-queue` password can still fill the server's memory.
+
+### Set up the queue user
+
+These steps bring the `valkey` Process on `services` under Orbit and move the queue to its own user. Run each command on a machine with Gateway access.
+
+First, adopt the Process as a Valkey Database server. `<id>` is the ID of the `valkey` Process in `orbit process:list --node=services`. Run this when the [dashboard](#dashboard) shows no running build or operation, because Valkey restarts once:
+
+```bash
+orbit database:server:create services-valkey --node=services --driver=redis --process=<id> --connection=services-valkey
+```
+
+The Gateway takes the password of `services-valkey` as the admin password, writes the ACL file, and restarts Valkey with it. Valkey reads its append-only file again, so the queued jobs stay. The queue and the collector keep logging in as `default` with the same password. [When Redis is down](#when-redis-is-down) describes the Gateway during the restart.
+
+Then create the queue's user and its connection:
+
+```bash
+orbit database:create gateway-queue --server=services-valkey --database=1 \
+  --pattern='orbit-gateway:*' --pattern='orbit-gateway-horizon:*' \
+  --allow=@connection --allow=@transaction --allow=@keyspace --allow=@string --allow=@list \
+  --allow=@hash --allow=@set --allow=@sortedset --allow=eval --allow=time
+```
+
+Last, as `orbit` on the Gateway, set this key in `/home/orbit/shared/gateway.env`:
+
+```bash
+ORBIT_GATEWAY_QUEUE_CONNECTION=gateway-queue
+```
+
+Then [run a release](/reference/gateway-recovery#deploy-a-release) of the current commit, as [Connection](#connection) requires. Read the commit as `release_sha` from `orbit gateway:status --json`:
+
+```bash
+orbit gateway:release:deploy <SHA>
+```
+
+The command follows the release, which must end `verified`. Its handoff runs `horizon:terminate`, so Horizon starts again as `gateway-queue` after its running jobs end ([Releases](#releases)). Both users reach the queue's keys, so no job is lost. When a newer commit passed CI meanwhile, or GitHub does not answer, the manual deploy [pauses automatic releases](/reference/gateway-recovery#pause) with `manual_deploy`. Then run [`orbit gateway:release:auto:resume`](/cli/gateway#orbit-gatewayreleaseautoresume).
+
+### Check the queue user
+
+Run `orbit doctor --family=database_server --node=services`. It reports no issue when the server runs with its ACL file and the live users match the records. Open the [dashboard](#dashboard), including its pending jobs. Then read the Horizon log with `orbit process:logs <id>`, where `<id>` is the `horizon` Process of the Gateway Node. A command that the user may not run shows there as an error with `NOPERM`.
+
+To switch back, set `ORBIT_GATEWAY_QUEUE_CONNECTION=services-valkey` and run a release of the current commit again. Horizon then logs in as `default` and works the same jobs. Do not use `gateway:release:rollback` for this: it switches code only, and every release reads the same env file.
+
 ## Operations
 
 These commands inspect and control Horizon on the Gateway.
@@ -165,6 +229,8 @@ Doctor does not report an old `last_tick_at` yet. Until it does, check [`orbit t
 
 A Horizon that is down while its Process should run is ordinary Process drift. Doctor reports it as `process.state_mismatch`, or `process.crash_loop` when systemd keeps restarting it. Problem collection runs in the scheduler, so it records that issue within one collection cycle, and `problems:file` files it once two collections 10 minutes apart saw it. A Horizon stopped with `orbit process:stop` is not drift and is not reported.
 
+The ProxyCli collector has no ACL user of its own. It logs in as `default` through `services-valkey`, and so do the Gateway's snapshot reads. Step 3 of the [AI router build](/decisions/0212-turn-proxycli-into-the-ai-router-extension#build-order) renames their keys from `orbit:proxycli:*` to `orbit:ai-router:*`. Nick creates their connection on `services-valkey` with the pattern `orbit:ai-router:*` after step 3 and before step 4. Step 4 binds it ([ADR 0221](/decisions/0221-run-valkey-database-servers-with-orbit-owned-acl-users#the-collector-gets-its-own-user-later)).
+
 ## Why it works this way
 
 The scheduler used to run its work, and the task VM workers, as foreground commands. A foreground command holds the scheduler's run for that minute, so a slow tick or a VM job could hold a publish for minutes. With dispatch, the scheduler's run takes milliseconds, and each queue's workers decide when a job starts.
@@ -172,3 +238,7 @@ The scheduler used to run its work, and the task VM workers, as foreground comma
 Problem collection is the exception, because it is how a stopped Horizon gets recorded. As a queued job, it would stop with Horizon, and the failure it should report would go unseen. In the scheduler, a collection costs late 10-second dispatches once every 10 minutes, and a release's [scheduler drain](/reference/gateway-recovery#runtime-handoff) waits for a running collection. Both are short and need no extra machinery.
 
 Horizon needs Redis. The fleet already runs Valkey on the `database` role, so the Gateway uses that registered connection instead of a second server on its own host. Orbit's records keep its address, as for every other Database connection.
+
+### An ACL user for the queue
+
+The queue has its own ACL user because Valkey is shared. As `default`, a fault in the queue or Horizon, or a leaked queue password, could read or delete the collector's keys. A second Database connection carries the user, because one connection holds one username and one password for all its clients. The user lives on a [Database server](/reference/database-servers#valkey-starts-only-from-orbits-acl-file), so the Gateway holds its password and Doctor checks it.

@@ -46,10 +46,11 @@ final class ListDatabaseServersCommand extends DatabaseCommand
         }
 
         ConsoleWriter::write($this->output, $this->humanRenderer()->table(
-            ['Slug', 'Node ID', 'Tag', 'Port', 'Status', 'Databases'],
+            ['Slug', 'Driver', 'Node ID', 'Tag', 'Port', 'Status', 'Databases'],
             array_map(
                 static fn (DatabaseServerResponse $server): array => [
                     $server->slug,
+                    $server->driver,
                     $server->nodeId,
                     $server->tag,
                     $server->port,

@@ -1,0 +1,39 @@
+Creating database...
+
+┌  Create database
+│
+├  ● Created database
+│
+└  Created database.
+
+
+┌  ACL user [queue] created on [beast-valkey].
+│
+├  ID                  2
+│
+├  Slug                queue
+│
+├  Driver              redis
+│
+├  Node ID             2
+│
+├  Host                10.44.0.80
+│
+├  Port                6379
+│
+├  Database            1
+│
+├  Path                —
+│
+├  Username            queue
+│
+├  Password            stored
+│
+├  Server              beast-valkey
+│
+├  Owner Instance ID   —
+│
+├  Test database       —
+│
+└  Request ID          0198e15c-bf97-7c23-8f1f-61b8fe67a844
+

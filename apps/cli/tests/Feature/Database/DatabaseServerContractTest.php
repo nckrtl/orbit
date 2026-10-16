@@ -57,3 +57,13 @@ describe('database server contract', function (): void {
         run_contract('database-connections/database-user-create/default', 'database:user:create', ['slug' => 'dlf-leden', '--username' => 'reporting', '--password' => 'reporting-secret', '--read-only' => true, '--json' => true], 'database-connections/database-user-create/default.json', 0);
     });
 });
+
+it('renders Valkey creation and closing from recorded responses', function (): void {
+    foreach ([false, true] as $json) {
+        $suffix = $json ? '.json' : '.human.txt';
+        run_contract('database-servers/database-server-create/valkey', 'database:server:create', ['slug' => 'beast-valkey', '--node' => '2', '--driver' => 'redis', '--json' => $json], 'database-servers/database-server-create/valkey'.$suffix, 0);
+        run_contract('database-servers/database-server-close/in-use', 'database:server:close', ['slug' => 'beast-valkey', '--json' => $json], 'database-servers/database-server-close/in-use'.$suffix, 1);
+        run_contract('database-servers/database-server-close/default', 'database:server:close', ['slug' => 'beast-valkey', '--json' => $json], 'database-servers/database-server-close/default'.$suffix, 0);
+        run_contract('database-connections/database-create/valkey', 'database:create', ['slug' => 'queue', '--server' => 'beast-valkey', '--database' => '1', '--pattern' => ['queue:*'], '--allow' => ['@list', 'eval'], '--json' => $json], 'database-connections/database-create/valkey'.$suffix, 0);
+    }
+});

@@ -124,7 +124,7 @@ The Gateway exposes these Process endpoints.
 | --- | --- |
 | `GET /api/v1/processes` | The Processes with desired state, runtime status, `keep_alive`, `restart_on_deploy`, `cpu`, and `memory_bytes`. `target_type` and `target_id` limit the list to one owner. |
 | `POST /api/v1/processes` | Creates one Process. |
-| `PATCH /api/v1/processes/{process}` | Replaces the specification and reconverges the runtime of the same Process. |
+| `PATCH /api/v1/processes/{process}` | Replaces the specification and reconverges the runtime of the same Process. The Process of a Valkey [Database server](/reference/database-servers#retry-and-response) is refused with `process.required_by_database_server` (409), so its command always keeps the server's ACL file. |
 | `POST /api/v1/processes/{process}/start`, `/stop`, `/restart` | Changes the runtime and stores the desired state: `running` after start and restart, `stopped` after stop. |
 | `GET /api/v1/processes/{process}/logs?lines=N` | A tail of 1 through 1,000 lines over SSH. See [Live logs](/reference/live-logs) to follow new lines. |
 | `DELETE /api/v1/processes/{process}` | Stops the Process, removes its unit or container, and deletes the record. The Process of a [Database server](/reference/database-servers) is refused with `process.required_by_database_server` (409); remove the server instead. |
@@ -160,6 +160,8 @@ For example, `PATCH /api/v1/processes/41` can replace a Docker specification wit
   "keep_alive": false
 }
 ```
+
+This example updates an ordinary Process. Run a Valkey that clients log in to as a [Valkey Database server](/reference/database-servers#a-valkey-server) instead: it starts only with a password, and `process:update` refuses its Process.
 
 The response keeps `id: 41`, returns `working_directory: null`, and exposes the environment only as `{"CACHE_LABEL":"[REDACTED]"}` under `runtime_config.environment`. Invalid fields return HTTP 422 before runtime mutation. An ownership conflict or competing operation returns the existing Process error code, not a successful replacement. A failed runtime operation uses the same failure contract as create, start, and restart.
 

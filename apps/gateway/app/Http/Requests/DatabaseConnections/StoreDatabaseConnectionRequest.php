@@ -8,6 +8,8 @@ use App\Data\DatabaseConnections\AddDatabaseConnectionData;
 use App\Data\DatabaseConnections\CreateServerDatabaseData;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Http\Requests\TopLevelJsonObjectInspector;
+use App\Models\DatabaseServer;
+use App\Support\ValidatedData;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\ValidationException;
 use UnexpectedValueException;
@@ -18,7 +20,7 @@ final class StoreDatabaseConnectionRequest extends FormRequest
     public function rules(): array
     {
         return $this->createsOnServer()
-            ? DatabaseConnectionFieldRules::onServer()
+            ? DatabaseConnectionFieldRules::onServer($this->serverDriver())
             : DatabaseConnectionFieldRules::register();
     }
 
@@ -49,6 +51,9 @@ final class StoreDatabaseConnectionRequest extends FormRequest
             slug: is_string($validated['slug'] ?? null) ? $validated['slug'] : '',
             server: is_string($validated['server'] ?? null) ? $validated['server'] : '',
             instanceId: self::nullableInt($validated, 'instance_id'),
+            patterns: isset($validated['patterns']) ? ValidatedData::stringList($validated['patterns']) : [],
+            allow: isset($validated['allow']) ? ValidatedData::stringList($validated['allow']) : [],
+            database: self::nullableInt($validated, 'database'),
         );
     }
 
@@ -67,6 +72,20 @@ final class StoreDatabaseConnectionRequest extends FormRequest
             username: self::nullableString($validated, 'username'),
             password: self::nullableString($validated, 'password'),
         );
+    }
+
+    /** The driver of the named Database server, which decides the fields the create takes, or null without one. */
+    private function serverDriver(): ?DatabaseDriver
+    {
+        $slug = $this->validationData()['server'] ?? null;
+
+        if (! is_string($slug) || preg_match(DatabaseConnectionFieldRules::SLUG_PATTERN, $slug) !== 1) {
+            return null;
+        }
+
+        $server = DatabaseServer::query()->where('slug', $slug)->first(['driver']);
+
+        return $server instanceof DatabaseServer ? $server->driver : null;
     }
 
     /** @param array<string, mixed> $validated */

@@ -8,6 +8,7 @@
             {
                 "id": 1,
                 "slug": "beast-mysql",
+                "driver": "mysql",
                 "node_id": 2,
                 "process_id": 1,
                 "tag": "8.4",

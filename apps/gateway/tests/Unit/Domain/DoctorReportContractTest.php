@@ -7,6 +7,7 @@ use App\Data\Doctor\DoctorIssueData;
 use App\Data\Doctor\DoctorNodeReportData;
 use App\Data\Doctor\DoctorReportData;
 use App\Domain\Doctor\DatabaseConnectionDoctorIssueCode;
+use App\Domain\Doctor\DatabaseServerDoctorIssueCode;
 use App\Domain\Doctor\DoctorFamily;
 use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Doctor\DoctorIssueCodeCatalog;
@@ -61,7 +62,7 @@ it('serializes bounded doctor reports and derives status precedence', function (
     $report = DoctorReportData::fromNodes([$node]);
 
     expect(array_map(static fn (DoctorFamily $family): string => $family->value, DoctorFamily::cases()))
-        ->toEqual(['node', 'role', 'project', 'instance', 'schedule', 'tool', 'process', 'firewall', 'database_connection', 'route'])
+        ->toEqual(['node', 'role', 'project', 'instance', 'schedule', 'tool', 'process', 'firewall', 'database_connection', 'route', 'database_server'])
         ->and($family->status->value)
         ->toBe('unverifiable')
         ->and($family->family)
@@ -218,6 +219,7 @@ it('defines the exact stable issue-code catalog for every Doctor family', functi
         DoctorFamily::Process->value => ProcessDoctorIssueCode::cases(),
         DoctorFamily::Firewall->value => FirewallDoctorIssueCode::cases(),
         DoctorFamily::DatabaseConnection->value => DatabaseConnectionDoctorIssueCode::cases(),
+        DoctorFamily::DatabaseServer->value => DatabaseServerDoctorIssueCode::cases(),
         DoctorFamily::Route->value => RouteDoctorIssueCode::cases(),
     ];
 
@@ -348,6 +350,12 @@ it('defines the exact stable issue-code catalog for every Doctor family', functi
             'database_connection.unhealthy',
             'database_connection.env_mismatch',
             'database_connection.inspection_failed',
+        ],
+        'database_server' => [
+            'database_server.open',
+            'database_server.acl_file_missing',
+            'database_server.acl_mismatch',
+            'database_server.inspection_failed',
         ],
         'route' => [
             'route.lifecycle_not_active',

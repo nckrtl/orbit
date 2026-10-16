@@ -663,3 +663,19 @@ function database_cli_attachment_json(): string
         JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
     );
 }
+
+it('sends repeated ACL patterns and allow rules with the Redis database index', function (): void {
+    $mockClient = database_cli_mock(CreateDatabaseConnectionRequest::class, [
+        ...database_cli_gateway_data(), 'driver' => 'redis', 'database' => '0',
+    ], 201);
+    $this->artisan('database:create', ['slug' => 'app', '--server' => 'cache', '--database' => '0', '--pattern' => ['queue:*', 'horizon:*'], '--allow' => ['@list', 'eval'], '--json' => true])->assertExitCode(0);
+    expect($mockClient->getLastRequest()?->body()->all())->toBe([
+        'slug' => 'app', 'server' => 'cache', 'patterns' => ['queue:*', 'horizon:*'], 'allow' => ['@list', 'eval'], 'database' => 0,
+    ]);
+});
+
+it('refuses ACL options without a server before sending', function (): void {
+    $mockClient = MockClient::global([]);
+    $this->artisan('database:create', ['slug' => 'app', '--driver' => 'redis', '--host' => 'localhost', '--pattern' => ['app:*'], '--json' => true])->assertExitCode(1);
+    expect($mockClient->getLastPendingRequest())->toBeNull();
+});

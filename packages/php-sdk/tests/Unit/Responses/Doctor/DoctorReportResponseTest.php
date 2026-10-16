@@ -74,6 +74,7 @@ it('accepts every family and all statuses', function (): void {
         'process',
         'firewall',
         'database_connection',
+        'database_server',
         'route',
     ]);
 

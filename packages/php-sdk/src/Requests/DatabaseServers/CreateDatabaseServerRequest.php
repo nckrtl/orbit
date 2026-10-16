@@ -23,6 +23,9 @@ final class CreateDatabaseServerRequest extends GatewayRequest implements HasBod
         private readonly int $nodeId,
         private readonly ?string $tag = null,
         private readonly ?int $port = null,
+        private readonly ?string $driver = null,
+        private readonly ?int $processId = null,
+        private readonly ?string $connection = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -49,6 +52,12 @@ final class CreateDatabaseServerRequest extends GatewayRequest implements HasBod
 
         if ($this->port !== null) {
             $body['port'] = $this->port;
+        }
+
+        foreach (['driver' => $this->driver, 'process_id' => $this->processId, 'connection' => $this->connection] as $key => $value) {
+            if ($value !== null) {
+                $body[$key] = $value;
+            }
         }
 
         return $body;

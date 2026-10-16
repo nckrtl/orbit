@@ -56,6 +56,14 @@ final readonly class InstanceDatabaseClonePlanner
                 throw $this->unsupported('The default Instance\'s MySQL database is not on a Database server.');
             }
 
+            if ($server->driver === DatabaseDriver::Redis) {
+                throw new ResourceOperationException(
+                    errorCode: 'database.driver_unsupported',
+                    message: "The default Instance's database is on Valkey server [{$server->slug}], which holds no Instance databases.",
+                    status: 422,
+                );
+            }
+
             return new InstanceDatabaseClonePlan($source, $connection, $server, null);
         }
 

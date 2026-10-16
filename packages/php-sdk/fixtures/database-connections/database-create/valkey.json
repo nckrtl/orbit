@@ -1,0 +1,26 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\DatabaseConnections\\CreateDatabaseConnectionRequest",
+    "route": "POST /api/v1/database-connections",
+    "status": 201,
+    "body": {
+        "data": {
+            "id": 2,
+            "slug": "queue",
+            "driver": "redis",
+            "node_id": 2,
+            "host": "10.44.0.80",
+            "port": 6379,
+            "database": "1",
+            "path": null,
+            "username": "queue",
+            "has_password": true,
+            "server": "beast-valkey",
+            "owner_instance_id": null,
+            "test_database": null
+        },
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+        }
+    }
+}

@@ -101,6 +101,7 @@ abstract class DatabaseCommand extends GatewayCommand
         ConsoleWriter::write($this->output, $this->humanRenderer()->detail($message, [
             'ID' => $server->id,
             'Slug' => $server->slug,
+            'Driver' => $server->driver,
             'Node ID' => $server->nodeId,
             'Process ID' => $server->processId,
             'Tag' => $server->tag,

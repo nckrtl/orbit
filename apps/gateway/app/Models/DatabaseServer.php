@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\Shared\LifecycleStatus;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
@@ -11,15 +12,17 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
- * A MySQL server that Orbit runs as a Docker Node Process. The Gateway is the only holder of its
- * root password, which the model encrypts at rest and never serializes.
+ * A MySQL or Valkey server that Orbit runs as a Docker Node Process. The Gateway is the only holder
+ * of its admin password, `root_password`, which the model encrypts at rest and never serializes.
  *
  * @property int $id
  * @property string $slug
+ * @property DatabaseDriver $driver
  * @property int $node_id
  * @property int|null $process_id
  * @property string $tag
  * @property int $port
+ * @property bool $default_open
  * @property string $root_password
  * @property LifecycleStatus $status
  * @property string|null $failed_step
@@ -30,10 +33,16 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  */
 final class DatabaseServer extends Model
 {
+    /** @var array<string, mixed> */
+    #[\Override]
+    protected $attributes = ['driver' => 'mysql', 'default_open' => false];
+
     /** @var list<string> */
     #[\Override]
     protected $fillable = [
         'slug',
+        'driver',
+        'default_open',
         'node_id',
         'process_id',
         'tag',
@@ -83,6 +92,8 @@ final class DatabaseServer extends Model
     protected function casts(): array
     {
         return [
+            'driver' => DatabaseDriver::class,
+            'default_open' => 'boolean',
             'node_id' => 'integer',
             'process_id' => 'integer',
             'port' => 'integer',

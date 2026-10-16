@@ -13,6 +13,8 @@ Loading Database server...
 │
 ├  Slug         beast-mysql
 │
+├  Driver       mysql
+│
 ├  Node ID      2
 │
 ├  Process ID   1

@@ -12,6 +12,7 @@ use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\DatabaseServers\DatabaseServerAdmin;
 use App\Domain\DatabaseServers\MysqlNames;
 use App\Domain\DatabaseServers\MysqlStatements;
+use App\Domain\DatabaseServers\ValkeyServerAdmin;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\DatabaseConnection;
@@ -19,8 +20,10 @@ use App\Models\DatabaseServer;
 use App\Models\DatabaseUser;
 use App\Models\Instance;
 use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use SensitiveParameter;
 use Throwable;
 
@@ -30,6 +33,9 @@ use Throwable;
  * With an Instance, the user is the Instance's one user on that server. It also gets the test
  * database `<name>_test` and every database whose name starts with it, and the connection is
  * attached to the Instance under prefix DB. Without an Instance, the database gets its own user.
+ *
+ * On a Valkey server it creates one ACL user named after the slug instead, and records the `redis`
+ * connection that logs in as that user. A Valkey server holds no Instance databases.
  */
 final readonly class CreateServerDatabaseAction
 {
@@ -43,11 +49,30 @@ final readonly class CreateServerDatabaseAction
         private MysqlStatements $statements,
         private AttachDatabaseConnectionAction $attach,
         private RecordEventBroadcaster $broadcaster,
+        private ValkeyServerAdmin $valkey,
     ) {}
 
     public function execute(CreateServerDatabaseData $data, ?string $createdBy): DatabaseConnection
     {
         $server = $this->server($data->server);
+
+        if ($server->driver === DatabaseDriver::Redis && $data->instanceId === null) {
+            $lock = Cache::lock("database-server:{$server->id}:acl", 120);
+            if (! $lock->get()) {
+                throw new ResourceOperationException(
+                    errorCode: 'database.server_in_use',
+                    message: "Database server [{$server->slug}] is changing ACL users. Try again.",
+                    status: 409,
+                );
+            }
+
+            try {
+                return $this->createAclUser($server->refresh(), $data, $createdBy);
+            } finally {
+                $lock->release();
+            }
+        }
+
         $instance = $data->instanceId === null
             ? null
             : Instance::query()->with('project')->findOrFail($data->instanceId);
@@ -70,6 +95,7 @@ final readonly class CreateServerDatabaseAction
         ?string $createdBy,
     ): DatabaseConnection {
         $this->assertActive($server);
+        $this->assertHoldsDatabases($server);
 
         if (DatabaseConnection::query()->where('slug', $slug)->exists()) {
             throw $this->slugConflict($slug);
@@ -165,6 +191,7 @@ final readonly class CreateServerDatabaseAction
         array $attributes = [],
     ): DatabaseConnection {
         $this->assertActive($server);
+        $this->assertHoldsDatabases($server);
 
         if (DatabaseConnection::query()->where('slug', $slug)->exists()) {
             throw $this->slugConflict($slug);
@@ -255,13 +282,96 @@ final readonly class CreateServerDatabaseAction
         );
     }
 
-    /** The active Database server with this slug, checked before a caller changes anything. */
+    /**
+     * The active MySQL Database server with this slug, checked before a caller changes anything. A
+     * Valkey server holds no Instance databases.
+     */
     public function activeServer(string $slug): DatabaseServer
     {
         $server = $this->server($slug);
         $this->assertActive($server);
+        $this->assertHoldsDatabases($server);
 
         return $server;
+    }
+
+    /**
+     * Create the ACL user `<slug>` on a Valkey server and record the `redis` connection that logs in
+     * as it, with the rules that Valkey reports. Orbit adds the reset, the password hash, no
+     * channels, and the final deny of `@admin` and `@dangerous`. A create that fails removes the
+     * user and records nothing.
+     */
+    private function createAclUser(DatabaseServer $server, CreateServerDatabaseData $data, ?string $createdBy): DatabaseConnection
+    {
+        $this->assertActive($server);
+        if ($data->database !== null && $data->database >= $this->valkey->databaseCount($server)) {
+            throw ValidationException::withMessages(['database' => ['The database index is outside the range configured on this server.']]);
+        }
+        $slug = $data->slug;
+
+        if (DatabaseConnection::query()->where('slug', $slug)->exists()) {
+            throw $this->slugConflict($slug);
+        }
+
+        $recorded = DatabaseConnection::query()
+            ->where('database_server_id', $server->id)
+            ->where('username', $slug)
+            ->exists();
+
+        if ($recorded || $this->valkey->userExists($server, $slug)) {
+            throw $this->nameConflict($server, $slug);
+        }
+
+        $password = Str::random(self::PASSWORD_LENGTH);
+
+        try {
+            $rules = $this->valkey->setUser($server, $slug, $password, $data->patterns, $data->allow);
+        } catch (ResourceOperationException $exception) {
+            $this->undoAclUser($server, $slug);
+
+            throw $exception;
+        }
+
+        try {
+            $connection = DB::transaction(function () use ($slug, $server, $data, $password, $rules, $createdBy): DatabaseConnection {
+                $connection = DatabaseConnection::query()->create([
+                    'slug' => $slug,
+                    'driver' => DatabaseDriver::Redis->value,
+                    'node_id' => $server->node_id,
+                    'database_server_id' => $server->id,
+                    'owner_instance_id' => null,
+                    'host' => $server->node->wireguard_ip,
+                    'port' => $server->port,
+                    'database' => $data->database === null ? null : (string) $data->database,
+                    'test_database' => null,
+                    'path' => null,
+                    'username' => $slug,
+                    'password' => $password,
+                ]);
+
+                DatabaseUser::query()->create([
+                    'database_connection_id' => $connection->id,
+                    'username' => $slug,
+                    'password' => $password,
+                    'privileges' => $rules,
+                    'created_by' => $createdBy,
+                ]);
+
+                return $connection;
+            });
+        } catch (Throwable $exception) {
+            $this->undoAclUser($server, $slug);
+
+            throw $exception instanceof UniqueConstraintViolationException ? $this->slugConflict($slug) : $exception;
+        }
+
+        $this->broadcaster->broadcast(
+            RecordEventType::DatabaseCreated,
+            $connection->id,
+            DatabaseConnectionData::fromModel($connection)->toArray(),
+        );
+
+        return $connection;
     }
 
     private function server(string $slug): DatabaseServer
@@ -277,6 +387,18 @@ final readonly class CreateServerDatabaseAction
         }
 
         return $server;
+    }
+
+    /** A Valkey server holds no databases of its own: each of its users is one `redis` connection. */
+    private function assertHoldsDatabases(DatabaseServer $server): void
+    {
+        if ($server->driver === DatabaseDriver::Redis) {
+            throw new ResourceOperationException(
+                errorCode: 'database.driver_unsupported',
+                message: "Database server [{$server->slug}] is a Valkey server, which holds no Instance databases.",
+                status: 422,
+            );
+        }
     }
 
     private function assertActive(DatabaseServer $server): void
@@ -394,6 +516,16 @@ final readonly class CreateServerDatabaseAction
 
         try {
             $this->admin->execute($server, $sql);
+        } catch (Throwable) {
+            // The create already failed; its error is the one to report.
+        }
+    }
+
+    /** Remove the ACL user that a failed create may have left. A failure here keeps the original error. */
+    private function undoAclUser(DatabaseServer $server, string $username): void
+    {
+        try {
+            $this->valkey->deleteUser($server, $username);
         } catch (Throwable) {
             // The create already failed; its error is the one to report.
         }

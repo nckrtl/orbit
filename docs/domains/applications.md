@@ -127,6 +127,7 @@ After the source is ready and before the setup steps, Orbit does what [`database
 | `instance.database_server_existing` | 409 | The Instance exists and finished its first setup. The message names the `database:create --instance` and `instance:setup` commands to run. Nothing changes. |
 | `database.server_missing` | 404 | No Database server has that slug. Nothing changes. |
 | `database.server_inactive` | 409 | The Database server is not active. Nothing changes. |
+| `database.driver_unsupported` | 422 | The Database server is a Valkey server, which holds no Instance databases. Nothing changes. |
 | `instance.database_create_failed` | 502 | Orbit could not finish the database. |
 
 The other `database:create` codes, such as `database.name_conflict` and `database.slug_conflict`, pass through. On the request that creates the Instance, every failure after the check removes the Instance and the database it owns, as a failed copy does, and no setup step runs. When a create stops before the database exists, an identical `instance:create` creates it and then runs the setup steps. That retry never removes the Instance: when the database or a setup step fails, the Instance remains and the error says so.

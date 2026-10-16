@@ -86,6 +86,7 @@ it('partitions every persisted model across doctor dispositions', function (): v
         Process::class => DoctorFamily::Process,
         FirewallRule::class => DoctorFamily::Firewall,
         DatabaseConnection::class => DoctorFamily::DatabaseConnection,
+        DatabaseServer::class => DoctorFamily::DatabaseServer,
         RouteCustomProxy::class => DoctorFamily::Route,
     ];
     $ownerInputs = [
@@ -140,7 +141,6 @@ it('partitions every persisted model across doctor dispositions', function (): v
         ProblemCollectorState::class,
         VaultItem::class,
         DatabaseUser::class,
-        DatabaseServer::class,
         Task::class,
         AgentThread::class,
         AgentThreadSendLease::class,

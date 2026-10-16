@@ -32,6 +32,7 @@ final readonly class DatabaseServerResponse
         public int $databasesCount,
         public string $requestId,
         public ?array $databases = null,
+        public string $driver = 'mysql',
     ) {
         if ($id < 1 || $nodeId < 1 || ($processId !== null && $processId < 1) || $databasesCount < 0) {
             throw new InvalidArgumentException('Invalid Database server response identifier.');
@@ -43,6 +44,10 @@ final readonly class DatabaseServerResponse
 
         if (preg_match(self::TAG_PATTERN, $tag) !== 1) {
             throw new InvalidArgumentException('Invalid Database server response field [tag].');
+        }
+
+        if (! in_array($driver, ['mysql', 'redis'], true)) {
+            throw new InvalidArgumentException('Invalid Database server response field [driver].');
         }
 
         if ($port < 1 || $port > 65535) {
@@ -66,6 +71,7 @@ final readonly class DatabaseServerResponse
             slug: self::string($data, 'slug'),
             nodeId: self::integer($data, 'node_id'),
             processId: ($data['process_id'] ?? null) === null ? null : self::integer($data, 'process_id'),
+            driver: array_key_exists('driver', $data) ? self::string($data, 'driver') : 'mysql',
             tag: self::string($data, 'tag'),
             port: self::integer($data, 'port'),
             status: self::string($data, 'status'),
@@ -81,6 +87,7 @@ final readonly class DatabaseServerResponse
         $data = [
             'id' => $this->id,
             'slug' => $this->slug,
+            'driver' => $this->driver,
             'node_id' => $this->nodeId,
             'process_id' => $this->processId,
             'tag' => $this->tag,

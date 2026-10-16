@@ -712,7 +712,7 @@ it('renders local validation failures through the exact json boundary', function
             '--tag' => 'validation secret',
         ],
         'database.server_tag_invalid',
-        'Tag must be a MySQL image tag such as 8.4.',
+        'Tag must be an image tag such as 8.4 or 8.1.',
     ],
     'process target selection' => [
         'process:create',

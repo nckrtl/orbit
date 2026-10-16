@@ -36,7 +36,7 @@ The Gateway's own environment is separate from an Instance's stored configuratio
 
 `ORBIT_GATEWAY_VERIFY_ORIGIN` is the origin deploy uses for `/up` and Gateway status. It defaults to `https://gateway.orbit`. It is not an Instance key.
 
-`ORBIT_GATEWAY_QUEUE_CONNECTION` is the slug of the Redis [Database connection](/reference/database-connections) of the [Gateway queue](/reference/gateway-queue), such as `services-valkey`. Empty, the default, keeps the scheduler running its commands itself and the Gateway creates no `horizon` Process. `ORBIT_GATEWAY_QUEUE_REDIS_DATABASE` is the Redis database index of the queue and Horizon, `1` by default. Neither is an Instance key.
+`ORBIT_GATEWAY_QUEUE_CONNECTION` is the slug of the Redis [Database connection](/reference/database-connections) of the [Gateway queue](/reference/gateway-queue), such as `gateway-queue`. Empty, the default, keeps the scheduler running its commands itself and the Gateway creates no `horizon` Process. `ORBIT_GATEWAY_QUEUE_REDIS_DATABASE` is the Redis database index of the queue and Horizon, `1` by default. Neither is an Instance key.
 
 `ORBIT_GATEWAY_RELEASE_SMOKE_TIMEOUT` and `ORBIT_GATEWAY_RELEASE_SMOKE_PROJECT` configure the [smoke step](/reference/gateway-recovery#smoke) of a Gateway release. The timeout is the limit `bin/gateway-smoke` gets, from 1 to 600 seconds, default `90`. The Project, by ID or slug, turns on the document write check; unset, no release writes a document. They are not Instance keys.
 

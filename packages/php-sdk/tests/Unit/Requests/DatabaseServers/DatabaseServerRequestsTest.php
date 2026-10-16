@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\GatewayRequest;
+use Orbit\Sdk\Requests\DatabaseServers\CloseDatabaseServerRequest;
 use Orbit\Sdk\Requests\DatabaseServers\CreateDatabaseServerRequest;
 use Orbit\Sdk\Requests\DatabaseServers\DestroyDatabaseServerRequest;
 use Orbit\Sdk\Requests\DatabaseServers\ListDatabaseServersRequest;
 use Orbit\Sdk\Requests\DatabaseServers\ShowDatabaseServerRequest;
 use Orbit\Sdk\Responses\DatabaseServers\DatabaseServerResponse;
 use Orbit\Sdk\Responses\DatabaseServers\DatabaseServersResponse;
+use Saloon\Contracts\Body\HasBody;
 use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
@@ -20,6 +22,7 @@ function database_server_sdk_payload(array $overrides = []): array
     return [
         'id' => 1,
         'slug' => 'beast-mysql',
+        'driver' => 'mysql',
         'node_id' => 2,
         'process_id' => 3,
         'tag' => '8.4',
@@ -100,4 +103,22 @@ describe('database server requests', function (): void {
         'bad slug' => [database_server_sdk_payload(['slug' => 'Beast'])],
         'missing node' => [database_server_sdk_payload(['node_id' => null])],
     ]);
+});
+
+it('transports Valkey adoption fields and keeps the close request bodyless', function (): void {
+    expect(new CreateDatabaseServerRequest('cache', 2, driver: 'redis', processId: 93, connection: 'cache')->body()->all())
+        ->toBe(['slug' => 'cache', 'node_id' => 2, 'driver' => 'redis', 'process_id' => 93, 'connection' => 'cache']);
+    $request = new CloseDatabaseServerRequest('cache');
+    expect($request->getMethod())->toBe(Method::POST)
+        ->and($request->resolveEndpoint())->toBe('/api/v1/database-servers/cache/close')
+        ->and($request)->not->toBeInstanceOf(HasBody::class);
+});
+
+it('preserves the Valkey driver and accepts a legacy MySQL response', function (): void {
+    $payload = database_server_sdk_payload(['driver' => 'redis']);
+    expect(DatabaseServerResponse::fromGatewayData($payload, 'request-1')->toArray()['driver'])->toBe('redis');
+    unset($payload['driver']);
+    expect(DatabaseServerResponse::fromGatewayData($payload, 'request-1')->driver)->toBe('mysql');
+    expect(fn () => DatabaseServerResponse::fromGatewayData([...$payload, 'driver' => 'pgsql'], 'request-1'))
+        ->toThrow(InvalidArgumentException::class);
 });

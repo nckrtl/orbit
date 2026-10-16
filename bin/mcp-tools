@@ -85,11 +85,16 @@ def tool(method, path, operation, components):
             variant_properties = {}
             for variant in variants:
                 for key, value in variant.get('properties', {}).items():
-                    existing = variant_properties.get(key)
-                    if existing and 'enum' in existing and 'enum' in value:
-                        value = {**value, 'enum': list(dict.fromkeys(existing['enum'] + value['enum']))}
-                    variant_properties[key] = value
-            body = {'type': 'object', 'properties': variant_properties, 'oneOf': variants}
+                    alternatives = variant_properties.setdefault(key, [])
+                    if value not in alternatives:
+                        alternatives.append(value)
+            # The complete variants below own field constraints. Shared declarations must accept
+            # every branch, including fields whose types or bounds differ between branches.
+            properties_union = {
+                key: alternatives[0] if len(alternatives) == 1 else {'anyOf': alternatives}
+                for key, alternatives in variant_properties.items()
+            }
+            body = {'type': 'object', 'properties': properties_union, 'oneOf': variants}
         if body.get('type') != 'object':
             sys.exit(f'{name}: request body is not an object')
         for key, schema in body.get('properties', {}).items():

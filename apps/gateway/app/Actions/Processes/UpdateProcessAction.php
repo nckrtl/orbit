@@ -8,6 +8,7 @@ use App\Data\Processes\AddProcessData;
 use App\Data\Processes\ProcessData;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
+use App\Domain\DatabaseServers\DatabaseServerProcessOwnership;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessAdmissionLock;
 use App\Domain\Processes\ProcessOperationException;
@@ -34,6 +35,7 @@ final readonly class UpdateProcessAction
         private ProcessSpecification $specifications,
         private SshProcessUserResolver $users,
         private RecordEventBroadcaster $broadcaster,
+        private DatabaseServerProcessOwnership $databaseServers,
     ) {}
 
     public function execute(#[SensitiveParameter] Process $process, #[SensitiveParameter] AddProcessData $data): Process
@@ -41,6 +43,7 @@ final readonly class UpdateProcessAction
         return $this->admissions->run(
             Instance::isMorphType($process->owner_type) ? [$process->owner_id] : [],
             fn (): Process => $this->lease->run($process, function (Process $fresh) use ($data): Process {
+                $this->databaseServers->assertUpdatable($fresh);
                 if (isset($fresh->runtime_config['preset'])) {
                     throw new ResourceOperationException('process.option_invalid', 'Preset Processes cannot be updated.', 422);
                 }

@@ -7,6 +7,7 @@ use App\Repositories\GatewayConfigRepository;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
+use Orbit\Sdk\Requests\DatabaseServers\CloseDatabaseServerRequest;
 use Orbit\Sdk\Requests\DatabaseServers\CreateDatabaseServerRequest;
 use Orbit\Sdk\Requests\DatabaseServers\DestroyDatabaseServerRequest;
 use Orbit\Sdk\Requests\Nodes\ListNodesRequest;
@@ -37,6 +38,7 @@ function database_server_cli_data(): array
     return [
         'id' => 1,
         'slug' => 'beast-mysql',
+        'driver' => 'mysql',
         'node_id' => 7,
         'process_id' => 3,
         'tag' => '8.4',
@@ -106,4 +108,33 @@ describe('database:server commands', function (): void {
 
         expect($mockClient->getLastRequest())->toBeInstanceOf(DestroyDatabaseServerRequest::class);
     });
+});
+
+it('sends Valkey driver and adoption options', function (): void {
+    $mockClient = MockClient::global([CreateDatabaseServerRequest::class => database_server_cli_response(201)]);
+    $this->artisan('database:server:create', ['slug' => 'cache', '--node' => '7', '--driver' => 'redis', '--process' => '93', '--connection' => 'cache', '--json' => true])->assertExitCode(0);
+    expect($mockClient->getLastRequest()?->body()->all())->toBe([
+        'slug' => 'cache', 'node_id' => 7, 'driver' => 'redis', 'process_id' => 93, 'connection' => 'cache',
+    ]);
+});
+
+it('refuses invalid server driver or Process before sending', function (array $options): void {
+    $mockClient = MockClient::global([]);
+    $this->artisan('database:server:create', ['slug' => 'cache', '--node' => '7', '--json' => true, ...$options])->assertExitCode(1);
+    expect($mockClient->getLastPendingRequest())->toBeNull();
+})->with([
+    [['--driver' => 'pgsql']],
+    [['--process' => '0']],
+]);
+
+it('sends the close request and preserves the Gateway refusal', function (): void {
+    $mockClient = MockClient::global([
+        CloseDatabaseServerRequest::class => MockResponse::make([
+            'error' => ['code' => 'database.server_in_use', 'message' => 'Clients still use default.', 'request_id' => '11111111-1111-4111-8111-111111111111'],
+        ], 409),
+    ]);
+    $tester = new CommandTester(app(Kernel::class)->all()['database:server:close']);
+    expect($tester->execute(['slug' => 'cache', '--json' => true], ['interactive' => false]))->toBe(1)
+        ->and($tester->getDisplay(true))->toContain('database.server_in_use')
+        ->and($mockClient->getLastRequest()?->resolveEndpoint())->toBe('/api/v1/database-servers/cache/close');
 });

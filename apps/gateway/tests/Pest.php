@@ -166,6 +166,7 @@ pest()->tia()->watch([
     'resources/remote/lib/program.py' => 'tests/Feature/Infrastructure/RemotePrograms',
     'resources/remote/lib/source-removal.py' => 'tests/Feature/Infrastructure/Instances/RemoteDevelopmentInstanceSourceLifecycleTest.php',
     'resources/remote/instances/*.py' => 'tests/Feature/Infrastructure/Instances/RemoteDevelopmentInstanceSourceLifecycleTest.php',
+    'resources/remote/database-servers/*.py' => 'tests/Feature/Api/ValkeyDatabaseServersTest.php',
     'tests/Programs/*.py' => 'tests/Feature/Infrastructure/RemotePrograms',
     'ruff.toml' => 'tests/Feature/Infrastructure/RemotePrograms',
 ]);

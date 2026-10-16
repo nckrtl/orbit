@@ -19,13 +19,17 @@ final class CreateDatabaseConnectionRequest extends GatewayRequest implements Ha
     #[\Override]
     protected Method $method = Method::POST;
 
+    /**
+     * @param  list<string>|null  $patterns
+     * @param  list<string>|null  $allow
+     */
     public function __construct(
         private readonly string $slug,
         private readonly ?string $driver = null,
         private readonly ?int $nodeId = null,
         private readonly ?string $host = null,
         private readonly ?int $port = null,
-        private readonly ?string $database = null,
+        private readonly string|int|null $database = null,
         private readonly ?string $path = null,
         private readonly ?string $username = null,
         #[SensitiveParameter]
@@ -33,6 +37,8 @@ final class CreateDatabaseConnectionRequest extends GatewayRequest implements Ha
         private readonly bool $hasPassword = false,
         private readonly ?string $server = null,
         private readonly ?int $instanceId = null,
+        private readonly ?array $patterns = null,
+        private readonly ?array $allow = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -45,7 +51,7 @@ final class CreateDatabaseConnectionRequest extends GatewayRequest implements Ha
         return DatabaseConnectionResponse::fromGatewayData($this->unwrapData($response), $this->successRequestId($response));
     }
 
-    /** @return array<string, int|string|null> */
+    /** @return array<string, int|string|list<string>|null> */
     protected function defaultBody(): array
     {
         $body = ['slug' => $this->slug];
@@ -55,6 +61,12 @@ final class CreateDatabaseConnectionRequest extends GatewayRequest implements Ha
 
             if ($this->instanceId !== null) {
                 $body['instance_id'] = $this->instanceId;
+            }
+
+            foreach (['patterns' => $this->patterns, 'allow' => $this->allow, 'database' => $this->database] as $key => $value) {
+                if ($value !== null) {
+                    $body[$key] = $value;
+                }
             }
 
             return $body;

@@ -18,6 +18,7 @@ use Orbit\Sdk\Requests\DatabaseConnections\RemoveInstanceDatabaseRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\ShowDatabaseConnectionRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\ShowDatabaseSchemaRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\UpdateDatabaseConnectionRequest;
+use Orbit\Sdk\Requests\DatabaseServers\CloseDatabaseServerRequest;
 use Orbit\Sdk\Requests\DatabaseServers\CreateDatabaseServerRequest;
 use Orbit\Sdk\Requests\DatabaseServers\DestroyDatabaseServerRequest;
 use Orbit\Sdk\Requests\DatabaseServers\ListDatabaseServersRequest;
@@ -229,6 +230,7 @@ describe('repository guidance bootstrap', function (): void {
             ListDatabaseUsersRequest::class,
         ];
         $databaseServerRequests = [
+            CloseDatabaseServerRequest::class,
             ListDatabaseServersRequest::class,
             ShowDatabaseServerRequest::class,
             CreateDatabaseServerRequest::class,

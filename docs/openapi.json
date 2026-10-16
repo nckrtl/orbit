@@ -4172,6 +4172,53 @@
                       "server"
                     ],
                     "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "slug": {
+                        "type": "string",
+                        "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$(?![\\s\\S])",
+                        "maxLength": 63
+                      },
+                      "server": {
+                        "type": "string",
+                        "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$(?![\\s\\S])",
+                        "maxLength": 63
+                      },
+                      "database": {
+                        "type": "integer",
+                        "maximum": 999,
+                        "minimum": 0
+                      },
+                      "patterns": {
+                        "type": "array",
+                        "maxItems": 32,
+                        "minItems": 1,
+                        "items": {
+                          "type": "string",
+                          "pattern": "^[\\x21-\\x7E]+$(?![\\s\\S])",
+                          "maxLength": 255
+                        }
+                      },
+                      "allow": {
+                        "type": "array",
+                        "maxItems": 64,
+                        "minItems": 1,
+                        "items": {
+                          "type": "string",
+                          "pattern": "^(?:@[a-z]+|[a-z][a-z0-9_.-]*(?:\\|[a-z][a-z0-9_.-]*)?)$(?![\\s\\S])",
+                          "maxLength": 128
+                        }
+                      }
+                    },
+                    "required": [
+                      "allow",
+                      "patterns",
+                      "server",
+                      "slug"
+                    ],
+                    "additionalProperties": false
                   }
                 ]
               }
@@ -5399,17 +5446,35 @@
                     "type": "integer",
                     "minimum": 1
                   },
+                  "driver": {
+                    "type": "string",
+                    "enum": [
+                      "mysql",
+                      "redis"
+                    ],
+                    "description": "Server driver: mysql or redis. Defaults to mysql"
+                  },
                   "tag": {
                     "type": "string",
                     "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$(?![\\s\\S])",
                     "maxLength": 128,
-                    "description": "MySQL image tag. Defaults to 8.4"
+                    "description": "Image tag. Defaults to 8.4 for mysql or 8.1 for redis"
                   },
                   "port": {
                     "type": "integer",
                     "maximum": 65535,
                     "minimum": 1,
-                    "description": "Port to publish on the Node WireGuard address. Defaults to 3306"
+                    "description": "Port to publish on the Node WireGuard address. Defaults to 3306 for mysql or 6379 for redis"
+                  },
+                  "process_id": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "connection": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$(?![\\s\\S])",
+                    "maxLength": 63,
+                    "description": "Existing redis connection for adoption"
                   }
                 },
                 "required": [
@@ -5501,7 +5566,7 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/database-servers\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"slug\": \"acme\", \"node_id\": 7, \"tag\": \"8.4\", \"port\": 3306}'\n"
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/database-servers\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"slug\": \"acme\", \"node_id\": 7}'\n"
           },
           {
             "lang": "php",
@@ -5690,6 +5755,94 @@
         ]
       }
     },
+    "/api/v1/database-servers/{database_server}/close": {
+      "post": {
+        "operationId": "database-server-close",
+        "summary": "database:server:close",
+        "tags": [
+          "Database connections"
+        ],
+        "parameters": [
+          {
+            "name": "database_server",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+            },
+            "description": "Database server slug."
+          }
+        ],
+        "description": "Give default the admin password on an adopted Valkey server.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/DatabaseServer"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/database-servers/beast-mysql/close\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\DatabaseServers\\CloseDatabaseServerRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new CloseDatabaseServerRequest(slug: 'acme'))->dto();\n"
+          }
+        ]
+      }
+    },
     "/api/v1/deployments/{deployment}": {
       "get": {
         "operationId": "instance-deployment-show",
@@ -5801,7 +5954,8 @@
                         "process",
                         "firewall",
                         "database_connection",
-                        "route"
+                        "route",
+                        "database_server"
                       ]
                     }
                   }
@@ -31064,6 +31218,9 @@
           "slug": {
             "type": "string"
           },
+          "driver": {
+            "type": "string"
+          },
           "node_id": {
             "type": "integer"
           },
@@ -31211,7 +31368,8 @@
               "process",
               "firewall",
               "database_connection",
-              "route"
+              "route",
+              "database_server"
             ]
           },
           "status": {

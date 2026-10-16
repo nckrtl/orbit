@@ -568,6 +568,9 @@ Route::prefix('v1')->group(function (): void {
         Route::get('database-servers/{database_server}', [DatabaseServersController::class, 'show'])
             ->where('database_server', '[a-z0-9]+(?:-[a-z0-9]+)*')
             ->name('database:server:show');
+        Route::post('database-servers/{database_server}/close', [DatabaseServersController::class, 'close'])
+            ->where('database_server', '[a-z0-9]+(?:-[a-z0-9]+)*')
+            ->name('database:server:close');
         Route::delete('database-servers/{database_server}', [DatabaseServersController::class, 'destroy'])
             ->where('database_server', '[a-z0-9]+(?:-[a-z0-9]+)*')
             ->name('database:server:destroy');

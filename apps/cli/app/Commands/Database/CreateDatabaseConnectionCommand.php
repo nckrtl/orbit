@@ -18,19 +18,21 @@ final class CreateDatabaseConnectionCommand extends DatabaseCommand
         {--node= : Optional Node ID or registered name}
         {--host= : Hostname or IP for mysql and pgsql}
         {--port= : TCP port for mysql and pgsql}
-        {--database= : Database name for mysql and pgsql}
+        {--database= : Database name for mysql and pgsql, or index for redis}
         {--path= : Unix absolute sqlite path}
         {--username= : Username}
         {--password= : Password}
-        {--server= : Database server slug. Creates a MySQL database and user on that server}
+        {--server= : Database server slug. Creates a MySQL database or Valkey ACL user on that server}
         {--instance= : Numeric Instance ID that owns a database created with --server}
+        {--pattern=* : Key pattern for a Valkey ACL user with --server}
+        {--allow=* : Allowed command or category for a Valkey ACL user with --server}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
     protected $description = 'Register an existing database, or create one on a Database server.';
 
     /** @var list<string> */
-    private const array REGISTRATION_OPTIONS = ['driver', 'node', 'host', 'port', 'database', 'path', 'username', 'password'];
+    private const array REGISTRATION_OPTIONS = ['driver', 'node', 'host', 'port', 'path', 'username', 'password'];
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
@@ -45,6 +47,10 @@ final class CreateDatabaseConnectionCommand extends DatabaseCommand
 
         if ($server !== null) {
             return $this->createOnServer($repository, $connectors, $slug, $server);
+        }
+
+        if ($this->option('pattern') !== [] || $this->option('allow') !== []) {
+            return $this->renderGatewayFailure('database.server_required', 'The --pattern and --allow options require --server.');
         }
 
         if ($this->option('instance') !== null) {
@@ -152,6 +158,15 @@ final class CreateDatabaseConnectionCommand extends DatabaseCommand
             }
         }
 
+        $database = $this->stringOption('database');
+        $databaseIndex = null;
+        if ($database !== null) {
+            $databaseIndex = filter_var($database, FILTER_VALIDATE_INT, ['options' => ['min_range' => 0, 'max_range' => 999]]);
+            if (! is_int($databaseIndex)) {
+                return $this->renderGatewayFailure('database.database_invalid', 'A server database index must be an integer from 0 through 999.');
+            }
+        }
+
         $connector = $this->gatewayConnector($repository, $connectors);
 
         if ($connector === null) {
@@ -164,6 +179,9 @@ final class CreateDatabaseConnectionCommand extends DatabaseCommand
                 slug: $slug,
                 server: $server,
                 instanceId: $instanceId,
+                database: $databaseIndex,
+                patterns: $this->aclOptions('pattern'),
+                allow: $this->aclOptions('allow'),
             ),
             DatabaseConnectionResponse::class,
             ['Create database', 'Creating database', 'Created database'],
@@ -173,6 +191,21 @@ final class CreateDatabaseConnectionCommand extends DatabaseCommand
             return self::FAILURE;
         }
 
-        return $this->renderConnection($connection, "Database [{$connection->database}] created on [{$server}].");
+        $message = $connection->driver === 'redis'
+            ? "ACL user [{$connection->username}] created on [{$server}]."
+            : "Database [{$connection->database}] created on [{$server}].";
+
+        return $this->renderConnection($connection, $message);
+    }
+
+    /** @return list<string>|null */
+    private function aclOptions(string $name): ?array
+    {
+        $values = $this->option($name);
+        if (! is_array($values) || $values === []) {
+            return null;
+        }
+
+        return array_values(array_map(static fn (?string $value): string => $value ?? '', $values));
     }
 }

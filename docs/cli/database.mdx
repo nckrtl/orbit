@@ -1,11 +1,11 @@
 ---
 title: "database"
-description: "Run MySQL servers, create databases on them, and register, inspect, update, and destroy the mysql, pgsql, sqlite, and redis connections that Instances can attach."
+description: "Run MySQL and Valkey servers, create databases and ACL users on them, and register, inspect, update, and destroy the mysql, pgsql, sqlite, and redis connections that Instances can attach."
 covers:
   - apps/cli/app/Commands/Database/**
 ---
 
-A Database connection is a Gateway record with an encrypted password. The `database` family manages the records and inspects a registered database. `database:server` runs a MySQL server as a Docker Node Process and keeps its root password in the Gateway. [Database servers](/reference/database-servers) describes the servers.
+A Database connection is a Gateway record with an encrypted password. The `database` family manages the records and inspects a registered database. `database:server` runs a MySQL or Valkey server as a Docker Node Process and keeps its admin password in the Gateway. [Database servers](/reference/database-servers) describes the servers.
 
 [Database connections](/reference/database-connections) describes the driver fields, the API, inspection, and the keys that an attachment writes. Attach a connection to an Instance with [`instance:database:add`](/cli/instance#orbit-instancedatabaseadd).
 
@@ -13,15 +13,16 @@ A Database connection is a Gateway record with an encrypted password. The `datab
 
 | Command | Result |
 | --- | --- |
-| [`database:create`](#orbit-databasecreate) | Register an existing database, or create one on a server. |
+| [`database:create`](#orbit-databasecreate) | Register an existing database, or create a database or an ACL user on a server. |
 | [`database:list`](#orbit-databaselist) | List registered connections. |
 | [`database:show`](#orbit-databaseshow) | Show one connection. |
 | [`database:update`](#orbit-databaseupdate) | Replace the supplied fields on one connection. |
-| [`database:server:create`](#orbit-databaseservercreate) | Run a MySQL server as a Docker Node Process. |
+| [`database:server:create`](#orbit-databaseservercreate) | Run a MySQL or Valkey server as a Docker Node Process. |
 | [`database:server:list`](#orbit-databaseserverlist) | List the servers. |
 | [`database:server:show`](#orbit-databaseservershow) | Show one server. |
 | [`database:server:destroy`](#orbit-databaseserverdestroy) | Remove a server that no connection uses. |
-| [`database:user:create`](#orbit-databaseusercreate) | Add a user to a database on a server. |
+| [`database:server:close`](#orbit-databaseserverclose) | Give `default` the admin password on an adopted Valkey server. |
+| [`database:user:create`](#orbit-databaseusercreate) | Add a user to a database on a MySQL server. |
 | [`database:user:list`](#orbit-databaseuserlist) | List the users Orbit created for a connection. |
 | [`database:destroy`](#orbit-databasedestroy) | Destroy one connection record. |
 | [`database:query`](#orbit-databasequery) | Run one SQL statement against a registered connection. |
@@ -33,11 +34,12 @@ Every command accepts `--json`, and every result includes the request ID. No out
 
 ## orbit database:create
 
-Register an existing database, or create a new one on a [Database server](/reference/database-servers#create-a-database-on-a-server). The Gateway encrypts the password before it writes the row.
+Register an existing database, or create a new one on a [Database server](/reference/database-servers#create-a-database-on-a-server). On a Valkey server, `--server` creates an [ACL user](/reference/database-servers#create-an-acl-user-on-a-valkey-server) instead. The Gateway encrypts the password before it writes the row.
 
 ```bash
 orbit database:create <slug> --driver=DRIVER [options]
 orbit database:create <slug> --server=SERVER [--instance=INSTANCE]
+orbit database:create <slug> --server=SERVER --pattern=PATTERN ... --allow=RULE ... [--database=INDEX]
 ```
 
 | Argument | Required | Meaning |
@@ -50,12 +52,14 @@ orbit database:create <slug> --server=SERVER [--instance=INSTANCE]
 | `--node=NODE` | Numeric Node ID or registered Node name to associate. The `database` role is not required. |
 | `--host=HOST` | Hostname or IP address for mysql, pgsql, and redis, without userinfo or port. |
 | `--port=PORT` | TCP port for mysql, pgsql, and redis. Defaults to `3306` for mysql, `5432` for pgsql, and `6379` for redis. |
-| `--database=NAME` | Database name for mysql and pgsql, or the numeric database index for redis. |
+| `--database=NAME` | Database name for mysql and pgsql, or the numeric database index for redis. With `--server`, only the index on a Valkey server. |
 | `--path=PATH` | Unix absolute sqlite path of at most 1024 characters. |
 | `--username=USER` | Username. Required for mysql and pgsql. Optional for redis; omit it when the server has none. |
 | `--password=SECRET` | Password. Required for mysql and pgsql. Optional for redis. |
-| `--server=SERVER` | Server slug. Creates a MySQL database and user on that server. Excludes every other option except `--instance`. |
-| `--instance=INSTANCE` | Numeric Instance ID. With `--server`, attaches the new database to the Instance under prefix `DB`, creates its test database, and makes the Instance its owner. |
+| `--server=SERVER` | Server slug. Creates a MySQL database and user, or a Valkey ACL user, on that server. Excludes every other option except `--instance`, and `--pattern`, `--allow`, and `--database` on a Valkey server. |
+| `--instance=INSTANCE` | Numeric Instance ID. With `--server` on a MySQL server, attaches the new database to the Instance under prefix `DB`, creates its test database, and makes the Instance its owner. |
+| `--pattern=PATTERN` | With `--server` on a Valkey server: a key pattern that the user may reach. Required there. Repeat it for more patterns. |
+| `--allow=RULE` | With `--server` on a Valkey server: a command category such as `@list`, or a command such as `eval`, that the user may run. Required there. Repeat it for more rules. |
 
 | Driver | Required fields | Optional fields |
 | --- | --- | --- |
@@ -70,6 +74,7 @@ orbit database:create local --driver=sqlite --path=/var/lib/app/database.sqlite
 orbit database:create postgres --driver=pgsql --node=beast --host=10.44.0.7 --database=app --username=app --password=secret
 orbit database:create cache --driver=redis --host=127.0.0.1 --database=0
 orbit database:create dlf-leden --server=beast-mysql --instance=60
+orbit database:create gateway-queue --server=services-valkey --database=1 --pattern='orbit-gateway:*' --allow=@list --allow=eval
 ```
 
 The Gateway answers `validation.failed` when a mysql, pgsql, or redis record includes `--path`, when a sqlite record includes `--host`, `--port`, or `--database`, when a redis record omits `--host`, or when the request includes an unsupported field. A duplicate slug returns `database.slug_conflict` and leaves the existing record unchanged.
@@ -124,10 +129,11 @@ Updating a record does not rewrite the keys already stored on attached Instances
 
 ## orbit database:server:create
 
-Run a MySQL server as a Docker Node Process. Orbit generates the root password and keeps it only in the Gateway.
+Run a MySQL or Valkey server as a Docker Node Process. Orbit generates the admin password and keeps it only in the Gateway.
 
 ```bash
-orbit database:server:create <slug> --node=NODE [--tag=TAG] [--port=PORT] [--json]
+orbit database:server:create <slug> --node=NODE [--driver=DRIVER] [--tag=TAG] [--port=PORT] [--json]
+orbit database:server:create <slug> --node=NODE --driver=redis --process=PROCESS --connection=CONNECTION [--tag=TAG] [--json]
 ```
 
 | Argument | Required | Meaning |
@@ -137,18 +143,22 @@ orbit database:server:create <slug> --node=NODE [--tag=TAG] [--port=PORT] [--jso
 | Option | Meaning |
 | --- | --- |
 | `--node=NODE` | Numeric Node ID or Node name. Required. |
-| `--tag=TAG` | MySQL image tag. The image is `mysql:<tag>`. Defaults to `8.4`. |
-| `--port=PORT` | Port to publish on the Node's WireGuard address. Defaults to `3306`. |
+| `--driver=DRIVER` | `mysql` or `redis`. A `redis` server runs Valkey. Defaults to `mysql`. |
+| `--tag=TAG` | Image tag. The image is `mysql:<tag>` or `valkey/valkey:<tag>`. Defaults to `8.4` for mysql and `8.1` for redis. |
+| `--port=PORT` | Port to publish on the Node's WireGuard address. Defaults to `3306` for mysql and `6379` for redis. |
+| `--process=PROCESS` | Numeric ID of an existing Valkey Process to [adopt](/reference/database-servers#adopt-a-valkey-process). Needs `--driver=redis` and `--connection`, and excludes `--port`. |
+| `--connection=CONNECTION` | With `--process`: the redis connection that logs in as `default` on that Process today, with or without a password. |
 
 ```bash
 orbit database:server:create beast-mysql --node=beast
+orbit database:server:create beast-valkey --node=beast --driver=redis
 ```
 
-[Database servers](/reference/database-servers#create-a-server) describes the steps, retry, and errors.
+[Database servers](/reference/database-servers#create-a-server) describes the steps, retry, adoption, and errors.
 
 ## orbit database:server:list
 
-List the servers with their slug, Node, tag, port, status, and number of databases.
+List the servers with their slug, driver, Node, tag, port, status, and number of databases.
 
 ```bash
 orbit database:server:list [--json]
@@ -174,9 +184,19 @@ orbit database:server:destroy <slug> [--force] [--json]
 | --- | --- |
 | `--force` | Confirm without prompting. Interactive confirmation defaults to No. A JSON or non-interactive call without `--force` returns `database.confirmation_required`. |
 
+## orbit database:server:close
+
+Give the user `default` the admin password on an [adopted Valkey server](/reference/database-servers#close-an-adopted-server), so a client without a password gets no access.
+
+```bash
+orbit database:server:close <slug> [--json]
+```
+
+The Gateway refuses with `database.server_in_use` while a connection on the server has no password, or while a client other than the Gateway is logged in as `default`. A server that is already closed returns at once. The command exists only for the adopted Valkey Processes.
+
 ## orbit database:user:create
 
-Add a user to a database on a [server](/reference/database-servers#add-a-user), for example a read-only user in production.
+Add a user to a database on a MySQL [server](/reference/database-servers#add-a-user), for example a read-only user in production.
 
 ```bash
 orbit database:user:create <slug> --username=USER --password=SECRET [--read-only] [--json]
@@ -196,7 +216,7 @@ orbit database:user:create <slug> --username=USER --password=SECRET [--read-only
 orbit database:user:create dlf-leden --username=reporting --password=secret --read-only
 ```
 
-A connection without a server returns `database.server_required`. The user of a connection on the same server returns `database.name_conflict`. Creating the same user again sets its password and privileges. The Gateway stores the password encrypted, so it can [publish it to Vaultwarden](/reference/vaultwarden#database-user-passwords). No response returns it.
+A connection without a server returns `database.server_required`, and a connection on a Valkey server returns `database.driver_unsupported`. The user of a connection on the same server returns `database.name_conflict`. Creating the same user again sets its password and privileges. The Gateway stores the password encrypted, so it can [publish it to Vaultwarden](/reference/vaultwarden#database-user-passwords). No response returns it.
 
 ## orbit database:user:list
 

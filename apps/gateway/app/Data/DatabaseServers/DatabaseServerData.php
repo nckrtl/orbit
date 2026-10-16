@@ -15,6 +15,7 @@ final class DatabaseServerData extends Data
     public function __construct(
         public int $id,
         public string $slug,
+        public string $driver,
         public int $nodeId,
         public ?int $processId,
         public string $tag,
@@ -28,6 +29,7 @@ final class DatabaseServerData extends Data
         return new self(
             id: $server->id,
             slug: $server->slug,
+            driver: $server->driver->value,
             nodeId: $server->node_id,
             processId: $server->process_id,
             tag: $server->tag,
