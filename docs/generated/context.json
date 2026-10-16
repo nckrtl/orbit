@@ -1193,6 +1193,37 @@
             ]
         },
         {
+            "path": "docs/decisions/0219-answer-cluster-names-from-a-dns-on-the-router.md",
+            "title": "ADR 0219: Answer Cluster names from a DNS server on the Router",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Cluster",
+                "Doctor",
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Placement",
+                "Role",
+                "Route",
+                "Task"
+            ],
+            "governing_adrs": [
+                "0209",
+                "0210",
+                "0211",
+                "0212",
+                "0218",
+                "0219"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -1254,7 +1285,8 @@
                 "0215",
                 "0216",
                 "0217",
-                "0218"
+                "0218",
+                "0219"
             ]
         },
         {
@@ -2570,7 +2602,9 @@
                 "Route",
                 "Tool"
             ],
-            "governing_adrs": []
+            "governing_adrs": [
+                "0219"
+            ]
         },
         {
             "path": "docs/reference/processes-and-schedules.md",

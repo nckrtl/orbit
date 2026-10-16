@@ -14,6 +14,8 @@ covers:
 
 Orbit VPN DNS answers private names, such as Route domains and `gateway.orbit`, and forwards every other query to ordinary resolvers. It runs on the Node with the `vpn` role. Managed Linux Nodes use it as their resolver by default. This page explains resolver selection, the Gateway machine's resolver, the listener, Cluster Router addresses, and how to inspect or repair one peer. The active WireGuard manager projects VPN DNS behavior without creating local dnsmasq snippet files.
 
+[ADR 0219](/decisions/0219-answer-cluster-names-from-a-dns-on-the-router) is in progress. It proposes moving the Router LAN answers to a Cluster DNS on each Cluster Router and replaces the listener with plain dnsmasq. The proposal preserves the Cluster TLD and exact Cluster Route domains outside it, and forwards remaining names to VPN DNS. Its approval list covers sticky resolver fallback and the other implementation choices. Until it is built, this page describes the listener.
+
 ## Resolver selection
 
 The Gateway selects the resolver policy when it provisions a managed Linux peer.
