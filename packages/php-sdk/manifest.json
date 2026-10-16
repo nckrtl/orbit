@@ -1,0 +1,22 @@
+{
+  "schema": 2,
+  "project": "packages/php-sdk",
+  "commit": "4e70f1121d035ad2d4c3736a08b24e563a2c010a",
+  "run_id": "38875813352",
+  "run_attempt": "1",
+  "configurations": {
+    "pint": "8659279ff07894ef78df963033e0358bad60a7653df88a00c89c4f3ad3adc159",
+    "phpstan": "4d3261cecada193575c14ad9822ba9f285bcf5500d8f1ff99d965493975ed13d"
+  },
+  "graph_sha256": "25f0dbe2c9013a7618fd64e8173ca02d7452da273da06fc931fdcbfde5f75d8c",
+  "inputs": {
+    "composer.lock": "6a81f57914505cc79806bbe199f5ba899b50d474d4f89fe8fb9c29ba69db4a2c",
+    "tests/Pest.php": "08d5e95370d1e7f10b31fabd64505e7edb48e0230efbcb0857228030edb3d04e",
+    "phpunit.xml.dist": "bbfdb152fa7824ab69e4559a4c77b6a8d9407572d9a519336a46998ffe0ce5e9"
+  },
+  "php": "8.5",
+  "quality": {
+    "pint": "fbc97e8d5f4b95cf04ae51a9bbac944cd2a354924fecbf006eb0fc590cce035d",
+    "phpstan": "caf637427975c13277ba469907096a279741858d719410bdf5eff580c3bb6df1"
+  }
+}
