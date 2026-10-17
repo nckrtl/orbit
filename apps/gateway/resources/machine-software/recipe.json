@@ -2,7 +2,7 @@
     "schema_version": 1,
     "ubuntu": {
         "release": "26.04",
-        "snapshot": "20261014T000000Z"
+        "snapshot": "20261017T000000Z"
     },
     "architectures": [
         "amd64",
