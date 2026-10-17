@@ -1,0 +1,22 @@
+{
+  "schema": 2,
+  "project": "apps/gateway",
+  "commit": "b229f5708715f8c16b84f9a1748ac4e5362aa052",
+  "run_id": "39007931072",
+  "run_attempt": "1",
+  "configurations": {
+    "pint": "aa88fe4cf309bfde535bde99b3924184c3b6ff0acc3617258502cde41ad2ffb1",
+    "phpstan": "7937f0ba24e9cd77023d734835577e858c6eb13fd8c74e1efb434d31c1877695"
+  },
+  "graph_sha256": "4002a4417c9543ac304a603e69067abb3554cc680a00bfb3a87e311b9fdb3bd8",
+  "inputs": {
+    "composer.lock": "d168a9c166c692e4c3b2397ec2a346f199994c4fdde3809da086afa48b0ae7a6",
+    "tests/Pest.php": "88631b32e5d9b12739fb7b1a8bae7c00ddd469df6d067d95e637070ddd322a02",
+    "phpunit.xml": "0354ef971a143a8c1ae84324207880f0c0401a0ddfe94fe66767d5a7e773d0c3"
+  },
+  "php": "8.5",
+  "quality": {
+    "pint": "b0a5784187bd6252885c7bbbcba57fdc41736cfacb31945c9dc878de73fbd4a0",
+    "phpstan": "01789e2780276a2d86476c047082ac14acc990dc31e6b734e93c9f8f642ecab0"
+  }
+}
