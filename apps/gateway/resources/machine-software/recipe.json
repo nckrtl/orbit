@@ -165,17 +165,17 @@
         },
         "incus": {
             "source": "artifact",
-            "version": "7.0.1",
+            "version": "7.0.2",
             "artifacts": {
                 "amd64": {
-                    "url": "https://pkgs.zabbly.com/incus/lts-7.0/pool/main/i/incus/incus_7.0.1-ubuntu26.04-202609250211_amd64.deb",
-                    "sha256": "cacd26f8f577a5f651bcceadffc6ff9dbe9724c28dd2795d5628b58b6300ffa9",
-                    "version": "1:7.0.1-ubuntu26.04-202609250211"
+                    "url": "https://pkgs.zabbly.com/incus/lts-7.0/pool/main/i/incus/incus_7.0.2-ubuntu26.04-202610211652_amd64.deb",
+                    "sha256": "a516df91469244c6858b2d8dc68c6ad8c5404a6e2b40e3edc487b1b78343e792",
+                    "version": "1:7.0.2-ubuntu26.04-202610211652"
                 },
                 "arm64": {
-                    "url": "https://pkgs.zabbly.com/incus/lts-7.0/pool/main/i/incus/incus_7.0.1-ubuntu26.04-202609250512_arm64.deb",
-                    "sha256": "0e15ed36ba8de31eda65b828e905b1effb3be87c1cd5ad5f7bf00779b136f844",
-                    "version": "1:7.0.1-ubuntu26.04-202609250512"
+                    "url": "https://pkgs.zabbly.com/incus/lts-7.0/pool/main/i/incus/incus_7.0.2-ubuntu26.04-202610211846_arm64.deb",
+                    "sha256": "3b9d1b81d8d666e1a70774562f5d7f426f01f9f5e063ae31944935a487cc13ac",
+                    "version": "1:7.0.2-ubuntu26.04-202610211846"
                 }
             }
         },
@@ -890,33 +890,33 @@
         },
         "incus-base": {
             "source": "artifact",
-            "version": "7.0.1",
+            "version": "7.0.2",
             "artifacts": {
                 "amd64": {
-                    "url": "https://pkgs.zabbly.com/incus/lts-7.0/pool/main/i/incus/incus-base_7.0.1-ubuntu26.04-202609250211_amd64.deb",
-                    "sha256": "61f58086f5e756076c6b29fa1b8a675c4cb63ff4d3a20c8d04cb68dca49bedb0",
-                    "version": "1:7.0.1-ubuntu26.04-202609250211"
+                    "url": "https://pkgs.zabbly.com/incus/lts-7.0/pool/main/i/incus/incus-base_7.0.2-ubuntu26.04-202610211652_amd64.deb",
+                    "sha256": "cd6b6eb14a3b00784ee88f831786089449e668de3f9ae0c6b306c4178c8cad74",
+                    "version": "1:7.0.2-ubuntu26.04-202610211652"
                 },
                 "arm64": {
-                    "url": "https://pkgs.zabbly.com/incus/lts-7.0/pool/main/i/incus/incus-base_7.0.1-ubuntu26.04-202609250512_arm64.deb",
-                    "sha256": "3199b9b1025551b4b840812626934746afab77470910afcfcd49994ef2a71165",
-                    "version": "1:7.0.1-ubuntu26.04-202609250512"
+                    "url": "https://pkgs.zabbly.com/incus/lts-7.0/pool/main/i/incus/incus-base_7.0.2-ubuntu26.04-202610211846_arm64.deb",
+                    "sha256": "8f4e5127e482bad9027ea6848fdc99e942679c492b218d2cb86a32258a2ee9fc",
+                    "version": "1:7.0.2-ubuntu26.04-202610211846"
                 }
             }
         },
         "incus-client": {
             "source": "artifact",
-            "version": "7.0.1",
+            "version": "7.0.2",
             "artifacts": {
                 "amd64": {
-                    "url": "https://pkgs.zabbly.com/incus/lts-7.0/pool/main/i/incus/incus-client_7.0.1-ubuntu26.04-202609250211_amd64.deb",
-                    "sha256": "27d20fa3b37916bbd3c3752483fb317e18139d46ffd4b073799a3859361e5265",
-                    "version": "1:7.0.1-ubuntu26.04-202609250211"
+                    "url": "https://pkgs.zabbly.com/incus/lts-7.0/pool/main/i/incus/incus-client_7.0.2-ubuntu26.04-202610211652_amd64.deb",
+                    "sha256": "6e4387f56a2647bfece6a47773406b17ca987ce50c0b304458201ffa5fa9c597",
+                    "version": "1:7.0.2-ubuntu26.04-202610211652"
                 },
                 "arm64": {
-                    "url": "https://pkgs.zabbly.com/incus/lts-7.0/pool/main/i/incus/incus-client_7.0.1-ubuntu26.04-202609250512_arm64.deb",
-                    "sha256": "f98bf56f5243e532903567f00511f4157b08e8b647e8bdbc7b397b5df11a2cfa",
-                    "version": "1:7.0.1-ubuntu26.04-202609250512"
+                    "url": "https://pkgs.zabbly.com/incus/lts-7.0/pool/main/i/incus/incus-client_7.0.2-ubuntu26.04-202610211846_arm64.deb",
+                    "sha256": "8ccc1fee71161f62c51005fff4e4e20e070569474d37f09c83dd12489d1d9569",
+                    "version": "1:7.0.2-ubuntu26.04-202610211846"
                 }
             }
         }
