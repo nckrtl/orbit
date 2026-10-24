@@ -1,0 +1,16 @@
+{
+  "schema": 3,
+  "project": "apps/gateway",
+  "commit": "2187129c471c20a34b6c91d5e1cb6c34878b8742",
+  "run_id": "40085180992",
+  "run_attempt": "1",
+  "configurations": {
+    "pint": "aa88fe4cf309bfde535bde99b3924184c3b6ff0acc3617258502cde41ad2ffb1",
+    "phpstan": "6eea3a3f9a452a1a417f27a93217d3c37e63fbad19acd2ee349606e34b8cd5a1"
+  },
+  "php": "8.5",
+  "quality": {
+    "pint": "ddbe407261f811361946d267fe498f2b155ac62041dfdbb2bf98526fd67bad7c",
+    "phpstan": "27553cc088812ecaa13d4e68dbcddead543ec54d1397ab939809023132b06183"
+  }
+}

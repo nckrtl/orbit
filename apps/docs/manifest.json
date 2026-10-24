@@ -1,0 +1,16 @@
+{
+  "schema": 3,
+  "project": "apps/docs",
+  "commit": "2187129c471c20a34b6c91d5e1cb6c34878b8742",
+  "run_id": "40085180992",
+  "run_attempt": "1",
+  "configurations": {
+    "pint": "be29a98e52b3d4f208b9d9ea3050e169f76af56dade1812d11c4e1681104e3de",
+    "phpstan": "d4f85f67ee0b9beb871565d2e0a5e672b85e0c6461faca446b48b365e6f7326a"
+  },
+  "php": "8.5",
+  "quality": {
+    "pint": "0ae9213c87fbfb045189d64b278458908c9228a9f718667bb893c56afaf79725",
+    "phpstan": "c1a6d60238660c2dc81f6a34660b5416a38a2a32574b5dda03411d56dbdaf118"
+  }
+}

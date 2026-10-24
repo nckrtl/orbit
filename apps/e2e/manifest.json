@@ -1,0 +1,16 @@
+{
+  "schema": 3,
+  "project": "apps/e2e",
+  "commit": "2187129c471c20a34b6c91d5e1cb6c34878b8742",
+  "run_id": "40085180992",
+  "run_attempt": "1",
+  "configurations": {
+    "pint": "5654574c5b76ff8a5f099f84395e8ae829e6644b47e04bb9465bca3704d0806f",
+    "phpstan": "f869a89cdfd6d283d268762fc945b9b6174f413b146fccdbf878cd50a5785ea1"
+  },
+  "php": "8.5",
+  "quality": {
+    "pint": "03bb8296d191003e69dc945f6fb7e8a7840f3d84fbca0005d47cd7dbd70dc74f",
+    "phpstan": "a96d4c6ecdf89c62a946e54f7d696e5c659083b5aa54e3f22601097fc9242aaf"
+  }
+}
